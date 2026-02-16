@@ -3,7 +3,11 @@
 **Automated Server Switch in Case Relays Are Crashed or Killed**
 
 A decentralized P2P voice and chat application with automatic failover. When your host goes down, ASSCRACK automatically switches to the next available node.
+**⚠️ EARLY DEVELOPMENT - NOT READY FOR USE ⚠️**
+This project is in active development. Nothing works yet. 
+Don't try to use this for actual voice chat.
 
+**Want to help build it?** Check out [CONTRIBUTING.md](CONTRIBUTING.md)
 ## Features
 
 - **Decentralized P2P Architecture** - No single point of failure
