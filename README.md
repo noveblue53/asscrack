@@ -52,5 +52,5 @@ MIT License.
 
 - Mumble team for the excellent voice codec
 - libp2p team for P2P networking
-- Parker, Sunmanga, HBO Max Verstappen
+- Noveblue, Parker, Sunmanga, HBO Max Verstappen
 - Discord ;)
