@@ -1,12 +1,17 @@
 const {app, BrowserWindow} = require('electron'); 
 const url = require('url');
 const path = require('path');
+const { Menu } = require('electron');
+
+Menu.setApplicationMenu(null);
 
 function createMainWindow() {
     const mainWindow = new BrowserWindow({
         title: 'AssCrack',
         width: 800,
-        height: 600,});
+        height: 600
+        
+    });
 
 
         const startUrl = url.format({
