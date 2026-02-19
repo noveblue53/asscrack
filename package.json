@@ -8,13 +8,14 @@
     "dev": "electron . --dev",
     "test": "node --test"
   },
-  "keywords": ["p2p", "voice-chat", "decentralized"],
+  "keywords": [
+    "p2p",
+    "voice-chat",
+    "decentralized"
+  ],
   "license": "MIT",
   "dependencies": {
-    "libp2p": "^2.0.0",
-    "automerge": "^2.0.0",
-    "better-sqlite3": "^9.0.0",
-    "electron": "^33.0.0"
+    "libp2p": "^2.10.0"
   },
   "devDependencies": {
     "eslint": "^9.0.0",
