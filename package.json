@@ -2,12 +2,13 @@
   "name": "asscrack",
   "version": "0.1.0",
   "description": "Automated Server Switch in Case Relays Are Crashed or Killed",
-  "main": "src/main/index.js",
-  "type": "module",
+  "main": "src/application/main.js",
+  "type": "commonjs",
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
     "test": "node --test"
+
   },
   "keywords": [
     "p2p",
