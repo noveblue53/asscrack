@@ -25,8 +25,9 @@
     "@libp2p/websockets": "^8.1.4",
     "@nodeutils/defaults-deep": "^1.1.0",
     "electron": "^40.5.0",
+    "it-pipe": "^3.0.1",
     "libp2p": "^1.9.4",
-    "uint8arrays": "^5.0.0"
+    "uint8arrays": "^5.1.0"
   },
   "devDependencies": {
     "eslint": "^9.0.0",
