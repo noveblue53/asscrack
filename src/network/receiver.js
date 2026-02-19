@@ -15,7 +15,7 @@ const main =  async () => {
          listen: ['/ip4/127.0.0.1/tcp/0']
     },
         transports: [tcp()],
-        connectionEncrypters: [noise()],
+        connectionEncryption: [noise()],
         streamMuxers: [yamux()],
         services: {
             ping: ping({
