@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Local data
+data/
+*.db
+*.sqlite
+
+# Bundled binaries (added later)
+bin/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editor stuff
+.vscode/
+.idea/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Build output
+dist/
+out/
