@@ -24,7 +24,8 @@ const node = await createLibp2p({
 await node.start()
 
 console.log('Receiver started with id:', node.peerId.toString())
-console.log('Listening on addresses:', node.getMultiaddrs().forEach(addr => console.log(addr.toString())))
+console.log('Listening on addresses:')
+node.getMultiaddrs().forEach(addr => console.log(addr.toString()))
 
 node.handle('/asscrack/chat/1.0.0', async ({ stream }) => {
   pipe(
