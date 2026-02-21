@@ -1,12 +1,10 @@
-export default ()
-//const {app, BrowserWindow} = require('electron'); 
-import {app, BrowserWindow} from "electron";
-//const url = require('url');
-import { url } from "url";
-//const path = require('path');
-import { path } from "path";
-//const { Menu } = require('electron');
-import { Menu } from "electron";
+import { app, BrowserWindow, Menu } from 'electron';
+import { fileURLToPath } from 'url';
+import path from 'path';
+
+// Recreate __dirname for ES Modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 Menu.setApplicationMenu(null);
 
@@ -15,19 +13,11 @@ function createMainWindow() {
         title: 'AssCrack',
         width: 800,
         height: 600
-        
     });
 
+    const startUrl = new URL(`file://${path.join(__dirname, 'index.html')}`).href;
 
-        const startUrl = url.format({
-            pathname: path.join(__dirname, 'index.html'),
-            protocol: 'file:',
-        });
-
-        mainWindow.loadURL(startUrl);
-
+    mainWindow.loadURL(startUrl);
 }
 
 app.whenReady().then(createMainWindow);
-        
-    
