@@ -13,6 +13,15 @@ async function waitFor(check) {
     assert.ok(check(), 'Timed out waiting for expected node behavior')
 }
 
+// The random id makes an exact deepEqual impossible: check the id, then remove it.
+function withoutId(messages) {
+    return messages.map(({ id, ...rest }) => {
+        assert.equal(typeof id, 'string')
+        assert.ok(id.length > 0)
+        return rest
+    })
+}
+
 // Remove the time after a check that it is a number, so tests can compare exact values.
 function withoutTime(messages) {
     return messages.map(({ time, ...rest }) => {
@@ -48,8 +57,8 @@ test('two nodes chat through createAsscrackNode', { timeout: 15000 }, async () =
         assert.equal(b.send('hello from B'), 1)
         await waitFor(() => logA.messages.length === 1 && logB.messages.length === 1)
         await delay(200)
-        assert.deepEqual(withoutTime(logB.messages), [{ peerId: a.peerId, from: a.name, text: 'hello from A' }])
-        assert.deepEqual(withoutTime(logA.messages), [{ peerId: b.peerId, from: b.name, text: 'hello from B' }])
+        assert.deepEqual(withoutTime(withoutId(logB.messages)), [{ peerId: a.peerId, from: a.name, text: 'hello from A' }])
+        assert.deepEqual(withoutTime(withoutId(logA.messages)), [{ peerId: b.peerId, from: b.name, text: 'hello from B' }])
 
         await b.stop()
         bStopped = true
@@ -78,8 +87,8 @@ test('two nodes in one room connect through mDNS discovery', { timeout: 30000 },
         assert.equal(b.send('auto hello from B'), 1)
         await waitFor(() => logA.messages.length === 1 && logB.messages.length === 1)
         await delay(200)
-        assert.deepEqual(withoutTime(logB.messages), [{ peerId: a.peerId, from: a.name, text: 'auto hello from A' }])
-        assert.deepEqual(withoutTime(logA.messages), [{ peerId: b.peerId, from: b.name, text: 'auto hello from B' }])
+        assert.deepEqual(withoutTime(withoutId(logB.messages)), [{ peerId: a.peerId, from: a.name, text: 'auto hello from A' }])
+        assert.deepEqual(withoutTime(withoutId(logA.messages)), [{ peerId: b.peerId, from: b.name, text: 'auto hello from B' }])
         assert.equal(a.peers().length, 1)
         assert.equal(b.peers().length, 1)
     } finally {
@@ -121,8 +130,8 @@ test('structured messages carry the sender name, text and time in both direction
         }
         await waitFor(() => logA.messages.length === texts.length && logB.messages.length === texts.length)
         await delay(200)
-        assert.deepEqual(withoutTime(logB.messages), texts.map(text => ({ peerId: a.peerId, from: 'Alice', text })))
-        assert.deepEqual(withoutTime(logA.messages), texts.map(text => ({ peerId: b.peerId, from: b.name, text })))
+        assert.deepEqual(withoutTime(withoutId(logB.messages)), texts.map(text => ({ peerId: a.peerId, from: 'Alice', text })))
+        assert.deepEqual(withoutTime(withoutId(logA.messages)), texts.map(text => ({ peerId: b.peerId, from: b.name, text })))
     } finally {
         await b.stop()
         await a.stop()
@@ -148,7 +157,7 @@ test('a node ignores lines that are not valid and keeps the session open', { tim
         outgoing.push(Buffer.from(JSON.stringify({ from: 'raw', text: 'valid', time: 123 }) + '\n'))
         await waitFor(() => logA.messages.length === 1)
         await delay(200)
-        assert.deepEqual(logA.messages, [{ peerId: b.peerId, from: 'raw', text: 'valid', time: 123 }])
+        assert.deepEqual(withoutId(logA.messages), [{ peerId: b.peerId, from: 'raw', text: 'valid', time: 123 }])
         assert.equal(warnings.filter(w => w.includes(b.peerId)).length, 2)
         assert.deepEqual(a.peers(), [b.peerId])
         assert.deepEqual(logA.left, [])

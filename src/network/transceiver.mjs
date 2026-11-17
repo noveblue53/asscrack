@@ -28,6 +28,9 @@ node.events.on('peer-joined', ({ peerId }) => console.log('Chat ready with peer:
 node.events.on('peer-left', ({ peerId }) => console.log('Chat closed with peer:', peerId))
 node.events.on('host-changed', ({ peerId, term }) => console.log(`Host: ${peerId} (term ${term})`))
 node.events.on('message', ({ from, text }) => console.log(`\n> ${from}: ${text}`))
+node.events.on('history', ({ messages }) => {
+    for (const { from, text } of messages) console.log(`[history] > ${from}: ${text}`)
+})
 
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: false })
 // One terminal reader, shared by all active peer sessions.

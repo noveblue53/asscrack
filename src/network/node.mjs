@@ -4,10 +4,11 @@ import { mdns } from '@libp2p/mdns'
 import { yamux } from '@chainsafe/libp2p-yamux'
 import { noise } from '@chainsafe/libp2p-noise'
 import { multiaddr } from '@multiformats/multiaddr'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { createChatSession } from './chat-session.mjs'
 import { createElection } from './election.mjs'
+import { createHistory } from './history.mjs'
 
 export const CHAT_PROTOCOL = '/asscrack/chat/receive'
 
@@ -16,8 +17,9 @@ export function roomServiceTag(room) {
     return `_asscrack-${h}._udp.local`
 }
 
-// One chat line is one JSON object: { from: string, text: string, time: number }.
-function parseMessage(line) {
+// One chat line is one JSON object: { id?: string, from: string, text: string, time: number }.
+// A line with no id (goal 1 format) gets an id from the sender peer ID, the time and the text.
+function parseMessage(line, peerId) {
     let value
     try {
         value = JSON.parse(line)
@@ -27,7 +29,17 @@ function parseMessage(line) {
     if (value === null || typeof value !== 'object') return null
     const { from, text, time } = value
     if (typeof from !== 'string' || typeof text !== 'string' || typeof time !== 'number') return null
-    return { from, text, time }
+    const id = typeof value.id === 'string' && value.id !== ''
+        ? value.id
+        : createHash('sha256').update(`${peerId}
+${time}
+${text}`).digest('hex')
+    return { id, from, text, time }
+}
+
+function validHistoryItem(m) {
+    return m !== null && typeof m === 'object' && typeof m.id === 'string' && typeof m.from === 'string' &&
+        typeof m.text === 'string' && typeof m.time === 'number'
 }
 
 export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0'], discovery = true, discoveryInterval, name,
@@ -47,12 +59,42 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
     const senderName = name ?? node.peerId.toString().slice(-8)
     const events = new EventEmitter()
     const sessions = new Map()
+    const history = createHistory(200)
+    const HISTORY_KEEP_MS = 10000
+    // The last history line from each peer that was not the host when it arrived.
+    const pendingHistory = new Map()
+
+    function applyHistory(messages) {
+        if (!Array.isArray(messages)) return
+        const added = []
+        for (const m of messages) {
+            if (!validHistoryItem(m)) continue
+            if (history.add(m)) added.push({ id: m.id, from: m.from, text: m.text, time: m.time })
+        }
+        events.emit('history', { messages: added })
+    }
+
+    function handleHistory(peerId, control) {
+        if (election.host()?.peerId === peerId) {
+            applyHistory(control.messages)
+            return
+        }
+        pendingHistory.set(peerId, { messages: control.messages, at: Date.now() })
+    }
     const election = createElection({
         selfId: node.peerId.toString(),
         sendTo: (peerId, line) => { sessions.get(peerId)?.send(line) },
         broadcast: line => { for (const session of sessions.values()) session.send(line) },
         openPeers: () => [...sessions.keys()],
-        onChange: info => events.emit('host-changed', info),
+        onChange: info => {
+            events.emit('host-changed', info)
+            // Use a history line that arrived before this host was accepted.
+            const kept = pendingHistory.get(info.peerId)
+            if (kept) {
+                pendingHistory.delete(info.peerId)
+                if (Date.now() - kept.at <= HISTORY_KEEP_MS) applyHistory(kept.messages)
+            }
+        },
         heartbeatInterval,
         hostTimeout,
         electionDelay
@@ -81,19 +123,23 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
                 if (control) {
                     // Ignore an unknown type with no warning.
                     if (control.type === 'host') election.handleAnnouncement(peerId, control)
+                    else if (control.type === 'history') handleHistory(peerId, control)
                     return
                 }
-                const message = parseMessage(line)
-                if (message) events.emit('message', { peerId, ...message })
-                else console.warn(`Ignored a message that is not valid from peer ${peerId}`)
+                const message = parseMessage(line, peerId)
+                if (message) {
+                    if (history.add(message)) events.emit('message', { peerId, ...message })
+                } else console.warn(`Ignored a message that is not valid from peer ${peerId}`)
             }
         })
         sessions.set(peerId, session)
         events.emit('peer-joined', { peerId })
         election.sessionOpened(peerId)
+        if (election.isHost()) session.send(JSON.stringify({ type: 'history', messages: history.list() }))
         session.done.catch(() => {}).finally(() => {
             if (sessions.get(peerId) === session) {
                 sessions.delete(peerId)
+                pendingHistory.delete(peerId)
                 events.emit('peer-left', { peerId })
                 election.sessionClosed(peerId)
             }
@@ -159,7 +205,9 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
         },
         name: senderName,
         send(text) {
-            const line = JSON.stringify({ from: senderName, text, time: Date.now() })
+            const message = { id: randomUUID(), from: senderName, text, time: Date.now() }
+            history.add(message)
+            const line = JSON.stringify(message)
             let count = 0
             for (const session of sessions.values()) if (session.send(line)) count++
             return count
@@ -167,6 +215,7 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
         peers: () => [...sessions.keys()],
         host: () => election.host(),
         isHost: () => election.isHost(),
+        history: () => history.list(),
         pauseHeartbeats: paused => election.pauseHeartbeats(paused),
         async stop() {
             election.stop()
