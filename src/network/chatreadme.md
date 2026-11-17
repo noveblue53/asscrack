@@ -33,7 +33,7 @@ This test does 2 things on a real local network. It does all of test card 3 (nam
 12. Close the app on the computer of the host (the host from step 2, or the host that the peer list shows now). Record the time. On the other computers, wait until the peer list shows a new host.
 13. Start the .exe on the closed computer again. Log in with the same name and the same room. Do not send a chat message. Look at the chat: the lines from step 3, with `before voice`, must be there.
 14. On the restarted computer, select Join voice. Speak in turn. Each user must hear each other user again.
-15. On each computer, keep the logs. Close the app first. In PowerShell, run `explorer "$env:APPDATA\ASSCRACK\logs"`. Copy each `asscrack-*.log` file into a folder with the name of the computer. The restarted computer has 2 log files, one for each start. Do not edit the files.
+15. On each computer, keep the logs. Close the app first. In PowerShell, run `explorer "$env:APPDATA\asscrack\logs"`. Copy each `asscrack-*.log` file into a folder with the name of the computer. The restarted computer has 2 log files, one for each start. Do not edit the files.
 
 ### Done when
 
@@ -96,7 +96,7 @@ This test shows if a file goes from one computer to the others on a real local n
 8. On B, open the Downloads folder. The file must be there with the same size as on A. Optional: on A and on B, run `Get-FileHash "<path of the file>"` in PowerShell. The 2 hash values must be the same.
 9. On A, send the large file again. On B, select Accept. While the progress bar moves, select **Cancel** on B. Expect on B: "Cancelled". Expect on A: "Cancelled" in the line for B. On B, look in the Downloads folder: no new file, and no file with a name that starts with `.asscrack-`. If the transfer ends before you can select Cancel, use a larger file and do this step again.
 10. On A, send the small text file. On B, select Accept. Then send the same small file again, and accept it again on B. Expect on B: "Saved as <name>" the first time, and "Saved as <name> (1).<extension>" the second time. The first file has no change.
-11. On each computer, keep the logs. Close the app first. A build after 0.3.0 writes one log file at each start. In PowerShell, run `explorer "$env:APPDATA\ASSCRACK\logs"`. Copy each `asscrack-*.log` file into a folder with the name of the computer. Do not edit the files. The 0.2.0 and 0.3.0 builds write no log file, and a terminal pipe (`Tee-Object`) does not get their output. With these builds, write down each red line of the developer console, with the time.
+11. On each computer, keep the logs. Close the app first. A build after 0.3.0 writes one log file at each start. In PowerShell, run `explorer "$env:APPDATA\asscrack\logs"`. Copy each `asscrack-*.log` file into a folder with the name of the computer. Do not edit the files. The 0.2.0 and 0.3.0 builds write no log file, and a terminal pipe (`Tee-Object`) does not get their output. With these builds, write down each red line of the developer console, with the time.
 
 ### Done when
 
@@ -149,7 +149,7 @@ This test shows if the voice and the automatic host failover work on a real loca
 6. Close the app on the computer of the host. Record the time.
 7. On the other computers, look at the peer list. Wait for a new host. Speak in turn. Record the time when the users hear each other again. Do not select a button.
 8. Start the app on the closed computer again. Log in to the same room. Look at the chat: `before voice` must be there. Select Join voice. Speak in turn.
-9. On each computer, keep the logs. Close the app first. A build after 0.3.0 writes one log file at each start. In PowerShell, run `explorer "$env:APPDATA\ASSCRACK\logs"`. Copy each `asscrack-*.log` file into a folder with the name of the computer. Do not edit the files. The 0.2.0 and 0.3.0 builds write no log file, and a terminal pipe (`Tee-Object`) does not get their output. With these builds, write down each red line of the developer console, with the time.
+9. On each computer, keep the logs. Close the app first. A build after 0.3.0 writes one log file at each start. In PowerShell, run `explorer "$env:APPDATA\asscrack\logs"`. Copy each `asscrack-*.log` file into a folder with the name of the computer. Do not edit the files. The 0.2.0 and 0.3.0 builds write no log file, and a terminal pipe (`Tee-Object`) does not get their output. With these builds, write down each red line of the developer console, with the time.
 
 **Known fault in 0.2.0 and 0.3.0:** condition 6 fails. The window of these builds does not show the chat history (`handoffs/test2-20261117`). Do conditions 6 to 8 again with a build after 0.3.0.
 

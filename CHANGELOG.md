@@ -16,14 +16,14 @@ Each result has one of these labels:
 - **Cause (127.0.0.1):** the network layer gets the history. In 12 of 12 runs, the restarted node got all earlier
   lines 1 to 3 ms after its session opened. But the main process of the app did not send the history to the window.
 - **Fix:** the main process now sends the history to the window. The window puts the lines in time sequence.
-- **Log file:** the app writes one log file at each start, in `%APPDATA%\ASSCRACK\logs`. Each history send and
+- **Log file:** the app writes one log file at each start, in `%APPDATA%\asscrack\logs`. Each history send and
   receive gives a log line with the message IDs and the count. The log does not contain the chat text.
 - **Results (127.0.0.1):** with 2 app windows, the restarted window showed 0 earlier lines in 4 of 4 runs before the
   fix. After the fix, it showed all 3 earlier lines in 4 of 4 runs. `npm test` passes 36 of 36.
 - **Results of the 0.3.1 build (127.0.0.1):** `npm test` passes 36 of 36, and one app start has no error line.
   With the .exe as the restarted app, the window showed all earlier lines in 2 of 2 runs. With 3 app windows and the
   .exe as the sender, a 200 MB file arrived in 2 windows in 4.7 s. The voice continued during the transfer. The
-  .exe writes its log file in `%APPDATA%\ASSCRACK\logs`.
+  .exe writes its log file in `%APPDATA%\asscrack\logs`.
 - **Results (LAN, test card 4, 2 computers, 2026-11-17):** pass for conditions 1 to 3 and 5 to 9. Pass for the names
   before the first chat message, and for the offer, accept, cancel and the " (1)" name of the file transfer. Pass for
   the voice during the transfer. Pass for the chat history after a restart (condition 8), and for the voice after the
@@ -32,7 +32,10 @@ Each result has one of these labels:
 - **Condition 4 (refuse):** pass with a changed procedure on 2 computers. The card asks for 3 computers, with Accept
   on B and Refuse on C at the same time. The operator did Accept, then Refuse, in sequence on the same receiver.
   Refuse by a third computer during a transfer to another receiver has no LAN test.
-- **Not tested:** no red console line (condition 10) and the log files (condition 11).
+- **Log files (LAN, 2 computers):** each computer wrote 2 log files, one for each start (condition 11). The 4 logs
+  have no warning or error line, and each window console line has the level info (condition 10, from the logs). After
+  each restart, the history arrived 3 to 4 ms after the session opened, and the window showed it 1 ms later.
+- **Not known:** the LAN transfer speed. The log has no file size and no line for Accept.
 
 ## 0.3.0: peer names and file sharing
 
