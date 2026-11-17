@@ -1,0 +1,17 @@
+2026-11-17T19:47:33.958Z INFO ASSCRACK 0.3.1 Electron 40.5.0 args ["D:\\Temp\\User\\3MFRiB0yGBsUNqZ5vGfKsx34aEE\\ASSCRACK.exe"] log D:\AppData\Roaming\asscrack\logs\asscrack-20261117-144733.log
+2026-11-17T19:51:02.922Z EVENT event peer-discovered peer 12D3KooWB3DLpvAfxrNQtEDkRobK1PuodgLGkytpgzWiVVpM6XJS
+2026-11-17T19:51:02.925Z WINDOW info peer-discovered [object Object] (file:///D:/Temp/User/3MFRiB0yGBsUNqZ5vGfKsx34aEE/resources/app.asar/src/application/renderer.js:96)
+2026-11-17T19:51:02.974Z EVENT event peer-joined peer 12D3KooWB3DLpvAfxrNQtEDkRobK1PuodgLGkytpgzWiVVpM6XJS
+2026-11-17T19:51:02.979Z EVENT event peer-name peer 12D3KooWB3DLpvAfxrNQtEDkRobK1PuodgLGkytpgzWiVVpM6XJS
+2026-11-17T19:51:05.992Z EVENT event host-changed peer 12D3KooWB3DLpvAfxrNQtEDkRobK1PuodgLGkytpgzWiVVpM6XJS
+2026-11-17T19:52:12.382Z EVENT event message peer 12D3KooWB3DLpvAfxrNQtEDkRobK1PuodgLGkytpgzWiVVpM6XJS ids 429efcc0-b969-4abd-99bb-6b2c52e1124a count 1
+2026-11-17T19:52:39.519Z EVENT event voice-state peer 12D3KooWB3DLpvAfxrNQtEDkRobK1PuodgLGkytpgzWiVVpM6XJS
+2026-11-17T19:53:36.980Z EVENT event file-refused peer 12D3KooWB3DLpvAfxrNQtEDkRobK1PuodgLGkytpgzWiVVpM6XJS offer 63133016-494b-4da4-84dd-a1d51f868833
+2026-11-17T19:54:46.434Z EVENT event file-done peer 12D3KooWB3DLpvAfxrNQtEDkRobK1PuodgLGkytpgzWiVVpM6XJS offer 77b5e2ba-21a4-4e24-b894-68ca159efa18
+2026-11-17T19:56:25.444Z EVENT event file-offer peer 12D3KooWB3DLpvAfxrNQtEDkRobK1PuodgLGkytpgzWiVVpM6XJS offer d36231ed-0dbc-4c78-b338-d0fbba5d1c75
+2026-11-17T19:56:28.144Z EVENT event file-cancelled peer 12D3KooWB3DLpvAfxrNQtEDkRobK1PuodgLGkytpgzWiVVpM6XJS offer d36231ed-0dbc-4c78-b338-d0fbba5d1c75
+2026-11-17T19:56:34.164Z EVENT event file-offer peer 12D3KooWB3DLpvAfxrNQtEDkRobK1PuodgLGkytpgzWiVVpM6XJS offer 77f4d79b-2b02-4895-8c5c-30038ce138fd
+2026-11-17T19:56:49.648Z EVENT event file-done peer 12D3KooWB3DLpvAfxrNQtEDkRobK1PuodgLGkytpgzWiVVpM6XJS offer 77f4d79b-2b02-4895-8c5c-30038ce138fd
+2026-11-17T19:57:32.595Z EVENT event file-offer peer 12D3KooWB3DLpvAfxrNQtEDkRobK1PuodgLGkytpgzWiVVpM6XJS offer 000a1bf9-fd93-4e58-822d-739d5d168a42
+2026-11-17T19:57:39.063Z EVENT event file-done peer 12D3KooWB3DLpvAfxrNQtEDkRobK1PuodgLGkytpgzWiVVpM6XJS offer 000a1bf9-fd93-4e58-822d-739d5d168a42
+2026-11-17T19:57:52.043Z EVENT event peer-left peer 12D3KooWB3DLpvAfxrNQtEDkRobK1PuodgLGkytpgzWiVVpM6XJS

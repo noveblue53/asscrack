@@ -1,0 +1,23 @@
+2026-11-17T19:50:57.830Z INFO ASSCRACK 0.3.1 Electron 40.5.0 args ["C:\\Users\\Kat\\AppData\\Local\\Temp\\3MFRiB0yGBsUNqZ5vGfKsx34aEE\\ASSCRACK.exe"] log C:\Users\Kat\AppData\Roaming\asscrack\logs\asscrack-20261117-145057.log
+2026-11-17T19:51:01.875Z EVENT event peer-discovered peer 12D3KooWFLJW6g3PWs4e8twqBz1pDexPsHhwsEfFWYDexyA6gTe5
+2026-11-17T19:51:01.882Z WINDOW info peer-discovered [object Object] (file:///C:/Users/Kat/AppData/Local/Temp/3MFRiB0yGBsUNqZ5vGfKsx34aEE/resources/app.asar/src/application/renderer.js:96)
+2026-11-17T19:51:01.929Z EVENT event peer-joined peer 12D3KooWFLJW6g3PWs4e8twqBz1pDexPsHhwsEfFWYDexyA6gTe5
+2026-11-17T19:51:01.929Z EVENT event peer-name peer 12D3KooWFLJW6g3PWs4e8twqBz1pDexPsHhwsEfFWYDexyA6gTe5
+2026-11-17T19:51:04.942Z EVENT event host-changed peer 12D3KooWB3DLpvAfxrNQtEDkRobK1PuodgLGkytpgzWiVVpM6XJS
+2026-11-17T19:51:48.454Z EVENT event message peer 12D3KooWFLJW6g3PWs4e8twqBz1pDexPsHhwsEfFWYDexyA6gTe5 ids dbe7c69f-ccd3-4a85-ab0c-55bbac9e3c2c count 1
+2026-11-17T19:52:25.655Z EVENT event message peer 12D3KooWFLJW6g3PWs4e8twqBz1pDexPsHhwsEfFWYDexyA6gTe5 ids 941b97de-403a-40ec-940b-edccb2a74ae5 count 1
+2026-11-17T19:52:31.525Z EVENT event voice-state peer 12D3KooWFLJW6g3PWs4e8twqBz1pDexPsHhwsEfFWYDexyA6gTe5
+2026-11-17T19:53:09.775Z EVENT event file-offer peer 12D3KooWFLJW6g3PWs4e8twqBz1pDexPsHhwsEfFWYDexyA6gTe5 offer 63133016-494b-4da4-84dd-a1d51f868833
+2026-11-17T19:54:11.067Z EVENT event file-offer peer 12D3KooWFLJW6g3PWs4e8twqBz1pDexPsHhwsEfFWYDexyA6gTe5 offer 77b5e2ba-21a4-4e24-b894-68ca159efa18
+2026-11-17T19:54:49.277Z EVENT event file-done peer 12D3KooWFLJW6g3PWs4e8twqBz1pDexPsHhwsEfFWYDexyA6gTe5 offer 77b5e2ba-21a4-4e24-b894-68ca159efa18
+2026-11-17T19:56:48.597Z EVENT event file-done peer 12D3KooWFLJW6g3PWs4e8twqBz1pDexPsHhwsEfFWYDexyA6gTe5 offer 77f4d79b-2b02-4895-8c5c-30038ce138fd
+2026-11-17T19:57:38.012Z EVENT event file-done peer 12D3KooWFLJW6g3PWs4e8twqBz1pDexPsHhwsEfFWYDexyA6gTe5 offer 000a1bf9-fd93-4e58-822d-739d5d168a42
+2026-11-17T19:57:50.997Z EVENT event peer-left peer 12D3KooWFLJW6g3PWs4e8twqBz1pDexPsHhwsEfFWYDexyA6gTe5
+2026-11-17T19:58:15.744Z EVENT event peer-discovered peer 12D3KooWPSMaxtg54UV551G58yfNkrxXjNGGWu27dy1kDNuaRLT8
+2026-11-17T19:58:15.747Z WINDOW info peer-discovered [object Object] (file:///C:/Users/Kat/AppData/Local/Temp/3MFRiB0yGBsUNqZ5vGfKsx34aEE/resources/app.asar/src/application/renderer.js:96)
+2026-11-17T19:58:15.778Z EVENT event peer-joined peer 12D3KooWPSMaxtg54UV551G58yfNkrxXjNGGWu27dy1kDNuaRLT8
+2026-11-17T19:58:15.779Z INFO History sent to 12D3KooWPSMaxtg54UV551G58yfNkrxXjNGGWu27dy1kDNuaRLT8: 3 messages
+2026-11-17T19:58:15.780Z EVENT event peer-name peer 12D3KooWPSMaxtg54UV551G58yfNkrxXjNGGWu27dy1kDNuaRLT8
+2026-11-17T19:58:29.522Z EVENT event voice-state peer 12D3KooWPSMaxtg54UV551G58yfNkrxXjNGGWu27dy1kDNuaRLT8
+2026-11-17T19:58:32.531Z EVENT event voice-state peer 12D3KooWPSMaxtg54UV551G58yfNkrxXjNGGWu27dy1kDNuaRLT8
+2026-11-17T19:59:04.221Z EVENT event peer-left peer 12D3KooWPSMaxtg54UV551G58yfNkrxXjNGGWu27dy1kDNuaRLT8

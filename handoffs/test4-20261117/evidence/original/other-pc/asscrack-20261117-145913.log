@@ -1,0 +1,10 @@
+2026-11-17T19:59:13.973Z INFO ASSCRACK 0.3.1 Electron 40.5.0 args ["C:\\Users\\Kat\\AppData\\Local\\Temp\\3MFRiB0yGBsUNqZ5vGfKsx34aEE\\ASSCRACK.exe"] log C:\Users\Kat\AppData\Roaming\asscrack\logs\asscrack-20261117-145913.log
+2026-11-17T19:59:18.811Z EVENT event peer-discovered peer 12D3KooWPSMaxtg54UV551G58yfNkrxXjNGGWu27dy1kDNuaRLT8
+2026-11-17T19:59:18.816Z WINDOW info peer-discovered [object Object] (file:///C:/Users/Kat/AppData/Local/Temp/3MFRiB0yGBsUNqZ5vGfKsx34aEE/resources/app.asar/src/application/renderer.js:96)
+2026-11-17T19:59:18.849Z EVENT event peer-joined peer 12D3KooWPSMaxtg54UV551G58yfNkrxXjNGGWu27dy1kDNuaRLT8
+2026-11-17T19:59:18.850Z EVENT event peer-name peer 12D3KooWPSMaxtg54UV551G58yfNkrxXjNGGWu27dy1kDNuaRLT8
+2026-11-17T19:59:18.851Z EVENT event host-changed peer 12D3KooWPSMaxtg54UV551G58yfNkrxXjNGGWu27dy1kDNuaRLT8
+2026-11-17T19:59:18.852Z INFO History applied: 3 of 3 messages are new
+2026-11-17T19:59:18.852Z EVENT event history ids dbe7c69f-ccd3-4a85-ab0c-55bbac9e3c2c,429efcc0-b969-4abd-99bb-6b2c52e1124a,941b97de-403a-40ec-940b-edccb2a74ae5 count 3
+2026-11-17T19:59:18.853Z WINDOW info History shown: 3 lines (file:///C:/Users/Kat/AppData/Local/Temp/3MFRiB0yGBsUNqZ5vGfKsx34aEE/resources/app.asar/src/application/renderer.js:114)
+2026-11-17T20:03:28.978Z EVENT event peer-left peer 12D3KooWPSMaxtg54UV551G58yfNkrxXjNGGWu27dy1kDNuaRLT8

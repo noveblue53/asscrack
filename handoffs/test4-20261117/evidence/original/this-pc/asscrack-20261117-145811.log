@@ -1,0 +1,18 @@
+2026-11-17T19:58:11.865Z INFO ASSCRACK 0.3.1 Electron 40.5.0 args ["D:\\Temp\\User\\3MFRiB0yGBsUNqZ5vGfKsx34aEE\\ASSCRACK.exe"] log D:\AppData\Roaming\asscrack\logs\asscrack-20261117-145811.log
+2026-11-17T19:58:16.795Z EVENT event peer-discovered peer 12D3KooWB3DLpvAfxrNQtEDkRobK1PuodgLGkytpgzWiVVpM6XJS
+2026-11-17T19:58:16.803Z WINDOW info peer-discovered [object Object] (file:///D:/Temp/User/3MFRiB0yGBsUNqZ5vGfKsx34aEE/resources/app.asar/src/application/renderer.js:96)
+2026-11-17T19:58:16.826Z EVENT event peer-joined peer 12D3KooWB3DLpvAfxrNQtEDkRobK1PuodgLGkytpgzWiVVpM6XJS
+2026-11-17T19:58:16.829Z EVENT event peer-name peer 12D3KooWB3DLpvAfxrNQtEDkRobK1PuodgLGkytpgzWiVVpM6XJS
+2026-11-17T19:58:16.829Z EVENT event host-changed peer 12D3KooWB3DLpvAfxrNQtEDkRobK1PuodgLGkytpgzWiVVpM6XJS
+2026-11-17T19:58:16.830Z INFO History applied: 3 of 3 messages are new
+2026-11-17T19:58:16.830Z EVENT event history ids dbe7c69f-ccd3-4a85-ab0c-55bbac9e3c2c,429efcc0-b969-4abd-99bb-6b2c52e1124a,941b97de-403a-40ec-940b-edccb2a74ae5 count 3
+2026-11-17T19:58:16.831Z EVENT event voice-state peer 12D3KooWB3DLpvAfxrNQtEDkRobK1PuodgLGkytpgzWiVVpM6XJS
+2026-11-17T19:58:16.831Z WINDOW info History shown: 3 lines (file:///D:/Temp/User/3MFRiB0yGBsUNqZ5vGfKsx34aEE/resources/app.asar/src/application/renderer.js:114)
+2026-11-17T19:59:05.273Z EVENT event peer-left peer 12D3KooWB3DLpvAfxrNQtEDkRobK1PuodgLGkytpgzWiVVpM6XJS
+2026-11-17T19:59:05.274Z EVENT event host-changed peer 12D3KooWPSMaxtg54UV551G58yfNkrxXjNGGWu27dy1kDNuaRLT8
+2026-11-17T19:59:19.859Z EVENT event peer-discovered peer 12D3KooWDbwDtnZku6cRJ2AJRRVhFT5sJuAu4pj9vB5oMGefK3oG
+2026-11-17T19:59:19.860Z WINDOW info peer-discovered [object Object] (file:///D:/Temp/User/3MFRiB0yGBsUNqZ5vGfKsx34aEE/resources/app.asar/src/application/renderer.js:96)
+2026-11-17T19:59:19.897Z EVENT event peer-joined peer 12D3KooWDbwDtnZku6cRJ2AJRRVhFT5sJuAu4pj9vB5oMGefK3oG
+2026-11-17T19:59:19.897Z INFO History sent to 12D3KooWDbwDtnZku6cRJ2AJRRVhFT5sJuAu4pj9vB5oMGefK3oG: 3 messages
+2026-11-17T19:59:19.903Z EVENT event peer-name peer 12D3KooWDbwDtnZku6cRJ2AJRRVhFT5sJuAu4pj9vB5oMGefK3oG
+2026-11-17T20:03:30.030Z EVENT event peer-left peer 12D3KooWDbwDtnZku6cRJ2AJRRVhFT5sJuAu4pj9vB5oMGefK3oG
