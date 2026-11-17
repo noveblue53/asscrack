@@ -5,12 +5,14 @@
 //   broadcast(line)       send one control line on all sessions
 //   openPeers()           the peer IDs with an open session
 //   onChange({ peerId, term })  called when host or term changes
+//   isFullNode(peerId)    true when that peer accepts incoming TCP; the rank puts full nodes first, then the lower peer ID
 export function createElection({
     selfId,
     sendTo,
     broadcast,
     openPeers,
     onChange = () => {},
+    isFullNode = () => false,
     heartbeatInterval = 1000,
     hostTimeout = 5000,
     electionDelay = 3000,
@@ -47,9 +49,18 @@ export function createElection({
         broadcast(announcement())
     }
 
+    // Rank: a full node comes before a node that is not a full node.
+    // Inside each group, the lower peer ID comes first.
     function lowest(ids) {
         let best = null
-        for (const id of ids) if (best === null || id < best) best = id
+        let bestFull = false
+        for (const id of ids) {
+            const full = Boolean(isFullNode(id))
+            if (best === null || (full && !bestFull) || (full === bestFull && id < best)) {
+                best = id
+                bestFull = full
+            }
+        }
         return best
     }
 

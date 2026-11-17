@@ -1,7 +1,8 @@
-import test from 'node:test'
+import test, { mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { setTimeout as delay } from 'node:timers/promises'
 import { createAsscrackNode } from '../src/network/node.mjs'
+import { createElection } from '../src/network/election.mjs'
 
 const base = { room: 'election', listen: ['/ip4/127.0.0.1/tcp/0'], discovery: false }
 
@@ -167,5 +168,98 @@ test('g: a node alone has no host', { timeout: 15000 }, async () => {
         assert.equal(nodes[0].isHost(), false)
     } finally {
         await stopAll(nodes)
+    }
+})
+
+// Unit tests of the rank (createElection with fake timers and fake send functions).
+
+function unit(selfId, peers, full) {
+    const sent = []
+    let open = [...peers]
+    const e = createElection({
+        selfId,
+        sendTo: (p, l) => sent.push([p, l]),
+        broadcast: l => sent.push(['*', l]),
+        openPeers: () => open,
+        isFullNode: id => full.includes(id)
+    })
+    e.start()
+    return { e, sent, setOpen: v => { open = v } }
+}
+
+test('rank: the only full node (highest ID) becomes host in the first election', () => {
+    mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] })
+    try {
+        const ids = ['a', 'b', 'c']
+        const units = ids.map(id => unit(id, ids.filter(x => x !== id), ['c']))
+        units.forEach((u, i) => ids.forEach(p => { if (p !== ids[i]) u.e.sessionOpened(p) }))
+        mock.timers.tick(3500)
+        assert.equal(units[2].e.isHost(), true)
+        assert.equal(units[0].e.isHost(), false)
+        assert.equal(units[1].e.isHost(), false)
+        for (const u of units) u.e.stop()
+    } finally {
+        mock.timers.reset()
+    }
+})
+
+test('rank: on failover the full node, not the lower ID, is the next host', () => {
+    mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] })
+    try {
+        // Self is 'c' (full node). Candidates after the host 'a' goes away: 'b' and 'c'.
+        const c = unit('c', ['a', 'b'], ['c'])
+        c.e.sessionOpened('a')
+        c.e.sessionOpened('b')
+        c.e.handleAnnouncement('a', { host: 'a', term: 1 })
+        c.setOpen(['b'])
+        c.e.sessionClosed('a')
+        assert.equal(c.e.isHost(), true)
+        assert.deepEqual(c.e.host(), { peerId: 'c', term: 2 })
+        // Self is 'b' (not a full node). It waits for 'c' and does not elect itself.
+        const b = unit('b', ['a', 'c'], ['c'])
+        b.e.sessionOpened('a')
+        b.e.sessionOpened('c')
+        b.e.handleAnnouncement('a', { host: 'a', term: 1 })
+        b.setOpen(['c'])
+        b.e.sessionClosed('a')
+        assert.equal(b.e.isHost(), false)
+        b.e.handleAnnouncement('c', { host: 'c', term: 2 })
+        assert.deepEqual(b.e.host(), { peerId: 'c', term: 2 })
+        c.e.stop()
+        b.e.stop()
+    } finally {
+        mock.timers.reset()
+    }
+})
+
+test('rank: a full node that opens a session after a host is live does not become host', () => {
+    mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] })
+    try {
+        const z = unit('z', ['a'], ['z'])
+        z.e.sessionOpened('a')
+        z.e.handleAnnouncement('a', { host: 'a', term: 1 })
+        for (let i = 0; i < 10; i++) {
+            mock.timers.tick(1000)
+            z.e.handleAnnouncement('a', { host: 'a', term: 1 })
+        }
+        assert.equal(z.e.isHost(), false)
+        assert.deepEqual(z.e.host(), { peerId: 'a', term: 1 })
+        z.e.stop()
+    } finally {
+        mock.timers.reset()
+    }
+})
+
+test('rank: with no full node the lowest ID becomes host', () => {
+    mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] })
+    try {
+        const ids = ['a', 'b', 'c']
+        const units = ids.map(id => unit(id, ids.filter(x => x !== id), []))
+        units.forEach((u, i) => ids.forEach(p => { if (p !== ids[i]) u.e.sessionOpened(p) }))
+        mock.timers.tick(3500)
+        assert.deepEqual(units.map(u => u.e.isHost()), [true, false, false])
+        for (const u of units) u.e.stop()
+    } finally {
+        mock.timers.reset()
     }
 })
