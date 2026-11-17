@@ -21,6 +21,9 @@ contextBridge.exposeInMainWorld('asscrack', {
     onHistory: listen('asscrack:history'),
     signal: (peerId, data) => ipcRenderer.invoke('asscrack:signal', { peerId, data }),
     setVoice: state => ipcRenderer.invoke('asscrack:set-voice', state),
+    // Uint8Array of one Opus frame. A plain send: 50 frames each second.
+    sendVoiceFrame: bytes => ipcRenderer.send('asscrack:voice-frame', bytes),
+    onVoiceFrame: listen('asscrack:voice-frame'),
     getHost: () => ipcRenderer.invoke('asscrack:host'),
     onSignal: listen('asscrack:signal'),
     onVoiceState: listen('asscrack:voice-state'),

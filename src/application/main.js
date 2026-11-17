@@ -12,7 +12,8 @@ const __dirname = path.dirname(__filename);
 Menu.setApplicationMenu(null);
 
 const EVENTS = ['peer-discovered', 'peer-joined', 'peer-left', 'message', 'history', 'signal', 'voice-state', 'host-changed', 'peer-name',
-    'file-offer', 'file-progress', 'file-done', 'file-failed', 'file-refused', 'file-cancelled', 'topology', 'full-node', 'full-node-addrs'];
+    'file-offer', 'file-progress', 'file-done', 'file-failed', 'file-refused', 'file-cancelled', 'topology', 'full-node', 'full-node-addrs',
+    'voice-frame'];
 
 // Test option: --profile <dir> gives each instance its own user data folder.
 const profileIndex = process.argv.indexOf('--profile');
@@ -66,7 +67,8 @@ for (const [method, level] of [['log', 'LOG'], ['info', 'INFO'], ['warn', 'WARN'
 openLog();
 
 // One log line for each node event. The chat text does not go into the log.
-const UNLOGGED_EVENTS = new Set(['signal', 'file-progress']);
+// 'voice-frame' comes 50 times each second for each speaker.
+const UNLOGGED_EVENTS = new Set(['signal', 'file-progress', 'voice-frame']);
 
 function logEvent(type, data) {
     if (UNLOGGED_EVENTS.has(type)) return;
@@ -248,6 +250,16 @@ ipcMain.handle('asscrack:send', (_event, text) => {
 ipcMain.handle('asscrack:signal', (_event, { peerId, data } = {}) => {
     if (!node) throw new Error('Not logged in');
     return node.sendTo(peerId, { type: 'signal', data });
+});
+
+// One Opus frame of the own microphone. An ipc send, not invoke: 50 frames each second.
+ipcMain.on('asscrack:voice-frame', (_event, bytes) => {
+    if (!node || !(bytes instanceof Uint8Array)) return;
+    try {
+        node.sendVoiceFrame(bytes);
+    } catch (err) {
+        writeLog('WARN', `Voice frame send failed: ${err?.message ?? err}`);
+    }
 });
 
 ipcMain.handle('asscrack:set-voice', (_event, state) => {

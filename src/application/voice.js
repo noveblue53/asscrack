@@ -1,26 +1,33 @@
 'use strict';
 
-// Voice with a star topology. The elected host has one RTCPeerConnection to each voice member.
-// A member that is not the host has one RTCPeerConnection, to the host.
-// The host forwards each received audio track to the other voice members.
-// Each connection uses the "perfect negotiation" pattern: the member is polite, the host is not polite.
+// Voice over libp2p. The main process sends the Opus frames on a libp2p stream to the room host,
+// and the host forwards them to the other voice members (star topology). There is no RTCPeerConnection.
+// Capture: microphone -> AudioWorklet (20 ms blocks) -> AudioEncoder (Opus) -> api.sendVoiceFrame.
+// Playback: api.onVoiceFrame -> one AudioDecoder for each origin -> playback worklet (60 ms jitter buffer, mix).
 (function () {
     const api = window.asscrack;
+
+    const SAMPLE_RATE = 48000;
+    const BLOCK = 960;
+    const BITRATE = 32000;
+    // An origin with no frame for this time has level 0.
+    const LEVEL_HOLD_MS = 300;
 
     let selfId = null;
     let hostId = null;
     let inVoice = false;
-    let localStream = null;
-    // While muted, each sender of the own track sends no track (replaceTrack(null)).
     let muted = false;
-    // peerId -> { inVoice, streamId } of the other peers.
+    let localStream = null;
+    let context = null;
+    let captureNode = null;
+    let playbackNode = null;
+    let sourceNode = null;
+    let encoder = null;
+    let timestamp = 0;
+    // peerId -> { inVoice, streamId, muted } of the other peers.
     const members = new Map();
-    // peerId -> connection entry.
-    const connections = new Map();
-    // Host only: origin peerId -> { track, stream } received from that member.
-    const relayed = new Map();
-    // track id -> <audio> element.
-    const players = new Map();
+    // origin -> { decoder, bytesReceived, audioLevel, lastAt, timestamp }
+    const origins = new Map();
     const listeners = [];
 
     function changed() {
@@ -33,245 +40,155 @@
         }
     }
 
-    function isHost() {
-        return selfId !== null && hostId === selfId;
+    function canSend() {
+        return typeof api.sendVoiceFrame === 'function';
     }
 
-    function peerForStream(streamId) {
-        for (const [peerId, state] of members) if (state.streamId === streamId) return peerId;
-        return null;
-    }
-
-    // The peers that this node must have a connection to.
-    function wantedPeers() {
-        if (selfId === null || hostId === null) return [];
-        // The host relays for the voice members, also when its own user is not in voice.
-        if (isHost()) return [...members].filter(([, s]) => s.inVoice).map(([peerId]) => peerId);
-        if (!inVoice || !localStream) return [];
-        return [hostId];
-    }
-
-    // Chromium pulls the received audio, also for the relay, only while a media element plays it.
-    // A host that is not in voice plays the relayed audio at volume 0.
-    function setPlayVolume() {
-        for (const audio of players.values()) audio.volume = inVoice ? 1 : 0;
-    }
-
-    function play(track, stream) {
-        if (players.has(track.id)) return;
-        const audio = document.createElement('audio');
-        audio.autoplay = true;
-        audio.volume = inVoice ? 1 : 0;
-        audio.hidden = true;
-        audio.srcObject = stream;
-        players.set(track.id, audio);
-        // Not in the visible layout.
-        document.documentElement.appendChild(audio);
-        audio.play().catch(err => console.warn('Audio play failed:', err?.message ?? err));
-    }
-
-    function stopPlay(trackId) {
-        const audio = players.get(trackId);
-        if (!audio) return;
-        players.delete(trackId);
-        audio.srcObject = null;
-        audio.remove();
-    }
-
-    function signal(peerId, data) {
-        api.signal(peerId, data).catch(err => console.warn('Signal send failed:', err?.message ?? err));
-    }
-
-    function createConnection(peerId, { withTrack = true } = {}) {
-        const pc = new RTCPeerConnection({ iceServers: [] });
-        const entry = {
-            peerId,
-            pc,
-            polite: !isHost(),
-            makingOffer: false,
-            ignoreOffer: false,
-            // track id -> stream id of the received tracks.
-            remote: new Map(),
-            // track id -> RTCRtpSender of the sent tracks.
-            senders: new Map()
-        };
-        connections.set(peerId, entry);
-
-        pc.onnegotiationneeded = async () => {
-            try {
-                entry.makingOffer = true;
-                await pc.setLocalDescription();
-                // The connection can be replaced while the offer is made.
-                if (connections.get(peerId) !== entry) return;
-                signal(peerId, { description: { type: pc.localDescription.type, sdp: pc.localDescription.sdp } });
-            } catch (err) {
-                if (connections.get(peerId) === entry) console.warn('Negotiation failed:', err?.message ?? err);
-            } finally {
-                entry.makingOffer = false;
-            }
-        };
-        pc.onicecandidate = ({ candidate }) => {
-            if (candidate && connections.get(peerId) === entry) signal(peerId, { candidate: candidate.toJSON() });
-        };
-        pc.ontrack = ({ track, streams }) => {
-            const stream = streams[0];
-            if (!stream) return;
-            entry.remote.set(track.id, stream.id);
-            play(track, stream);
-            if (isHost()) {
-                relayed.set(peerId, { track, stream });
-                updateSenders();
-            }
-            stream.onremovetrack = ({ track: removed }) => {
-                entry.remote.delete(removed.id);
-                stopPlay(removed.id);
-                changed();
-            };
-            changed();
-        };
-        pc.onconnectionstatechange = () => {
-            if (pc.connectionState === 'failed') {
-                // Make a new connection on the next reconcile.
-                closeConnection(peerId);
-                reconcile();
-            }
-        };
-
-        if (withTrack) addOwnTrack(entry);
-        return entry;
-    }
-
-    function addOwnTrack(entry) {
-        if (localStream) addSender(entry, localStream.getAudioTracks()[0], localStream);
-    }
-
-    // silent: the sender is made with no track (a muted member, relayed by the host).
-    function addSender(entry, track, stream, silent = false) {
-        if (!track || entry.senders.has(track.id)) return;
-        const sender = entry.pc.addTrack(track, stream);
-        entry.senders.set(track.id, sender);
-        if (silent || (muted && isOwnTrack(track))) setSenderTrack(sender, null);
-    }
-
-    // Host only: stop or restart the relay of the track of a member that mutes or unmutes.
-    function setRelayMuted(origin, memberMuted) {
-        const relay = relayed.get(origin);
-        if (!relay) return;
-        for (const entry of connections.values()) {
-            const sender = entry.senders.get(relay.track.id);
-            if (sender) setSenderTrack(sender, memberMuted ? null : relay.track);
-        }
-    }
-
-    function isOwnTrack(track) {
-        return !!localStream && localStream.getAudioTracks()[0] === track;
-    }
-
-    function setSenderTrack(sender, track) {
-        sender.replaceTrack(track).catch(err => console.warn('Replace track failed:', err?.message ?? err));
-    }
-
-    function closeConnection(peerId) {
-        const entry = connections.get(peerId);
-        if (!entry) return;
-        connections.delete(peerId);
-        for (const trackId of entry.remote.keys()) stopPlay(trackId);
-        entry.pc.close();
-        const relay = relayed.get(peerId);
-        if (relay) relayed.delete(peerId);
-    }
-
-    // Host only: send the track of each voice member to each other voice member.
-    function updateSenders() {
-        if (!isHost()) return;
-        for (const [origin] of relayed) {
-            if (!connections.has(origin)) relayed.delete(origin);
-        }
-        for (const [peerId, entry] of connections) {
-            const wanted = new Set();
-            const own = localStream?.getAudioTracks()[0];
-            if (own) {
-                wanted.add(own.id);
-                addSender(entry, own, localStream);
-            }
-            for (const [origin, { track, stream }] of relayed) {
-                if (origin === peerId) continue;
-                wanted.add(track.id);
-                addSender(entry, track, stream, members.get(origin)?.muted === true);
-            }
-            for (const [trackId, sender] of entry.senders) {
-                if (wanted.has(trackId)) continue;
-                entry.senders.delete(trackId);
-                try {
-                    entry.pc.removeTrack(sender);
-                } catch (err) {
-                    console.warn('Remove track failed:', err?.message ?? err);
-                }
-            }
-        }
-    }
-
-    function reconcile() {
-        const wanted = new Set(wantedPeers());
-        for (const peerId of [...connections.keys()]) {
-            const entry = connections.get(peerId);
-            // A change of host also changes the role of the connection.
-            if (!wanted.has(peerId) || entry.polite === isHost()) closeConnection(peerId);
-        }
-        for (const peerId of wanted) if (!connections.has(peerId)) createConnection(peerId);
-        updateSenders();
-        changed();
-    }
-
-    async function handleSignal({ peerId, data } = {}) {
-        if (!data || typeof data !== 'object') return;
-        if (selfId === null) {
-            try {
-                await refreshHost();
-            } catch (err) {
-                console.warn('Host query failed:', err?.message ?? err);
-                return;
-            }
-        }
-        if (!wantedPeers().includes(peerId)) return;
-        let entry = connections.get(peerId) ?? createConnection(peerId);
+    function encodeBlock(samples) {
+        if (!inVoice || muted || !encoder || encoder.state !== 'configured' || !canSend()) return;
+        const data = new AudioData({
+            format: 'f32',
+            sampleRate: SAMPLE_RATE,
+            numberOfFrames: samples.length,
+            numberOfChannels: 1,
+            timestamp,
+            data: samples
+        });
+        timestamp += Math.round(samples.length * 1e6 / SAMPLE_RATE);
         try {
-            if (data.description) {
-                const description = data.description;
-                const isOffer = description.type === 'offer';
-                const offerCollision = isOffer && (entry.makingOffer || entry.pc.signalingState !== 'stable');
-                entry.ignoreOffer = !entry.polite && offerCollision;
-                if (entry.ignoreOffer) return;
-                let deferTrack = false;
-                if (offerCollision && !entry.pc.currentRemoteDescription) {
-                    // Both nodes sent the first offer. Chromium can stop the ICE gathering of a connection that
-                    // rolls back its first offer: the connection then stays in the state "new" for ever.
-                    // The member (polite) starts again with a new connection. It answers first and adds its
-                    // own track after the answer.
-                    closeConnection(peerId);
-                    entry = createConnection(peerId, { withTrack: false });
-                    deferTrack = true;
-                }
-                const pc = entry.pc;
-                await pc.setRemoteDescription(description);
-                if (isOffer) {
-                    await pc.setLocalDescription();
-                    signal(peerId, { description: { type: pc.localDescription.type, sdp: pc.localDescription.sdp } });
-                    if (deferTrack && connections.get(peerId) === entry) addOwnTrack(entry);
-                }
-            } else if (data.candidate) {
-                try {
-                    await entry.pc.addIceCandidate(data.candidate);
-                } catch (err) {
-                    if (!entry.ignoreOffer) console.warn('ICE candidate failed:', err?.message ?? err);
-                }
-            }
+            encoder.encode(data);
         } catch (err) {
-            if (connections.get(peerId) === entry) console.warn('Signal handling failed:', err?.message ?? err);
+            console.warn('Voice encode failed:', err?.message ?? err);
+        } finally {
+            data.close();
         }
     }
 
-    // All callers share one pending query. Signals that wait for it then continue in their arrival order.
+    function makeEncoder() {
+        const enc = new AudioEncoder({
+            output: chunk => {
+                const bytes = new Uint8Array(chunk.byteLength);
+                chunk.copyTo(bytes);
+                if (!canSend()) return;
+                Promise.resolve(api.sendVoiceFrame(bytes))
+                    .catch(err => console.warn('Voice frame send failed:', err?.message ?? err));
+            },
+            error: err => console.warn('Voice encoder error:', err?.message ?? err)
+        });
+        enc.configure({ codec: 'opus', sampleRate: SAMPLE_RATE, numberOfChannels: 1, bitrate: BITRATE });
+        return enc;
+    }
+
+    function originEntry(origin) {
+        let o = origins.get(origin);
+        if (o) return o;
+        o = { decoder: null, bytesReceived: 0, audioLevel: 0, lastAt: 0, timestamp: 0 };
+        origins.set(origin, o);
+        return o;
+    }
+
+    function makeDecoder(origin, o) {
+        const dec = new AudioDecoder({
+            output: audio => {
+                try {
+                    const samples = new Float32Array(audio.numberOfFrames);
+                    audio.copyTo(samples, { planeIndex: 0, format: 'f32-planar' });
+                    let sum = 0;
+                    for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
+                    o.audioLevel = Math.sqrt(sum / Math.max(1, samples.length));
+                    if (playbackNode && inVoice) {
+                        playbackNode.port.postMessage({ type: 'samples', origin, samples }, [samples.buffer]);
+                    }
+                } finally {
+                    audio.close();
+                }
+            },
+            error: err => {
+                console.warn('Voice decoder error:', err?.message ?? err);
+                o.decoder = null;
+            }
+        });
+        dec.configure({ codec: 'opus', sampleRate: SAMPLE_RATE, numberOfChannels: 1 });
+        return dec;
+    }
+
+    function handleFrame({ origin, data } = {}) {
+        if (typeof origin !== 'string' || !data || origin === selfId) return;
+        const o = originEntry(origin);
+        const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+        o.bytesReceived += bytes.length;
+        o.lastAt = performance.now();
+        // A host that is not in voice does not play.
+        if (!inVoice || !playbackNode || typeof AudioDecoder !== 'function') return;
+        if (!o.decoder) o.decoder = makeDecoder(origin, o);
+        try {
+            o.decoder.decode(new EncodedAudioChunk({ type: 'key', timestamp: o.timestamp, data: bytes }));
+            o.timestamp += Math.round(BLOCK * 1e6 / SAMPLE_RATE);
+        } catch (err) {
+            console.warn('Voice decode failed:', err?.message ?? err);
+        }
+    }
+
+    function removeOrigin(origin) {
+        const o = origins.get(origin);
+        if (!o) return;
+        origins.delete(origin);
+        if (o.decoder && o.decoder.state !== 'closed') o.decoder.close();
+        playbackNode?.port.postMessage({ type: 'remove', origin });
+    }
+
+    async function startAudio() {
+        if (typeof AudioEncoder !== 'function' || typeof AudioDecoder !== 'function') {
+            throw new Error('this window has no AudioEncoder or AudioDecoder (WebCodecs)');
+        }
+        const support = await AudioEncoder.isConfigSupported({
+            codec: 'opus', sampleRate: SAMPLE_RATE, numberOfChannels: 1, bitrate: BITRATE
+        });
+        if (!support?.supported) throw new Error('the Opus encoder is not supported');
+        localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        try {
+            context = new AudioContext({ sampleRate: SAMPLE_RATE });
+            await context.audioWorklet.addModule('voice-worklet.js');
+            sourceNode = context.createMediaStreamSource(localStream);
+            captureNode = new AudioWorkletNode(context, 'voice-capture', {
+                numberOfInputs: 1, numberOfOutputs: 0, channelCount: 1, channelCountMode: 'explicit'
+            });
+            captureNode.port.onmessage = ({ data }) => encodeBlock(data);
+            sourceNode.connect(captureNode);
+            playbackNode = new AudioWorkletNode(context, 'voice-playback', {
+                numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2]
+            });
+            playbackNode.connect(context.destination);
+            encoder = makeEncoder();
+            timestamp = 0;
+            if (context.state === 'suspended') await context.resume();
+        } catch (err) {
+            stopAudio();
+            throw err;
+        }
+    }
+
+    function stopAudio() {
+        if (encoder && encoder.state !== 'closed') encoder.close();
+        encoder = null;
+        for (const o of origins.values()) {
+            if (o.decoder && o.decoder.state !== 'closed') o.decoder.close();
+            o.decoder = null;
+        }
+        if (captureNode) captureNode.port.onmessage = null;
+        try { sourceNode?.disconnect(); } catch { /* already disconnected */ }
+        try { captureNode?.disconnect(); } catch { /* already disconnected */ }
+        try { playbackNode?.disconnect(); } catch { /* already disconnected */ }
+        sourceNode = null;
+        captureNode = null;
+        playbackNode = null;
+        if (localStream) for (const track of localStream.getTracks()) track.stop();
+        localStream = null;
+        if (context) context.close().catch(() => {});
+        context = null;
+    }
+
+    // All callers share one pending query.
     let hostQuery = null;
     function refreshHost() {
         if (!hostQuery) {
@@ -283,49 +200,49 @@
         return hostQuery;
     }
 
-    // A host that is not in voice did not call join(). Get the own peer ID on the first event after the login.
-    function reconcileWithIds() {
-        if (selfId !== null) return reconcile();
-        refreshHost().then(reconcile).catch(err => console.warn('Host query failed:', err?.message ?? err));
+    function refreshIds() {
+        if (selfId !== null) return;
+        refreshHost().then(changed).catch(err => console.warn('Host query failed:', err?.message ?? err));
     }
 
-    api.onSignal(data => { handleSignal(data); });
+    if (typeof api.onVoiceFrame === 'function') api.onVoiceFrame(handleFrame);
     api.onVoiceState(({ peerId, inVoice: memberInVoice, streamId, muted: memberMuted } = {}) => {
-        const wasMuted = members.get(peerId)?.muted === true;
-        const nowMuted = memberMuted === true;
-        members.set(peerId, { inVoice: memberInVoice === true, streamId: streamId ?? null, muted: nowMuted });
-        if (isHost() && wasMuted !== nowMuted) setRelayMuted(peerId, nowMuted);
-        reconcileWithIds();
+        members.set(peerId, { inVoice: memberInVoice === true, streamId: streamId ?? null, muted: memberMuted === true });
+        if (memberInVoice !== true) removeOrigin(peerId);
+        refreshIds();
+        changed();
     });
     api.onHostChanged(info => {
         hostId = info?.peerId ?? null;
-        reconcileWithIds();
+        refreshIds();
+        changed();
     });
     api.onPeerLeft(({ peerId } = {}) => {
         members.delete(peerId);
-        reconcile();
+        removeOrigin(peerId);
+        changed();
     });
 
     window.voice = {
         async join() {
             if (inVoice) return;
             await refreshHost();
-            localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            await startAudio();
             muted = false;
             inVoice = true;
-            // A host that relayed before now plays the relayed audio at full volume.
-            setPlayVolume();
-            await api.setVoice({ inVoice: true, streamId: localStream.id });
-            reconcile();
+            try {
+                await api.setVoice({ inVoice: true, streamId: localStream.id });
+            } catch (err) {
+                inVoice = false;
+                stopAudio();
+                throw err;
+            }
+            changed();
         },
         async leave() {
             inVoice = false;
-            setPlayVolume();
-            if (localStream) for (const track of localStream.getTracks()) track.stop();
-            localStream = null;
             muted = false;
-            // The host keeps the relay connections and removes its own track. A member closes its connection.
-            reconcile();
+            stopAudio();
             await api.setVoice({ inVoice: false, streamId: null });
             changed();
         },
@@ -334,28 +251,16 @@
             const track = localStream?.getAudioTracks()[0];
             if (!track) return;
             track.enabled = !muted;
-            for (const entry of connections.values()) {
-                const sender = entry.senders.get(track.id);
-                if (sender) setSenderTrack(sender, muted ? null : track);
-            }
             api.setVoice({ inVoice: true, streamId: localStream.id, muted })
                 .catch(err => console.warn('Voice state send failed:', err?.message ?? err));
         },
+        // origin -> { bytesReceived, audioLevel }, as before.
         async stats() {
             const result = {};
-            for (const entry of connections.values()) {
-                for (const receiver of entry.pc.getReceivers()) {
-                    const track = receiver.track;
-                    if (!track || track.kind !== 'audio' || !entry.remote.has(track.id)) continue;
-                    const origin = peerForStream(entry.remote.get(track.id));
-                    if (origin === null) continue;
-                    const report = await receiver.getStats();
-                    for (const s of report.values()) {
-                        if (s.type === 'inbound-rtp' && s.kind === 'audio') {
-                            result[origin] = { bytesReceived: s.bytesReceived ?? 0, audioLevel: s.audioLevel ?? 0 };
-                        }
-                    }
-                }
+            const now = performance.now();
+            for (const [origin, o] of origins) {
+                const level = now - o.lastAt > LEVEL_HOLD_MS ? 0 : o.audioLevel;
+                result[origin] = { bytesReceived: o.bytesReceived, audioLevel: level };
             }
             return result;
         },
@@ -369,7 +274,8 @@
                 host: hostId,
                 inVoice,
                 members: Object.fromEntries(members),
-                connections: [...connections.keys()]
+                // The origins that sent frames to this window.
+                connections: [...origins.keys()]
             };
         }
     };

@@ -13,10 +13,12 @@ import { createChatSession } from './chat-session.mjs'
 import { createElection } from './election.mjs'
 import { createHistory } from './history.mjs'
 import { createFileTransfer, FILE_PROTOCOL } from './file-transfer.mjs'
+import { createVoiceRelay, VOICE_PROTOCOL } from './voice-relay.mjs'
 import { makeInvite, validAddr, validPeerId } from './invite.mjs'
 import { DIALBACK_PROTOCOL, handleDialback, requestDialback, isPrivateIp, observedIp, tcpTarget } from './fullnode.mjs'
 
 export { FILE_PROTOCOL, safeFileName } from './file-transfer.mjs'
+export { VOICE_PROTOCOL } from './voice-relay.mjs'
 
 export const CHAT_PROTOCOL = '/asscrack/chat/receive'
 const PROOF_TIMEOUT_MS = 10000
@@ -190,6 +192,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         pendingHistory.set(peerId, { messages: control.messages, at: Date.now() })
     }
     let voiceState = { inVoice: false, streamId: null, muted: false }
+    // peerId -> true for the peers in voice (from their voice lines).
+    const peerVoice = new Map()
+    let voiceRelay = null
     const voiceLine = () => JSON.stringify({ type: 'voice', inVoice: voiceState.inVoice, streamId: voiceState.streamId, muted: voiceState.muted })
 
     const election = createElection({
@@ -200,6 +205,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         isFullNode: peerId => peerId === selfId ? selfFull : peerFull.get(peerId) === true,
         onChange: info => {
             events.emit('host-changed', info)
+            voiceRelay?.hostChanged()
             // Use a history line that arrived before this host was accepted.
             const kept = pendingHistory.get(info.peerId)
             if (kept) {
@@ -211,6 +217,19 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         heartbeatInterval,
         hostTimeout,
         electionDelay
+    })
+
+    voiceRelay = createVoiceRelay({
+        libp2p: node,
+        selfId: node.peerId.toString(),
+        hostId: () => election.host()?.peerId ?? null,
+        voicePeers: () => {
+            const list = [...peerVoice.keys()].filter(p => sessions.has(p))
+            if (voiceState.inVoice) list.push(node.peerId.toString())
+            return list
+        },
+        connectionFor: peerId => sessionConns.get(peerId) ?? node.getConnections().find(c => c.remotePeer.toString() === peerId),
+        onFrame: frame => events.emit('voice-frame', frame)
     })
 
     const files = createFileTransfer({
@@ -342,6 +361,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                     } else if (control.type === 'file-offer' || control.type === 'file-refuse' || control.type === 'file-cancel') {
                         files.handleControl(peerId, control)
                     } else if (control.type === 'voice') {
+                        if (control.inVoice === true) peerVoice.set(peerId, true)
+                        else peerVoice.delete(peerId)
+                        voiceRelay.hostChanged()
                         events.emit('voice-state', {
                             peerId,
                             inVoice: control.inVoice === true,
@@ -397,6 +419,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 names.delete(peerId)
                 pendingHistory.delete(peerId)
                 events.emit('peer-left', { peerId })
+                peerVoice.delete(peerId)
+                voiceRelay.peerLeft(peerId)
                 election.sessionClosed(peerId)
                 files.peerLeft(peerId)
                 links.delete(peerId)
@@ -410,6 +434,15 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     await node.handle(CHAT_PROTOCOL, ({ stream, connection }) => {
         attachChat(stream, connection.remotePeer.toString(), connection)
     }, { maxInboundStreams: 1, maxOutboundStreams: 1, runOnTransientConnection: true })
+
+    // Voice only from a peer with an open session. In a keyed room, a wrong key gets no session.
+    await node.handle(VOICE_PROTOCOL, data => {
+        if (!sessions.has(data.connection.remotePeer.toString())) {
+            data.stream.abort?.(new Error('no session'))
+            return
+        }
+        voiceRelay.handle(data)
+    }, { runOnTransientConnection: true })
 
     await node.handle(FILE_PROTOCOL, data => files.handleStream(data), { runOnTransientConnection: true })
 
@@ -734,7 +767,11 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             voiceState = { inVoice: inVoice === true, streamId: typeof streamId === 'string' ? streamId : null, muted: muted === true }
             const line = voiceLine()
             for (const session of sessions.values()) session.send(line)
+            voiceRelay.hostChanged()
         },
+        // Send one Opus frame of this node on the voice path (star through the host).
+        sendVoiceFrame: bytes => voiceRelay.sendFrame(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)),
+        voiceStats: () => voiceRelay.stats(),
         host: () => election.host(),
         isHost: () => election.isHost(),
         history: () => history.list(),
@@ -750,6 +787,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             if (relayDialTimer) clearTimeout(relayDialTimer)
             await files.stop()
             election.stop()
+            voiceRelay.stop()
             const pending = [...sessions.values()].map(s => { s.close(); return s.done })
             await Promise.allSettled(pending)
             await node.stop()
