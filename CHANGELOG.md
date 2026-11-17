@@ -27,7 +27,7 @@ Each result has one of these labels:
   file action of the user. This shows which side cancelled a transfer, which test card 4 could not show.
 - **Results of the 0.4.0 build (127.0.0.1):** `npm test` passes 44 of 44. The history test gave 0 dial warnings in 4
   of 4 runs. One app start has no error line. With 2 app windows, the restarted window showed all earlier lines in 3
-  of 3 runs, one with the .exe. With 3 app windows, the file check passed, also with the .exe as the sender: a 200 MB
+  of 3 runs, one with the .exe. With 3 app windows, the file check passed, also with the .exe as the sender. A 200 MB
   file went to 2 windows in 5.1 s, and the voice continued. The map check passed all 40 lines. Each map had 3 nodes,
   one host, 3 chat lines, 2 voice lines and one transfer arrow. The terminal demo works.
 - **Not known:** the map, the new Cancel and the new look on a LAN. Test card 5 gives this.
