@@ -11,6 +11,8 @@
     let hostId = null;
     let inVoice = false;
     let localStream = null;
+    // While muted, each sender of the own track sends no track (replaceTrack(null)).
+    let muted = false;
     // peerId -> { inVoice, streamId } of the other peers.
     const members = new Map();
     // peerId -> connection entry.
@@ -143,9 +145,30 @@
         if (localStream) addSender(entry, localStream.getAudioTracks()[0], localStream);
     }
 
-    function addSender(entry, track, stream) {
+    // silent: the sender is made with no track (a muted member, relayed by the host).
+    function addSender(entry, track, stream, silent = false) {
         if (!track || entry.senders.has(track.id)) return;
-        entry.senders.set(track.id, entry.pc.addTrack(track, stream));
+        const sender = entry.pc.addTrack(track, stream);
+        entry.senders.set(track.id, sender);
+        if (silent || (muted && isOwnTrack(track))) setSenderTrack(sender, null);
+    }
+
+    // Host only: stop or restart the relay of the track of a member that mutes or unmutes.
+    function setRelayMuted(origin, memberMuted) {
+        const relay = relayed.get(origin);
+        if (!relay) return;
+        for (const entry of connections.values()) {
+            const sender = entry.senders.get(relay.track.id);
+            if (sender) setSenderTrack(sender, memberMuted ? null : relay.track);
+        }
+    }
+
+    function isOwnTrack(track) {
+        return !!localStream && localStream.getAudioTracks()[0] === track;
+    }
+
+    function setSenderTrack(sender, track) {
+        sender.replaceTrack(track).catch(err => console.warn('Replace track failed:', err?.message ?? err));
     }
 
     function closeConnection(peerId) {
@@ -174,7 +197,7 @@
             for (const [origin, { track, stream }] of relayed) {
                 if (origin === peerId) continue;
                 wanted.add(track.id);
-                addSender(entry, track, stream);
+                addSender(entry, track, stream, members.get(origin)?.muted === true);
             }
             for (const [trackId, sender] of entry.senders) {
                 if (wanted.has(trackId)) continue;
@@ -267,8 +290,11 @@
     }
 
     api.onSignal(data => { handleSignal(data); });
-    api.onVoiceState(({ peerId, inVoice: memberInVoice, streamId } = {}) => {
-        members.set(peerId, { inVoice: memberInVoice === true, streamId: streamId ?? null });
+    api.onVoiceState(({ peerId, inVoice: memberInVoice, streamId, muted: memberMuted } = {}) => {
+        const wasMuted = members.get(peerId)?.muted === true;
+        const nowMuted = memberMuted === true;
+        members.set(peerId, { inVoice: memberInVoice === true, streamId: streamId ?? null, muted: nowMuted });
+        if (isHost() && wasMuted !== nowMuted) setRelayMuted(peerId, nowMuted);
         reconcileWithIds();
     });
     api.onHostChanged(info => {
@@ -285,6 +311,7 @@
             if (inVoice) return;
             await refreshHost();
             localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            muted = false;
             inVoice = true;
             // A host that relayed before now plays the relayed audio at full volume.
             setPlayVolume();
@@ -296,14 +323,23 @@
             setPlayVolume();
             if (localStream) for (const track of localStream.getTracks()) track.stop();
             localStream = null;
+            muted = false;
             // The host keeps the relay connections and removes its own track. A member closes its connection.
             reconcile();
             await api.setVoice({ inVoice: false, streamId: null });
             changed();
         },
-        setMuted(muted) {
+        setMuted(muted_) {
+            muted = muted_ === true;
             const track = localStream?.getAudioTracks()[0];
-            if (track) track.enabled = !muted;
+            if (!track) return;
+            track.enabled = !muted;
+            for (const entry of connections.values()) {
+                const sender = entry.senders.get(track.id);
+                if (sender) setSenderTrack(sender, muted ? null : track);
+            }
+            api.setVoice({ inVoice: true, streamId: localStream.id, muted })
+                .catch(err => console.warn('Voice state send failed:', err?.message ?? err));
         },
         async stats() {
             const result = {};

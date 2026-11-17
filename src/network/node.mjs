@@ -81,8 +81,8 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
         }
         pendingHistory.set(peerId, { messages: control.messages, at: Date.now() })
     }
-    let voiceState = { inVoice: false, streamId: null }
-    const voiceLine = () => JSON.stringify({ type: 'voice', inVoice: voiceState.inVoice, streamId: voiceState.streamId })
+    let voiceState = { inVoice: false, streamId: null, muted: false }
+    const voiceLine = () => JSON.stringify({ type: 'voice', inVoice: voiceState.inVoice, streamId: voiceState.streamId, muted: voiceState.muted })
 
     const election = createElection({
         selfId: node.peerId.toString(),
@@ -133,7 +133,8 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
                         events.emit('voice-state', {
                             peerId,
                             inVoice: control.inVoice === true,
-                            streamId: typeof control.streamId === 'string' ? control.streamId : null
+                            streamId: typeof control.streamId === 'string' ? control.streamId : null,
+                            muted: control.muted === true
                         })
                     }
                     return
@@ -232,8 +233,8 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
             if (!session) return false
             return session.send(JSON.stringify(message))
         },
-        setVoice({ inVoice, streamId = null } = {}) {
-            voiceState = { inVoice: inVoice === true, streamId: typeof streamId === 'string' ? streamId : null }
+        setVoice({ inVoice, streamId = null, muted = false } = {}) {
+            voiceState = { inVoice: inVoice === true, streamId: typeof streamId === 'string' ? streamId : null, muted: muted === true }
             const line = voiceLine()
             for (const session of sessions.values()) session.send(line)
         },

@@ -42,10 +42,13 @@ test('setVoice sends the voice state to open and new sessions', { timeout: 15000
         a.setVoice({ inVoice: true, streamId: 'stream-1' })
         await b.connect(a.getMultiaddrs()[0])
         await waitFor(() => states.length === 1)
-        assert.deepEqual(states[0], { peerId: a.peerId, inVoice: true, streamId: 'stream-1' })
-        a.setVoice({ inVoice: false, streamId: null })
+        assert.deepEqual(states[0], { peerId: a.peerId, inVoice: true, streamId: 'stream-1', muted: false })
+        a.setVoice({ inVoice: true, streamId: 'stream-1', muted: true })
         await waitFor(() => states.length === 2)
-        assert.deepEqual(states[1], { peerId: a.peerId, inVoice: false, streamId: null })
+        assert.deepEqual(states[1], { peerId: a.peerId, inVoice: true, streamId: 'stream-1', muted: true })
+        a.setVoice({ inVoice: false, streamId: null })
+        await waitFor(() => states.length === 3)
+        assert.deepEqual(states[2], { peerId: a.peerId, inVoice: false, streamId: null, muted: false })
     } finally {
         await Promise.allSettled([a.stop(), b.stop()])
     }
