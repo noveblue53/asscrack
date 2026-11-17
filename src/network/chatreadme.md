@@ -29,7 +29,7 @@ This test shows if a file goes from one computer to the others on a real local n
 8. On B, open the Downloads folder. The file must be there with the same size as on A. Optional: on A and on B, run `Get-FileHash "<path of the file>"` in PowerShell. The 2 hash values must be the same.
 9. On A, send the large file again. On B, select Accept. While the progress bar moves, select **Cancel** on B. Expect on B: "Cancelled". Expect on A: "Cancelled" in the line for B. On B, look in the Downloads folder: no new file, and no file with a name that starts with `.asscrack-`. If the transfer ends before you can select Cancel, use a larger file and do this step again.
 10. On A, send the small text file. On B, select Accept. Then send the same small file again, and accept it again on B. Expect on B: "Saved as <name>" the first time, and "Saved as <name> (1).<extension>" the second time. The first file has no change.
-11. On each computer, save the terminal output and the developer console output to a text file. Keep the original files. Do not edit them.
+11. On each computer, keep the logs. Close the app first. A build after 0.3.0 writes one log file at each start. In PowerShell, run `explorer "$env:APPDATA\ASSCRACK\logs"`. Copy each `asscrack-*.log` file into a folder with the name of the computer. Do not edit the files. The 0.2.0 and 0.3.0 builds write no log file, and a terminal pipe (`Tee-Object`) does not get their output. With these builds, write down each red line of the developer console, with the time.
 
 ### Done when
 
@@ -53,7 +53,7 @@ Also write down the size of the large file and the time of step 6. These give th
 Keep these items for the analysis:
 - the number of the condition that failed, and the computer
 - what you saw and heard, and the times that you recorded
-- the saved terminal and console files from each computer
+- the log files (`asscrack-*.log`) from each computer, or your notes of the red console lines
 - the text in the line of the transfer, for example "Failed: hash mismatch"
 
 ---
@@ -76,13 +76,15 @@ This test shows if the voice and the automatic host failover work on a real loca
 
 1. On each computer, start the .exe. Type a name and the same room name, for example `voice1`. Then select Log In.
 2. Wait until each peer list shows all other users. On each computer, send one chat line, for example the name of the computer. The peer list shows a name after the first message of that user.
-3. Write down which user the peer list marks as the host. All computers must show the same host. On A, send `before voice` in the chat.
+3. Write down which user the peer list marks as the host. All computers must show the same host. **Do not skip this step: step 8 needs the line.** On A, type `before voice` in the chat and select Send.
 4. On each computer, select Join voice. Speak in turn. Each user must hear each other user.
 5. On one computer that is not the host, select Mute. Speak on that computer. The other users must not hear it. Select Unmute.
 6. Close the app on the computer of the host. Record the time.
 7. On the other computers, look at the peer list. Wait for a new host. Speak in turn. Record the time when the users hear each other again. Do not select a button.
 8. Start the app on the closed computer again. Log in to the same room. Look at the chat: `before voice` must be there. Select Join voice. Speak in turn.
-9. On each computer, save the terminal output and the developer console output to a text file. Keep the original files. Do not edit them.
+9. On each computer, keep the logs. Close the app first. A build after 0.3.0 writes one log file at each start. In PowerShell, run `explorer "$env:APPDATA\ASSCRACK\logs"`. Copy each `asscrack-*.log` file into a folder with the name of the computer. Do not edit the files. The 0.2.0 and 0.3.0 builds write no log file, and a terminal pipe (`Tee-Object`) does not get their output. With these builds, write down each red line of the developer console, with the time.
+
+**Known fault in 0.2.0 and 0.3.0:** condition 6 fails. The window of these builds does not show the chat history (`handoffs/test2-20261117`). Do conditions 6 to 8 again with a build after 0.3.0.
 
 ### Done when
 
@@ -105,7 +107,7 @@ Write PASS or FAIL for each condition:
 Keep these items for the analysis:
 - the number of the condition that failed, and the computer
 - what you saw and heard, and the times that you recorded
-- the saved terminal and console files from each computer
+- the log files (`asscrack-*.log`) from each computer, or your notes of the red console lines
 
 ---
 
