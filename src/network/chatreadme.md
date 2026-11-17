@@ -15,8 +15,8 @@ This test shows if the voice and the automatic host failover work on a real loca
 ### The test
 
 1. On each computer, start the .exe. Type a name and the same room name, for example `voice1`. Then select Log In.
-2. Wait until each peer list shows all other users. Write down which user the peer list marks as the host. All computers must show the same host.
-3. On A, send `before voice` in the chat.
+2. Wait until each peer list shows all other users. On each computer, send one chat line, for example the name of the computer. The peer list shows a name after the first message of that user.
+3. Write down which user the peer list marks as the host. All computers must show the same host. On A, send `before voice` in the chat.
 4. On each computer, select Join voice. Speak in turn. Each user must hear each other user.
 5. On one computer that is not the host, select Mute. Speak on that computer. The other users must not hear it. Select Unmute.
 6. Close the app on the computer of the host. Record the time.
