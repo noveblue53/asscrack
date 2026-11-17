@@ -1,3 +1,61 @@
+## LAN test card 5 (0.4.0): the new look, the network map and cancel for one receiver on 2 or 3 computers
+
+This test checks the 0.4.0 changes on a real local network. The window has a new look. A Network map panel shows the room. It shows who has a chat session with whom, which node is the voice relay, and who speaks. It also shows the file transfers of this computer. The sender can cancel the transfer to one receiver only. Use 3 computers (A, B and C) if possible. With 2 computers, do the conditions with "2 or 3" in the Computers column.
+
+- **dist/ASSCRACK-0.4.0-portable.exe** (SHA-256 in `CHANGELOG.md`, last LAN test: `dbea27ef`, version 0.3.1): a new look and the Network map. Each sender row has a Cancel button. The log lines of the file transfer have more fields.
+- **Not changed:** discovery, the host election, the failover, voice, mute, the names, the chat history and the file transfer itself.
+- **Mixed versions:** a 0.3.1 app in the same room works, but it sends no map data. Do not use a 0.3.1 app in this test.
+- **Not known:** the map on a LAN, and the speed of a file transfer on a LAN.
+
+### Before the test
+
+1. Copy `dist/ASSCRACK-0.4.0-portable.exe` to each computer. Do not use an older .exe.
+2. Connect each computer to the same network. Make sure that each computer can use multicast. Disconnect a VPN, for example TunnelBear.
+3. **Windows Firewall can ask again for this version.** When the .exe starts the first time, allow it on private networks.
+4. **The .exe has no code signature.** Windows SmartScreen can show "Windows protected your PC". The user of that computer decides if the .exe can run.
+5. On A, prepare a large file (1 GB or more). Use headphones on each computer.
+6. Start the .exe from a terminal with the argument `--dev` to see the developer console. Example: `.\ASSCRACK-0.4.0-portable.exe --dev`.
+
+### The test
+
+1. On each computer, start the .exe. Expect: a blue sky with bubbles and a glass card with the fields Username and Room. Type a name and the same room name, for example `room5`. Then select Log In.
+2. Look at the Buddies list on each computer. Expect: the names of all users. One user has the gold mark HOST. Write down the host.
+3. On each computer, select **Network map** (top right). Expect: one ball for each user, with the name. Your own ball has "(you)". A blue line connects each pair of balls. The ball of the host has the gold badge RELAY.
+4. On each computer, send one chat line. Expect: your own lines in green on the right, the lines of the others in white on the left.
+5. On each computer, select **Join voice**. Expect in each map: a green line from each other user in voice to the RELAY ball. Speak in turn. Expect: each user hears each other user. In the maps of the other computers, a green ring pulses around the ball of the user who speaks.
+6. On A, select **Choose File**, select the large file, then select **Send file**. On B and C, select **Accept**. Expect in the map of A: an orange arrow from A to B and from A to C. Expect in the map of B: an orange arrow from A to B only.
+7. While B and C receive the file, on A select **Cancel** in the row of B (not in the row "Offered ... to 2 users"). Expect on B: "Cancelled". Expect on A: "Cancelled" in the row of B. Expect on C: the transfer continues to "Saved as <file name>". With 2 computers, cancel the row of B and look only at A and B.
+8. On A, send the large file again. On B, select Accept. While the progress bar moves, select **Cancel** on B. Expect on A: "Cancelled" in the row of B, not "Failed".
+9. Close the app on a computer that is not the host. Expect on the other computers within 20 seconds: its ball and its lines go away from the map. Its name goes away from the Buddies list.
+10. On each computer, keep the logs. Close the app first. In PowerShell, run `explorer "$env:APPDATA\asscrack\logs"`. Copy each `asscrack-*.log` file into a folder with the name of the computer. Do not edit the files.
+
+### Done when
+
+Write PASS or FAIL for each condition:
+
+| # | Computers | Condition | Result |
+|---|---|---|---|
+| 1 | 2 or 3 | The login screen and the chat screen show the new look. All buttons are visible at the start size of the window. | |
+| 2 | 2 or 3 | The map shows one ball for each user and a blue line for each pair of users within 20 seconds of the last Log In. | |
+| 3 | 2 or 3 | The RELAY badge in the map is on the same user as the HOST mark in the Buddies list, on each computer. | |
+| 4 | 2 or 3 | After Join voice, each map shows a green line from each other user in voice to the RELAY ball. | |
+| 5 | 2 or 3 | A green ring pulses around the ball of a user who speaks. | |
+| 6 | 2 or 3 | During the transfer, the map of the sender shows an orange arrow to each receiver. | |
+| 7 | 3 | After Cancel in the row of B on A, B shows "Cancelled", and C shows "Saved as". | |
+| 8 | 2 or 3 | After Cancel on B (step 8), A shows "Cancelled" for B, not "Failed". | |
+| 9 | 2 or 3 | After a non-host user closes the app, the other maps remove that ball within 20 seconds. | |
+| 10 | 2 or 3 | The developer consoles show no red error line. | |
+| 11 | 2 or 3 | Each computer has at least one `asscrack-*.log` file from this test. | |
+
+### If a condition fails
+
+Keep these items for the analysis:
+- the number of the condition that failed, and the computer
+- what you saw, and a screenshot of the window if possible
+- the log files (`asscrack-*.log`) from each computer. A file line in the log now has the side of this computer (`direction send` or `direction receive`) and the side that cancelled (`by self` or `by peer`).
+
+---
+
 ## LAN test card 4 (0.3.1): history after a restart, names, file sharing and log files on 2 or 3 computers
 
 This test does 2 things on a real local network. It does all of test card 3 (names and file sharing), because 0.3.0 had no LAN test. It also does test card 2, conditions 6 to 8, again: the chat history and the voice after a restart. These conditions failed or were not tested on 0.2.0. Use 3 computers (A, B and C) if possible. With 2 computers, do the conditions with "2 or 3" in the Computers column.
