@@ -14,7 +14,7 @@ Don't use it for real voice chat yet. See [CHANGELOG.md](CHANGELOG.md) for what 
 - **Decentralized P2P Architecture** - No single point of failure
 - **Automatic Failover** - Primary host crashes? Next node takes over instantly
 - **Zero Configuration** - No IP addresses, no port forwarding wizards
-- **Built-in Voice** - WebRTC (Opus codec), with the host as the relay. Mumble is not used yet
+- **Built-in Voice** - WebRTC (Opus codec), with the host as the relay.
 - **Text Chat** - Full-featured P2P messaging
 - **File Sharing** - P2P file transfers, no size limits
 - **Self-Healing Network** - Mesh stays connected even when nodes drop
@@ -31,7 +31,7 @@ voice, chat and file sharing. A fix for the chat history after a restart is in w
 
 **Key Technologies:**
 - libp2p - P2P mesh networking
-- WebRTC - Voice, with the host as the relay (Mumble is deferred)
+- WebRTC - Voice, with the host as the relay
 - Host election with terms and heartbeats - Role management and failover
 - Electron - Desktop application (one portable Windows .exe)
 - SQLite - Local storage (not used yet: the chat history is in memory)
@@ -52,7 +52,6 @@ MIT License.
 
 ## Acknowledgments
 
-- Mumble team for the excellent voice codec
 - libp2p team for P2P networking
 - Noveblue, Parker, Sunmanga, HBO Max Verstappen
 - Discord ;)
