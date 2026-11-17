@@ -6,7 +6,10 @@ Each result has one of these labels:
 - **LAN**: a test on 2 or more computers on one real local network.
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 
-## Not released: history in the window after a restart
+## 0.3.1: history in the window after a restart, and a log file
+
+- **Build:** `dist/ASSCRACK-0.3.1-portable.exe`, 96,396,035 bytes, SHA-256 `dbea27ef…`. Test card 4 is at the top of
+  `src/network/chatreadme.md`.
 
 - **Fault (LAN, test card 2, 2 computers):** after a restart, the app did not show the chat lines from before the
   restart.
@@ -17,7 +20,11 @@ Each result has one of these labels:
   receive gives a log line with the message IDs and the count. The log does not contain the chat text.
 - **Results (127.0.0.1):** with 2 app windows, the restarted window showed 0 earlier lines in 4 of 4 runs before the
   fix. After the fix, it showed all 3 earlier lines in 4 of 4 runs. `npm test` passes 36 of 36.
-- **Results (LAN):** not tested yet. The next build (0.3.1) has the fix.
+- **Results of the 0.3.1 build (127.0.0.1):** `npm test` passes 36 of 36, and one app start has no error line.
+  With the .exe as the restarted app, the window showed all earlier lines in 2 of 2 runs. With 3 app windows and the
+  .exe as the sender, a 200 MB file arrived in 2 windows in 4.7 s. The voice continued during the transfer. The
+  .exe writes its log file in `%APPDATA%\ASSCRACK\logs`.
+- **Results (LAN):** not tested yet (test card 4).
 
 ## 0.3.0: peer names and file sharing
 

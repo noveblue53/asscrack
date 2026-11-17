@@ -1,3 +1,70 @@
+## LAN test card 4 (0.3.1): history after a restart, names, file sharing and log files on 2 or 3 computers
+
+This test does 2 things on a real local network. It does all of test card 3 (names and file sharing), because 0.3.0 had no LAN test. It also does test card 2, conditions 6 to 8, again: the chat history and the voice after a restart. These conditions failed or were not tested on 0.2.0. Use 3 computers (A, B and C) if possible. With 2 computers, do the conditions with "2 or 3" in the Computers column.
+
+- **dist/ASSCRACK-0.3.1-portable.exe** (`dbea27ef`, last LAN test: `d02f70a7`, version 0.2.0): after a restart and Log In, the window shows the chat lines from before the restart. The app writes one log file at each start.
+- **Not changed:** discovery, the host election, the failover, voice, mute, the names and the file transfer.
+- **Not known:** the speed of a file transfer on a LAN. On one PC (127.0.0.1), a 200 MB file went to 2 receivers in 4.1 to 4.7 s (0.3.0 and 0.3.1).
+
+### Before the test
+
+1. Copy `dist/ASSCRACK-0.3.1-portable.exe` to each computer. The .exe does not need Node.js. Do not use an older .exe: 0.3.0 and older do not show the history after a restart, and they write no log file.
+2. Connect each computer to the same network. Make sure that each computer can use multicast. Guest Wi-Fi, client isolation and a VPN can block mDNS. Disconnect a VPN, for example TunnelBear.
+3. **Windows Firewall can ask again for this version.** When the .exe starts the first time, allow it on private networks. The chat, the voice and the file transfer use TCP and UDP between the computers.
+4. **The .exe has no code signature.** Windows SmartScreen can show "Windows protected your PC". The user of that computer decides if the .exe can run.
+5. Windows can block the microphone for desktop apps. Open Settings > Privacy > Microphone. Make sure that "Allow desktop apps to access your microphone" is on. The user of each computer decides this setting.
+6. On A, prepare 2 files: a large file (1 GB or more, for example a video) and a small text file. Write down the size of the large file.
+7. Use headphones on each computer.
+8. Start the .exe from a terminal with the argument `--dev` to see the developer console. Example: `.\ASSCRACK-0.3.1-portable.exe --dev`.
+
+### The test
+
+1. On each computer, start the .exe. Type a name and the same room name, for example `room4`. Then select Log In.
+2. Do not send a chat message. Look at the peer list on each computer. Expect: the names of the other users, not text that starts with `12D3KooW`. Write down which user the peer list marks as the host.
+3. **Do not skip this step: step 13 needs these lines.** On each computer, send one chat line, for example the name of the computer. Then, on A, type `before voice` and select Send.
+4. On each computer, select Join voice. Speak in turn. Each user must hear each other user. Stay in voice until step 12.
+5. On A, select the file control (Chromium shows "Choose File"). Select the large file. Then select **Send file**. Expect on A: "Offered <file name> to <n> users". Expect on B and C: a line with the file name, the size, "from <name of A>", "Offered", and the buttons Accept and Refuse.
+6. On B, select **Accept**. On C, select **Refuse**. Expect on C: "Refused". Expect on A: "Refused" in the line for C.
+7. While the progress bar on B moves, speak in turn. Each user must continue to hear each other user.
+8. Wait until B shows "Saved as <file name>". Record the time from Accept to "Saved as". Expect on A: "Sent" in the line for B.
+9. On B, open the Downloads folder. The file must be there with the same size as on A. Optional: on A and on B, run `Get-FileHash "<path of the file>"` in PowerShell. The 2 hash values must be the same.
+10. On A, send the large file again. On B, select Accept. While the progress bar moves, select **Cancel** on B. Expect on B: "Cancelled". Expect on A: "Cancelled" in the line for B. On B, look in the Downloads folder: no new file, and no file with a name that starts with `.asscrack-`. If the transfer ends before you can select Cancel, use a larger file and do this step again.
+11. On A, send the small text file. On B, select Accept. Then send the same small file again, and accept it again on B. Expect on B: "Saved as <name>" the first time, and "Saved as <name> (1).<extension>" the second time. The first file has no change.
+12. Close the app on the computer of the host (the host from step 2, or the host that the peer list shows now). Record the time. On the other computers, wait until the peer list shows a new host.
+13. Start the .exe on the closed computer again. Log in with the same name and the same room. Do not send a chat message. Look at the chat: the lines from step 3, with `before voice`, must be there.
+14. On the restarted computer, select Join voice. Speak in turn. Each user must hear each other user again.
+15. On each computer, keep the logs. Close the app first. In PowerShell, run `explorer "$env:APPDATA\ASSCRACK\logs"`. Copy each `asscrack-*.log` file into a folder with the name of the computer. The restarted computer has 2 log files, one for each start. Do not edit the files.
+
+### Done when
+
+Write PASS or FAIL for each condition:
+
+| # | Computers | Condition | Result |
+|---|---|---|---|
+| 1 | 2 or 3 | Before any chat message, each peer list shows the names of the other users within 20 seconds. | |
+| 2 | 2 or 3 | After Send file on A, the offer shows on each other computer within 5 seconds. | |
+| 3 | 2 or 3 | After Accept on B, B shows "Saved as", and the file in the Downloads folder of B has the same size as on A. | |
+| 4 | 3 | After Refuse on C, A shows "Refused" for C, and the Downloads folder of C has no new file. | |
+| 5 | 2 or 3 | During the transfer, the users hear each other in voice. | |
+| 6 | 2 or 3 | After Cancel on B, A and B show "Cancelled", and the Downloads folder of B has no new file. | |
+| 7 | 2 or 3 | The second copy of the small file gets a name with " (1)". The first copy has no change. | |
+| 8 | 2 or 3 | After the restart and Log In, the restarted computer shows the chat lines from step 3, with `before voice`. | |
+| 9 | 2 or 3 | After the restart and Join voice, each user hears each other user again within 15 seconds. | |
+| 10 | 2 or 3 | The developer consoles show no red error line. | |
+| 11 | 2 or 3 | Each computer has at least one `asscrack-*.log` file from this test. | |
+
+Also write down the size of the large file and the time of step 8. These give the speed on the LAN.
+
+### If a condition fails
+
+Keep these items for the analysis:
+- the number of the condition that failed, and the computer
+- what you saw and heard, and the times that you recorded
+- the log files (`asscrack-*.log`) from each computer
+- the text in the line of the transfer, for example "Failed: hash mismatch"
+
+---
+
 ## LAN test card 3 (0.3.0): peer names and file sharing on 2 or 3 computers
 
 This test shows if a file goes from one computer to the others on a real local network. It also shows the names in the peer list before the first chat message. Use 3 computers (A, B and C) if possible. With 2 computers, do the conditions with "2 or 3" in the Computers column.
