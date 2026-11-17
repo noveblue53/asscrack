@@ -229,7 +229,7 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
             fh = await fsp.open(temp, 'wx')
             tempCreated = true
             if (t.selfCancel || stopping) throw new Error('cancelled')
-            const stream = await connection.newStream(FILE_PROTOCOL)
+            const stream = await connection.newStream(FILE_PROTOCOL, { runOnTransientConnection: true })
             t.stream = stream
             if (t.selfCancel || stopping) {
                 abortStream(stream, 'Transfer cancelled')

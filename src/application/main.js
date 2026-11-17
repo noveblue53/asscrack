@@ -3,7 +3,8 @@ import { fileURLToPath } from 'url';
 import path from 'path';
 import { mkdirSync, appendFileSync } from 'fs';
 import { format } from 'util';
-import { createAsscrackNode } from '../network/node.mjs';
+import { createAsscrackNode, keyedServiceTag } from '../network/node.mjs';
+import { newRoomKey, readInvite } from '../network/invite.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -11,7 +12,7 @@ const __dirname = path.dirname(__filename);
 Menu.setApplicationMenu(null);
 
 const EVENTS = ['peer-discovered', 'peer-joined', 'peer-left', 'message', 'history', 'signal', 'voice-state', 'host-changed', 'peer-name',
-    'file-offer', 'file-progress', 'file-done', 'file-failed', 'file-refused', 'file-cancelled', 'topology'];
+    'file-offer', 'file-progress', 'file-done', 'file-failed', 'file-refused', 'file-cancelled', 'topology', 'full-node', 'full-node-addrs'];
 
 // Test option: --profile <dir> gives each instance its own user data folder.
 const profileIndex = process.argv.indexOf('--profile');
@@ -104,6 +105,29 @@ if (downloadsIndex !== -1 && process.argv[downloadsIndex + 1]) {
     mkdirSync(downloadDir, { recursive: true });
 }
 
+// Test options for the check scripts: --port <n>, --full-node <auto|on|off>, --allow-private-full-node, --relay-only.
+// With no flag, the node defaults do not change.
+const nodeFlags = {};
+const portIndex = process.argv.indexOf('--port');
+if (portIndex !== -1 && process.argv[portIndex + 1]) nodeFlags.port = Number(process.argv[portIndex + 1]);
+const fullNodeIndex = process.argv.indexOf('--full-node');
+if (fullNodeIndex !== -1 && process.argv[fullNodeIndex + 1]) {
+    const value = process.argv[fullNodeIndex + 1];
+    nodeFlags.fullNode = value === 'on' ? true : value === 'off' ? false : 'auto';
+}
+if (process.argv.includes('--allow-private-full-node')) nodeFlags.allowPrivateFullNode = true;
+if (process.argv.includes('--relay-only')) nodeFlags.relayOnly = true;
+
+// "<IPv4>:<port>" gives { ip, port }. Throws for a bad value.
+function parsePublicAddress(text) {
+    const m = /^\s*(\d{1,3}(?:\.\d{1,3}){3}):(\d{1,5})\s*$/.exec(String(text));
+    const port = m ? Number(m[2]) : NaN;
+    if (!m || m[1].split('.').some(o => Number(o) > 255) || !(port >= 1 && port <= 65535)) {
+        throw new Error('The public address must be <IPv4>:<port>');
+    }
+    return { ip: m[1], port };
+}
+
 function isAppPage(url) {
     return typeof url === 'string' && url.startsWith('file://') && url.endsWith('/src/application/index.html');
 }
@@ -159,11 +183,31 @@ function createMainWindow() {
     }
 }
 
-ipcMain.handle('asscrack:login', async (_event, { name, room } = {}) => {
+ipcMain.handle('asscrack:login', async (_event, { name, room, invite, internet, publicAddress } = {}) => {
     if (loginStarted) throw new Error('Already logged in');
     loginStarted = true;
+    let inviteNodes = [];
     try {
-        node = await createAsscrackNode({ name, room, downloadDir: downloadDir ?? app.getPath('downloads') });
+        const options = { name, room, downloadDir: downloadDir ?? app.getPath('downloads'), ...nodeFlags };
+        if (typeof invite === 'string' && invite.trim() !== '') {
+            const code = readInvite(invite);
+            options.room = code.room;
+            options.roomKey = code.key;
+            inviteNodes = code.nodes;
+        } else if (internet === true) {
+            options.roomKey = newRoomKey();
+        }
+        if (publicAddress !== undefined && publicAddress !== null && String(publicAddress).trim() !== '') {
+            const { ip, port } = parsePublicAddress(publicAddress);
+            options.announce = [`/ip4/${ip}/tcp/${port}`];
+            options.port = port;
+        }
+        if (options.roomKey) {
+            const dir = path.join(app.getPath('userData'), 'rooms');
+            mkdirSync(dir, { recursive: true });
+            options.storePath = path.join(dir, `${keyedServiceTag(options.room, options.roomKey)}.json`);
+        }
+        node = await createAsscrackNode(options);
     } catch (err) {
         loginStarted = false;
         throw err;
@@ -174,7 +218,26 @@ ipcMain.handle('asscrack:login', async (_event, { name, room } = {}) => {
             sendToWindow(`asscrack:${type}`, data);
         });
     }
-    return { peerId: node.peerId };
+    // Connect to each address of each node in the invite code. Continue when one fails.
+    for (const { id, addrs } of inviteNodes) {
+        for (const addr of addrs) {
+            const target = addr.includes('/p2p/') ? addr : `${addr}/p2p/${id}`;
+            node.connect(target).catch(err => writeLog('WARN', `Invite connect to ${target} failed: ${err?.message ?? err}`));
+        }
+    }
+    return { peerId: node.peerId, internet: node.roomKey() !== null };
+});
+
+ipcMain.handle('asscrack:invite', () => {
+    if (!node) throw new Error('Not logged in');
+    if (node.roomKey() === null) return { code: null, reason: 'lan' };
+    const code = node.invite();
+    return code ? { code } : { code: null, reason: 'no-full-node' };
+});
+
+ipcMain.handle('asscrack:full-node', () => {
+    if (!node) throw new Error('Not logged in');
+    return { self: node.fullNode(), peers: node.fullNodes() };
 });
 
 ipcMain.handle('asscrack:send', (_event, text) => {

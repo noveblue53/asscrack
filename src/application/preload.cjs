@@ -7,7 +7,12 @@ function listen(channel) {
 }
 
 contextBridge.exposeInMainWorld('asscrack', {
-    login: ({ name, room }) => ipcRenderer.invoke('asscrack:login', { name, room }),
+    login: ({ name, room, invite, internet, publicAddress } = {}) =>
+        ipcRenderer.invoke('asscrack:login', { name, room, invite, internet, publicAddress }),
+    getInvite: () => ipcRenderer.invoke('asscrack:invite'),
+    getFullNode: () => ipcRenderer.invoke('asscrack:full-node'),
+    onFullNode: listen('asscrack:full-node'),
+    onFullNodeAddrs: listen('asscrack:full-node-addrs'),
     send: text => ipcRenderer.invoke('asscrack:send', text),
     onPeerDiscovered: listen('asscrack:peer-discovered'),
     onPeerJoined: listen('asscrack:peer-joined'),

@@ -6,17 +6,38 @@ import { noise } from '@chainsafe/libp2p-noise'
 import { multiaddr } from '@multiformats/multiaddr'
 import { identify } from '@libp2p/identify'
 import { circuitRelayServer, circuitRelayTransport } from '@libp2p/circuit-relay-v2'
-import { createHash, randomUUID } from 'node:crypto'
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
+import { readFileSync, writeFileSync, renameSync } from 'node:fs'
 import { EventEmitter } from 'node:events'
 import { createChatSession } from './chat-session.mjs'
 import { createElection } from './election.mjs'
 import { createHistory } from './history.mjs'
 import { createFileTransfer, FILE_PROTOCOL } from './file-transfer.mjs'
+import { makeInvite, validAddr, validPeerId } from './invite.mjs'
 import { DIALBACK_PROTOCOL, handleDialback, requestDialback, isPrivateIp, observedIp, tcpTarget } from './fullnode.mjs'
 
 export { FILE_PROTOCOL, safeFileName } from './file-transfer.mjs'
 
 export const CHAT_PROTOCOL = '/asscrack/chat/receive'
+const PROOF_TIMEOUT_MS = 10000
+const MAX_ADDRS = 16
+
+// A room key is 32 bytes: a Uint8Array or a base64url string. Returns a Buffer, or null for a LAN room.
+export function parseRoomKey(roomKey) {
+    if (roomKey === null || roomKey === undefined) return null
+    let b = null
+    if (typeof roomKey === 'string' && /^[A-Za-z0-9_-]+$/.test(roomKey)) b = Buffer.from(roomKey, 'base64url')
+    else if (roomKey instanceof Uint8Array) b = Buffer.from(roomKey)
+    if (!b || b.length !== 32) throw new TypeError('roomKey must be 32 bytes (a Uint8Array or a base64url string)')
+    return b
+}
+
+// The mDNS tag of a room. A keyed room adds the first 16 hex characters of SHA-256(roomKey).
+export function keyedServiceTag(room, roomKey) {
+    const key = parseRoomKey(roomKey)
+    if (!key) return roomServiceTag(room)
+    return roomServiceTag(room + '\n' + createHash('sha256').update(key).digest('hex').slice(0, 16))
+}
 
 export function roomServiceTag(room) {
     const h = createHash('sha256').update(room).digest('hex').slice(0, 8)
@@ -50,8 +71,10 @@ function validHistoryItem(m) {
 
 export async function createAsscrackNode({ room, listen, port = 0, discovery = true, discoveryInterval, name,
     heartbeatInterval = 1000, hostTimeout = 5000, electionDelay = 3000, downloadDir,
-    fullNode = 'auto', allowPrivateFullNode = false, relayOnly = false } = {}) {
+    fullNode = 'auto', allowPrivateFullNode = false, relayOnly = false, roomKey = null, announce = [], storePath = null } = {}) {
     if (typeof room !== 'string') throw new TypeError('room must be a string')
+    const key = parseRoomKey(roomKey)
+    if (!Array.isArray(announce) || !announce.every(validAddr)) throw new TypeError('announce must be an array of multiaddr strings')
     if (fullNode !== 'auto' && fullNode !== true && fullNode !== false) throw new TypeError("fullNode must be 'auto', true or false")
     if (!Number.isInteger(port) || port < 0 || port > 65535) throw new TypeError('port must be an integer from 0 to 65535')
     // Rule 5: a relay-only node has no TCP listen address and no mDNS.
@@ -68,11 +91,11 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     let allowReservation = () => false
     const node = await createLibp2p({
         start: false,
-        addresses: { listen: listenAddrs },
+        addresses: { listen: listenAddrs, announce: [...announce] },
         transports: [tcp(), circuitRelayTransport()],
         services,
         connectionGater: { denyInboundRelayReservation: peerId => !allowReservation(peerId.toString()) },
-        peerDiscovery: discovery ? [mdns({ serviceTag: roomServiceTag(room), ...(discoveryInterval !== undefined ? { interval: discoveryInterval } : {}) })] : [],
+        peerDiscovery: discovery ? [mdns({ serviceTag: keyedServiceTag(room, key), ...(discoveryInterval !== undefined ? { interval: discoveryInterval } : {}) })] : [],
         // The peer:discovery handler opens chat connections; no automatic dials.
         connectionManager: { minConnections: 0 },
         streamMuxers: [yamux()],
@@ -211,14 +234,79 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         return value
     }
 
+    // The proof of a keyed room: HMAC-SHA256 over the nonce of the receiver and both peer IDs.
+    function proofMac(peerNonce, senderId, receiverId) {
+        return createHmac('sha256', key)
+            .update(`asscrack-proof/1\n${room}\n${peerNonce}\n${senderId}\n${receiverId}`)
+            .digest()
+    }
+
+    // Streams of a keyed room that have no valid proof yet.
+    const pendingChats = new Map()
+
     function attachChat(stream, peerId, connection) {
         connection ??= node.getConnections().find(c => c.streams.includes(stream))
-        if (sessions.has(peerId)) {
+        if (sessions.has(peerId) || pendingChats.has(peerId)) {
             stream.abort(new Error('Chat session already exists for this peer'))
             return
         }
+        // A LAN room (no key) opens the session at once. A keyed room waits for a valid proof.
+        let open = key === null
+        const nonce = randomBytes(16).toString('base64url')
+        let peerName = ''
+        let proofSent = false
+        let timer = null
+        function reject(cause) {
+            if (open) return
+            clearTimeout(timer)
+            if (pendingChats.get(peerId) === session) pendingChats.delete(peerId)
+            console.warn(`Room proof from ${peerId} failed: ${cause}`)
+            stream.abort(new Error(`Room proof failed: ${cause}`))
+        }
+        function pendingLine(line) {
+            const control = controlMessage(line)
+            if (!control) return
+            if (control.type === 'hello') {
+                if (proofSent) return
+                if (typeof control.nonce !== 'string' || !/^[A-Za-z0-9_-]{16,64}$/.test(control.nonce)) {
+                    reject('hello with no nonce')
+                    return
+                }
+                peerName = typeof control.name === 'string' ? control.name.trim().slice(0, 64) : ''
+                proofSent = true
+                session.send(JSON.stringify({ type: 'proof', mac: proofMac(control.nonce, selfId, peerId).toString('base64url') }))
+            } else if (control.type === 'proof') {
+                const expected = proofMac(nonce, peerId, selfId)
+                const mac = typeof control.mac === 'string' && /^[A-Za-z0-9_-]+$/.test(control.mac) ? Buffer.from(control.mac, 'base64url') : null
+                if (!mac || mac.length !== expected.length || !timingSafeEqual(mac, expected)) {
+                    reject('wrong proof')
+                    return
+                }
+                if (!proofSent) {
+                    reject('proof before hello')
+                    return
+                }
+                clearTimeout(timer)
+                pendingChats.delete(peerId)
+                if (sessions.has(peerId)) {
+                    stream.abort(new Error('Chat session already exists for this peer'))
+                    return
+                }
+                open = true
+                openSession(session, peerId, connection, false)
+                if (peerName) {
+                    names.set(peerId, peerName)
+                    events.emit('peer-name', { peerId, name: peerName })
+                }
+            }
+            // Ignore all other lines before the session is open.
+        }
         const session = createChatSession(stream, {
             onMessage: line => {
+                if (!open) {
+                    pendingLine(line)
+                    return
+                }
                 const control = controlMessage(line)
                 if (control) {
                     // Ignore an unknown type with no warning.
@@ -247,7 +335,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                         }
                     }
                     else if (control.type === 'node') {
-                        if (sessions.get(peerId) === session && typeof control.fullNode === 'boolean') setPeerFull(peerId, control.fullNode)
+                        if (sessions.get(peerId) === session && typeof control.fullNode === 'boolean') setPeerFull(peerId, control.fullNode, control.fullNode ? validAddrList(control.addrs) : null)
                     }
                     else if (control.type === 'signal') {
                         if (control.data !== null && typeof control.data === 'object') events.emit('signal', { peerId, data: control.data })
@@ -269,9 +357,23 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 } else console.warn(`Ignored a message that is not valid from peer ${peerId}`)
             }
         })
+        if (open) {
+            openSession(session, peerId, connection, true)
+            return
+        }
+        pendingChats.set(peerId, session)
+        session.send(JSON.stringify({ type: 'hello', name: senderName, nonce }))
+        timer = setTimeout(() => reject(`no valid proof in ${PROOF_TIMEOUT_MS} ms`), PROOF_TIMEOUT_MS)
+        session.done.catch(() => {}).finally(() => {
+            clearTimeout(timer)
+            if (pendingChats.get(peerId) === session) pendingChats.delete(peerId)
+        })
+    }
+
+    function openSession(session, peerId, connection, sendHello) {
         sessions.set(peerId, session)
         if (connection) sessionConns.set(peerId, connection)
-        session.send(JSON.stringify({ type: 'hello', name: senderName }))
+        if (sendHello) session.send(JSON.stringify({ type: 'hello', name: senderName }))
         session.send(nodeLine())
         events.emit('peer-joined', { peerId })
         election.sessionOpened(peerId)
@@ -311,7 +413,18 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
 
     await node.handle(FILE_PROTOCOL, data => files.handleStream(data), { runOnTransientConnection: true })
 
-    await node.handle(DIALBACK_PROTOCOL, handleDialback, { runOnTransientConnection: true })
+    // In a keyed room, answer a dial-back only for a peer with an open session. The proof of the peer can
+    // arrive a short time after the request, so wait for the session for a short time.
+    await node.handle(DIALBACK_PROTOCOL, async data => {
+        const peerId = data.connection.remotePeer.toString()
+        for (let i = 0; key !== null && !sessions.has(peerId) && i < 40; i++) await new Promise(r => setTimeout(r, 50))
+        if (key !== null && !sessions.has(peerId)) {
+            console.warn(`Dial-back request from ${peerId} refused: no session`)
+            data.stream.abort(new Error('no session'))
+            return
+        }
+        handleDialback(data)
+    }, { runOnTransientConnection: true })
 
     // Rule 9: close a session only when its chat stream is on the closed connection.
     node.addEventListener('connection:close', ({ detail: connection }) => {
@@ -322,7 +435,88 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
 
     // Rule 6: the full-node state on the wire.
     function nodeLine() {
-        return JSON.stringify({ type: 'node', fullNode: selfFull })
+        return JSON.stringify(selfFull ? { type: 'node', fullNode: true, addrs: publicAddrs() } : { type: 'node', fullNode: false })
+    }
+
+    // The public addresses of this node: the announce addresses, else the dial-back address of a full node.
+    let dialbackIp = null
+    function publicAddrs() {
+        if (announce.length > 0) return [...announce]
+        const port = listenPort()
+        if (selfFull && dialbackIp && port !== null) return [`/${dialbackIp.includes(':') ? 'ip6' : 'ip4'}/${dialbackIp}/tcp/${port}`]
+        return []
+    }
+
+    // The addresses of each full node that sent addrs (self not included).
+    const knownFullNodes = new Map()
+    function validAddrList(addrs) {
+        if (!Array.isArray(addrs) || addrs.length < 1 || addrs.length > MAX_ADDRS || !addrs.every(validAddr)) return null
+        return [...new Set(addrs)]
+    }
+    function learnFullNode(peerId, addrs, save = true) {
+        if (peerId === selfId || !validPeerId(peerId)) return
+        const old = knownFullNodes.get(peerId)
+        if (!old || old.length !== addrs.length || old.some((a, i) => a !== addrs[i])) {
+            knownFullNodes.set(peerId, addrs)
+            events.emit('full-node-addrs', { peerId, addrs: [...addrs] })
+            if (save) saveStore()
+        }
+        dialFullNode(peerId)
+    }
+    function saveStore() {
+        if (!storePath) return
+        try {
+            const tmp = `${storePath}.tmp`
+            writeFileSync(tmp, JSON.stringify({ fullNodes: Object.fromEntries(knownFullNodes) }, null, 2))
+            renameSync(tmp, storePath)
+        } catch (err) {
+            console.warn(`Store write to ${storePath} failed:`, err?.message ?? err)
+        }
+    }
+    function loadStore() {
+        if (!storePath) return
+        let value
+        try {
+            value = JSON.parse(readFileSync(storePath, 'utf8'))
+        } catch (err) {
+            console.warn(`Store ${storePath} not read, the store is empty:`, err?.code ?? err?.message ?? err)
+            return
+        }
+        const list = value?.fullNodes
+        if (list === null || typeof list !== 'object' || Array.isArray(list)) {
+            console.warn(`Store ${storePath} is not valid, the store is empty`)
+            return
+        }
+        for (const [peerId, addrs] of Object.entries(list)) {
+            const valid = validAddrList(addrs)
+            if (valid && peerId !== selfId && validPeerId(peerId)) knownFullNodes.set(peerId, valid)
+        }
+    }
+    // Dial a known full node directly when this node has no direct connection to it.
+    function dialFullNode(peerId) {
+        const addrs = knownFullNodes.get(peerId)
+        if (stopped || !addrs || dialing.has(peerId)) return
+        const direct = node.getConnections().some(c => c.remotePeer.toString() === peerId && !c.remoteAddr.toString().includes('/p2p-circuit'))
+        if (direct) return
+        // Two full nodes: only the lower peer ID dials (as in dialDiscovered).
+        if (!sessions.has(peerId) && selfFull && !(selfId < peerId)) return
+        dialing.add(peerId)
+        ;(async () => {
+            for (const a of addrs) {
+                if (stopped) return
+                const target = a.includes('/p2p/') ? a : `${a}/p2p/${peerId}`
+                try {
+                    const conn = await node.dial(multiaddr(target))
+                    if (!sessions.has(peerId) && !pendingChats.has(peerId)) {
+                        const stream = await conn.newStream(CHAT_PROTOCOL, { runOnTransientConnection: true })
+                        attachChat(stream, peerId, conn)
+                    }
+                    return
+                } catch (err) {
+                    console.warn(`Direct dial to full node ${peerId} at ${a} failed:`, err?.message ?? err)
+                }
+            }
+        })().finally(() => dialing.delete(peerId))
     }
 
     function setSelfFull(value) {
@@ -334,10 +528,11 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         for (const session of sessions.values()) session.send(line)
     }
 
-    function setPeerFull(peerId, value) {
+    function setPeerFull(peerId, value, addrs = null) {
         const old = peerFull.get(peerId) === true
         peerFull.set(peerId, value)
         if (old !== value) events.emit('full-node', { peerId, fullNode: value })
+        if (value && addrs) learnFullNode(peerId, addrs)
         if (value) reserveOn(peerId)
         scheduleRelayDials()
     }
@@ -361,6 +556,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             .then(({ ok, ip }) => {
                 const publicIp = observedIp(node) ?? ip
                 const full = ok && publicIp !== null && (allowPrivateFullNode || !isPrivateIp(publicIp))
+                if (full) dialbackIp = publicIp
                 console.info(`Dial-back from ${peerId}: ${ok ? 'ok' : 'failed'}, IP ${publicIp}, full node ${full}`)
                 if (full && !stopped) setSelfFull(true)
             })
@@ -480,6 +676,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
 
     await node.start()
     election.start()
+    loadStore()
+    for (const peerId of knownFullNodes.keys()) dialFullNode(peerId)
 
     return {
         peerId: node.peerId.toString(),
@@ -511,6 +709,20 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         peerNames: () => Object.fromEntries([...names].filter(([peerId]) => sessions.has(peerId))),
         topology,
         fullNode: () => selfFull,
+        roomKey: () => key ? key.toString('base64url') : null,
+        publicAddrs,
+        knownFullNodes: () => Object.fromEntries([...knownFullNodes].map(([p, a]) => [p, [...a]])),
+        // The invite code: the self node (with public addresses) and the known full nodes.
+        // null in a LAN room, or with no full node with addresses.
+        invite() {
+            if (!key) return null
+            const nodes = []
+            const own = publicAddrs()
+            if (own.length > 0) nodes.push({ id: selfId, addrs: own })
+            for (const [id, addrs] of knownFullNodes) if (nodes.length < MAX_ADDRS) nodes.push({ id, addrs })
+            if (nodes.length === 0) return null
+            return makeInvite({ room, key: key.toString('base64url'), nodes })
+        },
         fullNodes: () => [...peerFull].filter(([p, v]) => v && sessions.has(p)).map(([p]) => p),
         // Send one control line to one peer. Returns true if the session is open.
         sendTo(peerId, message) {
