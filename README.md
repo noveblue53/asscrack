@@ -14,18 +14,22 @@ Don't use it for real voice chat yet. See [CHANGELOG.md](CHANGELOG.md) for what 
 - **Decentralized P2P Architecture** - No single point of failure
 - **Automatic Failover** - Primary host crashes? Next node takes over instantly
 - **Zero Configuration** - No IP addresses, no port forwarding wizards
-- **Built-in Voice** - WebRTC (Opus codec), with the host as the relay.
+- **Built-in Voice** - Opus frames on a libp2p stream, with the host as the relay.
 - **Text Chat** - Full-featured P2P messaging
 - **File Sharing** - P2P file transfers, no size limits
 - **Network Map** - See who is connected, who relays the voice, who speaks and which files move
+- **Internet Rooms** - Join with an invite code. Members with a forwarded port are full nodes and relay for the others
 - **Self-Healing Network** - Mesh stays connected even when nodes drop
 
 ## Status
 
 **Early Development** - Test copy on one LAN. Not ready for use.
 
-Current Phase: Phase 7 (UI/UX polish). Version 0.4.0 has a new look and a network map of the room. These passed
-the checks on one PC (127.0.0.1) and have no LAN test yet. Test card 5 gives the LAN test. Version 0.3.1 has peer
+Current Phase: Phase 8 (internet rooms). Version 0.5.0 has internet rooms with invite codes and a room key. Members
+with a forwarded port are full nodes and relay the chat, history and files for the others. Voice now uses libp2p
+streams in place of WebRTC. These passed the checks on one PC (127.0.0.1) and have no internet or LAN test yet. Test
+card 6 gives the internet test. Version 0.4.0 has a new look and a network map of the room. These passed the checks on
+one PC (127.0.0.1) and have no LAN test yet. Test card 5 gives the LAN test. Version 0.3.1 has peer
 discovery, the host election and failover, voice, chat with the history after a restart, and file sharing. All of
 these passed a LAN test. Each result in
 [CHANGELOG.md](CHANGELOG.md) has a label: LAN (real computers) or 127.0.0.1 (one PC only).
@@ -34,7 +38,8 @@ these passed a LAN test. Each result in
 
 **Key Technologies:**
 - libp2p - P2P mesh networking
-- WebRTC - Voice, with the host as the relay
+- Circuit relay v2 - Full nodes relay for members behind a NAT
+- WebCodecs Opus on libp2p streams - Voice, with the host as the relay
 - Host election with terms and heartbeats - Role management and failover
 - Electron - Desktop application (one portable Windows .exe)
 - SQLite - Local storage (not used yet: the chat history is in memory)
@@ -48,6 +53,7 @@ these passed a LAN test. Each result in
 - [x] Phase 5: P2P chat system (LAN tested on 2 computers, with the history after a restart in 0.3.1)
 - [x] Phase 6: File sharing (LAN tested on 2 computers with 0.3.1)
 - [ ] Phase 7: UI/UX polish (0.4.0: new look and network map, 127.0.0.1 only, LAN test open)
+- [ ] Phase 8: Internet rooms (0.5.0: invite codes, full nodes, relay links, voice over libp2p, 127.0.0.1 only, internet test open)
 
 ## License
 

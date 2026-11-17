@@ -1,3 +1,97 @@
+## Internet test card 6 (0.5.0): an internet room with an invite code, a full node and a relay on 2 computers
+
+This test checks the 0.5.0 changes across the internet. A user makes an internet room and gives an invite code to the other users. A computer with a forwarded TCP port is a **full node**. The other members connect to it. When two members cannot connect directly, their chat goes through the full node (a **relay link**). Voice now goes through the host on a libp2p stream, not WebRTC. A LAN room with no invite code works as before.
+
+- Computer 1 (**A**) is at home, on a router where you can forward a TCP port. A is the full node.
+- Computer 2 is on a phone hotspot (mobile data), not on the network of A. Computer 2 runs two apps: **B** and **C**. B and C use the test flag `--relay-only`, so they cannot connect directly to each other. Their chat must go through A.
+- **dist/ASSCRACK-0.5.0-portable.exe** (SHA-256 in `CHANGELOG.md`): internet rooms, invite codes, full nodes, relay links, the room key, and voice over libp2p.
+- **Not known:** all of this. On one PC (127.0.0.1), the relay path, the room key, history, files and voice frames passed. These are not internet results.
+- **Mixed versions:** a 0.4.0 app cannot join an internet room. In a LAN room, a 0.4.0 app has no voice with a 0.5.0 app. Do not use a 0.4.0 app in this test.
+
+### Before the test
+
+1. Copy `dist/ASSCRACK-0.5.0-portable.exe` to each computer. Do not use an older .exe.
+2. **Find out if A is behind a CGNAT.** A CGNAT is a second NAT at the internet provider. A port forward on your router cannot pass a CGNAT.
+   1. On A, open a web page that shows your public IP address, for example a search for "what is my IP". Write it down.
+   2. Open the admin page of your router. Find the WAN IP address (or "Internet IP").
+   3. If the WAN IP is the same as the public IP, there is no CGNAT. Continue.
+   4. A is behind a CGNAT if the WAN IP is not the same as the public IP. A WAN IP in these ranges is also a CGNAT: `100.64.0.0` to `100.127.255.255`, `10.x.x.x`, `172.16.x.x` to `172.31.x.x`, `192.168.x.x`. Stop. A cannot be a full node on this network. Write down both IP addresses and tell the engineer.
+3. On the router of A, forward TCP port **4001** to the LAN IP address of A (find it with `ipconfig` in PowerShell, line "IPv4 Address").
+4. **Windows Firewall:** when the .exe of A starts the first time, allow it on private networks. If Windows shows the network of A as a public network, also allow it on public networks. Else the firewall blocks the forwarded port.
+5. Connect computer 2 to the phone hotspot. Disconnect a VPN on both computers, for example TunnelBear.
+6. **The .exe has no code signature.** Windows SmartScreen can show "Windows protected your PC". The user of that computer decides if the .exe can run.
+7. Use headphones on A and on computer 2.
+8. On computer 2, make two folders: `C:\asscrack-b` and `C:\asscrack-c`. Each app on computer 2 keeps its profile and its logs in its own folder.
+9. On A, prepare a file of about 50 MB. On computer 2, prepare a file of about 5 MB (mobile data is slow and can cost money).
+
+### Start commands
+
+Run each command in PowerShell, in the folder of the .exe. `--dev` opens the developer console.
+
+- A: `.\ASSCRACK-0.5.0-portable.exe --dev`
+- B: `.\ASSCRACK-0.5.0-portable.exe --dev --relay-only --profile C:\asscrack-b --log-dir C:\asscrack-b\logs`
+- C: `.\ASSCRACK-0.5.0-portable.exe --dev --relay-only --profile C:\asscrack-c --log-dir C:\asscrack-c\logs`
+
+### The test
+
+1. On A, start the app. Type a name. Set **Room type** to "New internet room". Type the room name `room6`. In **Public address**, type `<public IP>:4001` (the public IP from step 2 of "Before the test"). Select Log In.
+2. On A, select **Invite** (top right). Expect: a long code that starts with `asscrack1:`. Select **Copy**. Send the code to computer 2 (for example in an e-mail or a chat message to yourself). Expect in the status bar of A: "No full node" at this time. A is a full node only after a peer can connect back to it.
+3. **Wrong key first.** On computer 2, copy the invite code. Then run this script in PowerShell. It replaces the room key in the code on the clipboard with a random key:
+   ```powershell
+   $c = (Get-Clipboard -Raw).Trim(); $b = $c.Substring(10).Replace('-','+').Replace('_','/'); $b += '=' * ((4 - $b.Length % 4) % 4)
+   $o = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b)) | ConvertFrom-Json
+   $k = New-Object byte[] 32; (New-Object Security.Cryptography.RNGCryptoServiceProvider).GetBytes($k)
+   $o.key = [Convert]::ToBase64String($k).TrimEnd('=').Replace('+','-').Replace('/','_')
+   $e = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(($o | ConvertTo-Json -Compress -Depth 5))).TrimEnd('=').Replace('+','-').Replace('/','_')
+   Set-Clipboard ('asscrack1:' + $e)
+   ```
+   Start C. Type the name `wrongkey`. Set **Room type** to "Join with invite code". Paste the code from the clipboard. Select Log In. Wait 30 seconds. Expect: C shows no other user. A shows no user `wrongkey`. Close C.
+4. **Join.** On computer 2, copy the real invite code again. Start B. Type a name. Set **Room type** to "Join with invite code". Paste the code. Select Log In. Expect within 30 seconds: A and B show each other in the Buddies list. The status bar of A shows "This computer is a full node". The status bar of B shows "Full node: <name of A>". The HOST mark is on A.
+5. On A and B, send chat lines. Expect: each line shows on the other computer.
+6. **History.** Start C again (same command as before). Type a new name. Join with the real invite code. Expect: C shows the chat lines of step 5, in the correct order.
+7. **Map.** On each app, select **Network map**. Expect: A has the FULL badge. The line between B and C is a dashed line (relay link). The lines from A to B and from A to C are solid lines.
+8. On B and C, send chat lines. Expect: each line shows on all three apps. The B to C lines go through A.
+9. **Voice.** On C, select Join voice, then **Mute**. On A and B, select Join voice. Speak in turn. Expect: A hears B, and B hears A. The sound has no long gaps.
+10. **Files.** On A, select the 50 MB file, then select **Send file**. On B and C, select Accept. Expect: "Saved as <file name>" on B and C. Then on B, send the 5 MB file. On C, select Accept. Expect: "Saved as" on C. This transfer goes from B to A and from A to C over mobile data.
+11. Close C, then B, then A.
+12. **LAN room.** Connect computer 2 to the same network as A (not the hotspot). Start A with `.\ASSCRACK-0.5.0-portable.exe --dev` and B with the start command of B **without** `--relay-only`. On both, set **Room type** to "LAN room" and type the room `lan6`. Select Log In. Expect: A and B find each other with no invite code. The **Invite** button is not visible. Send a chat line in each direction. Join voice on both, and speak. Expect: each user hears the other.
+13. Keep the logs. Close each app first.
+    - A: in PowerShell, run `explorer "$env:APPDATA\asscrack\logs"`.
+    - B and C: `C:\asscrack-b\logs` and `C:\asscrack-c\logs`.
+    - Copy each `asscrack-*.log` file into a folder with the name of the app (A, B, C). Do not edit the files. Also keep the developer console output of each app if it has a red line.
+
+### Done when
+
+Write PASS or FAIL for each condition:
+
+| # | Condition | Result |
+|---|---|---|
+| 1 | Step 2 of "Before the test": the router WAN IP is the same as the public IP (no CGNAT). Write both IP addresses. | |
+| 2 | A shows an invite code that starts with `asscrack1:`, and Copy puts it on the clipboard. | |
+| 3 | With the wrong key (step 3), C shows no other user, and A shows no user `wrongkey`, after 30 seconds. | |
+| 4 | With the real code, A and B show each other within 30 seconds. | |
+| 5 | A shows "This computer is a full node". B shows "Full node: <name of A>". | |
+| 6 | Chat lines go both ways between A and B. | |
+| 7 | C shows the earlier chat lines in the correct order (history). | |
+| 8 | The map shows the FULL badge on A, a dashed line between B and C, and solid lines from A to B and C. | |
+| 9 | Chat lines from B show on C, and lines from C show on B. | |
+| 10 | In voice, A hears B and B hears A. Write the time of a gap or an echo if you hear one. | |
+| 11 | The 50 MB file arrives on B and C. The 5 MB file arrives on C. Write the time of each transfer. | |
+| 12 | In the LAN room (step 12), A and B find each other with no invite code, and the Invite button is not visible. | |
+| 13 | In the LAN room, chat and voice work both ways. | |
+| 14 | The developer consoles show no red error line. | |
+| 15 | Each app has at least one `asscrack-*.log` file from this test. | |
+
+### If a condition fails
+
+Keep these items for the analysis:
+- the number of the condition that failed, and the app (A, B or C)
+- what you saw, and a screenshot of the window if possible
+- the log files of each app, and the public IP and the router WAN IP of A
+- the developer console output of each app with a red line
+
+---
+
 ## LAN test card 5 (0.4.0): the new look, the network map and cancel for one receiver on 2 or 3 computers
 
 This test checks the 0.4.0 changes on a real local network. The window has a new look. A Network map panel shows the room. It shows who has a chat session with whom, which node is the voice relay, and who speaks. It also shows the file transfers of this computer. The sender can cancel the transfer to one receiver only. Use 3 computers (A, B and C) if possible. With 2 computers, do the conditions with "2 or 3" in the Computers column.

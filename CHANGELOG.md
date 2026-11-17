@@ -6,6 +6,40 @@ Each result has one of these labels:
 - **LAN**: a test on 2 or more computers on one real local network.
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 
+## 0.5.0: internet rooms with invite codes, full nodes and voice over libp2p
+
+- **Build:** `dist/ASSCRACK-0.5.0-portable.exe`, 96,496,437 bytes, SHA-256
+  `132480d93ebcecc0a0b38f44afdb6be26191b332afb938f0bf3885d21dff4c50`. Test card 6 is at the top of
+  `src/network/chatreadme.md`. There is no internet result and no LAN result yet.
+
+- **Internet room:** a user makes a room with a room key. The **Invite** button gives a code that starts with
+  `asscrack1:`. The code has the room name, the room key and the addresses of the known full nodes. Other users join
+  with the code. There is no fixed server.
+- **Full node:** a member with a forwarded TCP port is a full node. A peer dials back to it to make sure that the port
+  is open. A full node keeps relay slots for the room members. When two members cannot connect directly, their chat,
+  history and files go through the full node (a relay link). A private or loopback address does not make a full node,
+  so a LAN room has no full node.
+- **Room key:** each new session sends a proof of the room key. A peer with a wrong key gets no session, no relay slot
+  and no voice stream.
+- **Host election:** a full node gets the host role first, then the lower peer ID. With no full node, the rule is the
+  same as before.
+- **Voice over libp2p:** voice is now Opus frames (48 kHz, 20 ms, 32 kbps) on a libp2p stream to the host. The host
+  sends each frame to the other members. This replaces WebRTC, so voice also works through a relay link. The host drops
+  a frame that has the name of a different sender.
+- **Network map:** a relay link is a dashed line (`data-kind="relay"`). A direct link is a solid line
+  (`data-kind="mesh"`). A full node has a FULL badge.
+- **Mixed versions:** a 0.4.0 app cannot join an internet room. In a LAN room, a 0.4.0 app has no voice with a 0.5.0
+  app.
+- **Results of the 0.5.0 tree (127.0.0.1):** `npm test` passes 67 of 67. New tests send chat, history, voice frames
+  and a 3 MiB file through a relay on one PC. Other new tests check the room key, the invite code and the relay access
+  rule. The file rate through the relay was 5.2 to 5.7 MiB/s. A voice frame from A through the host to B took a
+  median time of 1.0 to 1.3 ms (127.0.0.1). A window check with a fake microphone sent and decoded voice frames in 2 app windows. Seven
+  window checks passed. They check the start, the map, the history (a and b), files with 3 windows, Cancel for one
+  receiver and the relay map. The terminal demo works.
+- **Known (127.0.0.1):** after Join voice, the stream to the host opens after about 2.5 s. The frames of that time
+  are lost.
+- **Not known:** all of this on the internet and on a LAN. Test card 6 gives this.
+
 ## 0.4.0: a new look, the network map and cancel for one receiver
 
 - **Build:** `dist/ASSCRACK-0.4.0-portable.exe`, 96,412,548 bytes, SHA-256 `35d29b03…`. Test card 5 is at the top of
