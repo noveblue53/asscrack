@@ -1,3 +1,54 @@
+## LAN test card 2: voice and host failover on 2 or 3 computers
+
+This test shows if the voice and the automatic host failover work on a real local network. Use 3 computers (A, B and C) if possible. With 2 computers, do the conditions with "2" or "2 or 3" in the Computers column.
+
+### Before the test
+
+1. Copy `dist/ASSCRACK-0.2.0-portable.exe` to each computer. The .exe does not need Node.js. Do not use the 0.1.0 .exe: it has no voice.
+2. Connect each computer to the same network. Make sure that each computer can use multicast. Guest Wi-Fi, client isolation and a VPN can block mDNS. Disconnect a VPN, for example TunnelBear.
+3. Use headphones on each computer. Without headphones, the speaker of one computer can go into the microphone of another computer in the same room.
+4. Windows Firewall can ask for access when the .exe starts the first time. Allow it on private networks. Voice uses UDP between the computers.
+5. Windows can block the microphone for desktop apps. Open Settings > Privacy > Microphone. Make sure that "Allow desktop apps to access your microphone" is on. The user of each computer decides this setting.
+6. The .exe has no code signature. Windows SmartScreen can show "Windows protected your PC". The user of that computer decides if the .exe can run.
+7. Start the .exe from a terminal with the argument `--dev` to see the developer console. Example: `.\ASSCRACK-0.2.0-portable.exe --dev`.
+
+### The test
+
+1. On each computer, start the .exe. Type a name and the same room name, for example `voice1`. Then select Log In.
+2. Wait until each peer list shows all other users. Write down which user the peer list marks as the host. All computers must show the same host.
+3. On A, send `before voice` in the chat.
+4. On each computer, select Join voice. Speak in turn. Each user must hear each other user.
+5. On one computer that is not the host, select Mute. Speak on that computer. The other users must not hear it. Select Unmute.
+6. Close the app on the computer of the host. Record the time.
+7. On the other computers, look at the peer list. Wait for a new host. Speak in turn. Record the time when the users hear each other again. Do not select a button.
+8. Start the app on the closed computer again. Log in to the same room. Look at the chat: `before voice` must be there. Select Join voice. Speak in turn.
+9. On each computer, save the terminal output and the developer console output to a text file. Keep the original files. Do not edit them.
+
+### Done when
+
+Write PASS or FAIL for each condition:
+
+| # | Computers | Condition | Result |
+|---|---|---|---|
+| 1 | 2 or 3 | All computers show the other users in the peer list within 20 seconds. | |
+| 2 | 2 or 3 | All computers mark the same user as the host. | |
+| 3 | 2 or 3 | After Join voice, each user hears each other user. | |
+| 4 | 2 or 3 | When a user selects Mute, the other users do not hear that user. The peer list shows that user as "in voice", not "speaking". | |
+| 5 | 3 | After the app of the host closes, the 2 other users hear each other again within 15 seconds, with no button. | |
+| 5 | 2 | After the app of the host closes, the other computer shows itself as the host within 15 seconds. | |
+| 6 | 2 or 3 | After a restart and Log In, the closed computer shows the message `before voice` in the chat. | |
+| 7 | 2 or 3 | After the restart and Join voice, each user hears each other user again within 15 seconds. | |
+| 8 | 2 or 3 | The developer consoles show no red error line. | |
+
+### If a condition fails
+
+Keep these items for the analysis:
+- the number of the condition that failed, and the computer
+- what you saw and heard, and the times that you recorded
+- the saved terminal and console files from each computer
+
+---
+
 ## LAN test card: the desktop app on two computers
 
 This test shows if the test copy works on a real local network. Do it on two computers, A and B, on the same network.
