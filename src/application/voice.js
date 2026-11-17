@@ -42,15 +42,24 @@
 
     // The peers that this node must have a connection to.
     function wantedPeers() {
-        if (!inVoice || !localStream || selfId === null || hostId === null) return [];
+        if (selfId === null || hostId === null) return [];
+        // The host relays for the voice members, also when its own user is not in voice.
         if (isHost()) return [...members].filter(([, s]) => s.inVoice).map(([peerId]) => peerId);
-        return members.get(hostId)?.inVoice ? [hostId] : [];
+        if (!inVoice || !localStream) return [];
+        return [hostId];
+    }
+
+    // Chromium pulls the received audio, also for the relay, only while a media element plays it.
+    // A host that is not in voice plays the relayed audio at volume 0.
+    function setPlayVolume() {
+        for (const audio of players.values()) audio.volume = inVoice ? 1 : 0;
     }
 
     function play(track, stream) {
         if (players.has(track.id)) return;
         const audio = document.createElement('audio');
         audio.autoplay = true;
+        audio.volume = inVoice ? 1 : 0;
         audio.hidden = true;
         audio.srcObject = stream;
         players.set(track.id, audio);
@@ -71,7 +80,7 @@
         api.signal(peerId, data).catch(err => console.warn('Signal send failed:', err?.message ?? err));
     }
 
-    function createConnection(peerId) {
+    function createConnection(peerId, { withTrack = true } = {}) {
         const pc = new RTCPeerConnection({ iceServers: [] });
         const entry = {
             peerId,
@@ -90,15 +99,17 @@
             try {
                 entry.makingOffer = true;
                 await pc.setLocalDescription();
+                // The connection can be replaced while the offer is made.
+                if (connections.get(peerId) !== entry) return;
                 signal(peerId, { description: { type: pc.localDescription.type, sdp: pc.localDescription.sdp } });
             } catch (err) {
-                console.warn('Negotiation failed:', err?.message ?? err);
+                if (connections.get(peerId) === entry) console.warn('Negotiation failed:', err?.message ?? err);
             } finally {
                 entry.makingOffer = false;
             }
         };
         pc.onicecandidate = ({ candidate }) => {
-            if (candidate) signal(peerId, { candidate: candidate.toJSON() });
+            if (candidate && connections.get(peerId) === entry) signal(peerId, { candidate: candidate.toJSON() });
         };
         pc.ontrack = ({ track, streams }) => {
             const stream = streams[0];
@@ -124,8 +135,12 @@
             }
         };
 
-        addSender(entry, localStream.getAudioTracks()[0], localStream);
+        if (withTrack) addOwnTrack(entry);
         return entry;
+    }
+
+    function addOwnTrack(entry) {
+        if (localStream) addSender(entry, localStream.getAudioTracks()[0], localStream);
     }
 
     function addSender(entry, track, stream) {
@@ -152,7 +167,10 @@
         for (const [peerId, entry] of connections) {
             const wanted = new Set();
             const own = localStream?.getAudioTracks()[0];
-            if (own) wanted.add(own.id);
+            if (own) {
+                wanted.add(own.id);
+                addSender(entry, own, localStream);
+            }
             for (const [origin, { track, stream }] of relayed) {
                 if (origin === peerId) continue;
                 wanted.add(track.id);
@@ -184,24 +202,43 @@
 
     async function handleSignal({ peerId, data } = {}) {
         if (!data || typeof data !== 'object') return;
+        if (selfId === null) {
+            try {
+                await refreshHost();
+            } catch (err) {
+                console.warn('Host query failed:', err?.message ?? err);
+                return;
+            }
+        }
         if (!wantedPeers().includes(peerId)) return;
-        const entry = connections.get(peerId) ?? createConnection(peerId);
-        const pc = entry.pc;
+        let entry = connections.get(peerId) ?? createConnection(peerId);
         try {
             if (data.description) {
                 const description = data.description;
-                const offerCollision = description.type === 'offer' &&
-                    (entry.makingOffer || pc.signalingState !== 'stable');
+                const isOffer = description.type === 'offer';
+                const offerCollision = isOffer && (entry.makingOffer || entry.pc.signalingState !== 'stable');
                 entry.ignoreOffer = !entry.polite && offerCollision;
                 if (entry.ignoreOffer) return;
+                let deferTrack = false;
+                if (offerCollision && !entry.pc.currentRemoteDescription) {
+                    // Both nodes sent the first offer. Chromium can stop the ICE gathering of a connection that
+                    // rolls back its first offer: the connection then stays in the state "new" for ever.
+                    // The member (polite) starts again with a new connection. It answers first and adds its
+                    // own track after the answer.
+                    closeConnection(peerId);
+                    entry = createConnection(peerId, { withTrack: false });
+                    deferTrack = true;
+                }
+                const pc = entry.pc;
                 await pc.setRemoteDescription(description);
-                if (description.type === 'offer') {
+                if (isOffer) {
                     await pc.setLocalDescription();
                     signal(peerId, { description: { type: pc.localDescription.type, sdp: pc.localDescription.sdp } });
+                    if (deferTrack && connections.get(peerId) === entry) addOwnTrack(entry);
                 }
             } else if (data.candidate) {
                 try {
-                    await pc.addIceCandidate(data.candidate);
+                    await entry.pc.addIceCandidate(data.candidate);
                 } catch (err) {
                     if (!entry.ignoreOffer) console.warn('ICE candidate failed:', err?.message ?? err);
                 }
@@ -211,20 +248,32 @@
         }
     }
 
-    async function refreshHost() {
-        const info = await api.getHost();
-        selfId = info.self;
-        hostId = info.host?.peerId ?? null;
+    // All callers share one pending query. Signals that wait for it then continue in their arrival order.
+    let hostQuery = null;
+    function refreshHost() {
+        if (!hostQuery) {
+            hostQuery = api.getHost().then(info => {
+                selfId = info.self;
+                hostId = info.host?.peerId ?? null;
+            }).finally(() => { hostQuery = null; });
+        }
+        return hostQuery;
+    }
+
+    // A host that is not in voice did not call join(). Get the own peer ID on the first event after the login.
+    function reconcileWithIds() {
+        if (selfId !== null) return reconcile();
+        refreshHost().then(reconcile).catch(err => console.warn('Host query failed:', err?.message ?? err));
     }
 
     api.onSignal(data => { handleSignal(data); });
     api.onVoiceState(({ peerId, inVoice: memberInVoice, streamId } = {}) => {
         members.set(peerId, { inVoice: memberInVoice === true, streamId: streamId ?? null });
-        reconcile();
+        reconcileWithIds();
     });
     api.onHostChanged(info => {
         hostId = info?.peerId ?? null;
-        reconcile();
+        reconcileWithIds();
     });
     api.onPeerLeft(({ peerId } = {}) => {
         members.delete(peerId);
@@ -237,16 +286,18 @@
             await refreshHost();
             localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
             inVoice = true;
+            // A host that relayed before now plays the relayed audio at full volume.
+            setPlayVolume();
             await api.setVoice({ inVoice: true, streamId: localStream.id });
             reconcile();
         },
         async leave() {
             inVoice = false;
-            for (const peerId of [...connections.keys()]) closeConnection(peerId);
-            relayed.clear();
-            for (const trackId of [...players.keys()]) stopPlay(trackId);
+            setPlayVolume();
             if (localStream) for (const track of localStream.getTracks()) track.stop();
             localStream = null;
+            // The host keeps the relay connections and removes its own track. A member closes its connection.
+            reconcile();
             await api.setVoice({ inVoice: false, streamId: null });
             changed();
         },
