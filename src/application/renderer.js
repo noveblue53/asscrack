@@ -22,7 +22,7 @@ function formatTime(ms) {
 }
 
 // Use textContent only for peer text.
-function addMessage(from, text, time) {
+function makeMessageItem(from, text, time) {
     const item = document.createElement('li');
     const timeSpan = document.createElement('span');
     timeSpan.className = 'time';
@@ -34,8 +34,21 @@ function addMessage(from, text, time) {
     textSpan.className = 'text';
     textSpan.textContent = String(text ?? '');
     item.append(timeSpan, fromSpan, textSpan);
-    messageList.appendChild(item);
+    item.dataset.time = String(Number(time) || 0);
+    return item;
+}
+
+function addMessage(from, text, time) {
+    messageList.appendChild(makeMessageItem(from, text, time));
     messageList.scrollTop = messageList.scrollHeight;
+}
+
+// Put a history line before the first line that is newer. Equal times keep the arrival sequence.
+function insertMessage(from, text, time) {
+    const item = makeMessageItem(from, text, time);
+    const t = Number(item.dataset.time);
+    const next = Array.from(messageList.children).find(li => Number(li.dataset.time) > t);
+    messageList.insertBefore(item, next ?? null);
 }
 
 // A peer line: <li><span.name/><span.host/><span.voice/></li>. All text goes in with textContent.
@@ -93,6 +106,12 @@ window.asscrack.onMessage(data => {
     const item = peerItems.get(data.peerId);
     if (item && data.from) setPeerName(item, data.from);
     addMessage(data.from, data.text, data.time);
+});
+window.asscrack.onHistory(data => {
+    const lines = Array.isArray(data?.messages) ? [...data.messages] : [];
+    lines.sort((a, b) => (Number(a.time) || 0) - (Number(b.time) || 0));
+    for (const line of lines) insertMessage(line.from, line.text, line.time);
+    messageList.scrollTop = messageList.scrollHeight;
 });
 
 async function login() {

@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('asscrack', {
     onPeerJoined: listen('asscrack:peer-joined'),
     onPeerLeft: listen('asscrack:peer-left'),
     onMessage: listen('asscrack:message'),
+    onHistory: listen('asscrack:history'),
     signal: (peerId, data) => ipcRenderer.invoke('asscrack:signal', { peerId, data }),
     setVoice: state => ipcRenderer.invoke('asscrack:set-voice', state),
     getHost: () => ipcRenderer.invoke('asscrack:host'),

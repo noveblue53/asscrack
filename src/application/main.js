@@ -9,7 +9,7 @@ const __dirname = path.dirname(__filename);
 
 Menu.setApplicationMenu(null);
 
-const EVENTS = ['peer-discovered', 'peer-joined', 'peer-left', 'message', 'signal', 'voice-state', 'host-changed', 'peer-name',
+const EVENTS = ['peer-discovered', 'peer-joined', 'peer-left', 'message', 'history', 'signal', 'voice-state', 'host-changed', 'peer-name',
     'file-offer', 'file-progress', 'file-done', 'file-failed', 'file-refused', 'file-cancelled'];
 
 // Test option: --profile <dir> gives each instance its own user data folder.
