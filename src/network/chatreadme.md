@@ -4,13 +4,16 @@ This test shows if the test copy works on a real local network. Do it on two com
 
 ### Before the test
 
-1. On each computer, get the branch `opus/lan-chat-test-copy` and run `npm install`. The branch is on GitHub only after the operator approves a push. Without a push, copy the repository folder to the second computer.
+1. Get the app on each computer. Use one of these two methods:
+   - **Portable .exe (no install):** run `npm run dist` on one computer. Copy `dist/ASSCRACK-0.1.0-portable.exe` to the other computer. The .exe does not need Node.js.
+   - **Source:** get the branch `opus/lan-chat-test-copy` and run `npm install`.
 2. Make sure that each computer can use multicast on the network. Guest Wi-Fi, client isolation, a VPN or a container network can block mDNS.
-3. On Windows, Windows Firewall can ask for access when Electron starts the first time. Allow Electron on private networks.
+3. On Windows, Windows Firewall can ask for access when the app starts the first time. Allow the app on private networks.
+4. The .exe has no code signature. Windows SmartScreen can show "Windows protected your PC". The user of that computer decides if the .exe can run.
 
 ### The test
 
-1. On computer A, run `npm start`. To see the developer console, run `npm run dev`. It is `npm start` with the developer tools open.
+1. On computer A, start the app: run `npm start`, or start the .exe. To see the developer console, run `npm run dev`, or start the .exe from a terminal with the argument `--dev`.
 2. On computer B, do the same.
 3. On each computer, type a name and the same room name, for example `test1`. Then select Log In.
 4. Record the time. Wait for the other user in the peer list.
@@ -30,6 +33,8 @@ Write PASS or FAIL for each condition:
 | 4 | A message from A appears on B, and a message from B appears on A. | |
 | 5 | When user A closes the app, user A is no longer in the peer list on B. | |
 | 6 | `npm test` passes. | |
+
+With the portable .exe, condition 1 means: the user starts the .exe. Do condition 6 on a computer with the source.
 
 ### If a condition fails
 
