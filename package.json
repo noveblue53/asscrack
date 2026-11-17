@@ -1,6 +1,6 @@
 {
   "name": "asscrack",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Automated Server Switch in Case Relays Are Crashed or Killed",
   "main": "src/application/main.js",
   "type": "module",
