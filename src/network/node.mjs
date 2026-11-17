@@ -81,6 +81,9 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
         }
         pendingHistory.set(peerId, { messages: control.messages, at: Date.now() })
     }
+    let voiceState = { inVoice: false, streamId: null }
+    const voiceLine = () => JSON.stringify({ type: 'voice', inVoice: voiceState.inVoice, streamId: voiceState.streamId })
+
     const election = createElection({
         selfId: node.peerId.toString(),
         sendTo: (peerId, line) => { sessions.get(peerId)?.send(line) },
@@ -124,6 +127,15 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
                     // Ignore an unknown type with no warning.
                     if (control.type === 'host') election.handleAnnouncement(peerId, control)
                     else if (control.type === 'history') handleHistory(peerId, control)
+                    else if (control.type === 'signal') {
+                        if (control.data !== null && typeof control.data === 'object') events.emit('signal', { peerId, data: control.data })
+                    } else if (control.type === 'voice') {
+                        events.emit('voice-state', {
+                            peerId,
+                            inVoice: control.inVoice === true,
+                            streamId: typeof control.streamId === 'string' ? control.streamId : null
+                        })
+                    }
                     return
                 }
                 const message = parseMessage(line, peerId)
@@ -136,6 +148,7 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
         events.emit('peer-joined', { peerId })
         election.sessionOpened(peerId)
         if (election.isHost()) session.send(JSON.stringify({ type: 'history', messages: history.list() }))
+        if (voiceState.inVoice) session.send(voiceLine())
         session.done.catch(() => {}).finally(() => {
             if (sessions.get(peerId) === session) {
                 sessions.delete(peerId)
@@ -213,6 +226,17 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
             return count
         },
         peers: () => [...sessions.keys()],
+        // Send one control line to one peer. Returns true if the session is open.
+        sendTo(peerId, message) {
+            const session = sessions.get(peerId)
+            if (!session) return false
+            return session.send(JSON.stringify(message))
+        },
+        setVoice({ inVoice, streamId = null } = {}) {
+            voiceState = { inVoice: inVoice === true, streamId: typeof streamId === 'string' ? streamId : null }
+            const line = voiceLine()
+            for (const session of sessions.values()) session.send(line)
+        },
         host: () => election.host(),
         isHost: () => election.isHost(),
         history: () => history.list(),

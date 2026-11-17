@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, ipcMain } from 'electron';
+import { app, BrowserWindow, Menu, ipcMain, session } from 'electron';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import { createAsscrackNode } from '../network/node.mjs';
@@ -8,7 +8,28 @@ const __dirname = path.dirname(__filename);
 
 Menu.setApplicationMenu(null);
 
-const EVENTS = ['peer-discovered', 'peer-joined', 'peer-left', 'message'];
+const EVENTS = ['peer-discovered', 'peer-joined', 'peer-left', 'message', 'signal', 'voice-state', 'host-changed'];
+
+// Test option: --profile <dir> gives each instance its own user data folder.
+const profileIndex = process.argv.indexOf('--profile');
+if (profileIndex !== -1 && process.argv[profileIndex + 1]) {
+    app.setPath('userData', path.resolve(process.argv[profileIndex + 1]));
+}
+
+function isAppPage(url) {
+    return typeof url === 'string' && url.startsWith('file://') && url.endsWith('/src/application/index.html');
+}
+
+function setPermissions() {
+    session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
+        const url = details?.requestingUrl ?? webContents?.getURL();
+        callback(permission === 'media' && isAppPage(url));
+    });
+    session.defaultSession.setPermissionCheckHandler((_webContents, permission, requestingOrigin, details) => {
+        const url = details?.requestingUrl ?? requestingOrigin;
+        return permission === 'media' && isAppPage(url);
+    });
+}
 
 let mainWindow = null;
 let node = null;
@@ -30,7 +51,8 @@ function createMainWindow() {
             preload: path.join(__dirname, 'preload.cjs'),
             contextIsolation: true,
             nodeIntegration: false,
-            sandbox: true
+            sandbox: true,
+            autoplayPolicy: 'no-user-gesture-required'
         }
     });
 
@@ -63,6 +85,21 @@ ipcMain.handle('asscrack:send', (_event, text) => {
     return node.send(text);
 });
 
+ipcMain.handle('asscrack:signal', (_event, { peerId, data } = {}) => {
+    if (!node) throw new Error('Not logged in');
+    return node.sendTo(peerId, { type: 'signal', data });
+});
+
+ipcMain.handle('asscrack:set-voice', (_event, state) => {
+    if (!node) throw new Error('Not logged in');
+    node.setVoice(state ?? {});
+});
+
+ipcMain.handle('asscrack:host', () => {
+    if (!node) throw new Error('Not logged in');
+    return { host: node.host() ?? null, self: node.peerId };
+});
+
 app.on('before-quit', event => {
     if (!node || stopping) return;
     event.preventDefault();
@@ -86,4 +123,7 @@ app.on('before-quit', event => {
 
 app.on('window-all-closed', () => app.quit());
 
-app.whenReady().then(createMainWindow);
+app.whenReady().then(() => {
+    setPermissions();
+    createMainWindow();
+});
