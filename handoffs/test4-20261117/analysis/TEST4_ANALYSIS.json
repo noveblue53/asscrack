@@ -1,0 +1,187 @@
+{
+  "time_convention": "each time is the ISO time of the computer that wrote the line. The clocks of A and B are not",
+  "logs": [
+    {
+      "computer": "A",
+      "file": "asscrack-20261117-144733.log",
+      "start": "2026-11-17T19:47:33.958Z",
+      "version": "0.3.1",
+      "unpack_folder": "3MFRiB0yGBsUNqZ5vGfKsx34aEE",
+      "log_app_folder": "asscrack\\logs",
+      "levels": {
+        "EVENT": 15,
+        "INFO": 1,
+        "WINDOW": 1
+      },
+      "window_levels": [
+        "info"
+      ],
+      "warn_or_error_lines": [],
+      "first_session_ms_after_start": 209016,
+      "host_changed_ms_after_session": 3018,
+      "history_applied": null,
+      "history_applied_ms_after_session": null,
+      "history_shown": null,
+      "history_shown_ms_after_session": null,
+      "history_sent": []
+    },
+    {
+      "computer": "A",
+      "file": "asscrack-20261117-145811.log",
+      "start": "2026-11-17T19:58:11.865Z",
+      "version": "0.3.1",
+      "unpack_folder": "3MFRiB0yGBsUNqZ5vGfKsx34aEE",
+      "log_app_folder": "asscrack\\logs",
+      "levels": {
+        "EVENT": 12,
+        "INFO": 3,
+        "WINDOW": 3
+      },
+      "window_levels": [
+        "info"
+      ],
+      "warn_or_error_lines": [],
+      "first_session_ms_after_start": 4961,
+      "host_changed_ms_after_session": 3,
+      "history_applied": "History applied: 3 of 3 messages are new",
+      "history_applied_ms_after_session": 4,
+      "history_shown": "History shown: 3 lines",
+      "history_shown_ms_after_session": 5,
+      "history_sent": [
+        {
+          "time": "2026-11-17T19:59:19.897Z",
+          "text": "History sent to <peer>: 3 messages"
+        }
+      ]
+    },
+    {
+      "computer": "B",
+      "file": "asscrack-20261117-145057.log",
+      "start": "2026-11-17T19:50:57.830Z",
+      "version": "0.3.1",
+      "unpack_folder": "3MFRiB0yGBsUNqZ5vGfKsx34aEE",
+      "log_app_folder": "asscrack\\logs",
+      "levels": {
+        "EVENT": 19,
+        "INFO": 2,
+        "WINDOW": 2
+      },
+      "window_levels": [
+        "info"
+      ],
+      "warn_or_error_lines": [],
+      "first_session_ms_after_start": 4099,
+      "host_changed_ms_after_session": 3013,
+      "history_applied": null,
+      "history_applied_ms_after_session": null,
+      "history_shown": null,
+      "history_shown_ms_after_session": null,
+      "history_sent": [
+        {
+          "time": "2026-11-17T19:58:15.779Z",
+          "text": "History sent to <peer>: 3 messages"
+        }
+      ]
+    },
+    {
+      "computer": "B",
+      "file": "asscrack-20261117-145913.log",
+      "start": "2026-11-17T19:59:13.973Z",
+      "version": "0.3.1",
+      "unpack_folder": "3MFRiB0yGBsUNqZ5vGfKsx34aEE",
+      "log_app_folder": "asscrack\\logs",
+      "levels": {
+        "EVENT": 6,
+        "INFO": 2,
+        "WINDOW": 2
+      },
+      "window_levels": [
+        "info"
+      ],
+      "warn_or_error_lines": [],
+      "first_session_ms_after_start": 4876,
+      "host_changed_ms_after_session": 2,
+      "history_applied": "History applied: 3 of 3 messages are new",
+      "history_applied_ms_after_session": 3,
+      "history_shown": "History shown: 3 lines",
+      "history_shown_ms_after_session": 4,
+      "history_sent": []
+    }
+  ],
+  "inputs_sha256": {
+    "this-pc/asscrack-20261117-144733.log": "69af6c7425d6b279fdb229e8ee883556ee811651773df4d241bc0fec53276f8d",
+    "this-pc/asscrack-20261117-145811.log": "a51855e3c6850c6f4fd578b645822994021cbb2e535857f35f3b0d9b3d12ea69",
+    "other-pc/asscrack-20261117-145057.log": "45141b18d8808c0f7f84c6adfad34f2c58f6631bdbc260bb55c4eb5ae048ad68",
+    "other-pc/asscrack-20261117-145913.log": "5168a3ea236c20f5b86488ad6e85f1548bcc6a1ff78b592400d56803c5aedca1"
+  },
+  "transfers": [
+    {
+      "offer": "63133016",
+      "receiver": "B",
+      "events": [
+        "B file-offer 19:53:09.775",
+        "A file-refused 19:53:36.980"
+      ],
+      "receiver_offer_to_end_ms": null,
+      "receiver_end": null,
+      "sender_end_events": [
+        "file-refused"
+      ]
+    },
+    {
+      "offer": "77b5e2ba",
+      "receiver": "B",
+      "events": [
+        "B file-offer 19:54:11.067",
+        "A file-done 19:54:46.434",
+        "B file-done 19:54:49.277"
+      ],
+      "receiver_offer_to_end_ms": 38210,
+      "receiver_end": "file-done",
+      "sender_end_events": [
+        "file-done"
+      ]
+    },
+    {
+      "offer": "d36231ed",
+      "receiver": "A",
+      "events": [
+        "A file-offer 19:56:25.444",
+        "A file-cancelled 19:56:28.144"
+      ],
+      "receiver_offer_to_end_ms": 2700,
+      "receiver_end": "file-cancelled",
+      "sender_end_events": []
+    },
+    {
+      "offer": "77f4d79b",
+      "receiver": "A",
+      "events": [
+        "A file-offer 19:56:34.164",
+        "B file-done 19:56:48.597",
+        "A file-done 19:56:49.648"
+      ],
+      "receiver_offer_to_end_ms": 15484,
+      "receiver_end": "file-done",
+      "sender_end_events": [
+        "file-done"
+      ]
+    },
+    {
+      "offer": "000a1bf9",
+      "receiver": "A",
+      "events": [
+        "A file-offer 19:57:32.595",
+        "B file-done 19:57:38.012",
+        "A file-done 19:57:39.063"
+      ],
+      "receiver_offer_to_end_ms": 6468,
+      "receiver_end": "file-done",
+      "sender_end_events": [
+        "file-done"
+      ]
+    }
+  ],
+  "clock_offset_estimate_ms_A_minus_B": 1047,
+  "unsent_note": "The log lines of file events have no direction and no 'by' field."
+}

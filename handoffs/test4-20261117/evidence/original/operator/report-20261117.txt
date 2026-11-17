@@ -1,0 +1,13 @@
+1 - pass
+2 - pass
+3 - pass
+4 - pass
+5 - pass
+6 - pass
+7 - pass
+8 - pass
+9 - pass
+10/11 - didnt check
+
+After disconnecting with A and rejoining, i was able to verify that chat history works as intended.
+I then disconnected with B and rejoined, and chat history persisted. It seems to work well.

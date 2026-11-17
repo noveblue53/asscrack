@@ -1,0 +1,1 @@
+I used 2 PCs, and modified the test card - I tested by accepting and then refusing in sequence with just 2 pcs instead of asynchronously with 3 PCs.
