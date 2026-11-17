@@ -67,12 +67,21 @@ app.on('before-quit', event => {
     if (!node || stopping) return;
     event.preventDefault();
     stopping = true;
-    node.stop()
-        .catch(err => console.error('Node stop failed:', err))
-        .finally(() => {
-            node = null;
-            app.quit();
-        });
+    let timer;
+    const timeout = new Promise(resolve => {
+        timer = setTimeout(() => {
+            console.error('Node stop timed out');
+            resolve();
+        }, 3000);
+    });
+    Promise.race([
+        node.stop().catch(err => console.error('Node stop failed:', err)),
+        timeout
+    ]).finally(() => {
+        clearTimeout(timer);
+        node = null;
+        app.exit(0);
+    });
 });
 
 app.on('window-all-closed', () => app.quit());
