@@ -27,3 +27,17 @@ test('main.js writes a log file with the window console', async () => {
     assert.ok(source.includes("'console-message'"));
     assert.ok(source.includes("app.getPath('logs')"));
 });
+
+test('main.js forwards the topology event', async () => {
+    const source = await read('main.js');
+    const match = source.match(/const EVENTS = \[([^\]]*)\]/);
+    assert.ok(match, 'EVENTS not found in main.js');
+    assert.match(match[1], /'topology'/);
+    assert.ok(source.includes("ipcMain.handle('asscrack:topology'"));
+});
+
+test('preload.cjs exposes onTopology and getTopology', async () => {
+    const source = await read('preload.cjs');
+    assert.ok(source.includes("onTopology: listen('asscrack:topology')"));
+    assert.ok(source.includes("getTopology: () => ipcRenderer.invoke('asscrack:topology')"));
+});

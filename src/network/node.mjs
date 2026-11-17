@@ -68,6 +68,33 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
     const HISTORY_KEEP_MS = 10000
     // The last history line from each peer that was not the host when it arrived.
     const pendingHistory = new Map()
+    const selfId = node.peerId.toString()
+    // The last valid links list from each peer with an open session.
+    const links = new Map()
+    const MAX_LINKS = 256
+
+    function topology() {
+        const all = { [selfId]: [...sessions.keys()] }
+        for (const [peerId, list] of links) if (sessions.has(peerId)) all[peerId] = [...list]
+        return { self: selfId, links: all }
+    }
+
+    function emitTopology() {
+        events.emit('topology', topology())
+    }
+
+    // Tell all open sessions which sessions this node has.
+    function broadcastLinks() {
+        const line = JSON.stringify({ type: 'links', peers: [...sessions.keys()] })
+        for (const session of sessions.values()) session.send(line)
+    }
+
+    // The links line is untrusted data. Returns the list without duplicates, or null if it is not valid.
+    function validLinks(peers) {
+        if (!Array.isArray(peers) || peers.length > MAX_LINKS) return null
+        for (const p of peers) if (typeof p !== 'string' || p.length < 1 || p.length > 128) return null
+        return [...new Set(peers)]
+    }
 
     function applyHistory(messages) {
         if (!Array.isArray(messages)) return
@@ -151,6 +178,16 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
                             events.emit('peer-name', { peerId, name: peerName })
                         }
                     }
+                    else if (control.type === 'links') {
+                        const list = validLinks(control.peers)
+                        if (list && sessions.get(peerId) === session) {
+                            const old = links.get(peerId)
+                            if (!old || old.length !== list.length || old.some((p, i) => p !== list[i])) {
+                                links.set(peerId, list)
+                                emitTopology()
+                            }
+                        }
+                    }
                     else if (control.type === 'signal') {
                         if (control.data !== null && typeof control.data === 'object') events.emit('signal', { peerId, data: control.data })
                     } else if (control.type === 'file-offer' || control.type === 'file-refuse' || control.type === 'file-cancel') {
@@ -181,6 +218,8 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
             console.info(`History sent to ${peerId}: ${messages.length} messages`)
         }
         if (voiceState.inVoice) session.send(voiceLine())
+        broadcastLinks()
+        emitTopology()
         session.done.catch(() => {}).finally(() => {
             if (sessions.get(peerId) === session) {
                 sessions.delete(peerId)
@@ -189,6 +228,9 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
                 events.emit('peer-left', { peerId })
                 election.sessionClosed(peerId)
                 files.peerLeft(peerId)
+                links.delete(peerId)
+                broadcastLinks()
+                emitTopology()
             }
         })
     }
@@ -219,18 +261,37 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
         }
         // Only the node with the lower peer ID opens the chat stream.
         if (!(self < remoteId)) return
-        if (sessions.has(remoteId) || dialing.has(remoteId)) return
-        // libp2p also emits peer:discovery for peers that connect() or an inbound dial added.
-        // Do not dial when a chat stream to that peer is already open or in negotiation.
-        const chatOpen = node.getConnections(detail.id)
-            .some(c => c.streams.some(st => st.protocol === CHAT_PROTOCOL))
-        if (chatOpen) return
+        dialDiscovered(detail.id, 0)
+    })
+
+    // libp2p also emits peer:discovery after identify on a connection that connect() or a remote dial opened.
+    // At that time the chat stream on that connection can still be in protocol negotiation. libp2p sets
+    // stream.protocol only after the negotiation, so a check of the protocol alone does not see that stream.
+    // Thus wait while a stream with no protocol is on a connection to the peer, then check again.
+    const waitingDial = new Map()
+    const NEGOTIATION_CHECKS = 20
+    const NEGOTIATION_CHECK_MS = 100
+    let stopped = false
+    function dialDiscovered(id, attempt) {
+        const remoteId = id.toString()
+        if (stopped || sessions.has(remoteId) || dialing.has(remoteId)) return
+        if (attempt === 0 && waitingDial.has(remoteId)) return
+        const streams = node.getConnections(id).flatMap(c => c.streams)
+        // Do not dial when a chat stream to that peer is already open.
+        if (streams.some(st => st.protocol === CHAT_PROTOCOL)) return
+        if (streams.some(st => !st.protocol) && attempt < NEGOTIATION_CHECKS) {
+            waitingDial.set(remoteId, setTimeout(() => {
+                waitingDial.delete(remoteId)
+                dialDiscovered(id, attempt + 1)
+            }, NEGOTIATION_CHECK_MS))
+            return
+        }
         dialing.add(remoteId)
-        node.dialProtocol(detail.id, CHAT_PROTOCOL)
+        node.dialProtocol(id, CHAT_PROTOCOL)
             .then(stream => attachChat(stream, remoteId))
             .catch(err => console.warn(`Dial to discovered peer ${remoteId} failed:`, err?.message ?? err))
             .finally(() => dialing.delete(remoteId))
-    })
+    }
 
     await node.start()
     election.start()
@@ -263,6 +324,7 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
         },
         peers: () => [...sessions.keys()],
         peerNames: () => Object.fromEntries([...names].filter(([peerId]) => sessions.has(peerId))),
+        topology,
         // Send one control line to one peer. Returns true if the session is open.
         sendTo(peerId, message) {
             const session = sessions.get(peerId)
@@ -283,6 +345,9 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
         refuseFile: offerId => files.refuseFile(offerId),
         cancelFile: offerId => files.cancelFile(offerId),
         async stop() {
+            stopped = true
+            for (const timer of waitingDial.values()) clearTimeout(timer)
+            waitingDial.clear()
             await files.stop()
             election.stop()
             const pending = [...sessions.values()].map(s => { s.close(); return s.done })

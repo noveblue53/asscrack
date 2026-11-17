@@ -259,3 +259,85 @@ test('the host and the member log the history that they send and apply', { timeo
         await first.stop()
     }
 })
+
+function fullMesh(topology, ids) {
+    if (topology === null) return false
+    return ids.every(id => {
+        const list = topology.links[id]
+        return Array.isArray(list) && ids.filter(other => other !== id).every(other => list.includes(other))
+    })
+}
+
+test('three nodes in one room send links lines and show the full mesh, then the stopped node goes', { timeout: 40000 }, async () => {
+    const opts = { room: 'topology-test', listen: ['/ip4/0.0.0.0/tcp/0'], discovery: true, discoveryInterval: 1000 }
+    const nodes = [await createAsscrackNode(opts), await createAsscrackNode(opts), await createAsscrackNode(opts)]
+    const last = new Map(nodes.map(n => [n, null]))
+    for (const n of nodes) n.events.on('topology', t => last.set(n, t))
+    let stopped = false
+    try {
+        const ids = nodes.map(n => n.peerId)
+        const deadline = Date.now() + 25000
+        while (!nodes.every(n => fullMesh(last.get(n), ids)) && Date.now() < deadline) await delay(50)
+        for (const n of nodes) {
+            assert.ok(fullMesh(last.get(n), ids), `No full mesh topology event on ${n.peerId}`)
+            assert.equal(last.get(n).self, n.peerId)
+            assert.deepEqual(n.topology(), last.get(n))
+        }
+
+        const [gone, ...rest] = nodes
+        await gone.stop()
+        stopped = true
+        const restIds = rest.map(n => n.peerId)
+        const noGone = t => t !== null && !Object.hasOwn(t.links, gone.peerId) &&
+            restIds.every(id => Array.isArray(t.links[id]) && !t.links[id].includes(gone.peerId)) &&
+            fullMesh(t, restIds)
+        await waitFor(() => rest.every(n => noGone(last.get(n))))
+        for (const n of rest) assert.deepEqual(n.topology(), last.get(n))
+    } finally {
+        if (!stopped) await nodes[0].stop()
+        await nodes[1].stop()
+        await nodes[2].stop()
+    }
+})
+
+test('a links line that is not valid causes no topology change and no warning', { timeout: 15000 }, async () => {
+    const base = { room: 'test', listen: ['/ip4/127.0.0.1/tcp/0'], discovery: false }
+    const a = await createAsscrackNode(base)
+    const b = await createAsscrackNode(base)
+    const outgoing = pushable()
+    const warnings = []
+    const originalWarn = console.warn
+    console.warn = (...args) => warnings.push(args.join(' '))
+    try {
+        const logA = record(a)
+        const stream = await b.libp2p.dialProtocol(multiaddr(a.getMultiaddrs()[0]), CHAT_PROTOCOL)
+        stream.sink(outgoing).catch(() => {})
+        await waitFor(() => logA.joined.length === 1)
+        await delay(100)
+        const before = a.topology()
+        const changes = []
+        a.events.on('topology', t => changes.push(t))
+
+        outgoing.push(Buffer.from(JSON.stringify({ type: 'links', peers: 'not an array' }) + '\n'))
+        outgoing.push(Buffer.from(JSON.stringify({ type: 'links', peers: [a.peerId, 5] }) + '\n'))
+        outgoing.push(Buffer.from(JSON.stringify({ type: 'links', peers: Array.from({ length: 257 }, (_, i) => `p${i}`) }) + '\n'))
+        outgoing.push(Buffer.from(JSON.stringify({ type: 'links', peers: [''] }) + '\n'))
+        outgoing.push(Buffer.from(JSON.stringify({ from: 'raw', text: 'valid', time: 123 }) + '\n'))
+        await waitFor(() => logA.messages.length === 1)
+        await delay(200)
+        assert.deepEqual(changes, [])
+        assert.deepEqual(a.topology(), before)
+        assert.ok(!Object.hasOwn(before.links, b.peerId))
+        assert.deepEqual(warnings, [])
+
+        // A valid line with a duplicate is accepted once, without the duplicate.
+        outgoing.push(Buffer.from(JSON.stringify({ type: 'links', peers: [a.peerId, a.peerId] }) + '\n'))
+        await waitFor(() => changes.length === 1)
+        assert.deepEqual(a.topology().links[b.peerId], [a.peerId])
+    } finally {
+        console.warn = originalWarn
+        outgoing.end()
+        await b.stop()
+        await a.stop()
+    }
+})

@@ -21,6 +21,8 @@ contextBridge.exposeInMainWorld('asscrack', {
     onVoiceState: listen('asscrack:voice-state'),
     onHostChanged: listen('asscrack:host-changed'),
     onPeerName: listen('asscrack:peer-name'),
+    onTopology: listen('asscrack:topology'),
+    getTopology: () => ipcRenderer.invoke('asscrack:topology'),
     offerFile: async file => {
         const filePath = webUtils.getPathForFile(file);
         if (!filePath) throw new Error('The file has no path');

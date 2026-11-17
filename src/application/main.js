@@ -11,7 +11,7 @@ const __dirname = path.dirname(__filename);
 Menu.setApplicationMenu(null);
 
 const EVENTS = ['peer-discovered', 'peer-joined', 'peer-left', 'message', 'history', 'signal', 'voice-state', 'host-changed', 'peer-name',
-    'file-offer', 'file-progress', 'file-done', 'file-failed', 'file-refused', 'file-cancelled'];
+    'file-offer', 'file-progress', 'file-done', 'file-failed', 'file-refused', 'file-cancelled', 'topology'];
 
 // Test option: --profile <dir> gives each instance its own user data folder.
 const profileIndex = process.argv.indexOf('--profile');
@@ -179,6 +179,10 @@ ipcMain.handle('asscrack:set-voice', (_event, state) => {
 ipcMain.handle('asscrack:host', () => {
     if (!node) throw new Error('Not logged in');
     return { host: node.host() ?? null, self: node.peerId };
+});
+
+ipcMain.handle('asscrack:topology', () => {
+    return node ? node.topology() : null;
 });
 
 ipcMain.handle('asscrack:offer-file', (_event, filePath) => {
