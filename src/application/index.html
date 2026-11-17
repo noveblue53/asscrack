@@ -71,10 +71,18 @@
       <section id="message-panel" class="panel">
         <ul id="messages" role="log"></ul>
       </section>
-      <!-- The node map panel. A later package (nodemap.js) draws into #node-map. -->
+      <!-- The node map panel. nodemap.js draws one SVG into #node-map. -->
       <aside id="map-panel" class="panel" aria-hidden="true">
         <h2 class="panel-head">Network map <button id="map-close" type="button">Close</button></h2>
         <div id="node-map"></div>
+        <div id="map-legend">
+          <span class="key"><span class="sw sw-relay">RELAY</span>host, voice relay</span>
+          <span class="key"><span class="sw sw-mesh"></span>chat link</span>
+          <span class="key"><span class="sw sw-voice"></span>voice</span>
+          <span class="key"><span class="sw sw-speak"></span>speaks (while you are in voice)</span>
+          <span class="key"><span class="sw sw-file"></span>file transfer</span>
+          <p class="note">File arrows: only the transfers of this computer.</p>
+        </div>
       </aside>
     </div>
 
@@ -99,6 +107,7 @@
   </section>
 
   <script src="voice.js"></script>
+  <script src="nodemap.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

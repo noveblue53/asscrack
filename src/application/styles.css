@@ -851,29 +851,221 @@ body.map-open #map-panel {
   overflow: hidden;
 }
 
-/* The text shows only while the container is empty. */
-#node-map:empty {
+/* The picture of nodemap.js: one SVG. The positions are SVG attributes that nodemap.js sets. */
+#node-map svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  user-select: none;
+}
+
+.nm-edge {
+  animation: nm-fade 200ms ease;
+}
+
+/* A chat session between two members. */
+.nm-edge-mesh {
+  stroke: #5f9bd6;
+  stroke-width: 1.5;
+  opacity: 0.6;
+}
+
+/* The voice connection of a voice member to the host. */
+.nm-edge-voice {
+  stroke: #3fc41f;
+  stroke-width: 4.5;
+  stroke-linecap: round;
+  opacity: 0.75;
+}
+
+/* An active file transfer of this computer. The arrow head is the SVG marker nm-arrow. */
+.nm-edge-transfer {
+  fill: none;
+  stroke: #e07c00;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-dasharray: 7 5;
+}
+
+/* A node: the same glossy ball as the buddy icon, with the name color. */
+.nm-body {
+  animation: nm-in 220ms var(--ease);
+}
+
+.nm-orb {
+  fill: var(--nc, #6b8fb3);
+  stroke: rgba(8, 50, 120, 0.4);
+  stroke-width: 1;
+}
+
+.nm-node.host .nm-orb {
+  stroke: #e0a800;
+  stroke-width: 2.5;
+}
+
+.nm-orb-light,
+.nm-letter {
+  pointer-events: none;
+}
+
+.nm-letter {
+  fill: #ffffff;
+  font: 700 13px var(--font-title);
+}
+
+/* The ring of the own node. */
+.nm-halo {
+  fill: none;
+  stroke: var(--blue);
+  stroke-width: 2;
+  opacity: 0;
+}
+
+.nm-node.self .nm-halo {
+  opacity: 0.9;
+}
+
+.nm-name {
+  fill: var(--ink);
+  font: 600 11px var(--font-small);
+  paint-order: stroke;
+  stroke: rgba(255, 255, 255, 0.92);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+.nm-node.self .nm-name {
+  fill: var(--blue-dark);
+  font-weight: 700;
+}
+
+/* The RELAY badge: only on the host. */
+.nm-badge {
+  display: none;
+}
+
+.nm-node.host .nm-badge {
+  display: inline;
+}
+
+.nm-badge rect {
+  stroke: #c79a00;
+  stroke-width: 1;
+}
+
+.nm-badge text {
+  fill: #6b4300;
+  font: 700 8.5px var(--font-small);
+  letter-spacing: 0.5px;
+}
+
+.nm-voice-dot {
+  display: none;
+  stroke: #ffffff;
+  stroke-width: 1.5;
+}
+
+.nm-node.in-voice .nm-voice-dot {
+  display: inline;
+  fill: #45c422;
+}
+
+.nm-node.muted .nm-voice-dot {
+  fill: #f0a400;
+}
+
+/* The speaking pulse. It moves only while the node speaks, the panel is open and the page is visible. */
+.nm-pulse {
+  fill: none;
+  stroke: #3fc41f;
+  stroke-width: 2.5;
+  opacity: 0;
+}
+
+.nm-node.speaking .nm-pulse {
+  opacity: 0.9;
+}
+
+body.map-open #node-map:not([data-paused]) .nm-node.speaking .nm-pulse {
+  animation: ring 900ms ease-out infinite;
+}
+
+/* The legend of the map. */
+#map-legend {
+  flex: none;
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 16px;
-  text-align: center;
-  font-size: 12.5px;
-  color: #6f8aa5;
+  gap: 3px 12px;
+  padding: 5px 10px 6px;
+  border-top: 1px solid var(--line-soft);
+  font: 11px var(--font-small);
+  color: var(--ink-soft);
+  background: rgba(255, 255, 255, 0.55);
 }
 
-#node-map:empty::before {
+#map-legend .key {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+#map-legend .note {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--ink);
+}
+
+.sw {
+  flex: none;
+  display: inline-block;
+}
+
+.sw-relay {
+  padding: 0 5px;
+  border: 1px solid #c79a00;
+  border-radius: 6px;
+  font: 700 8.5px/11px var(--font-small);
+  letter-spacing: 0.5px;
+  color: #6b4300;
+  background: linear-gradient(180deg, #fff3b8 0%, #ffd95a 50%, #f7c22c 51%, #ffe07a 100%);
+}
+
+.sw-mesh {
+  width: 18px;
+  border-top: 2px solid #8fbbe4;
+}
+
+.sw-voice {
+  width: 18px;
+  height: 5px;
+  border-radius: 3px;
+  background: #6fd355;
+}
+
+.sw-speak {
+  width: 11px;
+  height: 11px;
+  border: 2px solid #3fc41f;
+  border-radius: 50%;
+}
+
+.sw-file {
+  position: relative;
+  width: 16px;
+  margin-right: 5px;
+  border-top: 2px dashed #e07c00;
+}
+
+.sw-file::after {
   content: '';
-  width: 56px;
-  height: 56px;
-  background: url('img/icon-map-dark.svg') center / contain no-repeat;
-  opacity: 0.7;
-}
-
-#node-map:empty::after {
-  content: 'The network map comes in a later version.';
+  position: absolute;
+  top: -5px;
+  right: -6px;
+  border: 4px solid transparent;
+  border-left: 6px solid #e07c00;
+  border-right: 0;
 }
 
 /* ---- Transfer table ---- */
@@ -1270,6 +1462,15 @@ body.map-open #map-panel {
 @keyframes chip-b {
   from { opacity: 0; transform: translateX(-6px); }
   to { opacity: 1; transform: none; }
+}
+
+@keyframes nm-in {
+  from { opacity: 0; transform: scale(0.6); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes nm-fade {
+  from { opacity: 0; }
 }
 
 @keyframes ring {

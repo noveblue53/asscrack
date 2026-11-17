@@ -159,6 +159,7 @@ function setPeerName(item, name) {
     item.querySelector('.name').textContent = String(name);
     item.querySelector('.avatar').textContent = firstLetter(name);
     setNameColor(item, name);
+    updateNodeMap();
 }
 
 let selfLine = null;
@@ -180,6 +181,7 @@ function removePeer(peerId) {
     if (!item) return;
     peerItems.delete(peerId);
     updatePeerCount();
+    updateNodeMap();
     if (reducedMotion.matches) {
         item.remove();
         return;
@@ -235,6 +237,7 @@ async function login() {
         peerList.prepend(selfLine);
         updatePeerCount();
         refreshHostInfo();
+        refreshTopology();
         updateVoiceView();
         messageInput.focus();
     } catch (err) {
@@ -315,6 +318,7 @@ function updateVoiceView() {
     muteButton.textContent = ownMuted ? 'Unmute' : 'Mute';
     muteButton.setAttribute('aria-pressed', String(ownMuted));
     document.body.classList.toggle('in-voice', ownInVoice);
+    updateNodeMap();
 }
 
 async function refreshHostInfo() {
@@ -473,6 +477,7 @@ function setTransferState(entry, state, text) {
     } else if (state === 'receiving') {
         buttons.append(makeButton('Cancel', () => callFile(window.asscrack.cancelFile, offerId)));
     }
+    updateNodeMap();
 }
 
 // A sender row of one receiver gets a Cancel button while the row is offered or sending.
@@ -621,3 +626,60 @@ async function sendFile() {
 }
 
 sendFileButton.addEventListener('click', sendFile);
+
+// ---- Node map ----
+// nodemap.js draws the map in #node-map. This part gives it the data at each change of the data.
+
+let topologyLinks = {}; // peer ID -> the peer IDs that it has a chat session with
+let topologySelf = null;
+
+function setTopology(data) {
+    if (data === null || typeof data !== 'object') return;
+    if (data.links !== null && typeof data.links === 'object') topologyLinks = data.links;
+    if (typeof data.self === 'string') topologySelf = data.self;
+    updateNodeMap();
+}
+
+async function refreshTopology() {
+    try {
+        setTopology(await window.asscrack.getTopology());
+    } catch (err) {
+        console.warn('Topology query failed:', err?.message ?? err);
+    }
+}
+
+// The nodes are the lines of the buddy list. The voice data is the data of updateVoiceView().
+// The transfers are the rows of this computer with the state sending or receiving.
+function updateNodeMap() {
+    if (!window.nodeMap || !selfLine) return;
+    const voice = window.voice.state();
+    const members = voice.members ?? {};
+    const self = selfId ?? topologySelf;
+    const nodes = [];
+    if (self) {
+        nodes.push({ id: self, name: ownName, color: nameColorClass(ownName), inVoice: voice.inVoice === true, muted: ownMuted, speaking: false });
+    }
+    for (const [peerId, item] of peerItems) {
+        const name = item.querySelector('.name').textContent;
+        nodes.push({
+            id: peerId,
+            name,
+            color: nameColorClass(name),
+            inVoice: members[peerId]?.inVoice === true,
+            muted: members[peerId]?.muted === true,
+            speaking: speaking.has(peerId)
+        });
+    }
+    const active = [];
+    if (self) {
+        for (const entry of transfers.values()) {
+            if (entry.state !== 'sending' && entry.state !== 'receiving') continue;
+            const { offerId, peerId } = entry.item.dataset;
+            const id = `${offerId}|${peerId}`;
+            active.push(entry.direction === 'send' ? { id, from: self, to: peerId } : { id, from: peerId, to: self });
+        }
+    }
+    window.nodeMap.update({ self, host: hostId, nodes, links: topologyLinks, transfers: active });
+}
+
+window.asscrack.onTopology(setTopology);
