@@ -1,0 +1,15 @@
+2026-11-17T19:13:22.696Z INFO ASSCRACK 0.3.0 Electron 40.5.0 args ["D:\\wt\\hr\\node_modules\\electron\\dist\\electron.exe",".","--profile","D:\\Github Repos\\asscrack\\.repro\\checks\\hcheck\\habmwl2lm27\\p1","--downloads","D:\\Github Repos\\asscrack\\.repro\\checks\\hcheck\\habmwl2lm27\\p1","--use-fake-device-for-media-stream","--use-fake-ui-for-media-stream","--remote-debugging-port=9601"] log D:\Github Repos\asscrack\.repro\checks\hcheck\habmwl2lm27\p1\logs\asscrack-20261117-141322.log
+2026-11-17T19:13:22.898Z EVENT event peer-discovered peer 12D3KooWAhcKRQRTprRUA4CmRLYP6c1nuGtHthcbeQNrVvoaLFi8
+2026-11-17T19:13:22.899Z WINDOW info peer-discovered [object Object] (file:///D:/wt/hr/src/application/renderer.js:96)
+2026-11-17T19:13:22.936Z EVENT event peer-joined peer 12D3KooWAhcKRQRTprRUA4CmRLYP6c1nuGtHthcbeQNrVvoaLFi8
+2026-11-17T19:13:22.938Z EVENT event peer-name peer 12D3KooWAhcKRQRTprRUA4CmRLYP6c1nuGtHthcbeQNrVvoaLFi8
+2026-11-17T19:13:25.953Z EVENT event host-changed peer 12D3KooWAhcKRQRTprRUA4CmRLYP6c1nuGtHthcbeQNrVvoaLFi8
+2026-11-17T19:13:25.971Z EVENT event message peer 12D3KooWAhcKRQRTprRUA4CmRLYP6c1nuGtHthcbeQNrVvoaLFi8 ids 5ff1e8d4-9ca7-43e1-8489-0581f2b4afbd count 1
+2026-11-17T19:13:27.163Z EVENT event voice-state peer 12D3KooWAhcKRQRTprRUA4CmRLYP6c1nuGtHthcbeQNrVvoaLFi8
+2026-11-17T19:13:30.039Z EVENT event peer-left peer 12D3KooWAhcKRQRTprRUA4CmRLYP6c1nuGtHthcbeQNrVvoaLFi8
+2026-11-17T19:13:30.039Z EVENT event host-changed peer 12D3KooWJVLydtqistcdZdqt1QnvqXAjvJh5BadeuoG9Z1Y45RPn
+2026-11-17T19:13:31.093Z EVENT event peer-discovered peer 12D3KooWNPRWSWVCYPdbVoFeN327vtnbiQPFncQ4MMDkBS8cMnxv
+2026-11-17T19:13:31.097Z WINDOW info peer-discovered [object Object] (file:///D:/wt/hr/src/application/renderer.js:96)
+2026-11-17T19:13:31.125Z EVENT event peer-joined peer 12D3KooWNPRWSWVCYPdbVoFeN327vtnbiQPFncQ4MMDkBS8cMnxv
+2026-11-17T19:13:31.126Z INFO History sent to 12D3KooWNPRWSWVCYPdbVoFeN327vtnbiQPFncQ4MMDkBS8cMnxv: 3 messages
+2026-11-17T19:13:31.126Z EVENT event peer-name peer 12D3KooWNPRWSWVCYPdbVoFeN327vtnbiQPFncQ4MMDkBS8cMnxv

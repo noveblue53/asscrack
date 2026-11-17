@@ -1,0 +1,12 @@
+2026-11-17T19:13:30.937Z INFO ASSCRACK 0.3.0 Electron 40.5.0 args ["D:\\wt\\hr\\node_modules\\electron\\dist\\electron.exe",".","--profile","D:\\Github Repos\\asscrack\\.repro\\checks\\hcheck\\habmwl2lm27\\p2","--downloads","D:\\Github Repos\\asscrack\\.repro\\checks\\hcheck\\habmwl2lm27\\p2","--use-fake-device-for-media-stream","--use-fake-ui-for-media-stream","--remote-debugging-port=9602"] log D:\Github Repos\asscrack\.repro\checks\hcheck\habmwl2lm27\p2\logs\asscrack-20261117-141330.log
+2026-11-17T19:13:31.095Z EVENT event peer-discovered peer 12D3KooWJVLydtqistcdZdqt1QnvqXAjvJh5BadeuoG9Z1Y45RPn
+2026-11-17T19:13:31.099Z WINDOW info peer-discovered [object Object] (file:///D:/wt/hr/src/application/renderer.js:96)
+2026-11-17T19:13:31.123Z EVENT event peer-joined peer 12D3KooWJVLydtqistcdZdqt1QnvqXAjvJh5BadeuoG9Z1Y45RPn
+2026-11-17T19:13:31.125Z EVENT event peer-name peer 12D3KooWJVLydtqistcdZdqt1QnvqXAjvJh5BadeuoG9Z1Y45RPn
+2026-11-17T19:13:31.126Z EVENT event host-changed peer 12D3KooWJVLydtqistcdZdqt1QnvqXAjvJh5BadeuoG9Z1Y45RPn
+2026-11-17T19:13:31.127Z INFO History applied: 3 of 3 messages are new
+2026-11-17T19:13:31.128Z EVENT event history ids 5ff1e8d4-9ca7-43e1-8489-0581f2b4afbd,0b648cd5-001b-47cb-be9f-f8a37dba9ea3,2f178021-91e2-43e7-bbb2-bc67ff512ad2 count 3
+2026-11-17T19:13:31.128Z EVENT event voice-state peer 12D3KooWJVLydtqistcdZdqt1QnvqXAjvJh5BadeuoG9Z1Y45RPn
+2026-11-17T19:13:31.129Z WINDOW info History shown: 3 lines (file:///D:/wt/hr/src/application/renderer.js:114)
+2026-11-17T19:13:39.713Z EVENT event peer-left peer 12D3KooWJVLydtqistcdZdqt1QnvqXAjvJh5BadeuoG9Z1Y45RPn
+2026-11-17T19:13:39.714Z EVENT event host-changed peer 12D3KooWNPRWSWVCYPdbVoFeN327vtnbiQPFncQ4MMDkBS8cMnxv

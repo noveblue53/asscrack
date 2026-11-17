@@ -2,6 +2,10 @@
  "handoff": "test2-20261117",
  "work_commit": "aeff7c7",
  "files": {
+  ".gitattributes": {
+   "sha256": "096f49ce7da388819a4b1c04f6cd26db155bc19fccf3cf69a6d7715586a28a4a",
+   "bytes": 102
+  },
   "START_HERE.md": {
    "sha256": "88528755506e043ac91a25b7ea2cb4e5f9633285ad111268fc71991cbc26cee0",
    "bytes": 2673
