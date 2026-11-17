@@ -8,7 +8,7 @@ Each result has one of these labels:
 
 ## 0.4.0: a new look, the network map and cancel for one receiver
 
-- **Build:** `dist/ASSCRACK-0.4.0-portable.exe`, 96,423,270 bytes, SHA-256 `14f1566a…`. Test card 5 is at the top of
+- **Build:** `dist/ASSCRACK-0.4.0-portable.exe`, 96,412,548 bytes, SHA-256 `35d29b03…`. Test card 5 is at the top of
   `src/network/chatreadme.md`. There is no LAN result yet.
 
 - **New look:** a 2000s style (Frutiger Aero, Windows XP, LimeWire and AOL) with a modern feel. The login screen is a
@@ -21,14 +21,17 @@ Each result has one of these labels:
 - **Cancel for one receiver:** each sender row of one receiver has a Cancel button. The other receivers continue.
 - **Fault fixed (127.0.0.1):** when a receiver cancelled, the sender could show "Failed" in place of "Cancelled".
   The window check failed 1 of 7 runs because of this. A new test reproduces the fault on the old code.
+- **Fault fixed (127.0.0.1):** when the sender cancelled, the receiver could show "Failed" in place of "Cancelled".
+  This is the same race on the receiver side. A new window check found it (1 of 1 runs before the fix).
 - **Fault fixed (127.0.0.1):** the warning "Dial to discovered peer ... failed" in the test runs. The node dialed a
   peer again while the first chat stream was still in negotiation. It now waits for the negotiation.
-- **Log:** each file line has the side of this computer and the side that cancelled. The log also has a line for each
+- **Log:** each file line has the side of this computer and the side whose action caused the event. The log also has a line for each
   file action of the user. This shows which side cancelled a transfer, which test card 4 could not show.
 - **Results of the 0.4.0 build (127.0.0.1):** `npm test` passes 44 of 44. The history test gave 0 dial warnings in 4
-  of 4 runs. One app start has no error line. With 2 app windows, the restarted window showed all earlier lines in 3
+  of 4 runs. One app start has no error line. A window check of Cancel for one receiver passes: the other receiver gets the
+  full file. With 2 app windows, the restarted window showed all earlier lines in 3
   of 3 runs, one with the .exe. With 3 app windows, the file check passed, also with the .exe as the sender. A 200 MB
-  file went to 2 windows in 5.1 s, and the voice continued. The map check passed all 40 lines. Each map had 3 nodes,
+  file went to 2 windows in 5.7 s, and the voice continued. The map check passed all 40 lines. Each map had 3 nodes,
   one host, 3 chat lines, 2 voice lines and one transfer arrow. The terminal demo works.
 - **Not known:** the map, the new Cancel and the new look on a LAN. Test card 5 gives this.
 

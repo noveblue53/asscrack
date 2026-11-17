@@ -17,14 +17,17 @@ Don't use it for real voice chat yet. See [CHANGELOG.md](CHANGELOG.md) for what 
 - **Built-in Voice** - WebRTC (Opus codec), with the host as the relay.
 - **Text Chat** - Full-featured P2P messaging
 - **File Sharing** - P2P file transfers, no size limits
+- **Network Map** - See who is connected, who relays the voice, who speaks and which files move
 - **Self-Healing Network** - Mesh stays connected even when nodes drop
 
 ## Status
 
 **Early Development** - Test copy on one LAN. Not ready for use.
 
-Current Phase: Phase 7 (UI/UX polish) is next. Version 0.3.1 has peer discovery, the host election and failover,
-voice, chat with the history after a restart, and file sharing. All of these passed a LAN test. Each result in
+Current Phase: Phase 7 (UI/UX polish). Version 0.4.0 has a new look and a network map of the room. These passed
+the checks on one PC (127.0.0.1) and have no LAN test yet. Test card 5 gives the LAN test. Version 0.3.1 has peer
+discovery, the host election and failover, voice, chat with the history after a restart, and file sharing. All of
+these passed a LAN test. Each result in
 [CHANGELOG.md](CHANGELOG.md) has a label: LAN (real computers) or 127.0.0.1 (one PC only).
 
 ## Architecture
@@ -44,7 +47,7 @@ voice, chat with the history after a restart, and file sharing. All of these pas
 - [x] Phase 4: Voice client with auto-reconnect (WebRTC, LAN tested on 2 computers)
 - [x] Phase 5: P2P chat system (LAN tested on 2 computers, with the history after a restart in 0.3.1)
 - [x] Phase 6: File sharing (LAN tested on 2 computers with 0.3.1)
-- [ ] Phase 7: UI/UX polish
+- [ ] Phase 7: UI/UX polish (0.4.0: new look and network map, 127.0.0.1 only, LAN test open)
 
 ## License
 
