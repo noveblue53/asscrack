@@ -7,6 +7,7 @@ import { multiaddr } from '@multiformats/multiaddr'
 import { createHash } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { createChatSession } from './chat-session.mjs'
+import { createElection } from './election.mjs'
 
 export const CHAT_PROTOCOL = '/asscrack/chat/receive'
 
@@ -29,7 +30,8 @@ function parseMessage(line) {
     return { from, text, time }
 }
 
-export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0'], discovery = true, discoveryInterval, name } = {}) {
+export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0'], discovery = true, discoveryInterval, name,
+    heartbeatInterval = 1000, hostTimeout = 5000, electionDelay = 3000 } = {}) {
     if (typeof room !== 'string') throw new TypeError('room must be a string')
     const node = await createLibp2p({
         start: false,
@@ -45,6 +47,28 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
     const senderName = name ?? node.peerId.toString().slice(-8)
     const events = new EventEmitter()
     const sessions = new Map()
+    const election = createElection({
+        selfId: node.peerId.toString(),
+        sendTo: (peerId, line) => { sessions.get(peerId)?.send(line) },
+        broadcast: line => { for (const session of sessions.values()) session.send(line) },
+        openPeers: () => [...sessions.keys()],
+        onChange: info => events.emit('host-changed', info),
+        heartbeatInterval,
+        hostTimeout,
+        electionDelay
+    })
+
+    // A line with a "type" field is a control line. Other lines are chat lines.
+    function controlMessage(line) {
+        let value
+        try {
+            value = JSON.parse(line)
+        } catch {
+            return null
+        }
+        if (value === null || typeof value !== 'object' || Array.isArray(value) || !Object.hasOwn(value, 'type')) return null
+        return value
+    }
 
     function attachChat(stream, peerId) {
         if (sessions.has(peerId)) {
@@ -53,6 +77,12 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
         }
         const session = createChatSession(stream, {
             onMessage: line => {
+                const control = controlMessage(line)
+                if (control) {
+                    // Ignore an unknown type with no warning.
+                    if (control.type === 'host') election.handleAnnouncement(peerId, control)
+                    return
+                }
                 const message = parseMessage(line)
                 if (message) events.emit('message', { peerId, ...message })
                 else console.warn(`Ignored a message that is not valid from peer ${peerId}`)
@@ -60,10 +90,12 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
         })
         sessions.set(peerId, session)
         events.emit('peer-joined', { peerId })
+        election.sessionOpened(peerId)
         session.done.catch(() => {}).finally(() => {
             if (sessions.get(peerId) === session) {
                 sessions.delete(peerId)
                 events.emit('peer-left', { peerId })
+                election.sessionClosed(peerId)
             }
         })
     }
@@ -106,6 +138,7 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
     })
 
     await node.start()
+    election.start()
 
     return {
         peerId: node.peerId.toString(),
@@ -132,7 +165,11 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
             return count
         },
         peers: () => [...sessions.keys()],
+        host: () => election.host(),
+        isHost: () => election.isHost(),
+        pauseHeartbeats: paused => election.pauseHeartbeats(paused),
         async stop() {
+            election.stop()
             const pending = [...sessions.values()].map(s => { s.close(); return s.done })
             await Promise.allSettled(pending)
             await node.stop()
