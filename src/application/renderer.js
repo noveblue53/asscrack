@@ -13,47 +13,133 @@ const leaveVoiceButton = document.getElementById('leave-voice');
 const muteButton = document.getElementById('mute');
 const voiceError = document.getElementById('voice-error');
 
+const statusBar = document.getElementById('statusbar');
+const peerCount = document.getElementById('peer-count');
+const transferCount = document.getElementById('transfer-count');
+const mapToggle = document.getElementById('map-toggle');
+const mapPanel = document.getElementById('map-panel');
+const mapClose = document.getElementById('map-close');
+
 let ownName = '';
 const peerItems = new Map(); // peerId -> <li>
+
+// ---- View helpers ----
+
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+const NAME_COLORS = 8; // The classes nc0 to nc7 in styles.css.
+const GROUP_MS = 5 * 60 * 1000;
+const PEER_OUT_MS = 180; // The time of the peer-out animation in styles.css.
+
+// The same name always gets the same color class, in the buddy list and in the chat.
+function nameColorClass(name) {
+    let hash = 0;
+    for (const ch of String(name)) hash = (hash * 31 + ch.codePointAt(0)) >>> 0;
+    return `nc${hash % NAME_COLORS}`;
+}
+
+function setNameColor(element, name) {
+    for (let i = 0; i < NAME_COLORS; i++) element.classList.remove(`nc${i}`);
+    element.classList.add(nameColorClass(name));
+}
+
+function firstLetter(name) {
+    const first = Array.from(String(name).trim())[0];
+    return first ? first.toUpperCase() : '?';
+}
+
+function updatePeerCount() {
+    peerCount.textContent = String(peerItems.size + (selfLine ? 1 : 0));
+}
+
+// The node map panel opens and closes with a CSS transition (body.map-open).
+function setMapOpen(open) {
+    document.body.classList.toggle('map-open', open);
+    mapToggle.setAttribute('aria-expanded', String(open));
+    mapPanel.setAttribute('aria-hidden', String(!open));
+}
+
+mapToggle.addEventListener('click', () => setMapOpen(!document.body.classList.contains('map-open')));
+mapClose.addEventListener('click', () => setMapOpen(false));
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') setMapOpen(false);
+});
 
 function formatTime(ms) {
     const d = new Date(ms);
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-// Use textContent only for peer text.
-function makeMessageItem(from, text, time) {
+// A message line: <li><span.from/><span.bubble-text><span.text/><span.time/></span></li>.
+// Use textContent only for peer text. The class "own" is for a line of this user.
+function makeMessageItem(from, text, time, own = false) {
     const item = document.createElement('li');
-    const timeSpan = document.createElement('span');
-    timeSpan.className = 'time';
-    timeSpan.textContent = formatTime(time);
+    const fromText = String(from ?? '');
+    if (own) item.classList.add('own');
+    else item.classList.add(nameColorClass(fromText));
     const fromSpan = document.createElement('span');
     fromSpan.className = 'from';
-    fromSpan.textContent = String(from ?? '');
+    fromSpan.textContent = fromText;
+    const bubble = document.createElement('span');
+    bubble.className = 'bubble-text';
     const textSpan = document.createElement('span');
     textSpan.className = 'text';
     textSpan.textContent = String(text ?? '');
-    item.append(timeSpan, fromSpan, textSpan);
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'time';
+    timeSpan.textContent = formatTime(time);
+    bubble.append(textSpan, timeSpan);
+    item.append(fromSpan, bubble);
     item.dataset.time = String(Number(time) || 0);
     return item;
 }
 
-function addMessage(from, text, time) {
-    messageList.appendChild(makeMessageItem(from, text, time));
+// View only: a line that follows a line of the same user gets the class "cont" (no name line).
+function groupWithPrevious(item) {
+    if (!item) return;
+    const prev = item.previousElementSibling;
+    const same = Boolean(prev)
+        && prev.classList.contains('own') === item.classList.contains('own')
+        && prev.querySelector('.from').textContent === item.querySelector('.from').textContent
+        && Math.abs(Number(item.dataset.time) - Number(prev.dataset.time)) < GROUP_MS;
+    item.classList.toggle('cont', same);
+}
+
+// View only: when the list gets a new height (the transfer table opens), keep the newest line in view.
+let messagesAtEnd = true;
+messageList.addEventListener('scroll', () => {
+    messagesAtEnd = messageList.scrollHeight - messageList.scrollTop - messageList.clientHeight < 24;
+});
+new ResizeObserver(() => {
+    if (messagesAtEnd) messageList.scrollTop = messageList.scrollHeight;
+}).observe(messageList);
+
+function addMessage(from, text, time, own = false) {
+    const item = makeMessageItem(from, text, time, own);
+    messageList.appendChild(item);
+    groupWithPrevious(item);
     messageList.scrollTop = messageList.scrollHeight;
 }
 
 // Put a history line before the first line that is newer. Equal times keep the arrival sequence.
 function insertMessage(from, text, time) {
-    const item = makeMessageItem(from, text, time);
+    // A history line has no peer ID: a line with the name of this user shows as an own line.
+    const item = makeMessageItem(from, text, time, String(from ?? '') === ownName);
     const t = Number(item.dataset.time);
     const next = Array.from(messageList.children).find(li => Number(li.dataset.time) > t);
     messageList.insertBefore(item, next ?? null);
+    groupWithPrevious(item);
+    groupWithPrevious(next);
 }
 
-// A peer line: <li><span.name/><span.host/><span.voice/></li>. All text goes in with textContent.
-function makePeerLine(name, title) {
+// A peer line: <li><span.avatar/><span.name/><span.host/><span.voice/></li>. All text goes in with textContent.
+// The avatar is the buddy icon: the first letter of the name on a ball with the name color.
+function makePeerLine(name, title, colorName = name) {
     const item = document.createElement('li');
+    const avatar = document.createElement('span');
+    avatar.className = 'avatar';
+    avatar.setAttribute('aria-hidden', 'true');
+    avatar.textContent = firstLetter(colorName);
+    setNameColor(item, colorName);
     const nameSpan = document.createElement('span');
     nameSpan.className = 'name';
     nameSpan.textContent = String(name);
@@ -64,13 +150,15 @@ function makePeerLine(name, title) {
     const voiceSpan = document.createElement('span');
     voiceSpan.className = 'voice-state';
     voiceSpan.textContent = 'not in voice';
-    item.append(nameSpan, hostSpan, voiceSpan);
+    item.append(avatar, nameSpan, hostSpan, voiceSpan);
     item.title = String(title);
     return item;
 }
 
 function setPeerName(item, name) {
     item.querySelector('.name').textContent = String(name);
+    item.querySelector('.avatar').textContent = firstLetter(name);
+    setNameColor(item, name);
 }
 
 let selfLine = null;
@@ -83,14 +171,22 @@ function addPeer(peerId) {
     item.dataset.peerId = String(peerId);
     peerItems.set(peerId, item);
     peerList.appendChild(item);
+    updatePeerCount();
     updateVoiceView();
 }
 
 function removePeer(peerId) {
     const item = peerItems.get(peerId);
     if (!item) return;
-    item.remove();
     peerItems.delete(peerId);
+    updatePeerCount();
+    if (reducedMotion.matches) {
+        item.remove();
+        return;
+    }
+    // View only: the line moves out, then it goes away.
+    item.classList.add('leaving');
+    setTimeout(() => item.remove(), PEER_OUT_MS);
 }
 
 window.asscrack.onPeerDiscovered(data => console.log('peer-discovered', data));
@@ -132,9 +228,12 @@ async function login() {
         chatScreen.hidden = false;
         document.body.classList.add('chat');
         status.textContent = '';
-        selfLine = makePeerLine(`${name} (you)`, name);
+        // View only: the status text moves to the status band of the chat screen.
+        statusBar.prepend(status);
+        selfLine = makePeerLine(`${name} (you)`, name, name);
         selfLine.classList.add('self');
         peerList.prepend(selfLine);
+        updatePeerCount();
         refreshHostInfo();
         updateVoiceView();
         messageInput.focus();
@@ -148,7 +247,7 @@ async function sendMessage() {
     const text = messageInput.value;
     if (!text.trim()) return;
     messageInput.value = '';
-    addMessage(ownName, text, Date.now());
+    addMessage(ownName, text, Date.now(), true);
     status.textContent = peerItems.size === 0 ? 'No peers in this room yet.' : '';
     try {
         await window.asscrack.send(text);
@@ -183,6 +282,8 @@ let statsTimer = null;
 
 function setVoiceState(item, text) {
     const span = item.querySelector('.voice-state');
+    // No DOM write when the text is the same: the stats timer calls this 4 times each second.
+    if (span.dataset.state === text) return;
     span.textContent = text;
     span.dataset.state = text;
 }
@@ -212,6 +313,8 @@ function updateVoiceView() {
     leaveVoiceButton.hidden = !ownInVoice;
     muteButton.hidden = !ownInVoice;
     muteButton.textContent = ownMuted ? 'Unmute' : 'Mute';
+    muteButton.setAttribute('aria-pressed', String(ownMuted));
+    document.body.classList.toggle('in-voice', ownInVoice);
 }
 
 async function refreshHostInfo() {
@@ -328,6 +431,8 @@ function makeSpan(className, text) {
 
 function makeButton(text, onClick) {
     const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `btn-${text.toLowerCase()}`;
     button.textContent = text;
     button.addEventListener('click', onClick);
     return button;
@@ -345,7 +450,9 @@ async function callFile(fn, offerId) {
 function setTransferState(entry, state, text) {
     entry.state = state;
     entry.item.dataset.state = state;
-    entry.item.querySelector('.state-text').textContent = String(text ?? state);
+    const stateSpan = entry.item.querySelector('.state-text');
+    stateSpan.textContent = String(text ?? state);
+    stateSpan.title = stateSpan.textContent;
     const buttons = entry.item.querySelector('.buttons');
     buttons.replaceChildren();
     const offerId = entry.item.dataset.offerId;
@@ -379,11 +486,18 @@ function getTransfer(offerId, peerId, direction, info = {}) {
     const progress = document.createElement('progress');
     progress.max = Number(info.size) || 1;
     progress.value = 0;
+    // The cell around the bar shows the percent text (data-pct, see showProgress).
+    const progressCell = makeSpan('progress-cell', '');
+    progressCell.append(progress);
+    const fileName = makeSpan('file-name', info.name);
+    fileName.title = fileName.textContent;
+    const peerName = makeSpan('peer-name', `${direction === 'send' ? 'to' : 'from'} ${transferPeerName(peerId, info.from)}`);
+    peerName.title = peerName.textContent;
     item.append(
-        makeSpan('file-name', info.name),
+        fileName,
         makeSpan('file-size', formatSize(info.size)),
-        makeSpan('peer-name', `${direction === 'send' ? 'to' : 'from'} ${transferPeerName(peerId, info.from)}`),
-        progress,
+        peerName,
+        progressCell,
         makeSpan('state-text', ''),
         makeSpan('buttons', '')
     );
@@ -391,7 +505,14 @@ function getTransfer(offerId, peerId, direction, info = {}) {
     transferList.scrollTop = transferList.scrollHeight;
     entry = { item, state: null, direction };
     transfers.set(key, entry);
+    transferCount.textContent = String(transfers.size);
     return entry;
+}
+
+// View only: the percent text on the progress bar.
+function showProgress(progress) {
+    const ratio = progress.max > 0 ? progress.value / progress.max : 0;
+    progress.parentElement.dataset.pct = `${Math.floor(ratio * 100)}%`;
 }
 
 // The entry for a file event. The sender makes the item at the first event for each receiver.
@@ -423,12 +544,14 @@ window.asscrack.onFileProgress(data => {
     const progress = entry.item.querySelector('progress');
     progress.max = Number(data.size) || 1;
     progress.value = Number(data.bytes) || 0;
+    showProgress(progress);
 });
 
 window.asscrack.onFileDone(data => {
     const entry = transferForEvent(data);
     const progress = entry.item.querySelector('progress');
     progress.value = progress.max;
+    showProgress(progress);
     if (data.direction === 'receive') {
         const fileName = String(data.path ?? '').split(/[\\/]/).pop();
         setTransferResult(entry, 'done', `Saved as ${fileName}`);
@@ -447,7 +570,9 @@ function addOfferHead(offerId, name, peers) {
     item.dataset.offerId = String(offerId);
     const buttons = makeSpan('buttons', '');
     if (peers > 0) {
-        item.append(makeSpan('state-text', `Offered ${name} to ${peers} users`));
+        const head = makeSpan('state-text', `Offered ${name} to ${peers} users`);
+        head.title = head.textContent;
+        item.append(head);
         buttons.append(makeButton('Cancel', async () => {
             buttons.replaceChildren();
             await callFile(window.asscrack.cancelFile, offerId);

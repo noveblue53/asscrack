@@ -8,45 +8,96 @@
   <title>ASSCRACK</title>
 </head>
 <body>
+  <!-- Decoration only: the sky bubbles behind the two screens. -->
+  <div id="sky" aria-hidden="true">
+    <span class="bubble b1"></span>
+    <span class="bubble b2"></span>
+    <span class="bubble b3"></span>
+    <span class="bubble b4"></span>
+    <span class="bubble b5"></span>
+    <span class="bubble b6"></span>
+    <span class="bubble b7"></span>
+  </div>
+
   <section id="login-screen">
-    <h1>ASSCRACK</h1>
-    <p>Automated Server Switch in Case Relays Are Crashed or Killed</p>
+    <div class="login-card">
+      <img class="logo" src="img/logo.svg" alt="" width="68" height="68">
+      <h1>ASSCRACK</h1>
+      <p class="tagline"><b>A</b>utomated <b>S</b>erver <b>S</b>witch in <b>C</b>ase <b>R</b>elays <b>A</b>re <b>C</b>rashed or <b>K</b>illed</p>
 
-    <label for="username">Username</label><br>
-    <input type="text" id="username" placeholder="Enter your username"><br><br>
+      <div class="field">
+        <label for="username">Username</label>
+        <input type="text" id="username" placeholder="Enter your username" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="field">
+        <label for="room">Room</label>
+        <input type="text" id="room" placeholder="Enter the room" autocomplete="off" spellcheck="false">
+      </div>
 
-    <label for="room">Room</label><br>
-    <input type="text" id="room" placeholder="Enter the room"><br><br>
-
-    <button id="login">Log In</button>
+      <button id="login" type="button">Log In</button>
+      <!-- renderer.js moves #status into #statusbar after the login. -->
+      <p id="status" role="status"></p>
+    </div>
   </section>
 
   <section id="chat-screen" hidden>
-    <header id="chat-header">
-      <span id="chat-user"></span> in <span id="chat-room"></span>
+    <header id="titlebar">
+      <img class="logo" src="img/logo.svg" alt="" width="24" height="24">
+      <span class="app-name">ASSCRACK</span>
+      <span id="chat-header" class="session">
+        <span id="chat-user"></span><span class="in">in</span><span id="chat-room"></span>
+      </span>
+      <button id="map-toggle" type="button" aria-expanded="false" aria-controls="map-panel">Network map</button>
     </header>
-    <div id="voice-controls">
-      <button id="join-voice">Join voice</button>
-      <button id="leave-voice" hidden>Leave voice</button>
-      <button id="mute" hidden>Mute</button>
-      <span id="voice-error"></span>
+
+    <div id="toolbar">
+      <div id="voice-controls" class="tool-group">
+        <button id="join-voice" type="button">Join voice</button>
+        <button id="leave-voice" type="button" hidden>Leave voice</button>
+        <button id="mute" type="button" aria-pressed="false" hidden>Mute</button>
+      </div>
+      <div id="file-controls" class="tool-group">
+        <input type="file" id="file-input">
+        <button id="send-file" type="button">Send file</button>
+      </div>
+      <span id="voice-error" role="alert"></span>
     </div>
-    <div id="file-controls">
-      <input type="file" id="file-input">
-      <button id="send-file">Send file</button>
-    </div>
+
     <div id="chat-body">
-      <ul id="peers"></ul>
-      <ul id="messages"></ul>
+      <section id="buddy-panel" class="panel">
+        <h2 class="panel-head">Buddies <span id="peer-count" class="count">1</span></h2>
+        <ul id="peers"></ul>
+      </section>
+      <section id="message-panel" class="panel">
+        <ul id="messages" role="log"></ul>
+      </section>
+      <!-- The node map panel. A later package (nodemap.js) draws into #node-map. -->
+      <aside id="map-panel" class="panel" aria-hidden="true">
+        <h2 class="panel-head">Network map <button id="map-close" type="button">Close</button></h2>
+        <div id="node-map"></div>
+      </aside>
     </div>
-    <ul id="transfers"></ul>
+
+    <section id="transfer-panel" class="panel">
+      <h2 class="panel-head">Transfers <span id="transfer-count" class="count">0</span>
+        <span class="hint">No transfers. Select a file, then press Send file.</span>
+      </h2>
+      <div class="transfer-cols" aria-hidden="true">
+        <span></span><span>File</span><span class="col-size">Size</span><span>User</span><span>Progress</span><span>Status</span><span></span>
+      </div>
+      <ul id="transfers"></ul>
+    </section>
+
     <div id="composer">
-      <input type="text" id="message-input" placeholder="Type a message">
-      <button id="send">Send</button>
+      <input type="text" id="message-input" placeholder="Type a message" autocomplete="off">
+      <button id="send" type="button">Send</button>
     </div>
+
+    <footer id="statusbar">
+      <span class="net-note">Local network</span>
+    </footer>
   </section>
 
-  <p id="status"></p>
   <script src="voice.js"></script>
   <script src="renderer.js"></script>
 </body>
