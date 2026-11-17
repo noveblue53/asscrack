@@ -260,21 +260,28 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
             p.end()
             events.emit('file-done', { offerId, peerId, direction: 'receive', name: offer.name, size: offer.size, path: finalPath })
         } catch (err) {
-            active.delete(t.key)
-            received.delete(offerId)
             abortStream(t.stream, 'Transfer ended')
             if (fh) await fh.close().catch(() => {})
             if (tempCreated) await fsp.unlink(temp).catch(() => {})
             const signalKey = `${offerId}|${peerId}`
+            // Keep the transfer in `active` and the offer in `received` during the wait. The stream abort of a sender
+            // cancel can come before its file-cancel line. handleControl must find them to note the cancel.
+            let ended
             if (t.selfCancel || stopping) {
                 cancelSignals.delete(signalKey)
-                events.emit('file-cancelled', { offerId, peerId, direction: 'receive', by: 'self' })
+                ended = ['file-cancelled', { offerId, peerId, direction: 'receive', by: 'self' }]
             } else if ((!(err instanceof TransferFailure) || err.message === 'incomplete') && await peerCancelled(signalKey)) {
-                events.emit('file-cancelled', { offerId, peerId, direction: 'receive', by: 'peer' })
+                ended = ['file-cancelled', { offerId, peerId, direction: 'receive', by: 'peer' }]
+            } else if (t.selfCancel || stopping) {
+                cancelSignals.delete(signalKey)
+                ended = ['file-cancelled', { offerId, peerId, direction: 'receive', by: 'self' }]
             } else {
                 cancelSignals.delete(signalKey)
-                events.emit('file-failed', { offerId, peerId, direction: 'receive', reason: shortReason(err) })
+                ended = ['file-failed', { offerId, peerId, direction: 'receive', reason: shortReason(err) }]
             }
+            active.delete(t.key)
+            received.delete(offerId)
+            events.emit(...ended)
         }
     }
 
