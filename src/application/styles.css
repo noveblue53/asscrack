@@ -1,3 +1,15 @@
+/* Moved from the inline <style> element of index.html. */
+body {
+  font-family: 'Segoe UI', Arial, sans-serif;
+  width: 100%;
+  max-width: 420px;
+  padding: 48px 40px;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.08);
+  text-align: center;
+}
+
 .button {
   background-color: lightblue;
   border: black;
@@ -8,4 +20,103 @@
   display: inline-block;
   font-size: 16px;
   cursor: pointer;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+/* Chat screen: use the full window, also at 400 px width. */
+body.chat {
+  max-width: none;
+  margin: 0;
+  padding: 8px;
+  height: 100vh;
+  border-radius: 0;
+  box-shadow: none;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+}
+
+#chat-screen {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+#chat-header {
+  font-weight: bold;
+  padding: 4px 0 8px;
+  overflow-wrap: anywhere;
+}
+
+#chat-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  gap: 8px;
+}
+
+#peers,
+#messages {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  border: 1px solid #ccc;
+  overflow-y: auto;
+}
+
+#peers {
+  flex: 0 0 30%;
+  max-width: 180px;
+  min-width: 80px;
+}
+
+#peers li {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#messages {
+  flex: 1;
+  min-width: 0;
+}
+
+#messages li {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  margin-bottom: 2px;
+}
+
+#messages .time {
+  color: #666;
+  margin-right: 4px;
+}
+
+#messages .from {
+  font-weight: bold;
+  margin-right: 4px;
+}
+
+#composer {
+  display: flex;
+  gap: 8px;
+  padding-top: 8px;
+}
+
+#message-input {
+  flex: 1;
+  min-width: 0;
+}
+
+body.chat #status {
+  margin: 4px 0 0;
+  min-height: 1em;
 }
