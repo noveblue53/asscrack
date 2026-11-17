@@ -21,3 +21,9 @@ test('renderer.js listens for history', async () => {
     const source = await read('renderer.js');
     assert.ok(source.includes('window.asscrack.onHistory('));
 });
+
+test('main.js writes a log file with the window console', async () => {
+    const source = await read('main.js');
+    assert.ok(source.includes("'console-message'"));
+    assert.ok(source.includes("app.getPath('logs')"));
+});

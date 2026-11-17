@@ -111,6 +111,7 @@ window.asscrack.onHistory(data => {
     const lines = Array.isArray(data?.messages) ? [...data.messages] : [];
     lines.sort((a, b) => (Number(a.time) || 0) - (Number(b.time) || 0));
     for (const line of lines) insertMessage(line.from, line.text, line.time);
+    console.info(`History shown: ${lines.length} lines`);
     messageList.scrollTop = messageList.scrollHeight;
 });
 

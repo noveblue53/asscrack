@@ -76,6 +76,7 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
             if (!validHistoryItem(m)) continue
             if (history.add(m)) added.push({ id: m.id, from: m.from, text: m.text, time: m.time })
         }
+        console.info(`History applied: ${added.length} of ${messages.length} messages are new`)
         events.emit('history', { messages: added })
     }
 
@@ -84,6 +85,7 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
             applyHistory(control.messages)
             return
         }
+        console.info(`History from ${peerId} kept until it is the host`)
         pendingHistory.set(peerId, { messages: control.messages, at: Date.now() })
     }
     let voiceState = { inVoice: false, streamId: null, muted: false }
@@ -101,6 +103,7 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
             if (kept) {
                 pendingHistory.delete(info.peerId)
                 if (Date.now() - kept.at <= HISTORY_KEEP_MS) applyHistory(kept.messages)
+                else console.info(`History from ${info.peerId} dropped: older than ${HISTORY_KEEP_MS} ms`)
             }
         },
         heartbeatInterval,
@@ -172,7 +175,11 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
         session.send(JSON.stringify({ type: 'hello', name: senderName }))
         events.emit('peer-joined', { peerId })
         election.sessionOpened(peerId)
-        if (election.isHost()) session.send(JSON.stringify({ type: 'history', messages: history.list() }))
+        if (election.isHost()) {
+            const messages = history.list()
+            session.send(JSON.stringify({ type: 'history', messages }))
+            console.info(`History sent to ${peerId}: ${messages.length} messages`)
+        }
         if (voiceState.inVoice) session.send(voiceLine())
         session.done.catch(() => {}).finally(() => {
             if (sessions.get(peerId) === session) {

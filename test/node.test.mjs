@@ -228,3 +228,34 @@ test('a node ignores a hello line with a name that is not valid', { timeout: 150
         await a.stop()
     }
 })
+
+test('the host and the member log the history that they send and apply', { timeout: 20000 }, async () => {
+    const opts = {
+        room: 'test', listen: ['/ip4/127.0.0.1/tcp/0'], discovery: false,
+        heartbeatInterval: 300, hostTimeout: 1500, electionDelay: 1000
+    }
+    const lines = []
+    const originalInfo = console.info
+    console.info = (...args) => { lines.push(args.join(' ')) }
+    // A node with no session never elects itself. Two nodes elect a host first.
+    const first = await createAsscrackNode(opts)
+    const second = await createAsscrackNode(opts)
+    let member
+    try {
+        await second.connect(first.getMultiaddrs()[0])
+        await waitFor(() => first.isHost() || second.isHost())
+        const host = first.isHost() ? first : second
+        host.send('one')
+        host.send('two')
+        assert.equal(host.history().length, 2)
+        member = await createAsscrackNode(opts)
+        await member.connect(host.getMultiaddrs()[0])
+        await waitFor(() => lines.includes(`History sent to ${member.peerId}: 2 messages`)
+            && lines.includes('History applied: 2 of 2 messages are new'))
+    } finally {
+        console.info = originalInfo
+        if (member) await member.stop()
+        await second.stop()
+        await first.stop()
+    }
+})
