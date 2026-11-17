@@ -133,6 +133,8 @@ function createMainWindow() {
         title: 'AssCrack',
         width: 800,
         height: 600,
+        // The middle sky blue of styles.css: no white flash before the page shows.
+        backgroundColor: '#2a8fec',
         webPreferences: {
             preload: path.join(__dirname, 'preload.cjs'),
             contextIsolation: true,
