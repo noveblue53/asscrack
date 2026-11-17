@@ -15,7 +15,21 @@ export function roomServiceTag(room) {
     return `_asscrack-${h}._udp.local`
 }
 
-export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0'], discovery = true, discoveryInterval } = {}) {
+// One chat line is one JSON object: { from: string, text: string, time: number }.
+function parseMessage(line) {
+    let value
+    try {
+        value = JSON.parse(line)
+    } catch {
+        return null
+    }
+    if (value === null || typeof value !== 'object') return null
+    const { from, text, time } = value
+    if (typeof from !== 'string' || typeof text !== 'string' || typeof time !== 'number') return null
+    return { from, text, time }
+}
+
+export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0'], discovery = true, discoveryInterval, name } = {}) {
     if (typeof room !== 'string') throw new TypeError('room must be a string')
     const node = await createLibp2p({
         start: false,
@@ -27,6 +41,8 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
         streamMuxers: [yamux()],
         connectionEncryption: [noise()]
     })
+    if (name !== undefined && typeof name !== 'string') throw new TypeError('name must be a string')
+    const senderName = name ?? node.peerId.toString().slice(-8)
     const events = new EventEmitter()
     const sessions = new Map()
 
@@ -36,7 +52,11 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
             return
         }
         const session = createChatSession(stream, {
-            onMessage: text => events.emit('message', { peerId, text })
+            onMessage: line => {
+                const message = parseMessage(line)
+                if (message) events.emit('message', { peerId, ...message })
+                else console.warn(`Ignored a message that is not valid from peer ${peerId}`)
+            }
         })
         sessions.set(peerId, session)
         events.emit('peer-joined', { peerId })
@@ -104,9 +124,11 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
                 dialing.delete(remoteId)
             }
         },
+        name: senderName,
         send(text) {
+            const line = JSON.stringify({ from: senderName, text, time: Date.now() })
             let count = 0
-            for (const session of sessions.values()) if (session.send(text)) count++
+            for (const session of sessions.values()) if (session.send(line)) count++
             return count
         },
         peers: () => [...sessions.keys()],

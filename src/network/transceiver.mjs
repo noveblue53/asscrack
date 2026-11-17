@@ -4,16 +4,18 @@ import { createAsscrackNode } from './node.mjs'
 const args = process.argv.slice(2)
 let room = 'default'
 let target
+let name
 for (let i = 0; i < args.length; i++) {
     if (args[i] === '--room') room = args[++i]
+    else if (args[i] === '--name') name = args[++i]
     else target = args[i]
 }
-if (!room) {
-    console.error('Usage: node src/network/transceiver.mjs [--room <name>] [<multiaddr>]')
+if (!room || name === '') {
+    console.error('Usage: node src/network/transceiver.mjs [--room <name>] [--name <name>] [<multiaddr>]')
     process.exit(1)
 }
 
-const node = await createAsscrackNode({ room })
+const node = await createAsscrackNode({ room, name })
 console.log('Transceiver started with peer id:', node.peerId, 'room:', room)
 console.log('Listening on:')
 node.getMultiaddrs().forEach(addr => console.log(addr))
@@ -24,7 +26,7 @@ node.events.on('peer-discovered', ({ peerId, addresses }) => {
 })
 node.events.on('peer-joined', ({ peerId }) => console.log('Chat ready with peer:', peerId))
 node.events.on('peer-left', ({ peerId }) => console.log('Chat closed with peer:', peerId))
-node.events.on('message', ({ text }) => console.log('\n> ' + text))
+node.events.on('message', ({ from, text }) => console.log(`\n> ${from}: ${text}`))
 
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: false })
 // One terminal reader, shared by all active peer sessions.
