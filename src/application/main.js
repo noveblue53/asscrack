@@ -78,8 +78,20 @@ function logEvent(type, data) {
         parts.push(`ids ${messages.map(m => m?.id).join(',')}`, `count ${messages.length}`);
     } else if (data?.offerId) {
         parts.push(`offer ${data.offerId}`);
+        // direction: the side of this node (send or receive). by: the side that cancelled (self or peer).
+        const direction = data.direction ?? (type === 'file-offer' ? 'receive' : type === 'file-refused' ? 'send' : null);
+        if (direction) parts.push(`direction ${direction}`);
+        const by = data.by ?? (type === 'file-refused' ? 'peer' : null);
+        if (by) parts.push(`by ${by}`);
+        if (Number.isFinite(data.size)) parts.push(`size ${data.size}`);
+        if (typeof data.reason === 'string') parts.push(`reason ${JSON.stringify(data.reason)}`);
     }
     writeLog('EVENT', parts.join(' '));
+}
+
+// One log line for each file action of the user. A Cancel before the transfer starts gives no node event.
+function logAction(action, offerId) {
+    writeLog('EVENT', `action ${action} offer ${offerId}`);
 }
 
 // Test option: --downloads <dir> sets the folder for received files.
@@ -188,21 +200,26 @@ ipcMain.handle('asscrack:topology', () => {
 ipcMain.handle('asscrack:offer-file', (_event, filePath) => {
     if (!node) throw new Error('Not logged in');
     if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) throw new Error('The file path is not an absolute path');
-    return node.offerFile(filePath);
+    const result = node.offerFile(filePath);
+    Promise.resolve(result).then(offer => logAction('offer-file', offer?.offerId ?? ''), () => {});
+    return result;
 });
 
 ipcMain.handle('asscrack:accept-file', (_event, offerId) => {
     if (!node) throw new Error('Not logged in');
+    logAction('accept-file', String(offerId));
     return node.acceptFile(String(offerId));
 });
 
 ipcMain.handle('asscrack:refuse-file', (_event, offerId) => {
     if (!node) throw new Error('Not logged in');
+    logAction('refuse-file', String(offerId));
     return node.refuseFile(String(offerId));
 });
 
 ipcMain.handle('asscrack:cancel-file', (_event, offerId) => {
     if (!node) throw new Error('Not logged in');
+    logAction('cancel-file', String(offerId));
     return node.cancelFile(String(offerId));
 });
 

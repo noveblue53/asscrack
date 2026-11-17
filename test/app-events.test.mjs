@@ -41,3 +41,12 @@ test('preload.cjs exposes onTopology and getTopology', async () => {
     assert.ok(source.includes("onTopology: listen('asscrack:topology')"));
     assert.ok(source.includes("getTopology: () => ipcRenderer.invoke('asscrack:topology')"));
 });
+
+test('main.js logs the direction, the cancel side and the file actions', async () => {
+    const source = await read('main.js');
+    assert.ok(source.includes('parts.push(`direction ${direction}`)'));
+    assert.ok(source.includes('parts.push(`by ${by}`)'));
+    for (const action of ['offer-file', 'accept-file', 'refuse-file', 'cancel-file']) {
+        assert.ok(source.includes(`logAction('${action}'`), action);
+    }
+});
