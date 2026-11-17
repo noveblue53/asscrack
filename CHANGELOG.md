@@ -11,8 +11,13 @@ Each result has one of these labels:
 - **Fault (LAN, test card 2, 2 computers):** after a restart, the app did not show the chat lines from before the
   restart.
 - **Cause (127.0.0.1):** the network layer gets the history. In 12 of 12 runs, the restarted node got all earlier
-  lines 1 to 3 ms after its session opened. But the main process of the app does not send the history to the window.
-- **Status:** the fix is in work on the branch `opus/history-restart`.
+  lines 1 to 3 ms after its session opened. But the main process of the app did not send the history to the window.
+- **Fix:** the main process now sends the history to the window. The window puts the lines in time sequence.
+- **Log file:** the app writes one log file at each start, in `%APPDATA%\ASSCRACK\logs`. Each history send and
+  receive gives a log line with the message IDs and the count. The log does not contain the chat text.
+- **Results (127.0.0.1):** with 2 app windows, the restarted window showed 0 earlier lines in 4 of 4 runs before the
+  fix. After the fix, it showed all 3 earlier lines in 4 of 4 runs. `npm test` passes 36 of 36.
+- **Results (LAN):** not tested yet. The next build (0.3.1) has the fix.
 
 ## 0.3.0: peer names and file sharing
 
@@ -38,7 +43,6 @@ Each result has one of these labels:
 - **Results (LAN):** the 0.2.0 peer list showed a name only after that user sent a chat message. Version 0.3.0 fixes
   this.
 - **Results (127.0.0.1):** after a kill of the host, the voice came back in 4.1 s.
-- **Not done:** Mumble. The voice uses WebRTC in place of Mumble.
 
 ## 0.1.0: LAN chat test copy
 
