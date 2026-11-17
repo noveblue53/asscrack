@@ -217,10 +217,14 @@ ipcMain.handle('asscrack:refuse-file', (_event, offerId) => {
     return node.refuseFile(String(offerId));
 });
 
-ipcMain.handle('asscrack:cancel-file', (_event, offerId) => {
+ipcMain.handle('asscrack:cancel-file', (_event, offerId, peerId) => {
     if (!node) throw new Error('Not logged in');
-    logAction('cancel-file', String(offerId));
-    return node.cancelFile(String(offerId));
+    if (peerId !== undefined && peerId !== null && (typeof peerId !== 'string' || peerId.length > 128)) {
+        throw new Error('Invalid peer ID');
+    }
+    const peer = typeof peerId === 'string' ? peerId : undefined;
+    logAction('cancel-file', peer === undefined ? String(offerId) : `${offerId} peer ${peer}`);
+    return node.cancelFile(String(offerId), peer);
 });
 
 app.on('before-quit', event => {

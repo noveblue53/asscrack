@@ -456,7 +456,9 @@ function setTransferState(entry, state, text) {
     const buttons = entry.item.querySelector('.buttons');
     buttons.replaceChildren();
     const offerId = entry.item.dataset.offerId;
-    if (state === 'offered') {
+    if (entry.direction === 'send') {
+        addSendCancel(entry, state);
+    } else if (state === 'offered') {
         buttons.append(
             makeButton('Accept', async () => {
                 setTransferState(entry, 'receiving', 'Receiving');
@@ -469,9 +471,24 @@ function setTransferState(entry, state, text) {
             })
         );
     } else if (state === 'receiving') {
-        // Sender rows get no Cancel: cancelFile() cancels the full offer. The offer head has that Cancel.
         buttons.append(makeButton('Cancel', () => callFile(window.asscrack.cancelFile, offerId)));
     }
+}
+
+// A sender row of one receiver gets a Cancel button while the row is offered or sending.
+// The button cancels the transfer to that receiver only.
+function addSendCancel(entry, state) {
+    if (entry.direction !== 'send' || (state !== 'offered' && state !== 'sending')) return;
+    const peerId = entry.item.dataset.peerId;
+    const offerId = entry.item.dataset.offerId;
+    entry.item.querySelector('.buttons').append(makeButton('Cancel', async () => {
+        entry.item.querySelector('.buttons').replaceChildren();
+        try {
+            await window.asscrack.cancelFile(offerId, peerId);
+        } catch (err) {
+            status.textContent = `Error: ${err?.message ?? err}`;
+        }
+    }));
 }
 
 function getTransfer(offerId, peerId, direction, info = {}) {

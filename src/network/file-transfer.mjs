@@ -190,15 +190,22 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
             p.end()
             events.emit('file-done', { offerId, peerId, direction: 'send', name: offer.name, size: offer.size })
         } catch (err) {
-            active.delete(key)
             t.readStream?.destroy()
             abortStream(stream, 'Transfer ended')
+            // Keep the transfer in `active` during the wait. The stream abort of a receiver cancel can come before
+            // its file-cancel line. handleControl must find the transfer to note the cancel.
             if (t.selfCancel || stopping) {
+                active.delete(key)
                 cancelSignals.delete(`${offerId}|${peerId}`)
                 events.emit('file-cancelled', { offerId, peerId, direction: 'send', by: 'self' })
             } else if (await peerCancelled(`${offerId}|${peerId}`)) {
+                active.delete(key)
                 events.emit('file-cancelled', { offerId, peerId, direction: 'send', by: 'peer' })
+            } else if (t.selfCancel || stopping) {
+                active.delete(key)
+                events.emit('file-cancelled', { offerId, peerId, direction: 'send', by: 'self' })
             } else {
+                active.delete(key)
                 events.emit('file-failed', { offerId, peerId, direction: 'send', reason: shortReason(err) })
             }
         }
@@ -290,8 +297,23 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
         return true
     }
 
-    function cancelFile(offerId) {
+    function cancelFile(offerId, peerId) {
         const own = ownOffers.get(offerId)
+        if (own && typeof peerId === 'string') {
+            // Cancel the transfer to one receiver only. The transfers to the other receivers continue.
+            if (!own.targets.has(peerId)) return false
+            const t = active.get(`send|${offerId}|${peerId}`)
+            if (own.started.has(peerId) && !t) return false
+            own.targets.delete(peerId)
+            sendLine(peerId, { type: 'file-cancel', offerId })
+            if (t) {
+                t.selfCancel = true
+                abortStream(t.stream, 'Transfer cancelled')
+            } else {
+                events.emit('file-cancelled', { offerId, peerId, direction: 'send', by: 'self' })
+            }
+            return true
+        }
         if (own) {
             ownOffers.delete(offerId)
             for (const peerId of own.targets) {

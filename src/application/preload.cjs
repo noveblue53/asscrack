@@ -30,7 +30,7 @@ contextBridge.exposeInMainWorld('asscrack', {
     },
     acceptFile: offerId => ipcRenderer.invoke('asscrack:accept-file', offerId),
     refuseFile: offerId => ipcRenderer.invoke('asscrack:refuse-file', offerId),
-    cancelFile: offerId => ipcRenderer.invoke('asscrack:cancel-file', offerId),
+    cancelFile: (offerId, peerId) => ipcRenderer.invoke('asscrack:cancel-file', offerId, peerId),
     onFileOffer: listen('asscrack:file-offer'),
     onFileProgress: listen('asscrack:file-progress'),
     onFileDone: listen('asscrack:file-done'),

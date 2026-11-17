@@ -50,3 +50,8 @@ test('main.js logs the direction, the cancel side and the file actions', async (
         assert.ok(source.includes(`logAction('${action}'`), action);
     }
 });
+
+test('preload.cjs passes a peer ID in cancelFile', async () => {
+    const source = await read('preload.cjs');
+    assert.ok(source.includes("cancelFile: (offerId, peerId) => ipcRenderer.invoke('asscrack:cancel-file', offerId, peerId)"));
+});

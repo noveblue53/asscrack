@@ -8,7 +8,8 @@ import * as path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { multiaddr } from '@multiformats/multiaddr'
 import { createAsscrackNode } from '../src/network/node.mjs'
-import { FILE_PROTOCOL, safeFileName } from '../src/network/file-transfer.mjs'
+import { FILE_PROTOCOL, safeFileName, createFileTransfer } from '../src/network/file-transfer.mjs'
+import { EventEmitter } from 'node:events'
 
 const base = { room: 'files', listen: ['/ip4/127.0.0.1/tcp/0'], discovery: false,
     heartbeatInterval: 200, hostTimeout: 1000, electionDelay: 300 }
@@ -300,4 +301,68 @@ test('k: safeFileName', () => {
     assert.ok(long.endsWith('.txt'))
     assert.equal(safeFileName('a\u0007b'), 'a_b')
     assert.equal(safeFileName(5), 'file')
+})
+
+test('l: A cancels only the transfer to B, and C gets the file', { timeout: 60000 }, async () => {
+    const ctx = await setup(3)
+    const [a, b, c] = ctx.nodes
+    try {
+        const file = path.join(ctx.src, 'big.bin')
+        await writeRandom(file, BIG)
+        acceptOnOffer(b)
+        acceptOnOffer(c)
+        b.events.once('file-progress', ({ offerId }) => assert.equal(a.cancelFile(offerId, b.peerId), true))
+        const offer = await a.offerFile(file)
+        assert.equal(offer.peers, 2)
+        await waitUntil(() => (b.log.cancelled.length === 1 || b.log.failed.length > 0) &&
+            (c.log.done.length === 1 || c.log.failed.length > 0), 90000)
+        assert.deepEqual(b.log.failed, [])
+        assert.deepEqual(c.log.failed, [])
+        assert.equal(b.log.cancelled[0].by, 'peer')
+        assert.equal(await sha(c.log.done[0].path), offer.sha256)
+        await waitUntil(() => a.log.done.length + a.log.cancelled.length + a.log.failed.length >= 2, 5000)
+        await delay(700)
+        assert.deepEqual(a.log.failed, [])
+        assert.deepEqual(a.log.cancelled, [{ offerId: offer.offerId, peerId: b.peerId, direction: 'send', by: 'self' }])
+        assert.deepEqual(a.log.done.map(e => e.peerId), [c.peerId])
+        assert.deepEqual(b.log.done, [])
+        assert.deepEqual(await entries(b.dir), [])
+    } finally {
+        await cleanup(ctx)
+    }
+})
+
+// The race: the stream abort of a receiver cancel comes to the sender before the file-cancel line.
+// The test drives the sender side directly with a fake stream, so that the order is always the same.
+test('m: a stream abort before the file-cancel line gives cancelled by peer on the sender', { timeout: 30000 }, async () => {
+    const src = await tempDir('src')
+    try {
+        const file = path.join(src, 'doc.bin')
+        await writeRandom(file, 1 << 20)
+        const events = new EventEmitter()
+        const log = { cancelled: [], failed: [], done: [] }
+        for (const k of Object.keys(log)) events.on(`file-${k}`, e => log[k].push(e))
+        const peer = 'peer-b'
+        const ft = createFileTransfer({ libp2p: null, events, sendTo: () => true, openPeers: () => [peer],
+            peerNames: () => ({}), downloadDir: src })
+        const { offerId } = await ft.offerFile(file)
+        let aborted = false
+        const stream = {
+            source: (async function* () { yield Buffer.from(JSON.stringify({ offerId }) + '\n') })(),
+            async sink(source) {
+                for await (const _ of source) throw new Error('stream reset')
+            },
+            async close() {},
+            abort() { aborted = true }
+        }
+        ft.handleStream({ stream, connection: { remotePeer: { toString: () => peer } } })
+        await waitUntil(() => aborted, 5000)
+        await delay(100)
+        ft.handleControl(peer, { type: 'file-cancel', offerId })
+        await waitUntil(() => log.cancelled.length + log.failed.length > 0, 5000)
+        assert.deepEqual(log.failed, [])
+        assert.deepEqual(log.cancelled, [{ offerId, peerId: peer, direction: 'send', by: 'peer' }])
+    } finally {
+        await fsp.rm(src, { recursive: true, force: true })
+    }
 })

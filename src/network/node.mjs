@@ -343,7 +343,7 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
         offerFile: filePath => files.offerFile(filePath),
         acceptFile: offerId => files.acceptFile(offerId),
         refuseFile: offerId => files.refuseFile(offerId),
-        cancelFile: offerId => files.cancelFile(offerId),
+        cancelFile: (offerId, peerId) => files.cancelFile(offerId, peerId),
         async stop() {
             stopped = true
             for (const timer of waitingDial.values()) clearTimeout(timer)
