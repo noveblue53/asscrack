@@ -1,0 +1,749 @@
+{
+  "node": "v24.13.1",
+  "results": [
+    {
+      "case": "a",
+      "restartDelayMs": 0,
+      "repeat": 0,
+      "steps": [],
+      "host": "A",
+      "sender": "A",
+      "failoverMs": 4,
+      "restartedIdLower": true,
+      "restartedTimeline": [
+        {
+          "dt": 0,
+          "ev": "peer-joined",
+          "host": "remaining",
+          "isHost": false
+        },
+        {
+          "dt": 1,
+          "ev": "host-changed",
+          "host": "remaining",
+          "isHost": false
+        },
+        {
+          "dt": 2,
+          "ev": "history",
+          "texts": [
+            "line from B",
+            "line from A",
+            "before voice"
+          ],
+          "isHost": false
+        },
+        {
+          "dt": 8053,
+          "ev": "state",
+          "texts": [
+            "line from B",
+            "line from A",
+            "before voice"
+          ],
+          "isHost": false
+        }
+      ],
+      "remainingHasBeforeVoice": true,
+      "historyEvent": {
+        "dt": 2,
+        "texts": [
+          "line from B",
+          "line from A",
+          "before voice"
+        ]
+      },
+      "restartedHasBeforeVoice": true,
+      "restartedElectedSelf": false,
+      "restartedHostIsRemaining": true,
+      "historyAfterHostKnown": true,
+      "pass": true,
+      "stderr": [
+        [],
+        []
+      ]
+    },
+    {
+      "case": "a",
+      "restartDelayMs": 0,
+      "repeat": 1,
+      "steps": [],
+      "host": "A",
+      "sender": "A",
+      "failoverMs": 3,
+      "restartedIdLower": true,
+      "restartedTimeline": [
+        {
+          "dt": 0,
+          "ev": "peer-joined",
+          "host": "remaining",
+          "isHost": false
+        },
+        {
+          "dt": 0,
+          "ev": "host-changed",
+          "host": "remaining",
+          "isHost": false
+        },
+        {
+          "dt": 1,
+          "ev": "history",
+          "texts": [
+            "line from B",
+            "line from A",
+            "before voice"
+          ],
+          "isHost": false
+        },
+        {
+          "dt": 8049,
+          "ev": "state",
+          "texts": [
+            "line from B",
+            "line from A",
+            "before voice"
+          ],
+          "isHost": false
+        }
+      ],
+      "remainingHasBeforeVoice": true,
+      "historyEvent": {
+        "dt": 1,
+        "texts": [
+          "line from B",
+          "line from A",
+          "before voice"
+        ]
+      },
+      "restartedHasBeforeVoice": true,
+      "restartedElectedSelf": false,
+      "restartedHostIsRemaining": true,
+      "historyAfterHostKnown": true,
+      "pass": true,
+      "stderr": [
+        [],
+        []
+      ]
+    },
+    {
+      "case": "a",
+      "restartDelayMs": 0,
+      "repeat": 2,
+      "steps": [],
+      "host": "A",
+      "sender": "A",
+      "failoverMs": 3,
+      "restartedIdLower": false,
+      "restartedTimeline": [
+        {
+          "dt": 0,
+          "ev": "peer-joined",
+          "host": "remaining",
+          "isHost": false
+        },
+        {
+          "dt": 2,
+          "ev": "host-changed",
+          "host": "remaining",
+          "isHost": false
+        },
+        {
+          "dt": 3,
+          "ev": "history",
+          "texts": [
+            "line from A",
+            "line from B",
+            "before voice"
+          ],
+          "isHost": false
+        },
+        {
+          "dt": 8071,
+          "ev": "state",
+          "texts": [
+            "line from A",
+            "line from B",
+            "before voice"
+          ],
+          "isHost": false
+        }
+      ],
+      "remainingHasBeforeVoice": true,
+      "historyEvent": {
+        "dt": 3,
+        "texts": [
+          "line from A",
+          "line from B",
+          "before voice"
+        ]
+      },
+      "restartedHasBeforeVoice": true,
+      "restartedElectedSelf": false,
+      "restartedHostIsRemaining": true,
+      "historyAfterHostKnown": true,
+      "pass": true,
+      "stderr": [
+        [],
+        []
+      ]
+    },
+    {
+      "case": "a",
+      "restartDelayMs": 8000,
+      "repeat": 0,
+      "steps": [],
+      "host": "A",
+      "sender": "A",
+      "failoverMs": 4,
+      "restartedIdLower": false,
+      "restartedTimeline": [
+        {
+          "dt": 0,
+          "ev": "peer-joined",
+          "host": "remaining",
+          "isHost": false
+        },
+        {
+          "dt": 2,
+          "ev": "host-changed",
+          "host": "remaining",
+          "isHost": false
+        },
+        {
+          "dt": 2,
+          "ev": "history",
+          "texts": [
+            "line from B",
+            "line from A",
+            "before voice"
+          ],
+          "isHost": false
+        },
+        {
+          "dt": 8045,
+          "ev": "state",
+          "texts": [
+            "line from B",
+            "line from A",
+            "before voice"
+          ],
+          "isHost": false
+        }
+      ],
+      "remainingHasBeforeVoice": true,
+      "historyEvent": {
+        "dt": 2,
+        "texts": [
+          "line from B",
+          "line from A",
+          "before voice"
+        ]
+      },
+      "restartedHasBeforeVoice": true,
+      "restartedElectedSelf": false,
+      "restartedHostIsRemaining": true,
+      "historyAfterHostKnown": true,
+      "pass": true,
+      "stderr": [
+        [],
+        []
+      ]
+    },
+    {
+      "case": "a",
+      "restartDelayMs": 8000,
+      "repeat": 1,
+      "steps": [],
+      "host": "A",
+      "sender": "A",
+      "failoverMs": 4,
+      "restartedIdLower": false,
+      "restartedTimeline": [
+        {
+          "dt": 0,
+          "ev": "peer-joined",
+          "host": "remaining",
+          "isHost": false
+        },
+        {
+          "dt": 2,
+          "ev": "host-changed",
+          "host": "remaining",
+          "isHost": false
+        },
+        {
+          "dt": 3,
+          "ev": "history",
+          "texts": [
+            "line from A",
+            "line from B",
+            "before voice"
+          ],
+          "isHost": false
+        },
+        {
+          "dt": 8030,
+          "ev": "state",
+          "texts": [
+            "line from A",
+            "line from B",
+            "before voice"
+          ],
+          "isHost": false
+        }
+      ],
+      "remainingHasBeforeVoice": true,
+      "historyEvent": {
+        "dt": 3,
+        "texts": [
+          "line from A",
+          "line from B",
+          "before voice"
+        ]
+      },
+      "restartedHasBeforeVoice": true,
+      "restartedElectedSelf": false,
+      "restartedHostIsRemaining": true,
+      "historyAfterHostKnown": true,
+      "pass": true,
+      "stderr": [
+        [],
+        []
+      ]
+    },
+    {
+      "case": "a",
+      "restartDelayMs": 8000,
+      "repeat": 2,
+      "steps": [],
+      "host": "B",
+      "sender": "B",
+      "failoverMs": 3,
+      "restartedIdLower": false,
+      "restartedTimeline": [
+        {
+          "dt": 0,
+          "ev": "peer-joined",
+          "host": "remaining",
+          "isHost": false
+        },
+        {
+          "dt": 2,
+          "ev": "host-changed",
+          "host": "remaining",
+          "isHost": false
+        },
+        {
+          "dt": 3,
+          "ev": "history",
+          "texts": [
+            "line from A",
+            "line from B",
+            "before voice"
+          ],
+          "isHost": false
+        },
+        {
+          "dt": 8051,
+          "ev": "state",
+          "texts": [
+            "line from A",
+            "line from B",
+            "before voice"
+          ],
+          "isHost": false
+        }
+      ],
+      "remainingHasBeforeVoice": true,
+      "historyEvent": {
+        "dt": 3,
+        "texts": [
+          "line from A",
+          "line from B",
+          "before voice"
+        ]
+      },
+      "restartedHasBeforeVoice": true,
+      "restartedElectedSelf": false,
+      "restartedHostIsRemaining": true,
+      "historyAfterHostKnown": true,
+      "pass": true,
+      "stderr": [
+        [],
+        []
+      ]
+    },
+    {
+      "case": "b",
+      "restartDelayMs": 0,
+      "repeat": 0,
+      "steps": [],
+      "host": "B",
+      "sender": "A",
+      "failoverMs": 3,
+      "restartedIdLower": false,
+      "restartedTimeline": [
+        {
+          "dt": 0,
+          "ev": "peer-joined",
+          "host": "remaining",
+          "isHost": false
+        },
+        {
+          "dt": 2,
+          "ev": "host-changed",
+          "host": "remaining",
+          "isHost": false
+        },
+        {
+          "dt": 2,
+          "ev": "history",
+          "texts": [
+            "line from B",
+            "line from A",
+            "before voice"
+          ],
+          "isHost": false
+        },
+        {
+          "dt": 8030,
+          "ev": "state",
+          "texts": [
+            "line from B",
+            "line from A",
+            "before voice"
+          ],
+          "isHost": false
+        }
+      ],
+      "remainingHasBeforeVoice": true,
+      "historyEvent": {
+        "dt": 2,
+        "texts": [
+          "line from B",
+          "line from A",
+          "before voice"
+        ]
+      },
+      "restartedHasBeforeVoice": true,
+      "restartedElectedSelf": false,
+      "restartedHostIsRemaining": true,
+      "historyAfterHostKnown": true,
+      "pass": true,
+      "stderr": [
+        [],
+        []
+      ]
+    },
+    {
+      "case": "b",
+      "restartDelayMs": 0,
+      "repeat": 1,
+      "steps": [],
+      "host": "B",
+      "sender": "A",
+      "failoverMs": 4,
+      "restartedIdLower": true,
+      "restartedTimeline": [
+        {
+          "dt": 0,
+          "ev": "peer-joined",
+          "host": "remaining",
+          "isHost": false
+        },
+        {
+          "dt": 1,
+          "ev": "host-changed",
+          "host": "remaining",
+          "isHost": false
+        },
+        {
+          "dt": 1,
+          "ev": "history",
+          "texts": [
+            "line from A",
+            "line from B",
+            "before voice"
+          ],
+          "isHost": false
+        },
+        {
+          "dt": 8064,
+          "ev": "state",
+          "texts": [
+            "line from A",
+            "line from B",
+            "before voice"
+          ],
+          "isHost": false
+        }
+      ],
+      "remainingHasBeforeVoice": true,
+      "historyEvent": {
+        "dt": 1,
+        "texts": [
+          "line from A",
+          "line from B",
+          "before voice"
+        ]
+      },
+      "restartedHasBeforeVoice": true,
+      "restartedElectedSelf": false,
+      "restartedHostIsRemaining": true,
+      "historyAfterHostKnown": true,
+      "pass": true,
+      "stderr": [
+        [],
+        []
+      ]
+    },
+    {
+      "case": "b",
+      "restartDelayMs": 0,
+      "repeat": 2,
+      "steps": [],
+      "host": "B",
+      "sender": "A",
+      "failoverMs": 3,
+      "restartedIdLower": false,
+      "restartedTimeline": [
+        {
+          "dt": 0,
+          "ev": "peer-joined",
+          "host": "remaining",
+          "isHost": false
+        },
+        {
+          "dt": 2,
+          "ev": "host-changed",
+          "host": "remaining",
+          "isHost": false
+        },
+        {
+          "dt": 2,
+          "ev": "history",
+          "texts": [
+            "line from B",
+            "line from A",
+            "before voice"
+          ],
+          "isHost": false
+        },
+        {
+          "dt": 8012,
+          "ev": "state",
+          "texts": [
+            "line from B",
+            "line from A",
+            "before voice"
+          ],
+          "isHost": false
+        }
+      ],
+      "remainingHasBeforeVoice": true,
+      "historyEvent": {
+        "dt": 2,
+        "texts": [
+          "line from B",
+          "line from A",
+          "before voice"
+        ]
+      },
+      "restartedHasBeforeVoice": true,
+      "restartedElectedSelf": false,
+      "restartedHostIsRemaining": true,
+      "historyAfterHostKnown": true,
+      "pass": true,
+      "stderr": [
+        [],
+        []
+      ]
+    },
+    {
+      "case": "b",
+      "restartDelayMs": 8000,
+      "repeat": 0,
+      "steps": [],
+      "host": "A",
+      "sender": "B",
+      "failoverMs": 3,
+      "restartedIdLower": false,
+      "restartedTimeline": [
+        {
+          "dt": 0,
+          "ev": "peer-joined",
+          "host": "remaining",
+          "isHost": false
+        },
+        {
+          "dt": 2,
+          "ev": "host-changed",
+          "host": "remaining",
+          "isHost": false
+        },
+        {
+          "dt": 2,
+          "ev": "history",
+          "texts": [
+            "line from B",
+            "line from A",
+            "before voice"
+          ],
+          "isHost": false
+        },
+        {
+          "dt": 8030,
+          "ev": "state",
+          "texts": [
+            "line from B",
+            "line from A",
+            "before voice"
+          ],
+          "isHost": false
+        }
+      ],
+      "remainingHasBeforeVoice": true,
+      "historyEvent": {
+        "dt": 2,
+        "texts": [
+          "line from B",
+          "line from A",
+          "before voice"
+        ]
+      },
+      "restartedHasBeforeVoice": true,
+      "restartedElectedSelf": false,
+      "restartedHostIsRemaining": true,
+      "historyAfterHostKnown": true,
+      "pass": true,
+      "stderr": [
+        [],
+        []
+      ]
+    },
+    {
+      "case": "b",
+      "restartDelayMs": 8000,
+      "repeat": 1,
+      "steps": [],
+      "host": "A",
+      "sender": "B",
+      "failoverMs": 3,
+      "restartedIdLower": false,
+      "restartedTimeline": [
+        {
+          "dt": 0,
+          "ev": "peer-joined",
+          "host": "remaining",
+          "isHost": false
+        },
+        {
+          "dt": 2,
+          "ev": "host-changed",
+          "host": "remaining",
+          "isHost": false
+        },
+        {
+          "dt": 2,
+          "ev": "history",
+          "texts": [
+            "line from B",
+            "line from A",
+            "before voice"
+          ],
+          "isHost": false
+        },
+        {
+          "dt": 8020,
+          "ev": "state",
+          "texts": [
+            "line from B",
+            "line from A",
+            "before voice"
+          ],
+          "isHost": false
+        }
+      ],
+      "remainingHasBeforeVoice": true,
+      "historyEvent": {
+        "dt": 2,
+        "texts": [
+          "line from B",
+          "line from A",
+          "before voice"
+        ]
+      },
+      "restartedHasBeforeVoice": true,
+      "restartedElectedSelf": false,
+      "restartedHostIsRemaining": true,
+      "historyAfterHostKnown": true,
+      "pass": true,
+      "stderr": [
+        [],
+        []
+      ]
+    },
+    {
+      "case": "b",
+      "restartDelayMs": 8000,
+      "repeat": 2,
+      "steps": [],
+      "host": "A",
+      "sender": "B",
+      "failoverMs": 4,
+      "restartedIdLower": true,
+      "restartedTimeline": [
+        {
+          "dt": 0,
+          "ev": "peer-joined",
+          "host": "remaining",
+          "isHost": false
+        },
+        {
+          "dt": 1,
+          "ev": "host-changed",
+          "host": "remaining",
+          "isHost": false
+        },
+        {
+          "dt": 2,
+          "ev": "history",
+          "texts": [
+            "line from B",
+            "line from A",
+            "before voice"
+          ],
+          "isHost": false
+        },
+        {
+          "dt": 8031,
+          "ev": "state",
+          "texts": [
+            "line from B",
+            "line from A",
+            "before voice"
+          ],
+          "isHost": false
+        }
+      ],
+      "remainingHasBeforeVoice": true,
+      "historyEvent": {
+        "dt": 2,
+        "texts": [
+          "line from B",
+          "line from A",
+          "before voice"
+        ]
+      },
+      "restartedHasBeforeVoice": true,
+      "restartedElectedSelf": false,
+      "restartedHostIsRemaining": true,
+      "historyAfterHostKnown": true,
+      "pass": true,
+      "stderr": [
+        [],
+        []
+      ]
+    }
+  ]
+}

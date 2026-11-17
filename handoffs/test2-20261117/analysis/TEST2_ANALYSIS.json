@@ -1,0 +1,177 @@
+{
+  "test": "LAN test card 2, asscrack 0.2.0, 2026-11-17",
+  "field_logs": null,
+  "field_logs_note": "The operator saved no terminal or console output. The field result is the operator report only.",
+  "reproduction_scope": "127.0.0.1, one PC. Not a LAN result.",
+  "time_convention": "history-net.json: dt = 0 is the first peer-joined event of the restarted node, in ms.",
+  "inputs_sha256": {
+    "evidence/original/operator/answers-20261117.txt": "b2264c651def0bca631856ae04d2274a3b21d986853451926d23dcb812e7568d",
+    "evidence/original/operator/names-20261117.txt": "2be3d45491c39d110feb9309ff315c8f01cdaa7881815b8804c5b9b459a3a606",
+    "evidence/original/operator/report-20261117.txt": "568254cdec2414732d664c648584918785e3fcf6a3a601f3c8b36a26d317cf1f",
+    "analysis/history-net.json": "c1fdebfc1112d68f59ce2bdf7280c585f8dad668e45d2c53755bf610f84f22bc",
+    "analysis/history-app-a-dev.json": "77e37132df2ac295464f9b5c5e405bc4e2e0066f704338e45a472bcedad8086e",
+    "analysis/history-app-a-exe020.json": "d51e243e32af43fe7c11392953c9a50e6651184c14bb1cd2ff0c1f5c14fe07ef",
+    "analysis/history-app-a-fix.json": "600e089faacf8e1ac18152b704157725fe68835f30e70d1563b5e3ddeff71223",
+    "analysis/history-app-a-fix2.json": "2d6b79ce82840b1883781336f9cb75c0f7f657b4df7fccb5ef504fcae87b8432",
+    "analysis/history-app-b-dev.json": "57e12637801865add0247cb0d788eb7119cd4424b10abdba0fc297f9d5f3ac3e",
+    "analysis/history-app-b-exe020.json": "d50ec8b39d5f0352f3fbeb62796c8ea5582092b672215141191ae97613a1dd8e",
+    "analysis/history-app-b-fix.json": "3740680a305733bfff7252635062d95fa6d2415d8ccca1d5dcc257cded0a1b12",
+    "analysis/history-app-b-fix2.json": "8c9000ecd0a212888242d00644dea7e28f04d534ebc4741fc094209b6bf33d6c"
+  },
+  "network_layer": {
+    "runs": 12,
+    "pass": 12,
+    "restarted_has_before_voice": 12,
+    "restarted_elected_self": 0,
+    "history_after_host_known": 12,
+    "restarted_id_lower": 4,
+    "history_dt_ms_min": 1,
+    "history_dt_ms_max": 3,
+    "failover_ms": [
+      4,
+      3,
+      3,
+      4,
+      4,
+      3,
+      3,
+      4,
+      3,
+      3,
+      3,
+      4
+    ],
+    "by_case_and_delay": {
+      "case a, restart delay 0 ms": {
+        "runs": 3,
+        "pass": 3
+      },
+      "case a, restart delay 8000 ms": {
+        "runs": 3,
+        "pass": 3
+      },
+      "case b, restart delay 0 ms": {
+        "runs": 3,
+        "pass": 3
+      },
+      "case b, restart delay 8000 ms": {
+        "runs": 3,
+        "pass": 3
+      }
+    }
+  },
+  "window": [
+    {
+      "file": "history-app-a-dev.json",
+      "build": "main 0ade5d9 (dev)",
+      "case": "a",
+      "host": "B",
+      "sender": "B",
+      "restarted_sees_peer": true,
+      "restarted_host_is_remaining": true,
+      "restarted_window_lines": 0,
+      "restarted_window_has_before_voice": false,
+      "remaining_window_lines": 3,
+      "console_error_lines": 0,
+      "error": null
+    },
+    {
+      "file": "history-app-a-exe020.json",
+      "build": "0.2.0 .exe",
+      "case": "a",
+      "host": "A",
+      "sender": "A",
+      "restarted_sees_peer": true,
+      "restarted_host_is_remaining": true,
+      "restarted_window_lines": 0,
+      "restarted_window_has_before_voice": false,
+      "remaining_window_lines": 3,
+      "console_error_lines": 0,
+      "error": null
+    },
+    {
+      "file": "history-app-a-fix.json",
+      "build": "fix 4752fd1 (opus/history-restart)",
+      "case": "a",
+      "host": "B",
+      "sender": "B",
+      "restarted_sees_peer": true,
+      "restarted_host_is_remaining": true,
+      "restarted_window_lines": 3,
+      "restarted_window_has_before_voice": true,
+      "remaining_window_lines": 3,
+      "console_error_lines": 0,
+      "error": null
+    },
+    {
+      "file": "history-app-a-fix2.json",
+      "build": "fix 2a62b4d (opus/history-restart, with the log file)",
+      "case": "a",
+      "host": "B",
+      "sender": "B",
+      "restarted_sees_peer": true,
+      "restarted_host_is_remaining": true,
+      "restarted_window_lines": 3,
+      "restarted_window_has_before_voice": true,
+      "remaining_window_lines": 3,
+      "console_error_lines": 0,
+      "error": null
+    },
+    {
+      "file": "history-app-b-dev.json",
+      "build": "main 0ade5d9 (dev)",
+      "case": "b",
+      "host": "A",
+      "sender": "B",
+      "restarted_sees_peer": true,
+      "restarted_host_is_remaining": true,
+      "restarted_window_lines": 0,
+      "restarted_window_has_before_voice": false,
+      "remaining_window_lines": 3,
+      "console_error_lines": 0,
+      "error": null
+    },
+    {
+      "file": "history-app-b-exe020.json",
+      "build": "0.2.0 .exe",
+      "case": "b",
+      "host": "A",
+      "sender": "B",
+      "restarted_sees_peer": true,
+      "restarted_host_is_remaining": true,
+      "restarted_window_lines": 0,
+      "restarted_window_has_before_voice": false,
+      "remaining_window_lines": 3,
+      "console_error_lines": 0,
+      "error": null
+    },
+    {
+      "file": "history-app-b-fix.json",
+      "build": "fix 4752fd1 (opus/history-restart)",
+      "case": "b",
+      "host": "A",
+      "sender": "B",
+      "restarted_sees_peer": true,
+      "restarted_host_is_remaining": true,
+      "restarted_window_lines": 3,
+      "restarted_window_has_before_voice": true,
+      "remaining_window_lines": 3,
+      "console_error_lines": 0,
+      "error": null
+    },
+    {
+      "file": "history-app-b-fix2.json",
+      "build": "fix 2a62b4d (opus/history-restart, with the log file)",
+      "case": "b",
+      "host": "A",
+      "sender": "B",
+      "restarted_sees_peer": true,
+      "restarted_host_is_remaining": true,
+      "restarted_window_lines": 3,
+      "restarted_window_has_before_voice": true,
+      "remaining_window_lines": 3,
+      "console_error_lines": 0,
+      "error": null
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "case": "a",
+  "room": "haamwl2ex39",
+  "restartedFrom": "ASSCRACK-0.2.0-portable.exe",
+  "host": "A",
+  "sender": "A",
+  "windowsBeforeClose": {
+    "A": [
+      "14:08Aline from A",
+      "14:08Bline from B",
+      "14:08Abefore voice"
+    ],
+    "B": [
+      "14:08Aline from A",
+      "14:08Bline from B",
+      "14:08Abefore voice"
+    ]
+  },
+  "failoverMs": 395,
+  "restartedSeesPeer": true,
+  "restartedHostIsRemaining": true,
+  "restartedWindow": [],
+  "remainingWindow": [
+    "14:08Aline from A",
+    "14:08Bline from B",
+    "14:08Abefore voice"
+  ],
+  "restartedWindowHasBeforeVoice": false,
+  "consoleLines": {
+    "A": [
+      "[console.log] peer-discovered Object"
+    ],
+    "B": [
+      "[console.log] peer-discovered Object",
+      "[console.log] peer-discovered Object"
+    ],
+    "A'": [
+      "[console.log] peer-discovered Object"
+    ]
+  },
+  "log": [
+    "7.9s host A sender A windows {\"A\":[\"14:08Aline from A\",\"14:08Bline from B\",\"14:08Abefore voice\"],\"B\":[\"14:08Aline from A\",\"14:08Bline from B\",\"14:08Abefore voice\"]}",
+    "8.3s failover 395 ms",
+    "23.5s restarted window [] has before voice: false"
+  ]
+}

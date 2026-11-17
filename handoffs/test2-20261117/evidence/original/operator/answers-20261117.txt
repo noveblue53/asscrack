@@ -1,0 +1,2 @@
+i didnt type before voice but i tested other chat, no history is passed on reconnect.
+i didnt manually save anything

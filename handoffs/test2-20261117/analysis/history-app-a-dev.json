@@ -1,0 +1,46 @@
+{
+  "case": "a",
+  "room": "haamwl2dupp",
+  "restartedFrom": "dev",
+  "host": "B",
+  "sender": "B",
+  "windowsBeforeClose": {
+    "A": [
+      "14:07Aline from A",
+      "14:07Bline from B",
+      "14:07Bbefore voice"
+    ],
+    "B": [
+      "14:07Aline from A",
+      "14:07Bline from B",
+      "14:07Bbefore voice"
+    ]
+  },
+  "failoverMs": 412,
+  "restartedSeesPeer": true,
+  "restartedHostIsRemaining": true,
+  "restartedWindow": [],
+  "remainingWindow": [
+    "14:07Aline from A",
+    "14:07Bline from B",
+    "14:07Bbefore voice"
+  ],
+  "restartedWindowHasBeforeVoice": false,
+  "consoleLines": {
+    "A": [
+      "[console.log] peer-discovered Object",
+      "[console.log] peer-discovered Object"
+    ],
+    "B": [
+      "[console.log] peer-discovered Object"
+    ],
+    "B'": [
+      "[console.log] peer-discovered Object"
+    ]
+  },
+  "log": [
+    "7.9s host B sender B windows {\"A\":[\"14:07Aline from A\",\"14:07Bline from B\",\"14:07Bbefore voice\"],\"B\":[\"14:07Aline from A\",\"14:07Bline from B\",\"14:07Bbefore voice\"]}",
+    "8.3s failover 412 ms",
+    "17.2s restarted window [] has before voice: false"
+  ]
+}

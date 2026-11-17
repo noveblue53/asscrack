@@ -1,0 +1,1 @@
+also at least on 0.2.0, the user names did not populate until that user sent a message
