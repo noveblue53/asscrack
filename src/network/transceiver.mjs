@@ -29,6 +29,8 @@ node.events.on('peer-left', ({ peerId }) => console.log('Chat closed with peer:'
 node.events.on('peer-name', ({ peerId, name }) => console.log(`Peer name: ${name} (${peerId})`))
 node.events.on('host-changed', ({ peerId, term }) => console.log(`Host: ${peerId} (term ${term})`))
 node.events.on('message', ({ from, text }) => console.log(`\n> ${from}: ${text}`))
+node.events.on('file-offer', ({ from, name, size }) =>
+    console.log(`File offer from ${from}: ${name} (${size} bytes). The terminal demo does not receive files.`))
 node.events.on('history', ({ messages }) => {
     for (const { from, text } of messages) console.log(`[history] > ${from}: ${text}`)
 })

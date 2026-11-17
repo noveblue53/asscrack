@@ -9,6 +9,9 @@ import { EventEmitter } from 'node:events'
 import { createChatSession } from './chat-session.mjs'
 import { createElection } from './election.mjs'
 import { createHistory } from './history.mjs'
+import { createFileTransfer, FILE_PROTOCOL } from './file-transfer.mjs'
+
+export { FILE_PROTOCOL, safeFileName } from './file-transfer.mjs'
 
 export const CHAT_PROTOCOL = '/asscrack/chat/receive'
 
@@ -43,7 +46,7 @@ function validHistoryItem(m) {
 }
 
 export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0'], discovery = true, discoveryInterval, name,
-    heartbeatInterval = 1000, hostTimeout = 5000, electionDelay = 3000 } = {}) {
+    heartbeatInterval = 1000, hostTimeout = 5000, electionDelay = 3000, downloadDir } = {}) {
     if (typeof room !== 'string') throw new TypeError('room must be a string')
     const node = await createLibp2p({
         start: false,
@@ -105,6 +108,15 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
         electionDelay
     })
 
+    const files = createFileTransfer({
+        libp2p: node,
+        events,
+        sendTo: (peerId, message) => sessions.get(peerId)?.send(JSON.stringify(message)) ?? false,
+        openPeers: () => [...sessions.keys()],
+        peerNames: () => Object.fromEntries([...names].filter(([peerId]) => sessions.has(peerId))),
+        downloadDir
+    })
+
     // A line with a "type" field is a control line. Other lines are chat lines.
     function controlMessage(line) {
         let value
@@ -138,6 +150,8 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
                     }
                     else if (control.type === 'signal') {
                         if (control.data !== null && typeof control.data === 'object') events.emit('signal', { peerId, data: control.data })
+                    } else if (control.type === 'file-offer' || control.type === 'file-refuse' || control.type === 'file-cancel') {
+                        files.handleControl(peerId, control)
                     } else if (control.type === 'voice') {
                         events.emit('voice-state', {
                             peerId,
@@ -167,6 +181,7 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
                 pendingHistory.delete(peerId)
                 events.emit('peer-left', { peerId })
                 election.sessionClosed(peerId)
+                files.peerLeft(peerId)
             }
         })
     }
@@ -175,6 +190,8 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
     await node.handle(CHAT_PROTOCOL, ({ stream, connection }) => {
         attachChat(stream, connection.remotePeer.toString())
     }, { maxInboundStreams: 1, maxOutboundStreams: 1 })
+
+    await node.handle(FILE_PROTOCOL, data => files.handleStream(data))
 
     node.addEventListener('connection:close', ({ detail: connection }) => {
         sessions.get(connection.remotePeer.toString())?.close()
@@ -254,7 +271,12 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
         isHost: () => election.isHost(),
         history: () => history.list(),
         pauseHeartbeats: paused => election.pauseHeartbeats(paused),
+        offerFile: filePath => files.offerFile(filePath),
+        acceptFile: offerId => files.acceptFile(offerId),
+        refuseFile: offerId => files.refuseFile(offerId),
+        cancelFile: offerId => files.cancelFile(offerId),
         async stop() {
+            await files.stop()
             election.stop()
             const pending = [...sessions.values()].map(s => { s.close(); return s.done })
             await Promise.allSettled(pending)
