@@ -156,3 +156,30 @@ body.chat #status {
 #peers li.self .name {
   font-style: italic;
 }
+
+/* File transfers */
+#file-controls {
+  margin: 4px 0;
+}
+#transfers {
+  list-style: none;
+  margin: 4px 0;
+  padding: 0;
+  max-height: 160px;
+  overflow-y: auto;
+}
+#transfers li.transfer {
+  padding: 2px 0;
+  border-bottom: 1px solid #ddd;
+}
+#transfers li.transfer > span {
+  margin-right: 8px;
+}
+#transfers progress {
+  width: 120px;
+  vertical-align: middle;
+  margin-right: 8px;
+}
+#transfers button {
+  margin-right: 4px;
+}

@@ -276,3 +276,186 @@ window.asscrack.onHostChanged(info => {
     updateVoiceView();
 });
 window.asscrack.onVoiceState(() => updateVoiceView());
+
+// ---- File transfers ----
+
+const fileInput = document.getElementById('file-input');
+const sendFileButton = document.getElementById('send-file');
+const transferList = document.getElementById('transfers');
+
+const RESULT_STATES = new Set(['done', 'failed', 'refused', 'cancelled']);
+const transfers = new Map(); // `${offerId}|${peerId}` -> { item, state, direction }
+const ownOffers = new Map(); // offerId -> { name, size }
+
+function formatSize(bytes) {
+    const n = Number(bytes) || 0;
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+function transferPeerName(peerId, from) {
+    return peerNames.get(peerId) || (typeof from === 'string' && from) || String(peerId ?? '').slice(0, 12);
+}
+
+function makeSpan(className, text) {
+    const span = document.createElement('span');
+    span.className = className;
+    span.textContent = String(text ?? '');
+    return span;
+}
+
+function makeButton(text, onClick) {
+    const button = document.createElement('button');
+    button.textContent = text;
+    button.addEventListener('click', onClick);
+    return button;
+}
+
+async function callFile(fn, offerId) {
+    try {
+        return await fn(offerId);
+    } catch (err) {
+        status.textContent = `Error: ${err?.message ?? err}`;
+        return false;
+    }
+}
+
+function setTransferState(entry, state, text) {
+    entry.state = state;
+    entry.item.dataset.state = state;
+    entry.item.querySelector('.state-text').textContent = String(text ?? state);
+    const buttons = entry.item.querySelector('.buttons');
+    buttons.replaceChildren();
+    const offerId = entry.item.dataset.offerId;
+    if (state === 'offered') {
+        buttons.append(
+            makeButton('Accept', async () => {
+                setTransferState(entry, 'receiving', 'Receiving');
+                const ok = await callFile(window.asscrack.acceptFile, offerId);
+                if (ok !== true) setTransferResult(entry, 'failed', 'Failed: the offer is not available');
+            }),
+            makeButton('Refuse', () => {
+                setTransferState(entry, 'refused', 'Refused');
+                callFile(window.asscrack.refuseFile, offerId);
+            })
+        );
+    } else if (state === 'receiving') {
+        // Sender rows get no Cancel: cancelFile() cancels the full offer. The offer head has that Cancel.
+        buttons.append(makeButton('Cancel', () => callFile(window.asscrack.cancelFile, offerId)));
+    }
+}
+
+function getTransfer(offerId, peerId, direction, info = {}) {
+    const key = `${offerId}|${peerId}`;
+    let entry = transfers.get(key);
+    if (entry) return entry;
+    const item = document.createElement('li');
+    item.className = 'transfer';
+    item.dataset.offerId = String(offerId);
+    item.dataset.peerId = String(peerId);
+    item.dataset.direction = direction;
+    const progress = document.createElement('progress');
+    progress.max = Number(info.size) || 1;
+    progress.value = 0;
+    item.append(
+        makeSpan('file-name', info.name),
+        makeSpan('file-size', formatSize(info.size)),
+        makeSpan('peer-name', `${direction === 'send' ? 'to' : 'from'} ${transferPeerName(peerId, info.from)}`),
+        progress,
+        makeSpan('state-text', ''),
+        makeSpan('buttons', '')
+    );
+    transferList.appendChild(item);
+    transferList.scrollTop = transferList.scrollHeight;
+    entry = { item, state: null, direction };
+    transfers.set(key, entry);
+    return entry;
+}
+
+// The entry for a file event. The sender makes the item at the first event for each receiver.
+function transferForEvent(data) {
+    const direction = data.direction === 'receive' ? 'receive' : 'send';
+    const own = ownOffers.get(data.offerId) ?? {};
+    const entry = getTransfer(data.offerId, data.peerId, direction, {
+        name: data.name ?? own.name,
+        size: data.size ?? own.size
+    });
+    if (entry.state === null) setTransferState(entry, direction === 'send' ? 'sending' : 'receiving', direction === 'send' ? 'Sending' : 'Receiving');
+    return entry;
+}
+
+function setTransferResult(entry, state, text) {
+    if (RESULT_STATES.has(entry.state)) return;
+    setTransferState(entry, state, text);
+    entry.item.querySelector('.buttons').replaceChildren();
+}
+
+window.asscrack.onFileOffer(data => {
+    const entry = getTransfer(data.offerId, data.peerId, 'receive', data);
+    setTransferState(entry, 'offered', 'Offered');
+});
+
+window.asscrack.onFileProgress(data => {
+    const entry = transferForEvent(data);
+    if (RESULT_STATES.has(entry.state)) return;
+    const progress = entry.item.querySelector('progress');
+    progress.max = Number(data.size) || 1;
+    progress.value = Number(data.bytes) || 0;
+});
+
+window.asscrack.onFileDone(data => {
+    const entry = transferForEvent(data);
+    const progress = entry.item.querySelector('progress');
+    progress.value = progress.max;
+    if (data.direction === 'receive') {
+        const fileName = String(data.path ?? '').split(/[\\/]/).pop();
+        setTransferResult(entry, 'done', `Saved as ${fileName}`);
+    } else {
+        setTransferResult(entry, 'done', 'Sent');
+    }
+});
+
+window.asscrack.onFileFailed(data => setTransferResult(transferForEvent(data), 'failed', `Failed: ${data.reason ?? ''}`));
+window.asscrack.onFileRefused(data => setTransferResult(transferForEvent({ ...data, direction: 'send' }), 'refused', 'Refused'));
+window.asscrack.onFileCancelled(data => setTransferResult(transferForEvent(data), 'cancelled', 'Cancelled'));
+
+function addOfferHead(offerId, name, peers) {
+    const item = document.createElement('li');
+    item.className = 'transfer offer-head';
+    item.dataset.offerId = String(offerId);
+    const buttons = makeSpan('buttons', '');
+    if (peers > 0) {
+        item.append(makeSpan('state-text', `Offered ${name} to ${peers} users`));
+        buttons.append(makeButton('Cancel', async () => {
+            buttons.replaceChildren();
+            await callFile(window.asscrack.cancelFile, offerId);
+            item.querySelector('.state-text').textContent = `Offered ${name}: cancelled`;
+        }));
+    } else {
+        item.append(makeSpan('state-text', 'No other users in the room'));
+    }
+    item.append(buttons);
+    transferList.appendChild(item);
+    transferList.scrollTop = transferList.scrollHeight;
+}
+
+async function sendFile() {
+    const file = fileInput.files?.[0];
+    if (!file) {
+        status.textContent = 'Error: select a file.';
+        return;
+    }
+    fileInput.value = '';
+    try {
+        const result = await window.asscrack.offerFile(file);
+        ownOffers.set(result.offerId, { name: result.name, size: result.size });
+        addOfferHead(result.offerId, result.name, result.peers);
+        status.textContent = '';
+    } catch (err) {
+        status.textContent = `Error: ${err?.message ?? err}`;
+    }
+}
+
+sendFileButton.addEventListener('click', sendFile);
