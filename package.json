@@ -7,7 +7,8 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
-    "test": "node --test"
+    "test": "node --test",
+    "dist": "electron-builder --win portable"
   },
   "keywords": [
     "p2p",
@@ -24,14 +25,33 @@
     "@libp2p/utils": "^5.0.0",
     "@libp2p/websockets": "^8.1.4",
     "@nodeutils/defaults-deep": "^1.1.0",
-    "electron": "^40.5.0",
     "it-pipe": "^3.0.1",
     "it-pushable": "^3.2.4",
     "libp2p": "^1.9.4",
     "uint8arrays": "^5.1.0"
   },
   "devDependencies": {
+    "electron": "^40.5.0",
+    "electron-builder": "^26.18.0",
     "eslint": "^9.0.0",
     "prettier": "^3.0.0"
+  },
+  "build": {
+    "appId": "com.asscrack.app",
+    "productName": "ASSCRACK",
+    "files": [
+      "src/application/**/*",
+      "src/network/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "portable"
+    },
+    "portable": {
+      "artifactName": "ASSCRACK-${version}-portable.exe"
+    }
   }
 }
