@@ -59,6 +59,8 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
     const senderName = name ?? node.peerId.toString().slice(-8)
     const events = new EventEmitter()
     const sessions = new Map()
+    // The name that each open session sent in its hello line.
+    const names = new Map()
     const history = createHistory(200)
     const HISTORY_KEEP_MS = 10000
     // The last history line from each peer that was not the host when it arrived.
@@ -127,6 +129,13 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
                     // Ignore an unknown type with no warning.
                     if (control.type === 'host') election.handleAnnouncement(peerId, control)
                     else if (control.type === 'history') handleHistory(peerId, control)
+                    else if (control.type === 'hello') {
+                        const peerName = typeof control.name === 'string' ? control.name.trim().slice(0, 64) : ''
+                        if (peerName && sessions.get(peerId) === session) {
+                            names.set(peerId, peerName)
+                            events.emit('peer-name', { peerId, name: peerName })
+                        }
+                    }
                     else if (control.type === 'signal') {
                         if (control.data !== null && typeof control.data === 'object') events.emit('signal', { peerId, data: control.data })
                     } else if (control.type === 'voice') {
@@ -146,6 +155,7 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
             }
         })
         sessions.set(peerId, session)
+        session.send(JSON.stringify({ type: 'hello', name: senderName }))
         events.emit('peer-joined', { peerId })
         election.sessionOpened(peerId)
         if (election.isHost()) session.send(JSON.stringify({ type: 'history', messages: history.list() }))
@@ -153,6 +163,7 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
         session.done.catch(() => {}).finally(() => {
             if (sessions.get(peerId) === session) {
                 sessions.delete(peerId)
+                names.delete(peerId)
                 pendingHistory.delete(peerId)
                 events.emit('peer-left', { peerId })
                 election.sessionClosed(peerId)
@@ -227,6 +238,7 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
             return count
         },
         peers: () => [...sessions.keys()],
+        peerNames: () => Object.fromEntries([...names].filter(([peerId]) => sessions.has(peerId))),
         // Send one control line to one peer. Returns true if the session is open.
         sendTo(peerId, message) {
             const session = sessions.get(peerId)

@@ -8,7 +8,7 @@ const __dirname = path.dirname(__filename);
 
 Menu.setApplicationMenu(null);
 
-const EVENTS = ['peer-discovered', 'peer-joined', 'peer-left', 'message', 'signal', 'voice-state', 'host-changed'];
+const EVENTS = ['peer-discovered', 'peer-joined', 'peer-left', 'message', 'signal', 'voice-state', 'host-changed', 'peer-name'];
 
 // Test option: --profile <dir> gives each instance its own user data folder.
 const profileIndex = process.argv.indexOf('--profile');

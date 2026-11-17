@@ -61,10 +61,12 @@ function setPeerName(item, name) {
 }
 
 let selfLine = null;
+// The name from the hello line of each peer.
+const peerNames = new Map();
 
 function addPeer(peerId) {
     if (peerItems.has(peerId)) return;
-    const item = makePeerLine(String(peerId).slice(0, 12), peerId);
+    const item = makePeerLine(peerNames.get(peerId) ?? String(peerId).slice(0, 12), peerId);
     item.dataset.peerId = String(peerId);
     peerItems.set(peerId, item);
     peerList.appendChild(item);
@@ -81,6 +83,12 @@ function removePeer(peerId) {
 window.asscrack.onPeerDiscovered(data => console.log('peer-discovered', data));
 window.asscrack.onPeerJoined(data => addPeer(data.peerId));
 window.asscrack.onPeerLeft(data => removePeer(data.peerId));
+window.asscrack.onPeerName(data => {
+    if (typeof data.name !== 'string') return;
+    peerNames.set(data.peerId, data.name);
+    const item = peerItems.get(data.peerId);
+    if (item) setPeerName(item, data.name);
+});
 window.asscrack.onMessage(data => {
     const item = peerItems.get(data.peerId);
     if (item && data.from) setPeerName(item, data.from);

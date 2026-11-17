@@ -18,5 +18,6 @@ contextBridge.exposeInMainWorld('asscrack', {
     getHost: () => ipcRenderer.invoke('asscrack:host'),
     onSignal: listen('asscrack:signal'),
     onVoiceState: listen('asscrack:voice-state'),
-    onHostChanged: listen('asscrack:host-changed')
+    onHostChanged: listen('asscrack:host-changed'),
+    onPeerName: listen('asscrack:peer-name')
 });

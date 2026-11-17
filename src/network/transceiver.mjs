@@ -26,6 +26,7 @@ node.events.on('peer-discovered', ({ peerId, addresses }) => {
 })
 node.events.on('peer-joined', ({ peerId }) => console.log('Chat ready with peer:', peerId))
 node.events.on('peer-left', ({ peerId }) => console.log('Chat closed with peer:', peerId))
+node.events.on('peer-name', ({ peerId, name }) => console.log(`Peer name: ${name} (${peerId})`))
 node.events.on('host-changed', ({ peerId, term }) => console.log(`Host: ${peerId} (term ${term})`))
 node.events.on('message', ({ from, text }) => console.log(`\n> ${from}: ${text}`))
 node.events.on('history', ({ messages }) => {

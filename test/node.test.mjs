@@ -168,3 +168,63 @@ test('a node ignores lines that are not valid and keeps the session open', { tim
         await a.stop()
     }
 })
+
+test('two nodes send their names in a hello line with no chat message', { timeout: 15000 }, async () => {
+    const opts = { room: 'test', listen: ['/ip4/127.0.0.1/tcp/0'], discovery: false }
+    const a = await createAsscrackNode({ ...opts, name: 'Alice' })
+    const b = await createAsscrackNode({ ...opts, name: 'Bob' })
+    let bStopped = false
+    try {
+        const namesA = []
+        const namesB = []
+        a.events.on('peer-name', e => namesA.push(e))
+        b.events.on('peer-name', e => namesB.push(e))
+        await b.connect(a.getMultiaddrs()[0])
+        await waitFor(() => namesA.length === 1 && namesB.length === 1)
+        assert.deepEqual(namesA, [{ peerId: b.peerId, name: 'Bob' }])
+        assert.deepEqual(namesB, [{ peerId: a.peerId, name: 'Alice' }])
+        assert.deepEqual(a.peerNames(), { [b.peerId]: 'Bob' })
+
+        await b.stop()
+        bStopped = true
+        await waitFor(() => a.peers().length === 0)
+        assert.deepEqual(a.peerNames(), {})
+    } finally {
+        if (!bStopped) await b.stop()
+        await a.stop()
+    }
+})
+
+test('a node ignores a hello line with a name that is not valid', { timeout: 15000 }, async () => {
+    const base = { room: 'test', listen: ['/ip4/127.0.0.1/tcp/0'], discovery: false }
+    const a = await createAsscrackNode(base)
+    const b = await createAsscrackNode(base)
+    const outgoing = pushable()
+    const warnings = []
+    const originalWarn = console.warn
+    console.warn = (...args) => warnings.push(args.join(' '))
+    try {
+        const logA = record(a)
+        const namesA = []
+        a.events.on('peer-name', e => namesA.push(e))
+        const stream = await b.libp2p.dialProtocol(multiaddr(a.getMultiaddrs()[0]), CHAT_PROTOCOL)
+        stream.sink(outgoing).catch(() => {})
+        await waitFor(() => logA.joined.length === 1)
+
+        outgoing.push(Buffer.from(JSON.stringify({ type: 'hello', name: 5 }) + '\n'))
+        outgoing.push(Buffer.from(JSON.stringify({ type: 'hello', name: '   ' }) + '\n'))
+        outgoing.push(Buffer.from(JSON.stringify({ from: 'raw', text: 'valid', time: 123 }) + '\n'))
+        await waitFor(() => logA.messages.length === 1)
+        await delay(200)
+        assert.deepEqual(namesA, [])
+        assert.deepEqual(warnings.filter(w => w.includes('Ignored')), [])
+        assert.deepEqual(a.peers(), [b.peerId])
+        assert.deepEqual(logA.left, [])
+        assert.deepEqual(a.peerNames(), {})
+    } finally {
+        console.warn = originalWarn
+        outgoing.end()
+        await b.stop()
+        await a.stop()
+    }
+})
