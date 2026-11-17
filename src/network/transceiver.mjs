@@ -18,6 +18,10 @@ console.log('Transceiver started with peer id:', node.peerId, 'room:', room)
 console.log('Listening on:')
 node.getMultiaddrs().forEach(addr => console.log(addr))
 
+node.events.on('peer-discovered', ({ peerId, addresses }) => {
+    console.log('Discovered peer:', peerId)
+    addresses.forEach(addr => console.log('Peer address:', addr))
+})
 node.events.on('peer-joined', ({ peerId }) => console.log('Chat ready with peer:', peerId))
 node.events.on('peer-left', ({ peerId }) => console.log('Chat closed with peer:', peerId))
 node.events.on('message', ({ text }) => console.log('\n> ' + text))

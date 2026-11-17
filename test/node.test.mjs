@@ -51,3 +51,43 @@ test('two nodes chat through createAsscrackNode', { timeout: 15000 }, async () =
         await a.stop()
     }
 })
+
+test('two nodes in one room connect through mDNS discovery', { timeout: 30000 }, async () => {
+    const opts = { room: 'auto-test', listen: ['/ip4/0.0.0.0/tcp/0'], discovery: true, discoveryInterval: 1000 }
+    const a = await createAsscrackNode(opts)
+    const b = await createAsscrackNode(opts)
+    try {
+        const logA = record(a)
+        const logB = record(b)
+        const deadline = Date.now() + 15000
+        while (!(logA.joined.length >= 1 && logB.joined.length >= 1) && Date.now() < deadline) await delay(50)
+        assert.deepEqual(logA.joined, [{ peerId: b.peerId }])
+        assert.deepEqual(logB.joined, [{ peerId: a.peerId }])
+
+        assert.equal(a.send('auto hello from A'), 1)
+        assert.equal(b.send('auto hello from B'), 1)
+        await waitFor(() => logA.messages.length === 1 && logB.messages.length === 1)
+        await delay(200)
+        assert.deepEqual(logB.messages, [{ peerId: a.peerId, text: 'auto hello from A' }])
+        assert.deepEqual(logA.messages, [{ peerId: b.peerId, text: 'auto hello from B' }])
+        assert.equal(a.peers().length, 1)
+        assert.equal(b.peers().length, 1)
+    } finally {
+        await b.stop()
+        await a.stop()
+    }
+})
+
+test('nodes in different rooms do not connect', { timeout: 15000 }, async () => {
+    const base = { listen: ['/ip4/0.0.0.0/tcp/0'], discovery: true, discoveryInterval: 1000 }
+    const a = await createAsscrackNode({ ...base, room: 'room-one' })
+    const b = await createAsscrackNode({ ...base, room: 'room-two' })
+    try {
+        await delay(5000)
+        assert.deepEqual(a.peers(), [])
+        assert.deepEqual(b.peers(), [])
+    } finally {
+        await b.stop()
+        await a.stop()
+    }
+})

@@ -15,14 +15,14 @@ export function roomServiceTag(room) {
     return `_asscrack-${h}._udp.local`
 }
 
-export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0'], discovery = true } = {}) {
+export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0'], discovery = true, discoveryInterval } = {}) {
     if (typeof room !== 'string') throw new TypeError('room must be a string')
     const node = await createLibp2p({
         start: false,
         addresses: { listen },
         transports: [tcp()],
-        peerDiscovery: discovery ? [mdns({ serviceTag: roomServiceTag(room) })] : [],
-        // Discovery only; chat connections are explicitly initiated.
+        peerDiscovery: discovery ? [mdns({ serviceTag: roomServiceTag(room), ...(discoveryInterval !== undefined ? { interval: discoveryInterval } : {}) })] : [],
+        // The peer:discovery handler opens chat connections; no automatic dials.
         connectionManager: { minConnections: 0 },
         streamMuxers: [yamux()],
         connectionEncryption: [noise()]
@@ -57,6 +57,34 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
         sessions.get(connection.remotePeer.toString())?.close()
     })
 
+    const discovered = new Set()
+    const dialing = new Set()
+    node.addEventListener('peer:discovery', ({ detail }) => {
+        const remoteId = detail.id.toString()
+        const self = node.peerId.toString()
+        if (remoteId === self) return
+        if (!discovered.has(remoteId)) {
+            discovered.add(remoteId)
+            events.emit('peer-discovered', {
+                peerId: remoteId,
+                addresses: (detail.multiaddrs ?? []).map(a => a.toString())
+            })
+        }
+        // Only the node with the lower peer ID opens the chat stream.
+        if (!(self < remoteId)) return
+        if (sessions.has(remoteId) || dialing.has(remoteId)) return
+        // libp2p also emits peer:discovery for peers that connect() or an inbound dial added.
+        // Do not dial when a chat stream to that peer is already open or in negotiation.
+        const chatOpen = node.getConnections(detail.id)
+            .some(c => c.streams.some(st => st.protocol === CHAT_PROTOCOL))
+        if (chatOpen) return
+        dialing.add(remoteId)
+        node.dialProtocol(detail.id, CHAT_PROTOCOL)
+            .then(stream => attachChat(stream, remoteId))
+            .catch(err => console.warn(`Dial to discovered peer ${remoteId} failed:`, err?.message ?? err))
+            .finally(() => dialing.delete(remoteId))
+    })
+
     await node.start()
 
     return {
@@ -66,8 +94,15 @@ export async function createAsscrackNode({ room, listen = ['/ip4/0.0.0.0/tcp/0']
         getMultiaddrs: () => node.getMultiaddrs().map(a => a.toString()),
         async connect(address) {
             const connection = await node.dial(multiaddr(address))
-            const stream = await connection.newStream(CHAT_PROTOCOL)
-            attachChat(stream, connection.remotePeer.toString())
+            const remoteId = connection.remotePeer.toString()
+            // Block discovery dials to this peer while this stream opens.
+            dialing.add(remoteId)
+            try {
+                const stream = await connection.newStream(CHAT_PROTOCOL)
+                attachChat(stream, remoteId)
+            } finally {
+                dialing.delete(remoteId)
+            }
         },
         send(text) {
             let count = 0
