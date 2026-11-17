@@ -24,12 +24,15 @@ Each result has one of these labels:
   With the .exe as the restarted app, the window showed all earlier lines in 2 of 2 runs. With 3 app windows and the
   .exe as the sender, a 200 MB file arrived in 2 windows in 4.7 s. The voice continued during the transfer. The
   .exe writes its log file in `%APPDATA%\ASSCRACK\logs`.
-- **Results (LAN, test card 4, 2026-11-17):** pass for conditions 1 to 9. Pass for the names before the first chat
-  message, and for the offer, accept, refuse, cancel and the " (1)" name of the file transfer. Pass for the voice
-  during the transfer. Pass for the chat history after a restart (condition 8), and for the voice after the restart
-  (condition 9). The operator also closed A, then B, and logged in again each time. The chat history showed each
-  time. Not tested: no red console line (condition 10) and the log files (condition 11). The number of computers is
-  not recorded yet.
+- **Results (LAN, test card 4, 2 computers, 2026-11-17):** pass for conditions 1 to 3 and 5 to 9. Pass for the names
+  before the first chat message, and for the offer, accept, cancel and the " (1)" name of the file transfer. Pass for
+  the voice during the transfer. Pass for the chat history after a restart (condition 8), and for the voice after the
+  restart (condition 9). The operator also closed A, then B, and logged in again each time. The chat history showed
+  each time.
+- **Condition 4 (refuse):** pass with a changed procedure on 2 computers. The card asks for 3 computers, with Accept
+  on B and Refuse on C at the same time. The operator did Accept, then Refuse, in sequence on the same receiver.
+  Refuse by a third computer during a transfer to another receiver has no LAN test.
+- **Not tested:** no red console line (condition 10) and the log files (condition 11).
 
 ## 0.3.0: peer names and file sharing
 

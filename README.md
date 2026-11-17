@@ -42,8 +42,8 @@ voice, chat with the history after a restart, and file sharing. All of these pas
 - [x] Phase 2: Consensus & role management (host election, LAN tested on 2 computers)
 - [ ] Phase 3: Mumble server integration (deferred: voice uses WebRTC)
 - [x] Phase 4: Voice client with auto-reconnect (WebRTC, LAN tested on 2 computers)
-- [x] Phase 5: P2P chat system (LAN tested, with the history after a restart in 0.3.1)
-- [x] Phase 6: File sharing (LAN tested with 0.3.1)
+- [x] Phase 5: P2P chat system (LAN tested on 2 computers, with the history after a restart in 0.3.1)
+- [x] Phase 6: File sharing (LAN tested on 2 computers with 0.3.1)
 - [ ] Phase 7: UI/UX polish
 
 ## License
