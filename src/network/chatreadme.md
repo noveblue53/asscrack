@@ -12,23 +12,24 @@ This test shows if a file goes from one computer to the others on a real local n
 2. Connect each computer to the same network. Make sure that each computer can use multicast. Guest Wi-Fi, client isolation and a VPN can block mDNS. Disconnect a VPN, for example TunnelBear.
 3. **Windows Firewall asks again for this version.** Version 0.3.0 unpacks to a new folder, so the firewall rule of 0.2.0 does not apply. When the .exe starts the first time, allow it on private networks. The file transfer uses TCP between the computers.
 4. **The .exe has no code signature.** Windows SmartScreen can show "Windows protected your PC". The user of that computer decides if the .exe can run.
-5. On A, prepare 2 files: a large file (100 MB or more, for example a video) and a small text file. Write down the size of the large file.
+5. On A, prepare 2 files: a large file (1 GB or more, for example a video) and a small text file. Write down the size of the large file. On a fast LAN, a smaller file can arrive before you can select Cancel.
 6. On each computer, find the Downloads folder (File Explorer, "Downloads"). The app writes the received files there.
-7. Use headphones on each computer, for step 5 of the test.
+7. Use headphones on each computer, for steps 3 and 6 of the test.
 8. Start the .exe from a terminal with the argument `--dev` to see the developer console. Example: `.\ASSCRACK-0.3.0-portable.exe --dev`.
 
 ### The test
 
 1. On each computer, start the .exe. Type a name and the same room name, for example `files1`. Then select Log In.
 2. Do not send a chat message. Look at the peer list on each computer. Expect: the names of the other users, not text that starts with `12D3KooW`.
-3. On A, select the file control (Chromium shows "Choose File"). Select the large file. Then select **Send file**. Expect on A: "Offered <file name> to <n> users". Expect on B and C: a line with the file name, the size, "from <name of A>", "Offered", and the buttons Accept and Refuse.
-4. On B, select **Accept**. On C, select **Refuse**. Expect on C: "Refused". Expect on A: "Refused" in the line for C.
-5. On each computer, select Join voice during the transfer. Speak in turn while the progress bar on B moves.
-6. Wait until B shows "Saved as <file name>". Record the time from Accept to "Saved as". Expect on A: "Sent" in the line for B.
-7. On B, open the Downloads folder. The file must be there with the same size as on A. Optional: on A and on B, run `Get-FileHash "<path of the file>"` in PowerShell. The 2 hash values must be the same.
-8. On A, send the large file again. On B, select Accept. While the progress bar moves, select **Cancel** on B. Expect on B: "Cancelled". Expect on A: "Cancelled" in the line for B. On B, look in the Downloads folder: no new file, and no file with a name that starts with `.asscrack-`.
-9. On A, send the small text file. On B, select Accept. Then send the same small file again, and accept it again on B. Expect on B: "Saved as <name>" the first time, and "Saved as <name> (1).<extension>" the second time. The first file has no change.
-10. On each computer, save the terminal output and the developer console output to a text file. Keep the original files. Do not edit them.
+3. On each computer, select Join voice. Speak in turn. Each user must hear each other user. Stay in voice until step 7.
+4. On A, select the file control (Chromium shows "Choose File"). Select the large file. Then select **Send file**. Expect on A: "Offered <file name> to <n> users". Expect on B and C: a line with the file name, the size, "from <name of A>", "Offered", and the buttons Accept and Refuse.
+5. On B, select **Accept**. On C, select **Refuse**. Expect on C: "Refused". Expect on A: "Refused" in the line for C.
+6. While the progress bar on B moves, speak in turn. Each user must continue to hear each other user.
+7. Wait until B shows "Saved as <file name>". Record the time from Accept to "Saved as". Expect on A: "Sent" in the line for B.
+8. On B, open the Downloads folder. The file must be there with the same size as on A. Optional: on A and on B, run `Get-FileHash "<path of the file>"` in PowerShell. The 2 hash values must be the same.
+9. On A, send the large file again. On B, select Accept. While the progress bar moves, select **Cancel** on B. Expect on B: "Cancelled". Expect on A: "Cancelled" in the line for B. On B, look in the Downloads folder: no new file, and no file with a name that starts with `.asscrack-`. If the transfer ends before you can select Cancel, use a larger file and do this step again.
+10. On A, send the small text file. On B, select Accept. Then send the same small file again, and accept it again on B. Expect on B: "Saved as <name>" the first time, and "Saved as <name> (1).<extension>" the second time. The first file has no change.
+11. On each computer, save the terminal output and the developer console output to a text file. Keep the original files. Do not edit them.
 
 ### Done when
 
