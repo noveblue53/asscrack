@@ -78,11 +78,13 @@ function logEvent(type, data) {
         parts.push(`ids ${messages.map(m => m?.id).join(',')}`, `count ${messages.length}`);
     } else if (data?.offerId) {
         parts.push(`offer ${data.offerId}`);
-        // direction: the side of this node (send or receive). by: the side that cancelled (self or peer).
+        // direction: the side of this node (send or receive).
+        // by: the side whose user action caused the event (self or peer). A done or failed transfer has no such
+        // action, so it gets "by none". An offer comes from the peer.
         const direction = data.direction ?? (type === 'file-offer' ? 'receive' : type === 'file-refused' ? 'send' : null);
         if (direction) parts.push(`direction ${direction}`);
-        const by = data.by ?? (type === 'file-refused' ? 'peer' : null);
-        if (by) parts.push(`by ${by}`);
+        const by = data.by ?? (type === 'file-refused' || type === 'file-offer' ? 'peer' : 'none');
+        parts.push(`by ${by}`);
         if (Number.isFinite(data.size)) parts.push(`size ${data.size}`);
         if (typeof data.reason === 'string') parts.push(`reason ${JSON.stringify(data.reason)}`);
     }
