@@ -2,7 +2,9 @@
 
 // The node map: one plain SVG in #node-map that shows the room as a web.
 // - Each room member is a node. The own node has the text "(you)".
-// - A mesh edge is a chat session between two members (from the topology data).
+// - A mesh edge is a chat session between two members (from the topology data). When either end reports the
+//   session as a relay link (kinds), the edge has the kind relay and a dashed line.
+// - A full node has a FULL badge.
 // - A voice edge goes from each voice member to the host. The host is the voice relay and has a RELAY badge.
 // - A node that speaks now has a pulse (a CSS animation, see styles.css).
 // - A transfer edge is an active file transfer of this computer, with an arrow from the sender to the receiver.
@@ -10,14 +12,16 @@
 // Interface: window.nodeMap.update(state). The renderer calls it when the data changes.
 //   state = {
 //     self: <peer ID or null>, host: <peer ID or null>,
-//     nodes: [{ id, name, color, inVoice, muted, speaking }],   color is a name color class (nc0 to nc7)
+//     nodes: [{ id, name, color, inVoice, muted, speaking, fullNode }],   color is a name color class (nc0 to nc7)
 //     links: { <peer ID>: [<peer ID>, ...] },                   the chat sessions that each peer reports
+//     kinds: { <peer ID>: { <peer ID>: 'relay' | 'mesh' } },    optional: the link kind that each peer reports
 //     transfers: [{ id, from, to }]                             the active transfers of this computer
 //   }
 // This file does not read the globals of the renderer. All peer text goes in with textContent.
 //
-// Test contract: each node element has data-node. The host node has data-host="true". Each edge element has
-// data-edge, data-kind (mesh, voice or transfer), data-from and data-to.
+// Test contract: each node element has data-node. The host node has data-host="true". A full node has
+// data-full-node="true". Each edge element has data-edge, data-kind (mesh, relay, voice or transfer), data-from and
+// data-to. A chat session is one edge: data-kind="relay" when either end reports it as relay, else "mesh".
 //
 // Motion: the nodes are on a ring. When the ring changes, the nodes move to the new positions in MOVE_MS and then
 // stop. There is no continuous requestAnimationFrame loop. There is no motion while document.hidden is true or with
@@ -111,12 +115,18 @@
                 host: id === host,
                 inVoice,
                 muted,
-                speaking: inVoice && !muted && item.speaking === true
+                speaking: inVoice && !muted && item.speaking === true,
+                fullNode: item.fullNode === true
             });
         }
         // One mesh edge for each pair, also when the two peers report the session.
         const mesh = new Set();
         const links = state?.links !== null && typeof state?.links === 'object' ? state.links : {};
+        const kinds = state?.kinds !== null && typeof state?.kinds === 'object' ? state.kinds : {};
+        const reportsRelay = (a, b) => {
+            const row = kinds[a];
+            return row !== null && typeof row === 'object' && row[b] === 'relay';
+        };
         for (const [from, peers] of Object.entries(links)) {
             if (!seen.has(from) || !Array.isArray(peers)) continue;
             for (const to of peers) {
@@ -136,7 +146,11 @@
             transferIds.add(id);
             transfers.push({ id, from, to });
         }
-        return { host: seen.has(host) ? host : null, nodes: list, mesh: [...mesh].sort(), voice, transfers };
+        const relay = [...mesh].filter(key => {
+            const [a, b] = key.split('|');
+            return reportsRelay(a, b) || reportsRelay(b, a);
+        }).sort();
+        return { host: seen.has(host) ? host : null, nodes: list, mesh: [...mesh].sort(), relay, voice, transfers };
     }
 
     // ---- Nodes ----
@@ -154,12 +168,17 @@
         const letter = svgEl('text', { class: 'nm-letter', 'text-anchor': 'middle', dy: '0.35em' });
         const voiceDot = svgEl('circle', { class: 'nm-voice-dot', r: 4.5, cx: NODE_R * 0.72, cy: NODE_R * 0.72 });
         const label = svgEl('text', { class: 'nm-name', 'text-anchor': 'middle' });
+        const fullBadge = svgEl('g', { class: 'nm-full-badge', transform: `translate(${-NODE_R - 6} ${-NODE_R + 2})` });
+        const fullBox = svgEl('rect', { x: -12, y: -6, width: 24, height: 11, rx: 5.5 });
+        const fullText = svgEl('text', { 'text-anchor': 'middle', x: 0, y: 2.8 });
+        fullText.textContent = 'FULL';
+        fullBadge.append(fullBox, fullText);
         const badge = svgEl('g', { class: 'nm-badge' });
         const badgeBox = svgEl('rect', { x: -19, width: 38, height: 12, rx: 6, fill: 'url(#nm-gold)' });
         const badgeText = svgEl('text', { 'text-anchor': 'middle', x: 0 });
         badgeText.textContent = 'RELAY';
         badge.append(badgeBox, badgeText);
-        body.append(title, pulse, halo, orb, orbShade, orbGloss, letter, voiceDot, label, badge);
+        body.append(title, pulse, halo, orb, orbShade, orbGloss, letter, voiceDot, label, badge, fullBadge);
         group.append(body);
         nodeLayer.append(group);
         return { id, group, title, letter, label, badge, badgeBox, badgeText, view: '', placed: false, up: null, host: false, x: 0, y: 0, fromX: 0, fromY: 0, toX: 0, toY: 0 };
@@ -179,14 +198,18 @@
         for (const flag of ['self', 'host', 'inVoice', 'muted', 'speaking']) {
             if (data[flag]) classes.push(flag === 'inVoice' ? 'in-voice' : flag);
         }
+        if (data.fullNode) classes.push('full-node');
         node.group.setAttribute('class', classes.join(' '));
         if (data.host) node.group.setAttribute('data-host', 'true');
         else node.group.removeAttribute('data-host');
+        if (data.fullNode) node.group.setAttribute('data-full-node', 'true');
+        else node.group.removeAttribute('data-full-node');
         const first = Array.from(data.name.trim())[0];
         node.letter.textContent = first ? first.toUpperCase() : '?';
         node.label.textContent = shortName(data.name, labelMax) + (data.self ? ' (you)' : '');
         const facts = [data.name + (data.self ? ' (you)' : '')];
         if (data.host) facts.push('host: the voice relay of the room');
+        if (data.fullNode) facts.push('full node: it relays the chat links of the room');
         if (data.inVoice) facts.push(data.speaking ? 'speaks now' : data.muted ? 'in voice (muted)' : 'in voice');
         else facts.push('not in voice');
         node.title.textContent = facts.join('\n');
@@ -236,9 +259,12 @@
 
     function syncEdges(state) {
         const wanted = new Map();
+        // The edge key has the kind, so a change of the kind makes a new element.
+        const relay = new Set(state.relay);
         for (const key of state.mesh) {
             const [from, to] = key.split('|');
-            wanted.set(`mesh|${key}`, { kind: 'mesh', from, to, lane: 0 });
+            const kind = relay.has(key) ? 'relay' : 'mesh';
+            wanted.set(`${kind}|${key}`, { kind, from, to, lane: 0 });
         }
         for (const id of state.voice) wanted.set(`voice|${id}`, { kind: 'voice', from: id, to: state.host, lane: 0 });
         // Transfers between the same two nodes get different curves.
@@ -269,7 +295,7 @@
                 'data-to': data.to
             });
             if (data.kind === 'transfer') element.setAttribute('marker-end', 'url(#nm-arrow)');
-            layers[data.kind].append(element);
+            (data.kind === 'relay' ? layers.mesh : layers[data.kind]).append(element);
             edges.set(key, { element, ...data });
         }
     }

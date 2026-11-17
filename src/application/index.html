@@ -30,8 +30,24 @@
         <input type="text" id="username" placeholder="Enter your username" autocomplete="off" spellcheck="false">
       </div>
       <div class="field">
+        <label for="room-type">Room type</label>
+        <select id="room-type">
+          <option value="lan" selected>LAN room</option>
+          <option value="new">New internet room</option>
+          <option value="join">Join with invite code</option>
+        </select>
+      </div>
+      <div class="field" id="room-field">
         <label for="room">Room</label>
         <input type="text" id="room" placeholder="Enter the room" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="field" id="invite-field" hidden>
+        <label for="invite-input">Invite code</label>
+        <textarea id="invite-input" rows="3" placeholder="Paste the invite code" spellcheck="false"></textarea>
+      </div>
+      <div class="field" id="public-address-field" hidden>
+        <label for="public-address">Public address (optional)</label>
+        <input type="text" id="public-address" placeholder="Public IP:port (full node only)" autocomplete="off" spellcheck="false">
       </div>
 
       <button id="login" type="button">Log In</button>
@@ -47,8 +63,19 @@
       <span id="chat-header" class="session">
         <span id="chat-user"></span><span class="in">in</span><span id="chat-room"></span>
       </span>
+      <button id="invite-toggle" type="button" aria-expanded="false" aria-controls="invite-panel" hidden>Invite</button>
       <button id="map-toggle" type="button" aria-expanded="false" aria-controls="map-panel">Network map</button>
     </header>
+
+    <!-- The invite panel. renderer.js fills #invite-code with getInvite(). -->
+    <div id="invite-panel" hidden>
+      <label for="invite-code">Invite code of this room</label>
+      <textarea id="invite-code" rows="3" readonly spellcheck="false"></textarea>
+      <div class="invite-buttons">
+        <button id="copy-invite" type="button">Copy</button>
+        <span id="invite-note" role="status"></span>
+      </div>
+    </div>
 
     <div id="toolbar">
       <div id="voice-controls" class="tool-group">
@@ -78,6 +105,8 @@
         <div id="map-legend">
           <span class="key"><span class="sw sw-relay">RELAY</span>host, voice relay</span>
           <span class="key"><span class="sw sw-mesh"></span>chat link</span>
+          <span class="key"><span class="sw sw-relaylink"></span>Relay link</span>
+          <span class="key"><span class="sw sw-full">FULL</span>full node</span>
           <span class="key"><span class="sw sw-voice"></span>voice</span>
           <span class="key"><span class="sw sw-speak"></span>speaks (while you are in voice)</span>
           <span class="key"><span class="sw sw-file"></span>file transfer</span>
@@ -102,6 +131,7 @@
     </div>
 
     <footer id="statusbar">
+      <span id="full-node-state" data-state="lan" hidden></span>
       <span class="net-note">Local network</span>
     </footer>
   </section>

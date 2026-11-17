@@ -213,16 +213,51 @@ window.asscrack.onHistory(data => {
     messageList.scrollTop = messageList.scrollHeight;
 });
 
+// ---- Room type on the login screen ----
+
+const roomTypeSelect = document.getElementById('room-type');
+const roomField = document.getElementById('room-field');
+const inviteField = document.getElementById('invite-field');
+const inviteInput = document.getElementById('invite-input');
+const publicAddressField = document.getElementById('public-address-field');
+const publicAddressInput = document.getElementById('public-address');
+
+function showRoomType() {
+    const type = roomTypeSelect.value;
+    roomField.hidden = type === 'join';
+    inviteField.hidden = type !== 'join';
+    publicAddressField.hidden = type === 'lan';
+}
+roomTypeSelect.addEventListener('change', showRoomType);
+showRoomType();
+
+let internetRoom = false;
+
 async function login() {
     const name = usernameInput.value.trim();
-    const room = roomInput.value.trim();
-    if (!name || !room) {
+    const type = roomTypeSelect.value;
+    let room = roomInput.value.trim();
+    const invite = inviteInput.value.trim();
+    const publicAddress = publicAddressInput.value.trim();
+    if (!name || (type !== 'join' && !room)) {
         status.textContent = 'Error: enter a username and a room.';
         return;
     }
+    if (type === 'join' && !invite) {
+        status.textContent = 'Error: enter a username and an invite code.';
+        return;
+    }
+    const options = { name, room };
+    if (type === 'join') options.invite = invite;
+    if (type !== 'lan') {
+        options.internet = true;
+        if (publicAddress) options.publicAddress = publicAddress;
+    }
     loginButton.disabled = true;
     try {
-        await window.asscrack.login({ name, room });
+        const result = await window.asscrack.login(options);
+        internetRoom = result?.internet === true || type !== 'lan';
+        if (typeof result?.room === 'string' && result.room) room = result.room;
         ownName = name;
         document.getElementById('chat-user').textContent = name;
         document.getElementById('chat-room').textContent = room;
@@ -232,12 +267,15 @@ async function login() {
         status.textContent = '';
         // View only: the status text moves to the status band of the chat screen.
         statusBar.prepend(status);
+        if (internetRoom) statusBar.querySelector('.net-note').textContent = 'Internet room';
         selfLine = makePeerLine(`${name} (you)`, name, name);
         selfLine.classList.add('self');
         peerList.prepend(selfLine);
         updatePeerCount();
         refreshHostInfo();
         refreshTopology();
+        refreshFullNode();
+        refreshInvite();
         updateVoiceView();
         messageInput.focus();
     } catch (err) {
@@ -260,7 +298,7 @@ async function sendMessage() {
 }
 
 loginButton.addEventListener('click', login);
-for (const input of [usernameInput, roomInput]) {
+for (const input of [usernameInput, roomInput, publicAddressInput]) {
     input.addEventListener('keydown', e => {
         if (e.key === 'Enter') login();
     });
@@ -631,11 +669,15 @@ sendFileButton.addEventListener('click', sendFile);
 // nodemap.js draws the map in #node-map. This part gives it the data at each change of the data.
 
 let topologyLinks = {}; // peer ID -> the peer IDs that it has a chat session with
+let topologyKinds = {}; // peer ID -> { peer ID: 'relay' | 'mesh' }, the link kinds that each peer reports
+let fullNodeSelf = false; // true when this computer is a full node (getFullNode)
+let fullNodePeers = new Set(); // the peer IDs of the full nodes (getFullNode, full-node events)
 let topologySelf = null;
 
 function setTopology(data) {
     if (data === null || typeof data !== 'object') return;
     if (data.links !== null && typeof data.links === 'object') topologyLinks = data.links;
+    if (data.kinds !== null && typeof data.kinds === 'object') topologyKinds = data.kinds;
     if (typeof data.self === 'string') topologySelf = data.self;
     updateNodeMap();
 }
@@ -657,7 +699,7 @@ function updateNodeMap() {
     const self = selfId ?? topologySelf;
     const nodes = [];
     if (self) {
-        nodes.push({ id: self, name: ownName, color: nameColorClass(ownName), inVoice: voice.inVoice === true, muted: ownMuted, speaking: false });
+        nodes.push({ id: self, name: ownName, color: nameColorClass(ownName), inVoice: voice.inVoice === true, muted: ownMuted, speaking: false, fullNode: fullNodeSelf });
     }
     for (const [peerId, item] of peerItems) {
         const name = item.querySelector('.name').textContent;
@@ -667,7 +709,8 @@ function updateNodeMap() {
             color: nameColorClass(name),
             inVoice: members[peerId]?.inVoice === true,
             muted: members[peerId]?.muted === true,
-            speaking: speaking.has(peerId)
+            speaking: speaking.has(peerId),
+            fullNode: fullNodePeers.has(peerId)
         });
     }
     const active = [];
@@ -679,7 +722,127 @@ function updateNodeMap() {
             active.push(entry.direction === 'send' ? { id, from: self, to: peerId } : { id, from: peerId, to: self });
         }
     }
-    window.nodeMap.update({ self, host: hostId, nodes, links: topologyLinks, transfers: active });
+    window.nodeMap.update({ self, host: hostId, nodes, links: topologyLinks, kinds: topologyKinds, transfers: active });
 }
 
 window.asscrack.onTopology(setTopology);
+
+// ---- Internet room: full nodes and the invite code ----
+// The calls of the new preload can be absent (old preload). Then the window works as a LAN window.
+
+const inviteToggle = document.getElementById('invite-toggle');
+const invitePanel = document.getElementById('invite-panel');
+const inviteCode = document.getElementById('invite-code');
+const copyInviteButton = document.getElementById('copy-invite');
+const inviteNote = document.getElementById('invite-note');
+const fullNodeState = document.getElementById('full-node-state');
+
+const NO_FULL_NODE_TEXT = 'No full node yet. A member with a forwarded TCP port must join.';
+
+function hasApi(name) {
+    return typeof window.asscrack?.[name] === 'function';
+}
+
+function showFullNodeState() {
+    let state = 'lan';
+    let text = '';
+    if (internetRoom) {
+        const first = [...fullNodePeers].filter(id => peerItems.has(id)).sort()[0];
+        if (fullNodeSelf) {
+            state = 'self';
+            text = 'This computer is a full node';
+        } else if (first) {
+            state = 'peer';
+            text = `Full node: ${peerNames.get(first) ?? String(first).slice(0, 12)}`;
+        } else {
+            state = 'none';
+            text = 'No full node';
+        }
+    }
+    fullNodeState.dataset.state = state;
+    fullNodeState.textContent = text;
+    fullNodeState.hidden = state === 'lan';
+}
+
+async function refreshFullNode() {
+    if (hasApi('getFullNode')) {
+        try {
+            const info = await window.asscrack.getFullNode();
+            fullNodeSelf = info?.self === true;
+            fullNodePeers = new Set(Array.isArray(info?.peers) ? info.peers.filter(id => typeof id === 'string') : []);
+        } catch (err) {
+            console.warn('Full node query failed:', err?.message ?? err);
+        }
+    }
+    showFullNodeState();
+    updateNodeMap();
+}
+
+function setInvitePanelOpen(open) {
+    invitePanel.hidden = !open;
+    inviteToggle.setAttribute('aria-expanded', String(open));
+}
+
+async function refreshInvite() {
+    if (!hasApi('getInvite') || !selfLine) {
+        inviteToggle.hidden = true;
+        return;
+    }
+    try {
+        const info = await window.asscrack.getInvite();
+        if (info?.reason === 'lan') {
+            inviteToggle.hidden = true;
+            setInvitePanelOpen(false);
+            return;
+        }
+        inviteToggle.hidden = false;
+        if (typeof info?.code === 'string' && info.code) {
+            inviteCode.value = info.code;
+            inviteNote.textContent = '';
+            copyInviteButton.disabled = false;
+        } else {
+            inviteCode.value = '';
+            inviteNote.textContent = info?.reason === 'no-full-node' ? NO_FULL_NODE_TEXT : '';
+            copyInviteButton.disabled = true;
+        }
+    } catch (err) {
+        console.warn('Invite query failed:', err?.message ?? err);
+    }
+}
+
+inviteToggle.addEventListener('click', () => {
+    const open = invitePanel.hidden;
+    setInvitePanelOpen(open);
+    if (open) refreshInvite();
+});
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') setInvitePanelOpen(false);
+});
+copyInviteButton.addEventListener('click', async () => {
+    if (!inviteCode.value) return;
+    try {
+        await navigator.clipboard.writeText(inviteCode.value);
+        inviteNote.textContent = 'Copied';
+    } catch (err) {
+        inviteNote.textContent = `Copy failed: ${err?.message ?? err}`;
+    }
+});
+
+if (hasApi('onFullNode')) {
+    window.asscrack.onFullNode(data => {
+        if (typeof data?.peerId === 'string') {
+            if (data.fullNode === true) fullNodePeers.add(data.peerId);
+            else fullNodePeers.delete(data.peerId);
+        }
+        showFullNodeState();
+        updateNodeMap();
+        refreshFullNode();
+        refreshInvite();
+    });
+}
+if (hasApi('onFullNodeAddrs')) {
+    window.asscrack.onFullNodeAddrs(() => refreshInvite());
+}
+// The name of a full node can come later, and a full node can leave.
+window.asscrack.onPeerName(() => showFullNodeState());
+window.asscrack.onPeerLeft(() => showFullNodeState());
