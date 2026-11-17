@@ -24,7 +24,12 @@ Each result has one of these labels:
   With the .exe as the restarted app, the window showed all earlier lines in 2 of 2 runs. With 3 app windows and the
   .exe as the sender, a 200 MB file arrived in 2 windows in 4.7 s. The voice continued during the transfer. The
   .exe writes its log file in `%APPDATA%\ASSCRACK\logs`.
-- **Results (LAN):** not tested yet (test card 4).
+- **Results (LAN, test card 4, 2026-11-17):** pass for conditions 1 to 9. Pass for the names before the first chat
+  message, and for the offer, accept, refuse, cancel and the " (1)" name of the file transfer. Pass for the voice
+  during the transfer. Pass for the chat history after a restart (condition 8), and for the voice after the restart
+  (condition 9). The operator also closed A, then B, and logged in again each time. The chat history showed each
+  time. Not tested: no red console line (condition 10) and the log files (condition 11). The number of computers is
+  not recorded yet.
 
 ## 0.3.0: peer names and file sharing
 
@@ -35,7 +40,8 @@ Each result has one of these labels:
   overwrite a file. A failed or cancelled transfer leaves no partial file.
 - **Results (127.0.0.1):** `npm test` passes 31 of 31. A 50 MB file arrives in 1.3 s, and its SHA-256 agrees with the sent file. With 3
   app windows, a 200 MB file arrives in 2 windows in 4.6 s, and the voice continues during the transfer.
-- **Results (LAN):** not tested yet (test card 3).
+- **Results (LAN):** the 0.3.0 build had no LAN test. Test card 4 tested the same names and file sharing with the
+  0.3.1 build, and they passed (see the 0.3.1 entry).
 - **Known limits:** the sender can cancel only the full offer, not one receiver.
 
 ## 0.2.0: voice and host failover

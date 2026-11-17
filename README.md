@@ -23,8 +23,8 @@ Don't use it for real voice chat yet. See [CHANGELOG.md](CHANGELOG.md) for what 
 
 **Early Development** - Test copy on one LAN. Not ready for use.
 
-Current Phase: Phase 7 (UI/UX polish) is next. Version 0.3.0 has peer discovery, the host election and failover,
-voice, chat and file sharing. The fix for the chat history after a restart is in `main`, with no LAN test yet. Each result in
+Current Phase: Phase 7 (UI/UX polish) is next. Version 0.3.1 has peer discovery, the host election and failover,
+voice, chat with the history after a restart, and file sharing. All of these passed a LAN test. Each result in
 [CHANGELOG.md](CHANGELOG.md) has a label: LAN (real computers) or 127.0.0.1 (one PC only).
 
 ## Architecture
@@ -42,8 +42,8 @@ voice, chat and file sharing. The fix for the chat history after a restart is in
 - [x] Phase 2: Consensus & role management (host election, LAN tested on 2 computers)
 - [ ] Phase 3: Mumble server integration (deferred: voice uses WebRTC)
 - [x] Phase 4: Voice client with auto-reconnect (WebRTC, LAN tested on 2 computers)
-- [x] Phase 5: P2P chat system (LAN tested; the fix for the history after a restart has no LAN test yet)
-- [x] Phase 6: File sharing (0.3.0, tested on one PC only, LAN test next)
+- [x] Phase 5: P2P chat system (LAN tested, with the history after a restart in 0.3.1)
+- [x] Phase 6: File sharing (LAN tested with 0.3.1)
 - [ ] Phase 7: UI/UX polish
 
 ## License
