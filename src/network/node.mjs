@@ -9,6 +9,7 @@ import { circuitRelayServer, circuitRelayTransport } from '@libp2p/circuit-relay
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { readFileSync, writeFileSync, renameSync } from 'node:fs'
 import { EventEmitter } from 'node:events'
+import { networkInterfaces } from 'node:os'
 import { createChatSession } from './chat-session.mjs'
 import { createElection } from './election.mjs'
 import { createHistory } from './history.mjs'
@@ -16,6 +17,7 @@ import { createFileTransfer, FILE_PROTOCOL } from './file-transfer.mjs'
 import { createVoiceRelay, VOICE_PROTOCOL } from './voice-relay.mjs'
 import { makeInvite, validAddr, validPeerId } from './invite.mjs'
 import { DIALBACK_PROTOCOL, handleDialback, requestDialback, isPrivateIp, observedIp, tcpTarget } from './fullnode.mjs'
+import { onUpnpRouterError } from './upnp-guard.mjs'
 
 export { FILE_PROTOCOL, safeFileName } from './file-transfer.mjs'
 export { VOICE_PROTOCOL } from './voice-relay.mjs'
@@ -118,7 +120,7 @@ function validHistoryItem(m) {
 export async function createAsscrackNode({ room, listen, port = 0, discovery = true, discoveryInterval, name,
     heartbeatInterval = 1000, hostTimeout = 5000, electionDelay = 3000, downloadDir,
     fullNode = 'auto', allowPrivateFullNode = false, relayOnly = false, roomKey = null, announce = [], storePath = null,
-    redialInterval = 5000, inviteNodes = [] } = {}) {
+    redialInterval = 5000, inviteNodes = [], upnp = false, upnpTimeout = 70000, upnpClient = null } = {}) {
     if (typeof room !== 'string') throw new TypeError('room must be a string')
     const key = parseRoomKey(roomKey)
     if (!Array.isArray(announce) || !announce.every(validAddr)) throw new TypeError('announce must be an array of multiaddr strings')
@@ -134,6 +136,13 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     const canBeFull = fullNode === true || (fullNode === 'auto' && !relayOnly)
     const services = { identify: identify() }
     if (canBeFull) services.relay = circuitRelayServer({ reservations: { applyDefaultLimit: false } })
+    // UPnP (opt-in): only for a node that can become a full node by the dial-back. With upnp false, the module is
+    // not loaded: no UPnP service, no SSDP and no timer.
+    const useUpnp = upnp === true && fullNode === 'auto' && !relayOnly
+    if (useUpnp) {
+        const { uPnPNAT } = await import('@libp2p/upnp-nat')
+        services.upnp = uPnPNAT({ description: 'asscrack' })
+    }
     // Set after the sessions map exists.
     let allowReservation = () => false
     const node = await createLibp2p({
@@ -148,6 +157,17 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         streamMuxers: [yamux()],
         connectionEncryption: [noise()]
     })
+    if (useUpnp) {
+        const service = node.services.upnp
+        // Block the library default path. Its afterStart() calls mapIpAddresses(), which maps a RANDOM public port
+        // (and, because of a start race, usually sees no listen address). An own no-op afterStart() on the instance
+        // hides the method of the class, so libp2p calls the no-op and the library sends no AddPortMapping.
+        // The node maps the port by hand after start (runUpnp). The stop() of the service still closes the client.
+        service.afterStart = () => {}
+        // Test option: a client on a fake router. The gateway option of uPnPNAT cannot point at a fake router
+        // (it gives a device with an empty service list, thus "Service not found").
+        if (upnpClient) service.client = upnpClient
+    }
     if (name !== undefined && typeof name !== 'string') throw new TypeError('name must be a string')
     const senderName = name ?? node.peerId.toString().slice(-8)
     const events = new EventEmitter()
@@ -537,6 +557,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         if (announce.length > 0) return [...announce]
         const port = listenPort()
         if (selfFull && dialbackIp && port !== null) return [`/${dialbackIp.includes(':') ? 'ip6' : 'ip4'}/${dialbackIp}/tcp/${port}`]
+        // A UPnP address is not proven. It is a candidate, the same as an unproven typed announce address.
+        if (upnpState) return [`/ip4/${upnpState.ip}/tcp/${upnpState.port}`]
         return []
     }
 
@@ -690,7 +712,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         const port = listenPort()
         if (!conn || port === null || conn.remoteAddr.toString().includes('/p2p-circuit')) return
         checking = true
-        requestDialback(conn, port)
+        // With a UPnP mapping, the peer must dial the mapped public port.
+        requestDialback(conn, upnpState?.port ?? port)
             .then(({ ok, ip }) => {
                 const publicIp = observedIp(node) ?? ip
                 const full = ok && publicIp !== null && (allowPrivateFullNode || !isPrivateIp(publicIp))
@@ -812,7 +835,111 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             .finally(() => dialing.delete(remoteId))
     }
 
+    // UPnP by hand, TCP only: externalIp(), then map(publicPort = localPort). One guarded task after start.
+    let upnpState = null // { ip, port, local, opts } after a successful map
+    let upnpTask = null
+    let upnpPhase = 'idle' // 'idle', 'discovery', 'map', 'done'
+    function upnpLog(fields) {
+        const { state, ...rest } = fields
+        console.info(connText(`upnp ${state}`, rest))
+        events.emit('upnp', fields)
+    }
+    function localIpv4() {
+        // The same rule as the library default (the first non-internal IPv4), here so that the log can show it.
+        // The gateway URL is not in the public API of @libp2p/upnp-nat, so a subnet match is not possible.
+        for (const infos of Object.values(networkInterfaces())) {
+            for (const info of infos ?? []) if (!info.internal && (info.family === 'IPv4' || info.family === 4)) return info.address
+        }
+        return undefined
+    }
+    function withTimeout(promise, ms) {
+        let timer
+        const limit = new Promise((_resolve, reject) => {
+            timer = setTimeout(() => reject(new Error(`timeout after ${ms} ms`)), ms)
+            timer.unref?.()
+        })
+        return Promise.race([promise, limit]).finally(() => clearTimeout(timer))
+    }
+    // A router error can give a promise that never settles: max. 1.5 s (the app quit limit is 3 s for all of stop).
+    async function upnpUnmap(state) {
+        try {
+            await withTimeout(node.services.upnp.client.unmap(state.opts), 1500)
+            upnpLog({ state: 'unmapped', port: state.port })
+        } catch (err) {
+            console.warn(connText('upnp unmap-failed', { port: state.port, error: err?.message ?? String(err) }))
+        }
+    }
+    function runUpnp() {
+        const client = node.services.upnp.client
+        let timedOut = false
+        // A router error that the guard swallows (installed by the entry point) rejects the step in flight at once.
+        // Without this signal the step promise never settles (the library throws outside of its promise).
+        let rejectStep
+        const routerError = new Promise((_resolve, reject) => { rejectStep = reject })
+        routerError.catch(() => {})
+        let unsubscribe = null
+        const guarded = async step => {
+            unsubscribe = onUpnpRouterError(err => rejectStep(Object.assign(new Error(err?.message ?? String(err)), { upnpReason: 'router-error' })))
+            try {
+                return await Promise.race([step(), routerError])
+            } finally {
+                unsubscribe()
+                unsubscribe = null
+            }
+        }
+        const work = (async () => {
+            const port = listenPort()
+            if (port === null) throw Object.assign(new Error('no TCP listen port'), { upnpReason: 'router-error' })
+            upnpPhase = 'discovery'
+            let ip
+            try {
+                ip = await guarded(() => client.externalIp())
+            } catch (err) {
+                if (err?.upnpReason) throw err
+                const noGateway = /discover gateway/i.test(err?.message ?? '') || err?.name === 'TimeoutError'
+                throw Object.assign(err, { upnpReason: noGateway ? 'no-gateway' : 'router-error' })
+            }
+            // After stop or timeout, do not call map().
+            if (stopped || timedOut) return
+            if (isPrivateIp(ip)) {
+                upnpLog({ state: 'none', reason: 'private-ip', error: `external IP ${ip} is private` })
+                return
+            }
+            const local = localIpv4()
+            const opts = { publicPort: port, localPort: port, protocol: 'TCP', localAddress: local }
+            upnpPhase = 'map'
+            await guarded(() => client.map(opts))
+            const state = { ip, port, local: local ?? 'auto', opts }
+            // A map that completes after stop or after the timeout must not stay on the router.
+            if (stopped || timedOut) {
+                await upnpUnmap(state)
+                return
+            }
+            upnpState = state
+            upnpLog({ state: 'mapped', ip, port, local: state.local })
+            // Sessions that exist already: ask again for a dial-back on the mapped port.
+            for (const peerId of [...sessions.keys()]) checkFullNode(peerId)
+        })()
+        // A late rejection of the work after the timeout must not be unhandled.
+        work.catch(() => {})
+        let timer
+        const limit = new Promise(resolve => {
+            timer = setTimeout(() => { timedOut = true; resolve('timeout') }, upnpTimeout)
+            timer.unref?.()
+        })
+        upnpTask = Promise.race([work.then(() => 'done'), limit])
+            .then(result => {
+                if (result === 'timeout' && !stopped) upnpLog({ state: 'none', reason: 'timeout', error: `no result after ${upnpTimeout} ms` })
+            }, err => {
+                if (!stopped) upnpLog({ state: 'none', reason: err?.upnpReason ?? 'router-error', error: err?.message ?? String(err) })
+            })
+            .finally(() => { clearTimeout(timer); upnpPhase = 'done' })
+    }
+
     await node.start()
+    // Not awaited: the UPnP task must not slow down or stop the start. The TCP listener is bound now.
+    // setImmediate: the caller attaches its event listeners before the first 'upnp' event can come.
+    if (useUpnp) setImmediate(() => { if (!stopped) runUpnp() })
     election.start()
     loadStore()
     if (Array.isArray(inviteNodes)) {
@@ -916,6 +1043,14 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             voiceRelay.stop()
             const pending = [...sessions.values()].map(s => { s.close(); return s.done })
             await Promise.allSettled(pending)
+            // UPnP: remove the mapping before node.stop() closes the client (the library close() does not unmap).
+            // A map request in flight can still complete: wait for the task (max. 1.5 s). The task then unmaps it.
+            if (upnpTask && upnpPhase === 'map') await withTimeout(upnpTask, 1500).catch(() => {})
+            if (upnpState) {
+                const state = upnpState
+                upnpState = null
+                await upnpUnmap(state)
+            }
             await node.stop()
         }
     }

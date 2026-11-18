@@ -1,10 +1,11 @@
-import { app, BrowserWindow, Menu, ipcMain, session } from 'electron';
+import { app, BrowserWindow, Menu, dialog, ipcMain, session } from 'electron';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import { mkdirSync, appendFileSync, readFileSync, writeFileSync } from 'fs';
 import { format } from 'util';
 import { createAsscrackNode, keyedServiceTag } from '../network/node.mjs';
 import { newRoomKey, readInvite } from '../network/invite.mjs';
+import { installUpnpGuard } from '../network/upnp-guard.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,7 +14,7 @@ Menu.setApplicationMenu(null);
 
 const EVENTS = ['peer-discovered', 'peer-joined', 'peer-left', 'message', 'history', 'signal', 'voice-state', 'host-changed', 'peer-name',
     'file-offer', 'file-progress', 'file-done', 'file-failed', 'file-refused', 'file-cancelled', 'topology', 'full-node', 'full-node-addrs',
-    'voice-frame', 'connection', 'dial-failed'];
+    'voice-frame', 'connection', 'dial-failed', 'upnp'];
 
 // Test option: --profile <dir> gives each instance its own user data folder.
 const profileIndex = process.argv.indexOf('--profile');
@@ -66,6 +67,22 @@ for (const [method, level] of [['log', 'LOG'], ['info', 'INFO'], ['warn', 'WARN'
 
 openLog();
 
+// The UPnP router HTTP error guard (src/network/upnp-guard.mjs). Each uncaughtException listener turns off the
+// default handler of Electron, which shows the dialog "A JavaScript error occurred in the main process" only when it
+// is the single listener (Electron 40.5.0, lib/browser/init.ts). The process does not exit. onOther keeps this
+// behavior for each other error, and also writes the error to the log.
+installUpnpGuard({
+    onOther: err => {
+        const stack = err?.stack ? err.stack : `${err?.name}: ${err?.message}`;
+        console.error('Uncaught exception in the main process:', stack);
+        try {
+            dialog.showErrorBox('A JavaScript error occurred in the main process', `Uncaught Exception:\n${stack}`);
+        } catch {
+            // Before app ready the dialog can fail. The log line stays.
+        }
+    }
+});
+
 // One log line for each node event. The chat text does not go into the log.
 // 'voice-frame' comes 50 times each second for each speaker.
 const UNLOGGED_EVENTS = new Set(['signal', 'file-progress', 'voice-frame']);
@@ -73,7 +90,7 @@ const UNLOGGED_EVENTS = new Set(['signal', 'file-progress', 'voice-frame']);
 function logEvent(type, data) {
     if (UNLOGGED_EVENTS.has(type)) return;
     const parts = [`event ${type}`];
-    if (type === 'connection' || type === 'dial-failed') {
+    if (type === 'connection' || type === 'dial-failed' || type === 'upnp') {
         for (const [k, v] of Object.entries(data ?? {})) if (v !== undefined && v !== null) parts.push(`${k} ${JSON.stringify(v)}`);
         writeLog('EVENT', parts.join(' '));
         return;
@@ -190,21 +207,40 @@ function createMainWindow() {
     }
 }
 
-// The public address that this profile used to host a room (file rooms/<tag>.host.json in the profile).
-function readHostAddress(file) {
+// The host data of this profile for a room (file rooms/<tag>.host.json in the profile):
+// publicAddress (the typed public address) and upnpPort (the port of the last UPnP mapping).
+function readHostFile(file) {
     try {
-        const value = JSON.parse(readFileSync(file, 'utf8'))?.publicAddress;
-        return typeof value === 'string' ? value.trim() : '';
+        const value = JSON.parse(readFileSync(file, 'utf8'));
+        return value !== null && typeof value === 'object' ? value : {};
     } catch {
-        return '';
+        return {};
     }
 }
-function saveHostAddress(file, address) {
+function readHostAddress(file) {
+    const value = readHostFile(file).publicAddress;
+    return typeof value === 'string' ? value.trim() : '';
+}
+function readUpnpPort(file) {
+    const value = readHostFile(file).upnpPort;
+    return Number.isInteger(value) && value >= 1 && value <= 65535 ? value : null;
+}
+function saveHostFields(file, fields) {
     try {
-        writeFileSync(file, JSON.stringify({ publicAddress: address }));
+        writeFileSync(file, JSON.stringify({ ...readHostFile(file), ...fields }));
     } catch (err) {
-        writeLog('WARN', `Public address not saved to ${file}: ${err?.message ?? err}`);
+        writeLog('WARN', `Host data not saved to ${file}: ${err?.message ?? err}`);
     }
+}
+// True when the error, its cause or one of its errors has the code EADDRINUSE.
+function isAddressInUse(err, depth = 0) {
+    if (!err || typeof err !== 'object' || depth > 4) return false;
+    if (err.code === 'EADDRINUSE') return true;
+    if (isAddressInUse(err.cause, depth + 1)) return true;
+    return Array.isArray(err.errors) && err.errors.some(e => isAddressInUse(e, depth + 1));
+}
+function saveHostAddress(file, address) {
+    saveHostFields(file, { publicAddress: address });
 }
 
 ipcMain.handle('asscrack:login', async (_event, { name, room, invite, internet, publicAddress } = {}) => {
@@ -241,8 +277,35 @@ ipcMain.handle('asscrack:login', async (_event, { name, room, invite, internet, 
             options.announce = [`/ip4/${ip}/tcp/${port}`];
             options.port = port;
             if (hostFile) saveHostAddress(hostFile, address);
+        } else if (hostFile) {
+            // A keyed room with no typed or saved address: try UPnP. Rejoin (decision 56): use the port of the last
+            // mapping again, so that old invite codes stay valid. The IP comes again from the router at each start.
+            options.upnp = true;
+            const savedPort = readUpnpPort(hostFile);
+            if (savedPort !== null && options.port === undefined) {
+                options.port = savedPort;
+                options.savedUpnpPort = true;
+                writeLog('INFO', `Saved UPnP port ${savedPort} used for this room`);
+            }
         }
-        node = await createAsscrackNode(options);
+        const fromSavedUpnpPort = options.savedUpnpPort === true;
+        delete options.savedUpnpPort;
+        try {
+            node = await createAsscrackNode(options);
+        } catch (err) {
+            // The saved UPnP port can be in use by another program: try one time again with a new port.
+            // A typed or saved public address keeps today's behavior (no retry).
+            if (!fromSavedUpnpPort || !isAddressInUse(err)) throw err;
+            writeLog('WARN', `Saved UPnP port ${options.port} is in use (EADDRINUSE). Start again with port 0`);
+            options.port = 0;
+            node = await createAsscrackNode(options);
+        }
+        if (options.upnp && hostFile) {
+            const file = hostFile;
+            node.events.on('upnp', data => {
+                if (data?.state === 'mapped' && Number.isInteger(data.port)) saveHostFields(file, { upnpPort: data.port });
+            });
+        }
     } catch (err) {
         loginStarted = false;
         throw err;
