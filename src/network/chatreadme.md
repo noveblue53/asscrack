@@ -1,3 +1,80 @@
+## Internet test card 7 (0.6.0): a host with no port forward (UPnP), connection log lines and the firewall question on 2 computers
+
+This test checks the 0.6.0 changes across the internet. The host does not need a port forward now. When the Public address field is empty, the app asks the router for a port (UPnP). If the router agrees, the host becomes a full node, and the invite code has the public address. Each app also writes one log line for each connection and for each failed dial. All builds now unpack to one folder, so Windows asks the firewall question one time only.
+
+- Computer 1 (**A**) is at home, on your router. A is the host.
+- Computer 2 (**L**, the laptop) is on a phone hotspot (mobile data), not on the network of A.
+- **dist/ASSCRACK-0.6.0-portable.exe** (SHA-256 in `CHANGELOG.md`): UPnP for the host, connection log lines and one unpack folder. Also: the relay sessions spread across the full nodes, and two members with a direct connection send voice directly.
+- **Not known:** UPnP on a real router, and all of 0.6.0 on the internet. The UPnP tests used a fake router on 127.0.0.1. The relay spread and the direct voice need 3 or more computers, so this card does not test them.
+- **Mixed versions:** use 0.6.0 on both computers.
+
+### Before the test
+
+1. Copy `dist/ASSCRACK-0.6.0-portable.exe` to each computer. Do not use an older .exe.
+2. **Router record.** Open the admin page of the router of A. Write down the router model. Find the UPnP setting and write down if it is on or off. Do not change it.
+3. **No port forward.** On the router of A, turn off the forward of TCP port 4001 to A (from test card 6 and R0). This test must show that A works with no forward. Write down that you turned it off.
+4. Connect L to the phone hotspot. Disconnect a VPN on both computers, for example TunnelBear.
+5. **Start only one copy of the app on each computer.** Known fault: a second copy deletes files of the first copy, and the second copy hangs.
+6. Use headphones on both computers. On A, prepare a file of about 5 MB.
+
+### Start commands
+
+Run each command in PowerShell, in the folder of the .exe. `--dev` opens the developer console.
+
+- A and L: `.\ASSCRACK-0.6.0-portable.exe --dev`
+
+### The test
+
+1. **Firewall question.** Start the app on A and on L. On each computer, write down if Windows shows the firewall question ("Windows Defender Firewall has blocked some features"). Write down the program path in the question if it shows one. Allow the app on private networks. If Windows shows the network as a public network, also allow it on public networks.
+2. **UPnP host.** On A, type a name. Set **Room type** to "New internet room". Type the room name `room7`. Keep **Public address** empty. Select Log In. Wait 70 seconds. Then run this command in PowerShell on A:
+   ```powershell
+   Select-String -Path "$env:APPDATA\asscrack\logs\asscrack-*.log" -Pattern 'event upnp' | Select-Object -Last 3
+   ```
+   Expect: a line with `event upnp state "mapped"`, the public IP of A and a port. Write down the full line. If the line has `state "none"`, write down the line, then go to step 9. A cannot be a host with no forward on this router.
+3. On A, select **Invite**, then **Copy**. Send the code to L.
+4. **Join.** On L, type a name. Set **Room type** to "Join with invite code". Paste the code. Select Log In. Expect within 30 seconds: A and L show each other in the Buddies list. The status bar of A shows "This computer is a full node". The status bar of L shows "Full node: <name of A>".
+5. On A and L, send chat lines. Expect: each line shows on the other computer.
+6. **Voice.** On A and L, select Join voice. Speak in turn. Expect: each user hears the other. The sound has no long gaps.
+7. **File.** On A, select the 5 MB file, then select **Send file**. On L, select Accept. Expect: "Saved as <file name>" on L.
+8. **Rejoin.** Close the app on A. Start it again with the same command. If Windows shows the firewall question again, write it down. Type the name. Set **Room type** to "Join with invite code". Paste the invite code of step 3. Keep **Public address** empty. Select Log In. Expect within 60 seconds: A and L show each other again, and chat works both ways. Run the command of step 2 again. Expect: a second `mapped` line with the same port as the first line.
+9. **Connection lines.** On each computer, run this command in PowerShell:
+   ```powershell
+   Select-String -Path "$env:APPDATA\asscrack\logs\asscrack-*.log" -Pattern 'event (upnp|connection|dial-failed)'
+   ```
+   Copy all output lines into a text file with the name of the computer (A or L). Expect on L: one or more `event connection` lines with `type "direct"`.
+10. **Firewall, second start.** Close the app on A and on L. Start it again on each computer. Expect: no firewall question. Write down the result. Close the apps.
+11. Keep the logs. In PowerShell, run `explorer "$env:APPDATA\asscrack\logs"` on each computer. Copy each `asscrack-*.log` file into a folder with the name of the computer (A or L). Do not edit the files. Also keep the developer console output of each app if it has a red line.
+12. Turn on the port forward of step 3 again if you want it.
+
+### Done when
+
+Write PASS or FAIL for each condition. Write down the values for conditions 1 to 3.
+
+| # | Condition | Result |
+|---|---|---|
+| 1 | Router record: the model, UPnP on or off. | |
+| 2 | The `event upnp` line of step 2 (copy the full line). | |
+| 3 | The firewall question: on the first start (step 1), on the rejoin (step 8) and on the second start (step 10), on each computer. Write "yes" or "no" for each. Expect: yes, no, no. | |
+| 4 | With no port forward, A and L show each other within 30 seconds (step 4). | |
+| 5 | A shows "This computer is a full node". L shows "Full node: <name of A>". | |
+| 6 | Chat lines go both ways. | |
+| 7 | In voice, each user hears the other. Write the time of a gap or an echo if you hear one. | |
+| 8 | The 5 MB file arrives on L. Write the time of the transfer. | |
+| 9 | After the rejoin, A and L are in one room again, and the port is the same. | |
+| 10 | Each computer has `event connection` lines (step 9). | |
+| 11 | The developer consoles show no red error line. | |
+
+### If a condition fails
+
+Keep these items for the analysis:
+- the number of the condition that failed, and the computer (A or L)
+- what you saw, and a screenshot of the window if possible
+- the text files of step 9 and the log files of step 11
+- the router model and the UPnP setting
+- the developer console output of each app with a red line
+
+---
+
 ## Internet test card 6 (0.5.0): an internet room with an invite code, a full node and a relay on 2 computers
 
 This test checks the 0.5.0 changes across the internet. A user makes an internet room and gives an invite code to the other users. A computer with a forwarded TCP port is a **full node**. The other members connect to it. When two members cannot connect directly, their chat goes through the full node (a **relay link**). Voice now goes through the host on a libp2p stream, not WebRTC. A LAN room with no invite code works as before.

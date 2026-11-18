@@ -5,6 +5,28 @@ This file gives the progress of ASSCRACK, one entry for each feature or release.
 Each result has one of these labels:
 - **LAN**: a test on 2 or more computers on one real local network.
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
+- **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
+
+## 0.6.0: a host with no port forward, connection log lines and load spreading
+
+- **Build:** `dist/ASSCRACK-0.6.0-portable.exe`, 97,233,105 bytes, SHA-256
+  `2d6185dff99c6bc8a4a204d8524d4b97a412a88744976c4d276c47dcd5070216`.
+- **UPnP host:** when the Public address field is empty in an internet room, the app asks the router for a TCP port
+  (UPnP). The invite code then has the public address. The full-node state still comes only from the dial-back. A
+  private or CGNAT address gives no port and one `upnp none` log line.
+- **Connection log:** each session writes one line with the peer, the type (direct or relay), the direction, the relay
+  and the address. Each failed dial writes one line with the reason.
+- **One unpack folder:** each build unpacks to `%TEMP%\ASSCRACK`. Thus Windows asks the firewall question one time.
+  Known fault: a second copy of the app on one computer deletes files of the first copy.
+- **Relay spread:** a member selects the full node with the fewest relayed sessions for each relay dial. When a full
+  node stops, the session opens again through another full node.
+- **Direct voice:** two voice members with a direct connection send the frames directly. The host forwards a frame only
+  to the members that do not get it directly. A 0.5.2 app still gets voice through the host.
+- **Results (internet):** R0, the rejoin of 0.5.2 with the old invite code and an empty address field: pass.
+- **Results (127.0.0.1):** UPnP with a fake router 10 of 10. The relay spread test 40 of 40 under CPU load. The direct
+  voice test: the host forwards 0 frames between two direct members. `npm test` passes 89 of 89. The terminal demo and
+  one app start pass.
+- **Not known:** UPnP on a real router, and all of 0.6.0 on a LAN or on the internet. Test card 7 gives the test.
 
 ## 0.5.2: the host rejoins its room with only the invite code
 
