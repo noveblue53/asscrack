@@ -1,7 +1,7 @@
 import { app, BrowserWindow, Menu, ipcMain, session } from 'electron';
 import { fileURLToPath } from 'url';
 import path from 'path';
-import { mkdirSync, appendFileSync } from 'fs';
+import { mkdirSync, appendFileSync, readFileSync, writeFileSync } from 'fs';
 import { format } from 'util';
 import { createAsscrackNode, keyedServiceTag } from '../network/node.mjs';
 import { newRoomKey, readInvite } from '../network/invite.mjs';
@@ -185,6 +185,23 @@ function createMainWindow() {
     }
 }
 
+// The public address that this profile used to host a room (file rooms/<tag>.host.json in the profile).
+function readHostAddress(file) {
+    try {
+        const value = JSON.parse(readFileSync(file, 'utf8'))?.publicAddress;
+        return typeof value === 'string' ? value.trim() : '';
+    } catch {
+        return '';
+    }
+}
+function saveHostAddress(file, address) {
+    try {
+        writeFileSync(file, JSON.stringify({ publicAddress: address }));
+    } catch (err) {
+        writeLog('WARN', `Public address not saved to ${file}: ${err?.message ?? err}`);
+    }
+}
+
 ipcMain.handle('asscrack:login', async (_event, { name, room, invite, internet, publicAddress } = {}) => {
     if (loginStarted) throw new Error('Already logged in');
     loginStarted = true;
@@ -200,15 +217,25 @@ ipcMain.handle('asscrack:login', async (_event, { name, room, invite, internet, 
         } else if (internet === true) {
             options.roomKey = newRoomKey();
         }
-        if (publicAddress !== undefined && publicAddress !== null && String(publicAddress).trim() !== '') {
-            const { ip, port } = parsePublicAddress(publicAddress);
-            options.announce = [`/ip4/${ip}/tcp/${port}`];
-            options.port = port;
-        }
+        let hostFile = null;
         if (options.roomKey) {
             const dir = path.join(app.getPath('userData'), 'rooms');
             mkdirSync(dir, { recursive: true });
-            options.storePath = path.join(dir, `${keyedServiceTag(options.room, options.roomKey)}.json`);
+            const tag = keyedServiceTag(options.room, options.roomKey);
+            options.storePath = path.join(dir, `${tag}.json`);
+            hostFile = path.join(dir, `${tag}.host.json`);
+        }
+        // A host that rejoins its room with an empty Public address field uses the saved address again.
+        let address = publicAddress === undefined || publicAddress === null ? '' : String(publicAddress).trim();
+        if (address === '' && hostFile) {
+            address = readHostAddress(hostFile);
+            if (address !== '') writeLog('INFO', `Saved public address ${address} used for this room`);
+        }
+        if (address !== '') {
+            const { ip, port } = parsePublicAddress(address);
+            options.announce = [`/ip4/${ip}/tcp/${port}`];
+            options.port = port;
+            if (hostFile) saveHostAddress(hostFile, address);
         }
         node = await createAsscrackNode(options);
     } catch (err) {
