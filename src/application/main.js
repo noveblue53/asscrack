@@ -189,11 +189,13 @@ ipcMain.handle('asscrack:login', async (_event, { name, room, invite, internet, 
     if (loginStarted) throw new Error('Already logged in');
     loginStarted = true;
     let inviteNodes = [];
+    let joinedRoom = room;
     try {
         const options = { name, room, downloadDir: downloadDir ?? app.getPath('downloads'), ...nodeFlags };
         if (typeof invite === 'string' && invite.trim() !== '') {
             const code = readInvite(invite);
             options.room = code.room;
+            joinedRoom = code.room;
             options.roomKey = code.key;
             inviteNodes = code.nodes;
         } else if (internet === true) {
@@ -227,7 +229,7 @@ ipcMain.handle('asscrack:login', async (_event, { name, room, invite, internet, 
             node.connect(target).catch(err => writeLog('WARN', `Invite connect to ${target} failed: ${err?.message ?? err}`));
         }
     }
-    return { peerId: node.peerId, internet: node.roomKey() !== null };
+    return { peerId: node.peerId, room: joinedRoom, internet: node.roomKey() !== null };
 });
 
 ipcMain.handle('asscrack:invite', () => {
