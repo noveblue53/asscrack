@@ -53,7 +53,8 @@
       "target": "portable"
     },
     "portable": {
-      "artifactName": "ASSCRACK-${version}-portable.exe"
+      "artifactName": "ASSCRACK-${version}-portable.exe",
+      "unpackDirName": "ASSCRACK"
     }
   }
 }
