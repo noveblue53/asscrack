@@ -6,6 +6,18 @@ Each result has one of these labels:
 - **LAN**: a test on 2 or more computers on one real local network.
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 
+## 0.5.2: the host rejoins its room with only the invite code
+
+- **Build:** `dist/ASSCRACK-0.5.2-portable.exe`, 96,502,816 bytes, SHA-256
+  `961b8a47690fb4adf0dc851dd136cf0d541f3005b4c4d0f77d81c623594e6307`.
+- **Saved public address:** the app saves the public address of each room that it hosts. When the host rejoins the
+  room with the invite code and an empty Public address field, the app uses the saved address again. Then the app
+  listens on the forwarded port, and the other members find the host again.
+- **Results (127.0.0.1):** a two-window check: B has no listen port and no LAN discovery, A leaves and rejoins with the
+  code and an empty field. B and A are in one room again. The same check on the 0.5.1 build fails. `npm test` passes
+  70 of 70. The packaged build passes the same check.
+- **Not known:** the rejoin on the internet.
+
 ## 0.5.1: rejoin an internet room, and the room name on the joiner
 
 - **Build:** `dist/ASSCRACK-0.5.1-portable.exe`, 96,497,772 bytes, SHA-256 `8f1af4f9d1bfd3c450b25cc94972bf918935dec654dd3057e45d6ce99496a41d`.
