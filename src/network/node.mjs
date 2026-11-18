@@ -506,6 +506,10 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 links.delete(peerId)
                 broadcastLinks()
                 emitTopology()
+                // A closed session must open again, for example through another relay when its relay stopped.
+                // Reset the try count so that the cap does not stop the redial.
+                relayDialTries.delete(peerId)
+                scheduleRelayDials(RELAY_DIAL_RETRY_MS)
             }
         })
     }
@@ -768,23 +772,74 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             if (!sessions.has(from)) continue
             for (const p of list) if (p !== selfId && !sessions.has(p) && selfId < p) wanted.add(p)
         }
+        // Clear the hold time of each target that is not wanted now (for example, its session is open).
+        for (const target of wantedSince.keys()) if (!wanted.has(target)) wantedSince.delete(target)
+        const now = Date.now()
         for (const target of wanted) {
             if (dialing.has(target)) continue
             const tries = relayDialTries.get(target) ?? 0
             if (tries >= RELAY_DIAL_TRIES) continue
+            if (!wantedSince.has(target)) wantedSince.set(target, now)
+            // Hold the first try until each full node with a direct session lists the target,
+            // or until the hold time is more than RELAY_SETTLE_MS.
+            if (tries === 0 && !relays.every(r => links.get(r)?.includes(target))) {
+                const left = wantedSince.get(target) + RELAY_SETTLE_MS - now
+                if (left > 0) { scheduleSettle(left); continue }
+            }
             relayDialTries.set(target, tries + 1)
-            const relay = relays[tries % relays.length]
+            const relay = pickRelay(target, relays, tries)
             dialing.add(target)
+            relayDialVia.set(target, relay)
             const addr = `${addrOf(relay)}/p2p-circuit/p2p/${target}`
             node.dial(multiaddr(addr))
                 .then(conn => conn.newStream(CHAT_PROTOCOL, { runOnTransientConnection: true })
-                    .then(stream => { attachChat(stream, target, conn); relayDialTries.delete(target) }))
+                    .then(stream => {
+                        attachChat(stream, target, conn)
+                        relayDialTries.delete(target)
+                        lastRelay.delete(target)
+                        wantedSince.delete(target)
+                    }))
                 .catch(err => {
                     dialFailed({ peer: target, addr, via: 'relay', err })
                     scheduleRelayDials(RELAY_DIAL_RETRY_MS)
                 })
-                .finally(() => dialing.delete(target))
+                .finally(() => { dialing.delete(target); relayDialVia.delete(target) })
         }
+    }
+    // The relay of each relay dial in flight.
+    const relayDialVia = new Map()
+    // The last relay that this node used for each target.
+    const lastRelay = new Map()
+    // The time when each target became wanted first.
+    const wantedSince = new Map()
+    const RELAY_SETTLE_MS = 2000
+    let settleTimer = null
+    // One timer wakes relayDials() at the end of the first hold.
+    function scheduleSettle(delay) {
+        if (stopped || settleTimer) return
+        settleTimer = setTimeout(() => { settleTimer = null; relayDials() }, delay)
+    }
+    // The number of relayed sessions and relay dials in flight of this node through the relay.
+    function relayLoad(relay) {
+        let n = 0
+        for (const conn of sessionConns.values()) if (circuitRelay(conn.remoteAddr.toString()) === relay) n++
+        for (const r of relayDialVia.values()) if (r === relay) n++
+        return n
+    }
+    // Spread the relayed sessions across the full nodes.
+    // The candidates are the relays whose last links list contains the target. If there is no candidate, use all relays.
+    // Sort the candidates by load, then by a stable hash of the target ID and the relay ID.
+    // After a failed dial (tries > 0), the next try uses the next candidate after the last relay.
+    function pickRelay(target, relays, tries) {
+        let list = relays.filter(r => links.get(r)?.includes(target))
+        if (list.length === 0) list = relays
+        const hash = r => createHash('sha256').update(`${target} ${r}`).digest('hex')
+        const keyed = list.map(r => ({ r, load: relayLoad(r), h: hash(r) }))
+        keyed.sort((a, b) => a.load - b.load || (a.h < b.h ? -1 : a.h > b.h ? 1 : 0))
+        const last = tries > 0 ? keyed.findIndex(k => k.r === lastRelay.get(target)) : -1
+        const relay = keyed[(last + 1) % keyed.length].r
+        lastRelay.set(target, relay)
+        return relay
     }
 
     const discovered = new Set()
@@ -1038,6 +1093,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             for (const timer of waitingDial.values()) clearTimeout(timer)
             waitingDial.clear()
             if (relayDialTimer) clearTimeout(relayDialTimer)
+            if (settleTimer) clearTimeout(settleTimer)
             await files.stop()
             election.stop()
             voiceRelay.stop()
