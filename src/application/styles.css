@@ -1619,6 +1619,22 @@ body.map-open #node-map:not([data-paused]) .nm-node.speaking .nm-pulse {
   opacity: 0.75;
 }
 
+/* The map legend: a solid line for a direct link, a dashed line for a relay link. */
+.nm-legend-direct,
+.nm-legend-relay {
+  stroke: var(--blue);
+  stroke-width: 1.5;
+}
+
+.nm-legend-relay {
+  stroke-dasharray: 5 4;
+}
+
+.nm-legend-text {
+  fill: var(--ink-soft);
+  font: 10px var(--font-small);
+}
+
 /* The FULL badge of a full node. */
 .nm-full-badge {
   display: none;

@@ -13,7 +13,7 @@ Menu.setApplicationMenu(null);
 
 const EVENTS = ['peer-discovered', 'peer-joined', 'peer-left', 'message', 'history', 'signal', 'voice-state', 'host-changed', 'peer-name',
     'file-offer', 'file-progress', 'file-done', 'file-failed', 'file-refused', 'file-cancelled', 'topology', 'full-node', 'full-node-addrs',
-    'voice-frame'];
+    'voice-frame', 'connection', 'dial-failed'];
 
 // Test option: --profile <dir> gives each instance its own user data folder.
 const profileIndex = process.argv.indexOf('--profile');
@@ -73,6 +73,11 @@ const UNLOGGED_EVENTS = new Set(['signal', 'file-progress', 'voice-frame']);
 function logEvent(type, data) {
     if (UNLOGGED_EVENTS.has(type)) return;
     const parts = [`event ${type}`];
+    if (type === 'connection' || type === 'dial-failed') {
+        for (const [k, v] of Object.entries(data ?? {})) if (v !== undefined && v !== null) parts.push(`${k} ${JSON.stringify(v)}`);
+        writeLog('EVENT', parts.join(' '));
+        return;
+    }
     if (data?.peerId) parts.push(`peer ${data.peerId}`);
     if (type === 'message') {
         parts.push(`ids ${data?.id ?? ''}`, 'count 1');

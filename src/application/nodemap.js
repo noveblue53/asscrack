@@ -69,7 +69,17 @@
     const voiceLayer = svgEl('g', { class: 'nm-layer-voice' });
     const transferLayer = svgEl('g', { class: 'nm-layer-transfer' });
     const nodeLayer = svgEl('g', { class: 'nm-layer-nodes' });
-    svg.append(defs, meshLayer, voiceLayer, transferLayer, nodeLayer);
+    // The legend: a solid line is a direct chat link, a dashed line is a chat link through a relay.
+    const legend = svgEl('g', { class: 'nm-legend', transform: 'translate(10 14)', 'aria-hidden': 'true' });
+    legend.append(
+        svgEl('line', { class: 'nm-legend-direct', x1: 0, y1: 0, x2: 22, y2: 0 }),
+        svgEl('text', { class: 'nm-legend-text', x: 28, y: 4 }),
+        svgEl('line', { class: 'nm-legend-relay', x1: 0, y1: 16, x2: 22, y2: 16 }),
+        svgEl('text', { class: 'nm-legend-text', x: 28, y: 20 })
+    );
+    legend.children[1].textContent = 'direct';
+    legend.children[3].textContent = 'relay';
+    svg.append(defs, meshLayer, voiceLayer, transferLayer, nodeLayer, legend);
     container.replaceChildren(svg);
 
     const layers = { mesh: meshLayer, voice: voiceLayer, transfer: transferLayer };
@@ -150,6 +160,15 @@
             const [a, b] = key.split('|');
             return reportsRelay(a, b) || reportsRelay(b, a);
         }).sort();
+        // The kind of the chat link of each peer to the own node.
+        if (seen.has(self)) {
+            const relaySet = new Set(relay);
+            for (const node of list) {
+                if (node.self) continue;
+                const key = self < node.id ? `${self}|${node.id}` : `${node.id}|${self}`;
+                if (mesh.has(key)) node.linkToYou = relaySet.has(key) ? 'relay' : 'direct';
+            }
+        }
         return { host: seen.has(host) ? host : null, nodes: list, mesh: [...mesh].sort(), relay, voice, transfers };
     }
 
@@ -210,6 +229,7 @@
         const facts = [data.name + (data.self ? ' (you)' : '')];
         if (data.host) facts.push('host: the voice relay of the room');
         if (data.fullNode) facts.push('full node: it relays the chat links of the room');
+        if (data.linkToYou) facts.push(data.linkToYou === 'relay' ? 'link to you: through a relay' : 'link to you: direct');
         if (data.inVoice) facts.push(data.speaking ? 'speaks now' : data.muted ? 'in voice (muted)' : 'in voice');
         else facts.push('not in voice');
         node.title.textContent = facts.join('\n');
@@ -295,6 +315,11 @@
                 'data-to': data.to
             });
             if (data.kind === 'transfer') element.setAttribute('marker-end', 'url(#nm-arrow)');
+            if (data.kind === 'mesh' || data.kind === 'relay') {
+                const title = svgEl('title');
+                title.textContent = data.kind === 'relay' ? 'relay link' : 'direct link';
+                element.append(title);
+            }
             (data.kind === 'relay' ? layers.mesh : layers[data.kind]).append(element);
             edges.set(key, { element, ...data });
         }

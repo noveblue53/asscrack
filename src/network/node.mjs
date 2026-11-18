@@ -21,6 +21,50 @@ export { FILE_PROTOCOL, safeFileName } from './file-transfer.mjs'
 export { VOICE_PROTOCOL } from './voice-relay.mjs'
 
 export const CHAT_PROTOCOL = '/asscrack/chat/receive'
+
+// The reason class of a failed dial. Looks into err.errors (AggregateError) and err.cause.
+export function dialReason(err) {
+    const found = new Set()
+    const seen = new Set()
+    const walk = e => {
+        if (!e || typeof e !== 'object' || seen.has(e) || seen.size > 50) {
+            if (typeof e === 'string') found.add(e)
+            return
+        }
+        seen.add(e)
+        if (typeof e.code === 'string') found.add(e.code)
+        if (typeof e.name === 'string') found.add(e.name)
+        if (typeof e.message === 'string') found.add(e.message)
+        if (Array.isArray(e.errors)) for (const x of e.errors) walk(x)
+        if (e.cause) walk(e.cause)
+    }
+    walk(err)
+    const all = [...found]
+    const has = list => all.some(v => list.includes(v))
+    const text = all.join(' | ')
+    if (has(['UnexpectedPeerError', 'ERR_UNEXPECTED_PEER', 'ERR_INVALID_PEER']) || /unexpected peer|peer id .*(mismatch|did not match|does not match)/i.test(text)) return 'wrong-peer'
+    if (/NO_RESERVATION|no reservation/i.test(text)) return 'no-reservation'
+    if (has(['ECONNREFUSED'])) return 'refused'
+    if (has(['EHOSTUNREACH', 'ENETUNREACH'])) return 'unreachable'
+    if (has(['AbortError', 'TimeoutError', 'ETIMEDOUT'])) return 'timeout'
+    return 'other'
+}
+
+// One log line: a fixed tag, then key=value fields. A value with a space or a quote is in JSON quotes.
+function connText(tag, fields) {
+    const parts = [tag]
+    for (const [k, v] of Object.entries(fields)) {
+        if (v === undefined || v === null) continue
+        const t = String(v)
+        parts.push(`${k}=${/^[^\s"=]+$/.test(t) ? t : JSON.stringify(t)}`)
+    }
+    return parts.join(' ')
+}
+
+function circuitRelay(addr) {
+    const m = /\/p2p\/([^/]+)\/p2p-circuit/.exec(addr)
+    return m ? m[1] : null
+}
 const PROOF_TIMEOUT_MS = 10000
 const MAX_ADDRS = 16
 
@@ -399,6 +443,18 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         if (sendHello) session.send(JSON.stringify({ type: 'hello', name: senderName }))
         session.send(nodeLine())
         events.emit('peer-joined', { peerId })
+        const sessionConn = sessionConns.get(peerId) ?? connection
+        const sessionStart = Date.now()
+        const connAddr = sessionConn?.remoteAddr?.toString() ?? '?'
+        const connType = connAddr.includes('/p2p-circuit') ? 'relay' : 'direct'
+        const opened = {
+            state: 'session', peer: peerId, type: connType,
+            dir: sessionConn?.direction === 'inbound' ? 'in' : sessionConn?.direction === 'outbound' ? 'out' : '?',
+            relay: connType === 'relay' ? (circuitRelay(connAddr) ?? '?') : undefined, addr: connAddr
+        }
+        if (opened.relay === undefined) delete opened.relay
+        console.info(connText('conn session', { peer: opened.peer, type: opened.type, dir: opened.dir, relay: opened.relay, addr: opened.addr }))
+        events.emit('connection', opened)
         election.sessionOpened(peerId)
         if (election.isHost()) {
             const messages = history.list()
@@ -410,6 +466,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         emitTopology()
         checkFullNode(peerId)
         session.done.catch(() => {}).finally(() => {
+            const secs = Math.round((Date.now() - sessionStart) / 100) / 10
+            console.info(connText('conn closed', { peer: peerId, type: connType, secs }))
+            events.emit('connection', { state: 'closed', peer: peerId, type: connType, secs })
             if (sessions.get(peerId) === session) {
                 sessions.delete(peerId)
                 sessionConns.delete(peerId)
@@ -531,6 +590,25 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             if (valid && peerId !== selfId && validPeerId(peerId)) knownFullNodes.set(peerId, valid)
         }
     }
+    // One line and one event for each failed dial. Repeated failures (same site, target, address and reason) are
+    // logged only one time in DIAL_FAIL_QUIET_MS. The first failure of each target and address is always logged.
+    const DIAL_FAIL_QUIET_MS = 60000
+    const dialFailSeen = new Map()
+    function dialFailed({ peer, addr, via, err }) {
+        const data = {
+            peer: peer ? String(peer) : '?', via, reason: dialReason(err), addr: addr ? String(addr) : '?',
+            error: String(err?.message ?? err).slice(0, 200)
+        }
+        const k = `${data.via} ${data.peer} ${data.addr} ${data.reason}`
+        const now = Date.now()
+        const last = dialFailSeen.get(k)
+        if (last !== undefined && now - last < DIAL_FAIL_QUIET_MS) return
+        if (dialFailSeen.size > 1000) dialFailSeen.clear()
+        dialFailSeen.set(k, now)
+        console.warn(connText('conn dial-failed', data))
+        events.emit('dial-failed', data)
+    }
+
     // Dial a known full node directly when this node has no direct connection to it.
     function dialFullNode(peerId) {
         const addrs = knownFullNodes.get(peerId)
@@ -552,7 +630,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                     }
                     return
                 } catch (err) {
-                    console.warn(`Direct dial to full node ${peerId} at ${a} failed:`, err?.message ?? err)
+                    dialFailed({ peer: peerId, addr: target, via: 'full-node', err })
                 }
             }
             // The peer ID can be old (the full node started again with a new ID). Dial each address with no peer ID.
@@ -573,7 +651,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                     }
                     return
                 } catch (err) {
-                    console.warn(`Address dial to ${bare} (no peer ID) failed:`, err?.message ?? err)
+                    dialFailed({ peer: '?', addr: bare, via: 'address', err })
                 }
             }
         })().finally(() => dialing.delete(peerId))
@@ -620,7 +698,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 console.info(`Dial-back from ${peerId}: ${ok ? 'ok' : 'failed'}, IP ${publicIp}, full node ${full}`)
                 if (full && !stopped) setSelfFull(true)
             })
-            .catch(err => console.warn(`Dial-back request to ${peerId} failed:`, err?.message ?? err))
+            .catch(err => dialFailed({ peer: peerId, addr: conn.remoteAddr.toString(), via: 'dial-back', err }))
             .finally(() => { checking = false })
     }
 
@@ -644,7 +722,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             .then(() => console.info(`Relay reservation on ${peerId}: ok`))
             .catch(err => {
                 reserved.delete(peerId)
-                console.warn(`Relay reservation on ${peerId} failed (try ${attempt}):`, err?.message ?? err)
+                dialFailed({ peer: peerId, addr: `${addr}/p2p-circuit`, via: 'reserve', err })
                 if (attempt < RESERVE_TRIES) setTimeout(() => reserveOn(peerId, attempt + 1), RESERVE_RETRY_MS)
             })
     }
@@ -679,7 +757,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 .then(conn => conn.newStream(CHAT_PROTOCOL, { runOnTransientConnection: true })
                     .then(stream => { attachChat(stream, target, conn); relayDialTries.delete(target) }))
                 .catch(err => {
-                    console.warn(`Relay dial to ${target} through ${relay} failed:`, err?.message ?? err)
+                    dialFailed({ peer: target, addr, via: 'relay', err })
                     scheduleRelayDials(RELAY_DIAL_RETRY_MS)
                 })
                 .finally(() => dialing.delete(target))
@@ -730,7 +808,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         node.dial(id)
             .then(conn => conn.newStream(CHAT_PROTOCOL, { runOnTransientConnection: true })
                 .then(stream => attachChat(stream, remoteId, conn)))
-            .catch(err => console.warn(`Dial to discovered peer ${remoteId} failed:`, err?.message ?? err))
+            .catch(err => dialFailed({ peer: remoteId, addr: node.getConnections(id)[0]?.remoteAddr?.toString() ?? '?', via: 'discovery', err }))
             .finally(() => dialing.delete(remoteId))
     }
 
@@ -758,7 +836,14 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         libp2p: node,
         getMultiaddrs: () => node.getMultiaddrs().map(a => a.toString()),
         async connect(address) {
-            const connection = await node.dial(multiaddr(address))
+            let connection
+            try {
+                connection = await node.dial(multiaddr(address))
+            } catch (err) {
+                const m = /\/p2p\/([^/]+)$/.exec(String(address))
+                dialFailed({ peer: m ? m[1] : '?', addr: address, via: 'connect', err })
+                throw err
+            }
             const remoteId = connection.remotePeer.toString()
             // Block discovery dials to this peer while this stream opens.
             dialing.add(remoteId)
