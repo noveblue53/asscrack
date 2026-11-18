@@ -812,15 +812,19 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         }
         // Clear the hold time of each target that is not wanted now (for example, its session is open).
         for (const target of wantedSince.keys()) if (!wanted.has(target)) wantedSince.delete(target)
+        for (const k of noReservationTries.keys()) if (!wanted.has(k.split(' ')[0])) noReservationTries.delete(k)
+        for (const target of retrySameRelay) if (!wanted.has(target)) retrySameRelay.delete(target)
         const now = Date.now()
+        const holdNodes = [...new Set([...relays, ...knownFullNodes.keys()])].filter(p => p !== selfId)
         for (const target of wanted) {
             if (dialing.has(target)) continue
             const tries = relayDialTries.get(target) ?? 0
             if (tries >= RELAY_DIAL_TRIES) continue
             if (!wantedSince.has(target)) wantedSince.set(target, now)
-            // Hold the first try until each full node with a direct session lists the target,
-            // or until the hold time is more than RELAY_SETTLE_MS.
-            if (tries === 0 && !relays.every(r => links.get(r)?.includes(target))) {
+            // Hold the first try until each full node with a direct session and each known full node lists the
+            // target, or until the hold time is more than RELAY_SETTLE_MS. A known full node with no session yet
+            // has no links list, thus the hold also waits for its session.
+            if (tries === 0 && !holdNodes.every(r => links.get(r)?.includes(target))) {
                 const left = wantedSince.get(target) + RELAY_SETTLE_MS - now
                 if (left > 0) { scheduleSettle(left); continue }
             }
@@ -836,9 +840,18 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                         relayDialTries.delete(target)
                         lastRelay.delete(target)
                         wantedSince.delete(target)
+                        clearNoReservation(target)
                     }))
                 .catch(err => {
                     dialFailed({ peer: target, addr, via: 'relay', err })
+                    // The target has a session with the relay, but its reservation can come later.
+                    // Thus try the same relay again, at most RELAY_NO_RESERVATION_RETRIES times.
+                    const k = `${target} ${relay}`
+                    const n = noReservationTries.get(k) ?? 0
+                    if (dialReason(err) === 'no-reservation' && n < RELAY_NO_RESERVATION_RETRIES) {
+                        noReservationTries.set(k, n + 1)
+                        retrySameRelay.add(target)
+                    }
                     scheduleRelayDials(RELAY_DIAL_RETRY_MS)
                 })
                 .finally(() => { dialing.delete(target); relayDialVia.delete(target) })
@@ -851,6 +864,15 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     // The time when each target became wanted first.
     const wantedSince = new Map()
     const RELAY_SETTLE_MS = 2000
+    // The same-relay retries after a 'no-reservation' failure, for each target and relay.
+    const RELAY_NO_RESERVATION_RETRIES = 3
+    const noReservationTries = new Map()
+    // The targets whose next try uses the last relay again.
+    const retrySameRelay = new Set()
+    function clearNoReservation(target) {
+        retrySameRelay.delete(target)
+        for (const k of noReservationTries.keys()) if (k.split(' ')[0] === target) noReservationTries.delete(k)
+    }
     let settleTimer = null
     // One timer wakes relayDials() at the end of the first hold.
     function scheduleSettle(delay) {
@@ -875,7 +897,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         const keyed = list.map(r => ({ r, load: relayLoad(r), h: hash(r) }))
         keyed.sort((a, b) => a.load - b.load || (a.h < b.h ? -1 : a.h > b.h ? 1 : 0))
         const last = tries > 0 ? keyed.findIndex(k => k.r === lastRelay.get(target)) : -1
-        const relay = keyed[(last + 1) % keyed.length].r
+        const same = retrySameRelay.delete(target) && last >= 0
+        const relay = keyed[same ? last : (last + 1) % keyed.length].r
         lastRelay.set(target, relay)
         return relay
     }

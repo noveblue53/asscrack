@@ -27,16 +27,16 @@ async function stopAll(nodes) {
     await Promise.allSettled(nodes.filter(Boolean).map(n => n.stop()))
 }
 
-// Record the relay of each relayed session event between two members.
-function recordRelays(member, memberIds, out) {
+// Record the relay of each relayed session event of a member. Only members use a relay in this room.
+function recordRelays(member, out) {
     member.events.on('connection', ev => {
-        if (ev.state === 'session' && ev.type === 'relay' && memberIds.has(ev.peer)) {
-            out.push({ from: member.peerId, peer: ev.peer, relay: ev.relay })
+        if (ev.state === 'session' && ev.type === 'relay') {
+            out.push({ from: member.peerId, peer: ev.peer, relay: ev.relay, dir: ev.dir })
         }
     })
 }
 
-// Two full nodes R1 and R2, and relay-only members. Each member connects to R1 and R2.
+// Two full nodes R1 and R2, and relay-only members. Each member dials R1 and R2 from its invite nodes.
 async function twoRelayRoom(nodes, memberCount) {
     const room = `rs-${Date.now()}-${Math.random().toString(16).slice(2)}`
     const roomKey = newRoomKey()
@@ -46,18 +46,15 @@ async function twoRelayRoom(nodes, memberCount) {
     nodes.push(R2)
     await R1.connect(localAddr(R2))
     await waitFor(() => R1.peers().includes(R2.peerId), 10000, 'R1-R2 session')
+    // The members know both full nodes, as from an invite code.
+    const inviteNodes = [R1, R2].map(r => ({ id: r.peerId, addrs: [localAddr(r)] }))
     const members = []
+    const events = []
     for (let i = 0; i < memberCount; i++) {
-        const m = await createAsscrackNode({ room, roomKey, relayOnly: true, fullNode: false, ...fast })
+        const m = await createAsscrackNode({ room, roomKey, relayOnly: true, fullNode: false, inviteNodes, ...fast })
         nodes.push(m)
         members.push(m)
-    }
-    const ids = new Set(members.map(m => m.peerId))
-    const events = []
-    for (const m of members) recordRelays(m, ids, events)
-    for (const m of members) {
-        await m.connect(localAddr(R1))
-        await m.connect(localAddr(R2))
+        recordRelays(m, events)
     }
     return { R1, R2, members, events }
 }
@@ -74,6 +71,13 @@ test('spread: the member sessions use both full nodes as relays', { timeout: 600
         const used = new Set(events.map(e => e.relay))
         assert.ok(used.has(R1.peerId), `R1 is a relay: ${JSON.stringify(events)}`)
         assert.ok(used.has(R2.peerId), `R2 is a relay: ${JSON.stringify(events)}`)
+        // The lowest member dials the two other members. It must use a different relay for each dial.
+        for (const m of members) {
+            const outs = events.filter(e => e.from === m.peerId && e.dir === 'out').map(e => e.relay)
+            assert.equal(new Set(outs).size, outs.length, `each outbound session of a member uses a different relay: ${JSON.stringify(events)}`)
+        }
+        assert.ok(events.some(e => e.dir === 'out' && events.filter(x => x.from === e.from && x.dir === 'out').length === 2),
+            `one member dials two sessions: ${JSON.stringify(events)}`)
     } finally {
         await stopAll(nodes)
     }
