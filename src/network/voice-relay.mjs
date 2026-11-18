@@ -1,9 +1,16 @@
-// Voice over libp2p streams, star topology.
+// Voice over libp2p streams, star topology with direct streams.
 // A member in voice opens one duplex stream to the host. The host forwards each frame to the other voice streams.
+// A member also opens one direct stream to each voice peer with a direct connection (VOICE_DIRECT_PROTOCOL).
+// The member reports these peers in the 'direct' field of its voice line. The host does not forward a frame of
+// that member to a peer in that list.
 // Wire: 4-byte big-endian length, then the body.
 // Body: version (1), origin length N, N bytes origin (UTF-8), 4-byte big-endian sequence number, Opus bytes.
 
 export const VOICE_PROTOCOL = '/asscrack/voice/1.0.0'
+// Frames from one peer to one peer. The receiver delivers each frame and never forwards it.
+export const VOICE_DIRECT_PROTOCOL = '/asscrack/voice-direct/1.0.0'
+// The size of the window of sequence numbers for each origin, to drop duplicate frames.
+const DEDUP_WINDOW = 64
 export const MAX_BODY = 4000
 export const MAX_QUEUE = 50
 const VERSION = 1
@@ -99,7 +106,11 @@ async function readFrames(source, onBody, onOversize) {
     }
 }
 
-export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectionFor, onFrame }) {
+// directCandidates(): the peer IDs to open a direct stream to (voice peers with a direct session connection).
+// directListOf(peerId): the last valid 'direct' list of that peer, or null.
+// onDirectChanged(): called when the list of working direct streams of this node changes.
+export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectionFor, onFrame,
+    directCandidates = () => [], directListOf = () => null, onDirectChanged = () => {} }) {
     // Host side: peerId -> { stream, queue }. Member side: one entry to the host.
     const members = new Map()
     let upstream = null
@@ -112,6 +123,22 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
     let droppedOversize = 0
     let closedDrops = 0
     let droppedOrigin = 0
+    // Member side: peerId -> { stream, queue } for the working outbound direct streams.
+    const directOut = new Map()
+    // Peers with a direct stream open in progress.
+    const directPending = new Set()
+    // Peers that refused the direct protocol (for example a 0.5.2 peer). Cleared when the peer leaves.
+    const directRefused = new Set()
+    // Receiver side: the inbound direct streams.
+    const directIn = new Set()
+    // origin -> { set, order } of the last sequence numbers.
+    const seen = new Map()
+    let directSent = 0
+    let directReceived = 0
+    let duplicates = 0
+    let forwarded = 0
+    // origin -> target -> number of frames that the host forwarded.
+    const forwardedTo = {}
 
     function warnOversize(len) {
         droppedOversize++
@@ -129,8 +156,20 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
         return voicePeers().includes(selfId)
     }
 
+    // Returns true when this frame (origin and sequence number) arrived before.
+    function isDuplicate(frame) {
+        let w = seen.get(frame.origin)
+        if (!w) { w = { set: new Set(), order: [] }; seen.set(frame.origin, w) }
+        if (w.set.has(frame.seq)) return true
+        w.set.add(frame.seq)
+        w.order.push(frame.seq)
+        if (w.order.length > DEDUP_WINDOW) w.set.delete(w.order.shift())
+        return false
+    }
+
     function deliver(frame) {
         if (frame.origin === selfId) return
+        if (isDuplicate(frame)) { duplicates++; return }
         try {
             onFrame(frame)
         } catch (err) {
@@ -171,7 +210,15 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
             const wire = Buffer.alloc(4 + body.length)
             wire.writeUInt32BE(body.length, 0)
             body.copy(wire, 4)
-            for (const [other, e] of members) if (other !== peerId) e.queue.push(wire)
+            // Do not forward to a peer that gets the frame on a direct stream from the origin.
+            const direct = directListOf(peerId)
+            for (const [other, e] of members) {
+                if (other === peerId || (Array.isArray(direct) && direct.includes(other))) continue
+                e.queue.push(wire)
+                forwarded++
+                const row = forwardedTo[peerId] ?? (forwardedTo[peerId] = {})
+                row[other] = (row[other] ?? 0) + 1
+            }
             deliver(frame)
         }, () => {
             if (members.get(peerId) === entry) {
@@ -238,8 +285,104 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
         retryTimer.unref?.()
     }
 
-    // Opens or closes the stream to the host, after a change of host or of the own voice state.
+    // Receiver: a peer opened a direct voice stream. The caller makes sure that the peer has an open session.
+    function handleDirect({ stream, connection }) {
+        if (stopped) { stream.abort?.(new Error('stopped')); return }
+        const peerId = connection.remotePeer.toString()
+        const entry = { stream, peerId, originWarned: false }
+        directIn.add(entry)
+        // This side only reads. Do not close the write side: the sender reads the end of the stream as a close.
+        readFrames(stream.source, body => {
+            const frame = decodeBody(body)
+            if (!frame) return
+            if (frame.origin !== peerId) {
+                droppedOrigin++
+                if (!entry.originWarned) {
+                    entry.originWarned = true
+                    console.warn(`Voice frame dropped: origin ${frame.origin} is not the sender ${peerId} (direct)`)
+                }
+                return
+            }
+            directReceived++
+            deliver(frame)
+        }, warnOversize).catch(() => {}).finally(() => directIn.delete(entry))
+    }
+
+    // The peers with a working direct stream from this node.
+    function directList() {
+        return [...directOut.keys()]
+    }
+
+    function closeDirect(peerId) {
+        const e = directOut.get(peerId)
+        if (!e) return false
+        directOut.delete(peerId)
+        closedDrops += e.queue.drops
+        closeEntry(e)
+        return true
+    }
+
+    // Closes the inbound direct streams of one peer, or of all peers when peerId is undefined.
+    function closeDirectIn(peerId) {
+        for (const e of [...directIn]) {
+            if (peerId !== undefined && e.peerId !== peerId) continue
+            directIn.delete(e)
+            e.stream.abort?.(new Error('closed'))
+        }
+    }
+
+    function wantedDirect() {
+        if (stopped || isHost() || !selfInVoice()) return []
+        const host = hostId()
+        // Do not open a direct stream to the host. The upstream stream carries the frames to the host.
+        return directCandidates().filter(p => p !== selfId && p !== host)
+    }
+
+    async function openDirect(peerId) {
+        const conn = connectionFor(peerId)
+        if (!conn) return
+        directPending.add(peerId)
+        let stream
+        try {
+            stream = await conn.newStream(VOICE_DIRECT_PROTOCOL, { runOnTransientConnection: true })
+        } catch (err) {
+            directPending.delete(peerId)
+            // Do not try again for this session. The peer gets the frames through the host.
+            directRefused.add(peerId)
+            console.info(`Voice direct stream to ${peerId} not opened: ${err?.message ?? err}`)
+            return
+        }
+        directPending.delete(peerId)
+        if (stopped || directOut.has(peerId) || !wantedDirect().includes(peerId)) {
+            stream.abort?.(new Error('not needed'))
+            return
+        }
+        const entry = { stream, queue: createQueue() }
+        directOut.set(peerId, entry)
+        attach(stream, entry.queue, () => {}, () => {
+            if (directOut.get(peerId) !== entry) return
+            directOut.delete(peerId)
+            closedDrops += entry.queue.drops
+            onDirectChanged()
+        })
+        onDirectChanged()
+    }
+
+    // Opens and closes the direct streams after a change of the voice peers, the host or the own voice state.
+    function refreshDirect() {
+        const wanted = wantedDirect()
+        let changed = false
+        for (const peerId of [...directOut.keys()]) if (!wanted.includes(peerId)) changed = closeDirect(peerId) || changed
+        if (changed) onDirectChanged()
+        for (const peerId of wanted) {
+            if (directOut.has(peerId) || directPending.has(peerId) || directRefused.has(peerId)) continue
+            openDirect(peerId)
+        }
+    }
+
+    // Opens or closes the stream to the host and the direct streams, after a change of host or of the voice state.
     function hostChanged() {
+        refreshDirect()
         const host = hostId()
         if (upstream && (upstreamHost !== host || isHost() || !selfInVoice())) closeUpstream()
         if (upstreamHost !== host) retries = 0
@@ -264,7 +407,11 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
             for (const e of members.values()) e.queue.push(wire)
             return true
         }
-        if (!upstream) { openUpstream(); return false }
+        for (const e of directOut.values()) {
+            e.queue.push(wire)
+            directSent++
+        }
+        if (!upstream) { openUpstream(); return directOut.size > 0 }
         upstream.queue.push(wire)
         return true
     }
@@ -277,20 +424,31 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
             closeEntry(entry)
         }
         if (peerId === hostId()) closeUpstream()
+        directRefused.delete(peerId)
+        seen.delete(peerId)
+        closeDirectIn(peerId)
+        if (closeDirect(peerId)) onDirectChanged()
     }
 
     function stop() {
         stopped = true
         closeUpstream()
         for (const [peerId] of [...members]) peerLeft(peerId)
+        for (const peerId of [...directOut.keys()]) closeDirect(peerId)
+        closeDirectIn()
     }
 
     function stats() {
         let drops = closedDrops
         for (const e of members.values()) drops += e.queue.drops
         if (upstream) drops += upstream.queue.drops
-        return { drops, droppedOversize, droppedOrigin, streams: members.size + (upstream ? 1 : 0) }
+        for (const e of directOut.values()) drops += e.queue.drops
+        return {
+            drops, droppedOversize, droppedOrigin, streams: members.size + (upstream ? 1 : 0),
+            directSent, directReceived, directStreams: directOut.size, directIn: directIn.size,
+            forwarded, forwardedTo: JSON.parse(JSON.stringify(forwardedTo)), duplicates
+        }
     }
 
-    return { handle, sendFrame, hostChanged, peerLeft, stop, stats }
+    return { handle, handleDirect, directList, sendFrame, hostChanged, peerLeft, stop, stats }
 }

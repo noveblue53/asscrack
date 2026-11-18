@@ -14,13 +14,13 @@ import { createChatSession } from './chat-session.mjs'
 import { createElection } from './election.mjs'
 import { createHistory } from './history.mjs'
 import { createFileTransfer, FILE_PROTOCOL } from './file-transfer.mjs'
-import { createVoiceRelay, VOICE_PROTOCOL } from './voice-relay.mjs'
+import { createVoiceRelay, VOICE_PROTOCOL, VOICE_DIRECT_PROTOCOL } from './voice-relay.mjs'
 import { makeInvite, validAddr, validPeerId } from './invite.mjs'
 import { DIALBACK_PROTOCOL, handleDialback, requestDialback, isPrivateIp, observedIp, tcpTarget } from './fullnode.mjs'
 import { onUpnpRouterError } from './upnp-guard.mjs'
 
 export { FILE_PROTOCOL, safeFileName } from './file-transfer.mjs'
-export { VOICE_PROTOCOL } from './voice-relay.mjs'
+export { VOICE_PROTOCOL, VOICE_DIRECT_PROTOCOL } from './voice-relay.mjs'
 
 export const CHAT_PROTOCOL = '/asscrack/chat/receive'
 
@@ -260,7 +260,21 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     // peerId -> true for the peers in voice (from their voice lines).
     const peerVoice = new Map()
     let voiceRelay = null
-    const voiceLine = () => JSON.stringify({ type: 'voice', inVoice: voiceState.inVoice, streamId: voiceState.streamId, muted: voiceState.muted })
+    // peerId -> the last valid 'direct' list of that peer: the peers that get its frames on a direct stream.
+    const peerDirect = new Map()
+    const MAX_DIRECT = 64
+    // A 0.5.2 peer ignores the field 'direct'.
+    const voiceLine = () => JSON.stringify({
+        type: 'voice', inVoice: voiceState.inVoice, streamId: voiceState.streamId, muted: voiceState.muted,
+        direct: voiceRelay ? voiceRelay.directList() : []
+    })
+    // Returns the list when it is valid: an array of at most 64 strings, each one a peer ID with a session.
+    // Returns null when it is not valid.
+    function validDirect(list) {
+        if (!Array.isArray(list) || list.length > MAX_DIRECT) return null
+        if (!list.every(p => typeof p === 'string' && sessions.has(p))) return null
+        return list
+    }
 
     const election = createElection({
         selfId: node.peerId.toString(),
@@ -294,7 +308,18 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             return list
         },
         connectionFor: peerId => sessionConns.get(peerId) ?? node.getConnections().find(c => c.remotePeer.toString() === peerId),
-        onFrame: frame => events.emit('voice-frame', frame)
+        onFrame: frame => events.emit('voice-frame', frame),
+        // Voice peers whose session connection is not relayed.
+        directCandidates: () => [...peerVoice.keys()].filter(p => {
+            const conn = sessionConns.get(p)
+            return sessions.has(p) && conn && !conn.remoteAddr.toString().includes('/p2p-circuit')
+        }),
+        directListOf: peerId => peerDirect.get(peerId) ?? null,
+        // Send the voice line again, so that the host knows which peers to forward to.
+        onDirectChanged: () => {
+            const line = voiceLine()
+            for (const session of sessions.values()) session.send(line)
+        }
     })
 
     const files = createFileTransfer({
@@ -428,6 +453,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                     } else if (control.type === 'voice') {
                         if (control.inVoice === true) peerVoice.set(peerId, true)
                         else peerVoice.delete(peerId)
+                        const direct = control.inVoice === true ? validDirect(control.direct) : null
+                        if (direct) peerDirect.set(peerId, direct)
+                        else peerDirect.delete(peerId)
                         voiceRelay.hostChanged()
                         events.emit('voice-state', {
                             peerId,
@@ -500,6 +528,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 pendingHistory.delete(peerId)
                 events.emit('peer-left', { peerId })
                 peerVoice.delete(peerId)
+                peerDirect.delete(peerId)
                 voiceRelay.peerLeft(peerId)
                 election.sessionClosed(peerId)
                 files.peerLeft(peerId)
@@ -526,6 +555,15 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             return
         }
         voiceRelay.handle(data)
+    }, { runOnTransientConnection: true })
+
+    // Direct voice frames only from a peer with an open session. The receiver never forwards them.
+    await node.handle(VOICE_DIRECT_PROTOCOL, data => {
+        if (!sessions.has(data.connection.remotePeer.toString())) {
+            data.stream.abort?.(new Error('no session'))
+            return
+        }
+        voiceRelay.handleDirect(data)
     }, { runOnTransientConnection: true })
 
     await node.handle(FILE_PROTOCOL, data => files.handleStream(data), { runOnTransientConnection: true })
@@ -1076,7 +1114,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             for (const session of sessions.values()) session.send(line)
             voiceRelay.hostChanged()
         },
-        // Send one Opus frame of this node on the voice path (star through the host).
+        // Send one Opus frame of this node on the voice path (direct streams, and the star through the host).
         sendVoiceFrame: bytes => voiceRelay.sendFrame(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)),
         voiceStats: () => voiceRelay.stats(),
         host: () => election.host(),
