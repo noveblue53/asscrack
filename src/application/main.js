@@ -188,7 +188,6 @@ function createMainWindow() {
 ipcMain.handle('asscrack:login', async (_event, { name, room, invite, internet, publicAddress } = {}) => {
     if (loginStarted) throw new Error('Already logged in');
     loginStarted = true;
-    let inviteNodes = [];
     let joinedRoom = room;
     try {
         const options = { name, room, downloadDir: downloadDir ?? app.getPath('downloads'), ...nodeFlags };
@@ -197,7 +196,7 @@ ipcMain.handle('asscrack:login', async (_event, { name, room, invite, internet, 
             options.room = code.room;
             joinedRoom = code.room;
             options.roomKey = code.key;
-            inviteNodes = code.nodes;
+            options.inviteNodes = code.nodes;
         } else if (internet === true) {
             options.roomKey = newRoomKey();
         }
@@ -222,13 +221,7 @@ ipcMain.handle('asscrack:login', async (_event, { name, room, invite, internet, 
             sendToWindow(`asscrack:${type}`, data);
         });
     }
-    // Connect to each address of each node in the invite code. Continue when one fails.
-    for (const { id, addrs } of inviteNodes) {
-        for (const addr of addrs) {
-            const target = addr.includes('/p2p/') ? addr : `${addr}/p2p/${id}`;
-            node.connect(target).catch(err => writeLog('WARN', `Invite connect to ${target} failed: ${err?.message ?? err}`));
-        }
-    }
+    // The node dials the invite nodes at start and again with the redial timer (option inviteNodes).
     return { peerId: node.peerId, room: joinedRoom, internet: node.roomKey() !== null };
 });
 

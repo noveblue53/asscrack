@@ -73,7 +73,8 @@ function validHistoryItem(m) {
 
 export async function createAsscrackNode({ room, listen, port = 0, discovery = true, discoveryInterval, name,
     heartbeatInterval = 1000, hostTimeout = 5000, electionDelay = 3000, downloadDir,
-    fullNode = 'auto', allowPrivateFullNode = false, relayOnly = false, roomKey = null, announce = [], storePath = null } = {}) {
+    fullNode = 'auto', allowPrivateFullNode = false, relayOnly = false, roomKey = null, announce = [], storePath = null,
+    redialInterval = 5000, inviteNodes = [] } = {}) {
     if (typeof room !== 'string') throw new TypeError('room must be a string')
     const key = parseRoomKey(roomKey)
     if (!Array.isArray(announce) || !announce.every(validAddr)) throw new TypeError('announce must be an array of multiaddr strings')
@@ -491,6 +492,11 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         const old = knownFullNodes.get(peerId)
         if (!old || old.length !== addrs.length || old.some((a, i) => a !== addrs[i])) {
             knownFullNodes.set(peerId, addrs)
+            // A different peer ID with the same address list: the old entry is stale (the full node started again).
+            const same = new Set(addrs)
+            for (const [otherId, otherAddrs] of [...knownFullNodes]) {
+                if (otherId !== peerId && otherAddrs.length === same.size && otherAddrs.every(a => same.has(a))) knownFullNodes.delete(otherId)
+            }
             events.emit('full-node-addrs', { peerId, addrs: [...addrs] })
             if (save) saveStore()
         }
@@ -547,6 +553,27 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                     return
                 } catch (err) {
                     console.warn(`Direct dial to full node ${peerId} at ${a} failed:`, err?.message ?? err)
+                }
+            }
+            // The peer ID can be old (the full node started again with a new ID). Dial each address with no peer ID.
+            for (const a of addrs) {
+                if (stopped) return
+                const bare = a.split('/p2p/')[0]
+                if (!bare) continue
+                try {
+                    const conn = await node.dial(multiaddr(bare))
+                    const remoteId = conn.remotePeer.toString()
+                    if (remoteId === selfId) {
+                        await conn.close().catch(() => {})
+                        continue
+                    }
+                    if (!sessions.has(remoteId) && !pendingChats.has(remoteId)) {
+                        const stream = await conn.newStream(CHAT_PROTOCOL, { runOnTransientConnection: true })
+                        attachChat(stream, remoteId, conn)
+                    }
+                    return
+                } catch (err) {
+                    console.warn(`Address dial to ${bare} (no peer ID) failed:`, err?.message ?? err)
                 }
             }
         })().finally(() => dialing.delete(peerId))
@@ -710,7 +737,20 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     await node.start()
     election.start()
     loadStore()
+    if (Array.isArray(inviteNodes)) {
+        for (const entry of inviteNodes) {
+            const valid = validAddrList(entry?.addrs)
+            if (valid && entry.id !== selfId && validPeerId(entry.id)) knownFullNodes.set(entry.id, valid)
+        }
+    }
     for (const peerId of knownFullNodes.keys()) dialFullNode(peerId)
+    // Redial: a member with no session to a full node dials the known full nodes again.
+    const redialTimer = setInterval(() => {
+        if (stopped || selfFull) return
+        if ([...sessions.keys()].some(id => peerFull.get(id) === true)) return
+        for (const peerId of [...knownFullNodes.keys()]) dialFullNode(peerId)
+    }, redialInterval)
+    redialTimer.unref?.()
 
     return {
         peerId: node.peerId.toString(),
@@ -782,6 +822,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         cancelFile: (offerId, peerId) => files.cancelFile(offerId, peerId),
         async stop() {
             stopped = true
+            clearInterval(redialTimer)
             for (const timer of waitingDial.values()) clearTimeout(timer)
             waitingDial.clear()
             if (relayDialTimer) clearTimeout(relayDialTimer)
