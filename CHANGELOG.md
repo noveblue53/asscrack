@@ -6,6 +6,24 @@ Each result has one of these labels:
 - **LAN**: a test on 2 or more computers on one real local network.
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 
+## 0.5.1: rejoin an internet room, and the room name on the joiner
+
+- **Build:** `dist/ASSCRACK-0.5.1-portable.exe`, 96,497,772 bytes, SHA-256 `8f1af4f9d1bfd3c450b25cc94972bf918935dec654dd3057e45d6ce99496a41d`.
+- **Internet result of 0.5.0 (operator, 2026-11-18):** A on a PC with a forwarded TCP port made an internet room. A
+  laptop on a phone hotspot joined with the invite code. Chat, voice and file sharing worked. This is the first
+  internet result. Two faults were found.
+- **Room name:** a user who joined with an invite code saw no room name. The window now shows the room name from the
+  code.
+- **Rejoin:** when the full node left and started again, the other member stayed alone. A member with no full node now
+  dials the known full nodes again each 5 s. A full node that started again has a new peer ID. The member then dials
+  the same address with no peer ID, so an old invite code is still good.
+- **Public address:** the label now says that the host of the room must fill it in. With no public address, the
+  window shows no invite code.
+- **Results (127.0.0.1):** `npm test` passes 70 of 70. A new test stops the full node and starts a new one at the
+  same port. The member has a session with it after less than 1 s. The start, join and room name window checks pass.
+  The terminal demo works.
+- **Not known:** the rejoin on the internet.
+
 ## 0.5.0: internet rooms with invite codes, full nodes and voice over libp2p
 
 - **Build:** `dist/ASSCRACK-0.5.0-portable.exe`, 96,496,437 bytes, SHA-256
