@@ -1,0 +1,6 @@
+e2e exit=0
+npm test exit=0 ℹ pass 218 ℹ fail 0 
+rejoin exit=0 ℹ pass 3 ℹ fail 0 
+app start: terminal error lines 5, log files asscrack-20261119-201315.log 
+app start: log error lines 0, archive line: 2026-11-19T20:13:16.363Z INFO Saved rooms archive opened: state open, reason none, safeStorage backend gnome_libsecret
+done

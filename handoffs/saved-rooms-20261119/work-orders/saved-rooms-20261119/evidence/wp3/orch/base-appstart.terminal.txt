@@ -1,0 +1,6 @@
+dbus-daemon[8861]: [session uid=0 pid=8861] org.freedesktop.DBus.Error.AccessDenied: Failed to set fd limit to 65536: Operation not permitted
+[8876:1119/201348.894744:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Failed to connect to socket /run/dbus/system_bus_socket: No such file or directory
+[8876:1119/201348.901957:ERROR:electron/shell/common/node_bindings.cc:490] The NODE_OPTION --use-openssl-ca is not supported in Electron
+[8876:1119/201349.381988:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Failed to connect to socket /run/dbus/system_bus_socket: No such file or directory
+[8876:1119/201349.382202:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Failed to connect to socket /run/dbus/system_bus_socket: No such file or directory
+/home/user/asscrack/node_modules/electron/dist/electron exited with signal SIGTERM

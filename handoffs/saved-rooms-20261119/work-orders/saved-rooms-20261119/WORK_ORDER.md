@@ -38,8 +38,10 @@
 | Builder | Tier | Task | Files |
 |---|---|---|---|
 | binding study | t1 (general-purpose, opus) | WP1 study of the SQLCipher bindings | scratchpad `wp1/` only |
-| (round 2, after the approval) | t1 | WP2 store and tests | to be written after the approval |
-| (round 2, after the approval) | t1 | WP3 app integration | to be written after the approval |
+| A (round 2) | t1 | WP2 store and tests (`brief-A-room-archive.md`) | `src/application/room-archive.mjs`, `test/room-archive.test.mjs` |
+| B (round 2) | t1 | WP2 node record (`brief-B-send-record.md`) | `src/network/node.mjs` (`send`), `test/send-record.test.mjs` |
+| C (round 3) | t1 | WP3 app integration (`brief-C-app.md`) | `main.js`, `preload.cjs`, `renderer.js`, `index.html`, `styles.css`, new `saved-rooms.mjs`, `saved-rooms-ui.js`, `test/saved-rooms.test.mjs` |
+| D (round 3) | t1 | WP3 Electron check script (`brief-D-check-script.md`) | `evidence/wp3/` only |
 
 ## Rules given to the builders
 - The builder-t1 rules of `/opt/agent-kit/agents/builder-t1.md`, in each brief.

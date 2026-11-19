@@ -1,31 +1,47 @@
 {
   "DECISIONS.md": {
-    "sha256": "d1f5b433dcce9e058853d2a41b2f5a322c31eaf47f67789ae08c5f2697048a70",
-    "bytes": 8259
+    "sha256": "e5bf6150f5981b327339387805141514820a04309749081985f92921f4a37d04",
+    "bytes": 12447
   },
   "START_HERE.md": {
-    "sha256": "01fa4311117a12edd1dd06b63a92811ee5aa12920a3c4f30d4ff3e33218fe817",
-    "bytes": 2835
+    "sha256": "fd361ca2702a14c1a0082f60ef86e9c94f13161fc07ebee52b436abc0b4f67a4",
+    "bytes": 2243
   },
   "work-orders/saved-rooms-20261119/CONTINUE.md": {
-    "sha256": "8ea653329f8d96314259f0e0f52048be5218f67927cb95b872f797ade4a909a3",
-    "bytes": 4110
+    "sha256": "65af48a757947c06dc1f1e680c751a0f97e59f30153ec2e832d870d88024e356",
+    "bytes": 6073
   },
   "work-orders/saved-rooms-20261119/GOAL.md": {
     "sha256": "30e2d8c6db39658736cbc86b00d52939d1151b9e2d67a78e946ef695a0197265",
     "bytes": 7366
   },
   "work-orders/saved-rooms-20261119/GOAL_ACTIVE": {
-    "sha256": "4009ca4f40220c43a423f1d9c80d0f829175d9807124639b2a1b61d811e59450",
+    "sha256": "80fd4e19c8fabea2c7d7ad5c0ac32b51604d9ce759b2468dddae6aabbf2eb517",
     "bytes": 1577
   },
-  "work-orders/saved-rooms-20261119/GOAL_WAIT": {
-    "sha256": "49c6a1e882f6c01d82fe2f0ddd532038b05bf978b2fb1cc00a1bb3eec6fdad22",
-    "bytes": 160
+  "work-orders/saved-rooms-20261119/GOAL_OWNER": {
+    "sha256": "577cf1c57bce8ca644fe863e889e3d5af5cc902e9da8b8f5cc57b25a70911759",
+    "bytes": 36
   },
   "work-orders/saved-rooms-20261119/WORK_ORDER.md": {
-    "sha256": "81d44cdfd347aae9e1cf102610c4e40bb2a8351f5e5385dc6ac718230a715713",
-    "bytes": 3600
+    "sha256": "750deaebf26a463c1d56cc3fbd70781ebe8b851b2bbd902656e5f3b323a39973",
+    "bytes": 3980
+  },
+  "work-orders/saved-rooms-20261119/brief-A-room-archive.md": {
+    "sha256": "023bfaa6d66564254906cffae92d77f8ea4a1742553cc0860e4e03d18325630a",
+    "bytes": 8232
+  },
+  "work-orders/saved-rooms-20261119/brief-B-send-record.md": {
+    "sha256": "1ba3f078e71677e11e2c02b650d5a795cb4bdfbcc57e3c6f19b9a7e8d45e3ed7",
+    "bytes": 2819
+  },
+  "work-orders/saved-rooms-20261119/brief-C-app.md": {
+    "sha256": "31d774108d50515ff74680206320a233a8a538493b52e6ee4741fb0d7e219ee1",
+    "bytes": 8048
+  },
+  "work-orders/saved-rooms-20261119/brief-D-check-script.md": {
+    "sha256": "525b380fc5243e4b67c1504bb8e17db93385c3af3cd5a2a38b54de19f5a9918c",
+    "bytes": 4417
   },
   "work-orders/saved-rooms-20261119/evidence/DECISIONS.copy.md": {
     "sha256": "d1f5b433dcce9e058853d2a41b2f5a322c31eaf47f67789ae08c5f2697048a70",
@@ -86,5 +102,61 @@
   "work-orders/saved-rooms-20261119/evidence/wp1/trial.cjs": {
     "sha256": "3256f92a86a195b6d0dd2d1796524d2322c2af2a7f6375fa5dddba26448f227d",
     "bytes": 4198
+  },
+  "work-orders/saved-rooms-20261119/evidence/wp3/check-saved-rooms.cjs": {
+    "sha256": "bb60de9326561106d62d5a9778799f799ad829034e7f5274b7382393db26a3c0",
+    "bytes": 9666
+  },
+  "work-orders/saved-rooms-20261119/evidence/wp3/orch/base-appstart.terminal.txt": {
+    "sha256": "6c5cb00b800ce5f912f3f0af4294b427c2de4569b18381bcea54618fd5d2a4ef",
+    "bytes": 845
+  },
+  "work-orders/saved-rooms-20261119/evidence/wp3/orch/voice-direct-compare.txt": {
+    "sha256": "4e46b48b5264ccbdc8329d1e2a425f6f6ccb44481879a60331dbe9910a9a7b0a",
+    "bytes": 425
+  },
+  "work-orders/saved-rooms-20261119/evidence/wp3/orch/wp2-npmtest.console.txt": {
+    "sha256": "7840fba32e713b00645612e7c0e5d34ff5b03ac8dd56c809aa9746937ebd547d",
+    "bytes": 148448
+  },
+  "work-orders/saved-rooms-20261119/evidence/wp3/orch/wp3-appstart.log.txt": {
+    "sha256": "5e73af679bcf8c228a130a1911271facc88702056445edb2824ea0ff37cc7b08",
+    "bytes": 448
+  },
+  "work-orders/saved-rooms-20261119/evidence/wp3/orch/wp3-appstart.terminal.txt": {
+    "sha256": "40f2d50f5c74febc079a9af21459750c5b54a9e2644c2cb778ba4331ab98530d",
+    "bytes": 845
+  },
+  "work-orders/saved-rooms-20261119/evidence/wp3/orch/wp3-e2e-orch.txt": {
+    "sha256": "67d81fccc90c704c9ae446984cebbdba8e1f742a5973bb57e2aba28f4b226430",
+    "bytes": 3589
+  },
+  "work-orders/saved-rooms-20261119/evidence/wp3/orch/wp3-npmtest.console.txt": {
+    "sha256": "95366af942be711b69f228875707de0e21d3eba6640eef550a56a46b5abf6f27",
+    "bytes": 148000
+  },
+  "work-orders/saved-rooms-20261119/evidence/wp3/orch/wp3-rejoin.console.txt": {
+    "sha256": "ccd14446a71c8eb04e6659f1a2218d87d4658bfe1e963e2ea07ab72d0bdd51ef",
+    "bytes": 4118
+  },
+  "work-orders/saved-rooms-20261119/evidence/wp3/orch/wp3-summary.txt": {
+    "sha256": "60ef36ae28cf998955f06749ab01ab172cc474923921787809c7bdf090721c99",
+    "bytes": 332
+  },
+  "work-orders/saved-rooms-20261119/evidence/wp3/run1.out": {
+    "sha256": "e2ce02417a90d8907a110e4525e0ea84664f3e192b6375fc8e5880fb78c04350",
+    "bytes": 1833
+  },
+  "work-orders/saved-rooms-20261119/evidence/wp3/run2.out": {
+    "sha256": "ec2b4681146d02ceaab141a876f7e64f37c2e933a355dd13016203a215b31467",
+    "bytes": 1833
+  },
+  "work-orders/saved-rooms-20261119/evidence/wp3/run3.out": {
+    "sha256": "0378463994b0a2eed5f89bc89631713ce3af828d83bcfb191ad3df91c6e68f94",
+    "bytes": 2039
+  },
+  "work-orders/saved-rooms-20261119/evidence/wp3/run4.out": {
+    "sha256": "3eb97e74174da2ef25376e730ed47d48c08d95610ac1a1ba311d07f7d4a04b96",
+    "bytes": 3539
   }
 }

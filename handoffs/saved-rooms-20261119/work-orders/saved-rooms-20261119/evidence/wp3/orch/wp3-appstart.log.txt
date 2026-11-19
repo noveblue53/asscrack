@@ -1,0 +1,2 @@
+2026-11-19T20:13:15.875Z INFO ASSCRACK 0.6.0 Electron 40.5.0 args ["/home/user/asscrack/node_modules/electron/dist/electron","/home/user/asscrack","--no-sandbox","--profile","/tmp/tmp.5ZWv5jSjeC/p","--log-dir","/tmp/tmp.5ZWv5jSjeC/log","--password-store=gnome-libsecret"] log /tmp/tmp.5ZWv5jSjeC/log/asscrack-20261119-201315.log
+2026-11-19T20:13:16.363Z INFO Saved rooms archive opened: state open, reason none, safeStorage backend gnome_libsecret

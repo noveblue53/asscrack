@@ -1,10 +1,10 @@
 - [x] WP1: `DECISIONS.md` records the baseline (SHA, Node and Electron versions, `npm test` count) and the binding choice with the reasons and the sources.
 - [x] WP1: `GOAL_WAIT` asks the operator to approve the new dependency (name, version, license, size, native build path). Stop until the operator replies.
-- [ ] WP2: `node --test` cases for the fingerprint: the same name with a different key, and an encoding with only one meaning.
-- [ ] WP2: `node --test` cases for the key: a missing key file, a key that does not unwrap, and an interrupted first start.
-- [ ] WP2: `node --test` cases for the rows: one row for each (room, message ID). A plain SQLite open and a wrong key cannot read a row.
-- [ ] WP2: `npm test` passes on the branch (127.0.0.1). For each failed test, the same test also ran on `main`, and the report says if the change caused it.
-- [ ] WP3: Electron under Xvfb, new profile (127.0.0.1): save a keyed room and send and receive one chat line. Close all processes. Start with no peer, reopen the room and read the line. `DECISIONS.md` records the `safeStorage` backend.
-- [ ] WP3: a second saved room with the same user name and a different key shows only its own chat.
-- [ ] WP3: one app start with no error line in the terminal or the developer console (Xvfb). `test/rejoin.test.mjs` passes.
-- [ ] WP3: `CHANGELOG.md` and `README.md` on the branch give the results with the label 127.0.0.1. They tell the difference between encrypted peer connections and encrypted local storage (only what this goal built). They list the open packaged Windows checks.
+- [x] WP2: `node --test` cases for the fingerprint: the same name with a different key, and an encoding with only one meaning.
+- [x] WP2: `node --test` cases for the key: a missing key file, a key that does not unwrap, and an interrupted first start.
+- [x] WP2: `node --test` cases for the rows: one row for each (room, message ID). A plain SQLite open and a wrong key cannot read a row.
+- [x] WP2: `npm test` passes on the branch (127.0.0.1). For each failed test, the same test also ran on `main`, and the report says if the change caused it.
+- [x] WP3: Electron under Xvfb, new profile (127.0.0.1): save a keyed room and send and receive one chat line. Close all processes. Start with no peer, reopen the room and read the line. `DECISIONS.md` records the `safeStorage` backend.
+- [x] WP3: a second saved room with the same user name and a different key shows only its own chat.
+- [x] WP3: one app start with no error line in the terminal or the developer console (Xvfb). `test/rejoin.test.mjs` passes.
+- [x] WP3: `CHANGELOG.md` and `README.md` on the branch give the results with the label 127.0.0.1. They tell the difference between encrypted peer connections and encrypted local storage (only what this goal built). They list the open packaged Windows checks.

@@ -1,0 +1,1310 @@
+
+> asscrack@0.6.0 test
+> node --test
+
+✔ main.js forwards the history event (10.489258ms)
+✔ preload.cjs exposes onHistory (1.965532ms)
+✔ renderer.js listens for history (1.427427ms)
+✔ main.js writes a log file with the window console (1.134721ms)
+✔ main.js forwards the topology event (3.228334ms)
+✔ preload.cjs exposes onTopology and getTopology (5.495215ms)
+✔ main.js logs the direction, the cancel side and the file actions (1.490861ms)
+✔ preload.cjs passes a peer ID in cancelFile (0.845198ms)
+✔ preload.cjs exposes revealFile by key and no path API for the reveal (1.153788ms)
+✔ main.js records the receive path of file-done by offerId|peerId and checks that the file exists (3.799812ms)
+✔ renderer.js has one Escape dispatcher in the sequence menu, layout, invite panel, map (2.488008ms)
+✔ menu.js handles no Escape itself (2.576393ms)
+✔ the row buttons and the menus call the same action functions (2.791376ms)
+✔ nodemap.js highlights a node by peer ID with a data attribute (1.395298ms)
+✔ menu.js, renderer.js and nodemap.js set no inline style (2.957441ms)
+✔ menu.js loads with no DOM and gives menuCore only (2.215435ms)
+✔ menuCore.actionsFor gives the actions of each target (2.826587ms)
+✔ menuCore.allowed stops a stale action after the transfer completed (1.657578ms)
+✔ menuCore keys and position (2.493053ms)
+✔ the Escape dispatcher closes the find bar and then the quote chip, between layout and the invite panel (0.672006ms)
+✔ find.js and quote.js handle no Escape and set no inline style (1.151015ms)
+✔ the Quote button and the menu action Quote run the same row action (0.626776ms)
+✔ index.html loads find.js and quote.js before renderer.js, and has the find bar and the quote chip (0.648753ms)
+✔ menuCore gives Quote for a quotable message line (1.862834ms)
+✔ one duplex stream carries chat both ways and cleans up on disconnect (1210.484118ms)
+example: conn session peer=12D3KooWPzJQYzTW9gCFgEgBW31WtARYnzVgvaDd39oyF98km5wk type=direct dir=in addr=/ip4/127.0.0.1/tcp/48068/p2p/12D3KooWPzJQYzTW9gCFgEgBW31WtARYnzVgvaDd39oyF98km5wk
+example: conn closed peer=12D3KooWPUpEsUxc28ZseyMVRA7VKkUHfSu9qnZoiJ4bhHYBK19V type=direct secs=0
+✔ connection log: a direct session (167.169216ms)
+example: conn session peer=12D3KooWJZq3F6g9NY7jkijVNdSgWR1qTKHxk9q4E5aLR63ypNMY type=relay dir=in relay=12D3KooWJCCFrLyBCrjCFcWoxjbkos31CvAZirBXSiSc3LGq2h7W addr=/ip4/127.0.0.1/tcp/45749/p2p/12D3KooWJCCFrLyBCrjCFcWoxjbkos31CvAZirBXSiSc3LGq2h7W/p2p-circuit/p2p/12D3KooWJZq3F6g9NY7jkijVNdSgWR1qTKHxk9q4E5aLR63ypNMY
+conn closed peer=12D3KooWJZq3F6g9NY7jkijVNdSgWR1qTKHxk9q4E5aLR63ypNMY type=direct secs=0.2
+conn closed peer=12D3KooWLY684wcKmsYMShB3rW67rcxsd26V9qN6MdJZdBwzCRUz type=direct secs=0.1
+conn closed peer=12D3KooWJCCFrLyBCrjCFcWoxjbkos31CvAZirBXSiSc3LGq2h7W type=direct secs=0.2
+conn closed peer=12D3KooWLY684wcKmsYMShB3rW67rcxsd26V9qN6MdJZdBwzCRUz type=relay secs=0
+conn closed peer=12D3KooWJCCFrLyBCrjCFcWoxjbkos31CvAZirBXSiSc3LGq2h7W type=direct secs=0.1
+conn closed peer=12D3KooWJZq3F6g9NY7jkijVNdSgWR1qTKHxk9q4E5aLR63ypNMY type=relay secs=0
+✔ connection log: a relay session (260.922347ms)
+example: conn dial-failed peer=? via=connect reason=refused addr=/ip4/127.0.0.1/tcp/35313 error="connection error 127.0.0.1:35313: connect ECONNREFUSED 127.0.0.1:35313"
+✔ connection log: a failed dial to a port with no listener (22.492609ms)
+✔ connection log: the reason class of a failed dial (0.638865ms)
+conn session peer=12D3KooWN4cdAacP6kcFUERK3e8GVtuNb6aBWzHQifUuxVnoGNfr type=direct dir=in addr=/ip4/127.0.0.1/tcp/46722/p2p/12D3KooWN4cdAacP6kcFUERK3e8GVtuNb6aBWzHQifUuxVnoGNfr
+conn session peer=12D3KooWK5qFA52dB3SwYUfhR3NajBoouxppM1wdGPWkN4BoAmqT type=direct dir=out addr=/ip4/127.0.0.1/tcp/36655/p2p/12D3KooWK5qFA52dB3SwYUfhR3NajBoouxppM1wdGPWkN4BoAmqT
+Dial-back from 12D3KooWN4cdAacP6kcFUERK3e8GVtuNb6aBWzHQifUuxVnoGNfr: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWK5qFA52dB3SwYUfhR3NajBoouxppM1wdGPWkN4BoAmqT: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWN4cdAacP6kcFUERK3e8GVtuNb6aBWzHQifUuxVnoGNfr type=direct dir=in addr=/ip4/127.0.0.1/tcp/35974/p2p/12D3KooWN4cdAacP6kcFUERK3e8GVtuNb6aBWzHQifUuxVnoGNfr
+conn session peer=12D3KooWPnvxdDZd5V2uypSdXfwgPeXrZfCtZ6qUCKNGzystxmo9 type=direct dir=out addr=/ip4/127.0.0.1/tcp/33323/p2p/12D3KooWPnvxdDZd5V2uypSdXfwgPeXrZfCtZ6qUCKNGzystxmo9
+Dial-back from 12D3KooWN4cdAacP6kcFUERK3e8GVtuNb6aBWzHQifUuxVnoGNfr: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWPnvxdDZd5V2uypSdXfwgPeXrZfCtZ6qUCKNGzystxmo9: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWK5qFA52dB3SwYUfhR3NajBoouxppM1wdGPWkN4BoAmqT type=direct dir=in addr=/ip4/127.0.0.1/tcp/35978/p2p/12D3KooWK5qFA52dB3SwYUfhR3NajBoouxppM1wdGPWkN4BoAmqT
+conn session peer=12D3KooWPnvxdDZd5V2uypSdXfwgPeXrZfCtZ6qUCKNGzystxmo9 type=direct dir=out addr=/ip4/127.0.0.1/tcp/33323/p2p/12D3KooWPnvxdDZd5V2uypSdXfwgPeXrZfCtZ6qUCKNGzystxmo9
+Dial-back from 12D3KooWK5qFA52dB3SwYUfhR3NajBoouxppM1wdGPWkN4BoAmqT: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWPnvxdDZd5V2uypSdXfwgPeXrZfCtZ6qUCKNGzystxmo9: ok, IP 127.0.0.1, full node false
+History sent to 12D3KooWN4cdAacP6kcFUERK3e8GVtuNb6aBWzHQifUuxVnoGNfr: 0 messages
+History sent to 12D3KooWPnvxdDZd5V2uypSdXfwgPeXrZfCtZ6qUCKNGzystxmo9: 0 messages
+History applied: 0 of 0 messages are new
+History applied: 0 of 0 messages are new
+test a: 3084 ms
+conn session peer=12D3KooWQtMd6D7snYrbvFveJp22fAaVuTMFpQw7kscwnsLHgmEm type=direct dir=in addr=/ip4/127.0.0.1/tcp/43246/p2p/12D3KooWQtMd6D7snYrbvFveJp22fAaVuTMFpQw7kscwnsLHgmEm
+conn session peer=12D3KooWN4cdAacP6kcFUERK3e8GVtuNb6aBWzHQifUuxVnoGNfr type=direct dir=out addr=/ip4/127.0.0.1/tcp/39251/p2p/12D3KooWN4cdAacP6kcFUERK3e8GVtuNb6aBWzHQifUuxVnoGNfr
+Dial-back from 12D3KooWQtMd6D7snYrbvFveJp22fAaVuTMFpQw7kscwnsLHgmEm: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWN4cdAacP6kcFUERK3e8GVtuNb6aBWzHQifUuxVnoGNfr: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWQtMd6D7snYrbvFveJp22fAaVuTMFpQw7kscwnsLHgmEm type=direct dir=in addr=/ip4/127.0.0.1/tcp/46762/p2p/12D3KooWQtMd6D7snYrbvFveJp22fAaVuTMFpQw7kscwnsLHgmEm
+History sent to 12D3KooWQtMd6D7snYrbvFveJp22fAaVuTMFpQw7kscwnsLHgmEm: 0 messages
+conn session peer=12D3KooWK5qFA52dB3SwYUfhR3NajBoouxppM1wdGPWkN4BoAmqT type=direct dir=out addr=/ip4/127.0.0.1/tcp/36655/p2p/12D3KooWK5qFA52dB3SwYUfhR3NajBoouxppM1wdGPWkN4BoAmqT
+History applied: 0 of 0 messages are new
+Dial-back from 12D3KooWQtMd6D7snYrbvFveJp22fAaVuTMFpQw7kscwnsLHgmEm: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWK5qFA52dB3SwYUfhR3NajBoouxppM1wdGPWkN4BoAmqT: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWQtMd6D7snYrbvFveJp22fAaVuTMFpQw7kscwnsLHgmEm type=direct dir=in addr=/ip4/127.0.0.1/tcp/36008/p2p/12D3KooWQtMd6D7snYrbvFveJp22fAaVuTMFpQw7kscwnsLHgmEm
+conn session peer=12D3KooWPnvxdDZd5V2uypSdXfwgPeXrZfCtZ6qUCKNGzystxmo9 type=direct dir=out addr=/ip4/127.0.0.1/tcp/33323/p2p/12D3KooWPnvxdDZd5V2uypSdXfwgPeXrZfCtZ6qUCKNGzystxmo9
+Dial-back from 12D3KooWQtMd6D7snYrbvFveJp22fAaVuTMFpQw7kscwnsLHgmEm: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWPnvxdDZd5V2uypSdXfwgPeXrZfCtZ6qUCKNGzystxmo9: ok, IP 127.0.0.1, full node false
+test b: 4133 ms
+conn closed peer=12D3KooWK5qFA52dB3SwYUfhR3NajBoouxppM1wdGPWkN4BoAmqT type=direct secs=7.1
+conn closed peer=12D3KooWPnvxdDZd5V2uypSdXfwgPeXrZfCtZ6qUCKNGzystxmo9 type=direct secs=7.1
+conn closed peer=12D3KooWQtMd6D7snYrbvFveJp22fAaVuTMFpQw7kscwnsLHgmEm type=direct secs=4.1
+conn closed peer=12D3KooWN4cdAacP6kcFUERK3e8GVtuNb6aBWzHQifUuxVnoGNfr type=direct secs=7.2
+conn closed peer=12D3KooWPnvxdDZd5V2uypSdXfwgPeXrZfCtZ6qUCKNGzystxmo9 type=direct secs=7
+conn closed peer=12D3KooWQtMd6D7snYrbvFveJp22fAaVuTMFpQw7kscwnsLHgmEm type=direct secs=4.1
+conn closed peer=12D3KooWN4cdAacP6kcFUERK3e8GVtuNb6aBWzHQifUuxVnoGNfr type=direct secs=7.1
+conn closed peer=12D3KooWK5qFA52dB3SwYUfhR3NajBoouxppM1wdGPWkN4BoAmqT type=direct secs=7
+conn closed peer=12D3KooWQtMd6D7snYrbvFveJp22fAaVuTMFpQw7kscwnsLHgmEm type=direct secs=4
+conn closed peer=12D3KooWN4cdAacP6kcFUERK3e8GVtuNb6aBWzHQifUuxVnoGNfr type=direct secs=4.1
+conn closed peer=12D3KooWK5qFA52dB3SwYUfhR3NajBoouxppM1wdGPWkN4BoAmqT type=direct secs=4
+conn closed peer=12D3KooWPnvxdDZd5V2uypSdXfwgPeXrZfCtZ6qUCKNGzystxmo9 type=direct secs=4
+✔ a+b: 3 nodes elect one host, and a 4th node does not change it (7296.061001ms)
+conn session peer=12D3KooWJEjLEhwri9TyRnTXhNnkTWuCihvcqLW6bwc3XeF7TZb4 type=direct dir=in addr=/ip4/127.0.0.1/tcp/51756/p2p/12D3KooWJEjLEhwri9TyRnTXhNnkTWuCihvcqLW6bwc3XeF7TZb4
+conn session peer=12D3KooWHEf62zj5CrcCMxHp9MPkUiZgfGAwVzzktwNXdLCrKp1p type=direct dir=out addr=/ip4/127.0.0.1/tcp/46451/p2p/12D3KooWHEf62zj5CrcCMxHp9MPkUiZgfGAwVzzktwNXdLCrKp1p
+Dial-back from 12D3KooWJEjLEhwri9TyRnTXhNnkTWuCihvcqLW6bwc3XeF7TZb4: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWHEf62zj5CrcCMxHp9MPkUiZgfGAwVzzktwNXdLCrKp1p: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWJEjLEhwri9TyRnTXhNnkTWuCihvcqLW6bwc3XeF7TZb4 type=direct dir=in addr=/ip4/127.0.0.1/tcp/33300/p2p/12D3KooWJEjLEhwri9TyRnTXhNnkTWuCihvcqLW6bwc3XeF7TZb4
+conn session peer=12D3KooWAWjt4SwmB7q5pn69auZdPEEQ2NZtBjwpTJjtcxT2dqSB type=direct dir=out addr=/ip4/127.0.0.1/tcp/32899/p2p/12D3KooWAWjt4SwmB7q5pn69auZdPEEQ2NZtBjwpTJjtcxT2dqSB
+Dial-back from 12D3KooWJEjLEhwri9TyRnTXhNnkTWuCihvcqLW6bwc3XeF7TZb4: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWAWjt4SwmB7q5pn69auZdPEEQ2NZtBjwpTJjtcxT2dqSB: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWHEf62zj5CrcCMxHp9MPkUiZgfGAwVzzktwNXdLCrKp1p type=direct dir=in addr=/ip4/127.0.0.1/tcp/33312/p2p/12D3KooWHEf62zj5CrcCMxHp9MPkUiZgfGAwVzzktwNXdLCrKp1p
+conn session peer=12D3KooWAWjt4SwmB7q5pn69auZdPEEQ2NZtBjwpTJjtcxT2dqSB type=direct dir=out addr=/ip4/127.0.0.1/tcp/32899/p2p/12D3KooWAWjt4SwmB7q5pn69auZdPEEQ2NZtBjwpTJjtcxT2dqSB
+Dial-back from 12D3KooWHEf62zj5CrcCMxHp9MPkUiZgfGAwVzzktwNXdLCrKp1p: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWAWjt4SwmB7q5pn69auZdPEEQ2NZtBjwpTJjtcxT2dqSB: ok, IP 127.0.0.1, full node false
+History sent to 12D3KooWJEjLEhwri9TyRnTXhNnkTWuCihvcqLW6bwc3XeF7TZb4: 0 messages
+History sent to 12D3KooWHEf62zj5CrcCMxHp9MPkUiZgfGAwVzzktwNXdLCrKp1p: 0 messages
+History applied: 0 of 0 messages are new
+History applied: 0 of 0 messages are new
+History sent to 12D3KooWJEjLEhwri9TyRnTXhNnkTWuCihvcqLW6bwc3XeF7TZb4: 0 messages
+History sent to 12D3KooWAWjt4SwmB7q5pn69auZdPEEQ2NZtBjwpTJjtcxT2dqSB: 0 messages
+History applied: 0 of 0 messages are new
+History applied: 0 of 0 messages are new
+test c: 5905 ms
+conn closed peer=12D3KooWHEf62zj5CrcCMxHp9MPkUiZgfGAwVzzktwNXdLCrKp1p type=direct secs=9
+conn closed peer=12D3KooWAWjt4SwmB7q5pn69auZdPEEQ2NZtBjwpTJjtcxT2dqSB type=direct secs=8.9
+conn closed peer=12D3KooWJEjLEhwri9TyRnTXhNnkTWuCihvcqLW6bwc3XeF7TZb4 type=direct secs=9
+conn closed peer=12D3KooWAWjt4SwmB7q5pn69auZdPEEQ2NZtBjwpTJjtcxT2dqSB type=direct secs=8.9
+conn closed peer=12D3KooWJEjLEhwri9TyRnTXhNnkTWuCihvcqLW6bwc3XeF7TZb4 type=direct secs=8.9
+conn closed peer=12D3KooWHEf62zj5CrcCMxHp9MPkUiZgfGAwVzzktwNXdLCrKp1p type=direct secs=8.9
+✔ c: a host with paused heartbeats is replaced (9038.10989ms)
+conn session peer=12D3KooWJHNBQR83pAJTjHUqrJLcSDAxW95RCGmzerhvAgTAWHH7 type=direct dir=in addr=/ip4/127.0.0.1/tcp/41548/p2p/12D3KooWJHNBQR83pAJTjHUqrJLcSDAxW95RCGmzerhvAgTAWHH7
+conn session peer=12D3KooWNcozKnAC9Ha72cfU8QwFWd2qGzywaX6HHMyQkxtnvgR2 type=direct dir=out addr=/ip4/127.0.0.1/tcp/33431/p2p/12D3KooWNcozKnAC9Ha72cfU8QwFWd2qGzywaX6HHMyQkxtnvgR2
+Dial-back from 12D3KooWJHNBQR83pAJTjHUqrJLcSDAxW95RCGmzerhvAgTAWHH7: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWNcozKnAC9Ha72cfU8QwFWd2qGzywaX6HHMyQkxtnvgR2: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWJHNBQR83pAJTjHUqrJLcSDAxW95RCGmzerhvAgTAWHH7 type=direct dir=in addr=/ip4/127.0.0.1/tcp/34226/p2p/12D3KooWJHNBQR83pAJTjHUqrJLcSDAxW95RCGmzerhvAgTAWHH7
+conn session peer=12D3KooWMTjoBag29V17aNbsXsKK133gGMMmM42BDUMeL57FCmv6 type=direct dir=out addr=/ip4/127.0.0.1/tcp/42155/p2p/12D3KooWMTjoBag29V17aNbsXsKK133gGMMmM42BDUMeL57FCmv6
+Dial-back from 12D3KooWJHNBQR83pAJTjHUqrJLcSDAxW95RCGmzerhvAgTAWHH7: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWMTjoBag29V17aNbsXsKK133gGMMmM42BDUMeL57FCmv6: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWNcozKnAC9Ha72cfU8QwFWd2qGzywaX6HHMyQkxtnvgR2 type=direct dir=in addr=/ip4/127.0.0.1/tcp/34236/p2p/12D3KooWNcozKnAC9Ha72cfU8QwFWd2qGzywaX6HHMyQkxtnvgR2
+conn session peer=12D3KooWMTjoBag29V17aNbsXsKK133gGMMmM42BDUMeL57FCmv6 type=direct dir=out addr=/ip4/127.0.0.1/tcp/42155/p2p/12D3KooWMTjoBag29V17aNbsXsKK133gGMMmM42BDUMeL57FCmv6
+Dial-back from 12D3KooWNcozKnAC9Ha72cfU8QwFWd2qGzywaX6HHMyQkxtnvgR2: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWMTjoBag29V17aNbsXsKK133gGMMmM42BDUMeL57FCmv6: ok, IP 127.0.0.1, full node false
+History sent to 12D3KooWNcozKnAC9Ha72cfU8QwFWd2qGzywaX6HHMyQkxtnvgR2: 0 messages
+History sent to 12D3KooWMTjoBag29V17aNbsXsKK133gGMMmM42BDUMeL57FCmv6: 0 messages
+History applied: 0 of 0 messages are new
+History applied: 0 of 0 messages are new
+conn closed peer=12D3KooWNcozKnAC9Ha72cfU8QwFWd2qGzywaX6HHMyQkxtnvgR2 type=direct secs=3
+conn closed peer=12D3KooWMTjoBag29V17aNbsXsKK133gGMMmM42BDUMeL57FCmv6 type=direct secs=3
+conn closed peer=12D3KooWJHNBQR83pAJTjHUqrJLcSDAxW95RCGmzerhvAgTAWHH7 type=direct secs=3
+conn closed peer=12D3KooWJHNBQR83pAJTjHUqrJLcSDAxW95RCGmzerhvAgTAWHH7 type=direct secs=3
+History sent to 12D3KooWNcozKnAC9Ha72cfU8QwFWd2qGzywaX6HHMyQkxtnvgR2: 0 messages
+History applied: 0 of 0 messages are new
+test d: 53 ms
+conn closed peer=12D3KooWMTjoBag29V17aNbsXsKK133gGMMmM42BDUMeL57FCmv6 type=direct secs=3
+conn closed peer=12D3KooWNcozKnAC9Ha72cfU8QwFWd2qGzywaX6HHMyQkxtnvgR2 type=direct secs=3
+✔ d: a stopped host is replaced (3118.541031ms)
+conn session peer=12D3KooWBtDMVYFeKrnpjNRUasxAYqT5yKtKwGgcMvD9BRtGtMa8 type=direct dir=in addr=/ip4/127.0.0.1/tcp/38720/p2p/12D3KooWBtDMVYFeKrnpjNRUasxAYqT5yKtKwGgcMvD9BRtGtMa8
+conn session peer=12D3KooWBG8xF9kNba1yxtDxCsSJY1gLxFpzdSGoB11QingEFaZR type=direct dir=out addr=/ip4/127.0.0.1/tcp/38931/p2p/12D3KooWBG8xF9kNba1yxtDxCsSJY1gLxFpzdSGoB11QingEFaZR
+Dial-back from 12D3KooWBtDMVYFeKrnpjNRUasxAYqT5yKtKwGgcMvD9BRtGtMa8: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWBG8xF9kNba1yxtDxCsSJY1gLxFpzdSGoB11QingEFaZR: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWFjStNfa5ip7kjtetseNQLyU7qGikxohetcYFup5PNcFa type=direct dir=in addr=/ip4/127.0.0.1/tcp/53012/p2p/12D3KooWFjStNfa5ip7kjtetseNQLyU7qGikxohetcYFup5PNcFa
+conn session peer=12D3KooWQvNXAxBq8RHVXhe6zPQkijeo7D4wn4C6AtVWGp23T8ca type=direct dir=out addr=/ip4/127.0.0.1/tcp/46717/p2p/12D3KooWQvNXAxBq8RHVXhe6zPQkijeo7D4wn4C6AtVWGp23T8ca
+Dial-back from 12D3KooWFjStNfa5ip7kjtetseNQLyU7qGikxohetcYFup5PNcFa: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWQvNXAxBq8RHVXhe6zPQkijeo7D4wn4C6AtVWGp23T8ca: ok, IP 127.0.0.1, full node false
+History sent to 12D3KooWBtDMVYFeKrnpjNRUasxAYqT5yKtKwGgcMvD9BRtGtMa8: 0 messages
+History applied: 0 of 0 messages are new
+History sent to 12D3KooWQvNXAxBq8RHVXhe6zPQkijeo7D4wn4C6AtVWGp23T8ca: 0 messages
+History applied: 0 of 0 messages are new
+conn session peer=12D3KooWBtDMVYFeKrnpjNRUasxAYqT5yKtKwGgcMvD9BRtGtMa8 type=direct dir=in addr=/ip4/127.0.0.1/tcp/49764/p2p/12D3KooWBtDMVYFeKrnpjNRUasxAYqT5yKtKwGgcMvD9BRtGtMa8
+History sent to 12D3KooWBtDMVYFeKrnpjNRUasxAYqT5yKtKwGgcMvD9BRtGtMa8: 0 messages
+conn session peer=12D3KooWFjStNfa5ip7kjtetseNQLyU7qGikxohetcYFup5PNcFa type=direct dir=out addr=/ip4/127.0.0.1/tcp/36661/p2p/12D3KooWFjStNfa5ip7kjtetseNQLyU7qGikxohetcYFup5PNcFa
+History from 12D3KooWFjStNfa5ip7kjtetseNQLyU7qGikxohetcYFup5PNcFa kept until it is the host
+Dial-back from 12D3KooWBtDMVYFeKrnpjNRUasxAYqT5yKtKwGgcMvD9BRtGtMa8: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWFjStNfa5ip7kjtetseNQLyU7qGikxohetcYFup5PNcFa: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWBtDMVYFeKrnpjNRUasxAYqT5yKtKwGgcMvD9BRtGtMa8 type=direct dir=in addr=/ip4/127.0.0.1/tcp/53024/p2p/12D3KooWBtDMVYFeKrnpjNRUasxAYqT5yKtKwGgcMvD9BRtGtMa8
+conn session peer=12D3KooWQvNXAxBq8RHVXhe6zPQkijeo7D4wn4C6AtVWGp23T8ca type=direct dir=out addr=/ip4/127.0.0.1/tcp/46717/p2p/12D3KooWQvNXAxBq8RHVXhe6zPQkijeo7D4wn4C6AtVWGp23T8ca
+Dial-back from 12D3KooWBtDMVYFeKrnpjNRUasxAYqT5yKtKwGgcMvD9BRtGtMa8: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWQvNXAxBq8RHVXhe6zPQkijeo7D4wn4C6AtVWGp23T8ca: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWBG8xF9kNba1yxtDxCsSJY1gLxFpzdSGoB11QingEFaZR type=direct dir=in addr=/ip4/127.0.0.1/tcp/49784/p2p/12D3KooWBG8xF9kNba1yxtDxCsSJY1gLxFpzdSGoB11QingEFaZR
+conn session peer=12D3KooWFjStNfa5ip7kjtetseNQLyU7qGikxohetcYFup5PNcFa type=direct dir=out addr=/ip4/127.0.0.1/tcp/36661/p2p/12D3KooWFjStNfa5ip7kjtetseNQLyU7qGikxohetcYFup5PNcFa
+History sent to 12D3KooWFjStNfa5ip7kjtetseNQLyU7qGikxohetcYFup5PNcFa: 0 messages
+History applied: 0 of 0 messages are new
+Dial-back from 12D3KooWBG8xF9kNba1yxtDxCsSJY1gLxFpzdSGoB11QingEFaZR: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWFjStNfa5ip7kjtetseNQLyU7qGikxohetcYFup5PNcFa: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWBG8xF9kNba1yxtDxCsSJY1gLxFpzdSGoB11QingEFaZR type=direct dir=in addr=/ip4/127.0.0.1/tcp/53040/p2p/12D3KooWBG8xF9kNba1yxtDxCsSJY1gLxFpzdSGoB11QingEFaZR
+conn session peer=12D3KooWQvNXAxBq8RHVXhe6zPQkijeo7D4wn4C6AtVWGp23T8ca type=direct dir=out addr=/ip4/127.0.0.1/tcp/46717/p2p/12D3KooWQvNXAxBq8RHVXhe6zPQkijeo7D4wn4C6AtVWGp23T8ca
+History sent to 12D3KooWQvNXAxBq8RHVXhe6zPQkijeo7D4wn4C6AtVWGp23T8ca: 0 messages
+test e: 158 ms
+conn closed peer=12D3KooWBG8xF9kNba1yxtDxCsSJY1gLxFpzdSGoB11QingEFaZR type=direct secs=3.2
+conn closed peer=12D3KooWFjStNfa5ip7kjtetseNQLyU7qGikxohetcYFup5PNcFa type=direct secs=0.1
+conn closed peer=12D3KooWQvNXAxBq8RHVXhe6zPQkijeo7D4wn4C6AtVWGp23T8ca type=direct secs=0.1
+conn closed peer=12D3KooWBtDMVYFeKrnpjNRUasxAYqT5yKtKwGgcMvD9BRtGtMa8 type=direct secs=3.2
+conn closed peer=12D3KooWFjStNfa5ip7kjtetseNQLyU7qGikxohetcYFup5PNcFa type=direct secs=0
+conn closed peer=12D3KooWQvNXAxBq8RHVXhe6zPQkijeo7D4wn4C6AtVWGp23T8ca type=direct secs=3.2
+conn closed peer=12D3KooWBtDMVYFeKrnpjNRUasxAYqT5yKtKwGgcMvD9BRtGtMa8 type=direct secs=0.1
+conn closed peer=12D3KooWBG8xF9kNba1yxtDxCsSJY1gLxFpzdSGoB11QingEFaZR type=direct secs=0
+conn closed peer=12D3KooWFjStNfa5ip7kjtetseNQLyU7qGikxohetcYFup5PNcFa type=direct secs=3.2
+conn closed peer=12D3KooWBtDMVYFeKrnpjNRUasxAYqT5yKtKwGgcMvD9BRtGtMa8 type=direct secs=0.1
+conn closed peer=12D3KooWBG8xF9kNba1yxtDxCsSJY1gLxFpzdSGoB11QingEFaZR type=direct secs=0
+conn closed peer=12D3KooWQvNXAxBq8RHVXhe6zPQkijeo7D4wn4C6AtVWGp23T8ca type=direct secs=0
+conn dial-failed peer=12D3KooWBG8xF9kNba1yxtDxCsSJY1gLxFpzdSGoB11QingEFaZR via=dial-back reason=other addr=/ip4/127.0.0.1/tcp/53040/p2p/12D3KooWBG8xF9kNba1yxtDxCsSJY1gLxFpzdSGoB11QingEFaZR error="unexpected end of input"
+conn dial-failed peer=12D3KooWQvNXAxBq8RHVXhe6zPQkijeo7D4wn4C6AtVWGp23T8ca via=dial-back reason=other addr=/ip4/127.0.0.1/tcp/46717/p2p/12D3KooWQvNXAxBq8RHVXhe6zPQkijeo7D4wn4C6AtVWGp23T8ca error="unexpected end of input"
+✔ e: two groups merge to one host (3303.380189ms)
+conn session peer=12D3KooWFvHhEYktVFvSug5SXyPTP7KQu2pPDQ4EDHcAYptwexWm type=direct dir=in addr=/ip4/127.0.0.1/tcp/42908/p2p/12D3KooWFvHhEYktVFvSug5SXyPTP7KQu2pPDQ4EDHcAYptwexWm
+conn session peer=12D3KooWLbsRngtrM1sVPgA26AtGii8soDzEnv2mQxo2SdHupTUw type=direct dir=out addr=/ip4/127.0.0.1/tcp/41811/p2p/12D3KooWLbsRngtrM1sVPgA26AtGii8soDzEnv2mQxo2SdHupTUw
+Dial-back from 12D3KooWFvHhEYktVFvSug5SXyPTP7KQu2pPDQ4EDHcAYptwexWm: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWLbsRngtrM1sVPgA26AtGii8soDzEnv2mQxo2SdHupTUw: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWFvHhEYktVFvSug5SXyPTP7KQu2pPDQ4EDHcAYptwexWm type=direct dir=in addr=/ip4/127.0.0.1/tcp/36234/p2p/12D3KooWFvHhEYktVFvSug5SXyPTP7KQu2pPDQ4EDHcAYptwexWm
+conn session peer=12D3KooWLtWmGw5MHm7fnGJCYm6jr15LinSWCn439Kqgxt2zdpsS type=direct dir=out addr=/ip4/127.0.0.1/tcp/41317/p2p/12D3KooWLtWmGw5MHm7fnGJCYm6jr15LinSWCn439Kqgxt2zdpsS
+Dial-back from 12D3KooWFvHhEYktVFvSug5SXyPTP7KQu2pPDQ4EDHcAYptwexWm: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWLtWmGw5MHm7fnGJCYm6jr15LinSWCn439Kqgxt2zdpsS: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWLbsRngtrM1sVPgA26AtGii8soDzEnv2mQxo2SdHupTUw type=direct dir=in addr=/ip4/127.0.0.1/tcp/36248/p2p/12D3KooWLbsRngtrM1sVPgA26AtGii8soDzEnv2mQxo2SdHupTUw
+conn session peer=12D3KooWLtWmGw5MHm7fnGJCYm6jr15LinSWCn439Kqgxt2zdpsS type=direct dir=out addr=/ip4/127.0.0.1/tcp/41317/p2p/12D3KooWLtWmGw5MHm7fnGJCYm6jr15LinSWCn439Kqgxt2zdpsS
+Dial-back from 12D3KooWLbsRngtrM1sVPgA26AtGii8soDzEnv2mQxo2SdHupTUw: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWLtWmGw5MHm7fnGJCYm6jr15LinSWCn439Kqgxt2zdpsS: ok, IP 127.0.0.1, full node false
+History sent to 12D3KooWLbsRngtrM1sVPgA26AtGii8soDzEnv2mQxo2SdHupTUw: 0 messages
+History sent to 12D3KooWLtWmGw5MHm7fnGJCYm6jr15LinSWCn439Kqgxt2zdpsS: 0 messages
+History applied: 0 of 0 messages are new
+History applied: 0 of 0 messages are new
+conn session peer=12D3KooWCvd7jNuv229XBQjG1dSTfVB7e6mx7162AnoHtTvSM2jn type=direct dir=in addr=/ip4/127.0.0.1/tcp/48114/p2p/12D3KooWCvd7jNuv229XBQjG1dSTfVB7e6mx7162AnoHtTvSM2jn
+conn session peer=12D3KooWLbsRngtrM1sVPgA26AtGii8soDzEnv2mQxo2SdHupTUw type=direct dir=out addr=/ip4/127.0.0.1/tcp/41811/p2p/12D3KooWLbsRngtrM1sVPgA26AtGii8soDzEnv2mQxo2SdHupTUw
+Dial-back from 12D3KooWCvd7jNuv229XBQjG1dSTfVB7e6mx7162AnoHtTvSM2jn: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWLbsRngtrM1sVPgA26AtGii8soDzEnv2mQxo2SdHupTUw: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWCvd7jNuv229XBQjG1dSTfVB7e6mx7162AnoHtTvSM2jn type=direct dir=in addr=/ip4/127.0.0.1/tcp/43118/p2p/12D3KooWCvd7jNuv229XBQjG1dSTfVB7e6mx7162AnoHtTvSM2jn
+conn session peer=12D3KooWLtWmGw5MHm7fnGJCYm6jr15LinSWCn439Kqgxt2zdpsS type=direct dir=out addr=/ip4/127.0.0.1/tcp/41317/p2p/12D3KooWLtWmGw5MHm7fnGJCYm6jr15LinSWCn439Kqgxt2zdpsS
+Dial-back from 12D3KooWCvd7jNuv229XBQjG1dSTfVB7e6mx7162AnoHtTvSM2jn: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWLtWmGw5MHm7fnGJCYm6jr15LinSWCn439Kqgxt2zdpsS: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWCvd7jNuv229XBQjG1dSTfVB7e6mx7162AnoHtTvSM2jn type=direct dir=in addr=/ip4/127.0.0.1/tcp/56428/p2p/12D3KooWCvd7jNuv229XBQjG1dSTfVB7e6mx7162AnoHtTvSM2jn
+History sent to 12D3KooWCvd7jNuv229XBQjG1dSTfVB7e6mx7162AnoHtTvSM2jn: 0 messages
+conn session peer=12D3KooWFvHhEYktVFvSug5SXyPTP7KQu2pPDQ4EDHcAYptwexWm type=direct dir=out addr=/ip4/127.0.0.1/tcp/44505/p2p/12D3KooWFvHhEYktVFvSug5SXyPTP7KQu2pPDQ4EDHcAYptwexWm
+History applied: 0 of 0 messages are new
+Dial-back from 12D3KooWCvd7jNuv229XBQjG1dSTfVB7e6mx7162AnoHtTvSM2jn: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWFvHhEYktVFvSug5SXyPTP7KQu2pPDQ4EDHcAYptwexWm: ok, IP 127.0.0.1, full node false
+test f: 10091 ms
+conn closed peer=12D3KooWLbsRngtrM1sVPgA26AtGii8soDzEnv2mQxo2SdHupTUw type=direct secs=6.1
+conn closed peer=12D3KooWLtWmGw5MHm7fnGJCYm6jr15LinSWCn439Kqgxt2zdpsS type=direct secs=4
+conn closed peer=12D3KooWFvHhEYktVFvSug5SXyPTP7KQu2pPDQ4EDHcAYptwexWm type=direct secs=4
+conn closed peer=12D3KooWLbsRngtrM1sVPgA26AtGii8soDzEnv2mQxo2SdHupTUw type=direct secs=13.1
+conn closed peer=12D3KooWLtWmGw5MHm7fnGJCYm6jr15LinSWCn439Kqgxt2zdpsS type=direct secs=13.1
+conn closed peer=12D3KooWCvd7jNuv229XBQjG1dSTfVB7e6mx7162AnoHtTvSM2jn type=direct secs=4
+conn closed peer=12D3KooWFvHhEYktVFvSug5SXyPTP7KQu2pPDQ4EDHcAYptwexWm type=direct secs=13.2
+conn closed peer=12D3KooWLtWmGw5MHm7fnGJCYm6jr15LinSWCn439Kqgxt2zdpsS type=direct secs=13.1
+conn closed peer=12D3KooWCvd7jNuv229XBQjG1dSTfVB7e6mx7162AnoHtTvSM2jn type=direct secs=6.1
+conn closed peer=12D3KooWFvHhEYktVFvSug5SXyPTP7KQu2pPDQ4EDHcAYptwexWm type=direct secs=13.1
+conn closed peer=12D3KooWLbsRngtrM1sVPgA26AtGii8soDzEnv2mQxo2SdHupTUw type=direct secs=13.1
+conn closed peer=12D3KooWCvd7jNuv229XBQjG1dSTfVB7e6mx7162AnoHtTvSM2jn type=direct secs=4
+✔ f: a new node with a lower peer ID, alone for 4 s, does not take the role from a live host (13218.562863ms)
+test g: 4004 ms
+✔ g: a node alone has no host (4010.010536ms)
+✔ rank: the only full node (highest ID) becomes host in the first election (1.717773ms)
+✔ rank: on failover the full node, not the lower ID, is the next host (0.477217ms)
+✔ rank: a full node that opens a session after a host is live does not become host (0.520408ms)
+✔ rank: with no full node the lowest ID becomes host (0.622983ms)
+conn session peer=12D3KooWNQTbHejnM3271YSZE8nLx5xokgCsJ5yiJyhdPCatBG8M type=direct dir=in addr=/ip4/127.0.0.1/tcp/59456/p2p/12D3KooWNQTbHejnM3271YSZE8nLx5xokgCsJ5yiJyhdPCatBG8M
+conn session peer=12D3KooW9xyEsto8E9uoMNyBdv8P9Y5FixvBBNwKB6Lc9jcTyGXJ type=direct dir=out addr=/ip4/127.0.0.1/tcp/41173/p2p/12D3KooW9xyEsto8E9uoMNyBdv8P9Y5FixvBBNwKB6Lc9jcTyGXJ
+Dial-back from 12D3KooWNQTbHejnM3271YSZE8nLx5xokgCsJ5yiJyhdPCatBG8M: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooW9xyEsto8E9uoMNyBdv8P9Y5FixvBBNwKB6Lc9jcTyGXJ: ok, IP 127.0.0.1, full node false
+History sent to 12D3KooWNQTbHejnM3271YSZE8nLx5xokgCsJ5yiJyhdPCatBG8M: 0 messages
+History applied: 0 of 0 messages are new
+50 MB transfer time: 1576 ms
+conn closed peer=12D3KooW9xyEsto8E9uoMNyBdv8P9Y5FixvBBNwKB6Lc9jcTyGXJ type=direct secs=2.1
+conn closed peer=12D3KooWNQTbHejnM3271YSZE8nLx5xokgCsJ5yiJyhdPCatBG8M type=direct secs=2.1
+✔ a: a 50 MB file goes from A to B with the correct SHA-256 (2236.542878ms)
+conn session peer=12D3KooWNeFT8sv7PKoyTv3oLXNkpMxVjFFHrJPHV669AT1b8idC type=direct dir=in addr=/ip4/127.0.0.1/tcp/46370/p2p/12D3KooWNeFT8sv7PKoyTv3oLXNkpMxVjFFHrJPHV669AT1b8idC
+conn session peer=12D3KooWEm5izZDhKCmfTYhhJyMjkki7UL9Ls7LJyqjXHT8M2bhK type=direct dir=out addr=/ip4/127.0.0.1/tcp/35117/p2p/12D3KooWEm5izZDhKCmfTYhhJyMjkki7UL9Ls7LJyqjXHT8M2bhK
+Dial-back from 12D3KooWNeFT8sv7PKoyTv3oLXNkpMxVjFFHrJPHV669AT1b8idC: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWEm5izZDhKCmfTYhhJyMjkki7UL9Ls7LJyqjXHT8M2bhK: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWNeFT8sv7PKoyTv3oLXNkpMxVjFFHrJPHV669AT1b8idC type=direct dir=in addr=/ip4/127.0.0.1/tcp/34494/p2p/12D3KooWNeFT8sv7PKoyTv3oLXNkpMxVjFFHrJPHV669AT1b8idC
+conn session peer=12D3KooWFqHdLyqmPGPUF8CKYaVsr7jQjkmDWPsjaFwJEiDWthDT type=direct dir=out addr=/ip4/127.0.0.1/tcp/39921/p2p/12D3KooWFqHdLyqmPGPUF8CKYaVsr7jQjkmDWPsjaFwJEiDWthDT
+Dial-back from 12D3KooWNeFT8sv7PKoyTv3oLXNkpMxVjFFHrJPHV669AT1b8idC: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWFqHdLyqmPGPUF8CKYaVsr7jQjkmDWPsjaFwJEiDWthDT: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWEm5izZDhKCmfTYhhJyMjkki7UL9Ls7LJyqjXHT8M2bhK type=direct dir=in addr=/ip4/127.0.0.1/tcp/34510/p2p/12D3KooWEm5izZDhKCmfTYhhJyMjkki7UL9Ls7LJyqjXHT8M2bhK
+conn session peer=12D3KooWFqHdLyqmPGPUF8CKYaVsr7jQjkmDWPsjaFwJEiDWthDT type=direct dir=out addr=/ip4/127.0.0.1/tcp/39921/p2p/12D3KooWFqHdLyqmPGPUF8CKYaVsr7jQjkmDWPsjaFwJEiDWthDT
+Dial-back from 12D3KooWEm5izZDhKCmfTYhhJyMjkki7UL9Ls7LJyqjXHT8M2bhK: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWFqHdLyqmPGPUF8CKYaVsr7jQjkmDWPsjaFwJEiDWthDT: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWEm5izZDhKCmfTYhhJyMjkki7UL9Ls7LJyqjXHT8M2bhK type=direct secs=0.2
+conn closed peer=12D3KooWFqHdLyqmPGPUF8CKYaVsr7jQjkmDWPsjaFwJEiDWthDT type=direct secs=0.1
+conn closed peer=12D3KooWNeFT8sv7PKoyTv3oLXNkpMxVjFFHrJPHV669AT1b8idC type=direct secs=0.2
+conn closed peer=12D3KooWFqHdLyqmPGPUF8CKYaVsr7jQjkmDWPsjaFwJEiDWthDT type=direct secs=0
+conn closed peer=12D3KooWNeFT8sv7PKoyTv3oLXNkpMxVjFFHrJPHV669AT1b8idC type=direct secs=0.1
+conn closed peer=12D3KooWEm5izZDhKCmfTYhhJyMjkki7UL9Ls7LJyqjXHT8M2bhK type=direct secs=0
+✔ b: B refuses, and C accepts (292.111951ms)
+conn session peer=12D3KooWM5miYYSMHMa9oBgVJkKy39U5PBYwy2qJTUdBzMEEhVXH type=direct dir=in addr=/ip4/127.0.0.1/tcp/51164/p2p/12D3KooWM5miYYSMHMa9oBgVJkKy39U5PBYwy2qJTUdBzMEEhVXH
+conn session peer=12D3KooWGSw67ZbFFCPLwN4j4firqkHg3XqG6cSBeKLbkR48eD5E type=direct dir=out addr=/ip4/127.0.0.1/tcp/38403/p2p/12D3KooWGSw67ZbFFCPLwN4j4firqkHg3XqG6cSBeKLbkR48eD5E
+Dial-back from 12D3KooWM5miYYSMHMa9oBgVJkKy39U5PBYwy2qJTUdBzMEEhVXH: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWGSw67ZbFFCPLwN4j4firqkHg3XqG6cSBeKLbkR48eD5E: ok, IP 127.0.0.1, full node false
+History sent to 12D3KooWM5miYYSMHMa9oBgVJkKy39U5PBYwy2qJTUdBzMEEhVXH: 0 messages
+History applied: 0 of 0 messages are new
+conn closed peer=12D3KooWGSw67ZbFFCPLwN4j4firqkHg3XqG6cSBeKLbkR48eD5E type=direct secs=1.2
+conn closed peer=12D3KooWM5miYYSMHMa9oBgVJkKy39U5PBYwy2qJTUdBzMEEhVXH type=direct secs=1.2
+✔ c: B cancels on its first progress event (1216.350615ms)
+conn session peer=12D3KooWP6c49RyM81P9o7ow3M2ZuZggPnB3o8trUE5wyikeNxcS type=direct dir=in addr=/ip4/127.0.0.1/tcp/38958/p2p/12D3KooWP6c49RyM81P9o7ow3M2ZuZggPnB3o8trUE5wyikeNxcS
+conn session peer=12D3KooWDCrY2yS7q5ddz7yDcwJ4b9y3ZehknZp23TMK97p1BHqo type=direct dir=out addr=/ip4/127.0.0.1/tcp/43177/p2p/12D3KooWDCrY2yS7q5ddz7yDcwJ4b9y3ZehknZp23TMK97p1BHqo
+Dial-back from 12D3KooWP6c49RyM81P9o7ow3M2ZuZggPnB3o8trUE5wyikeNxcS: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWDCrY2yS7q5ddz7yDcwJ4b9y3ZehknZp23TMK97p1BHqo: ok, IP 127.0.0.1, full node false
+History sent to 12D3KooWP6c49RyM81P9o7ow3M2ZuZggPnB3o8trUE5wyikeNxcS: 0 messages
+History applied: 0 of 0 messages are new
+conn closed peer=12D3KooWDCrY2yS7q5ddz7yDcwJ4b9y3ZehknZp23TMK97p1BHqo type=direct secs=1.2
+conn closed peer=12D3KooWP6c49RyM81P9o7ow3M2ZuZggPnB3o8trUE5wyikeNxcS type=direct secs=1.2
+✔ d: A cancels on the first progress event of B (1213.514984ms)
+conn session peer=12D3KooWFbPT7aYS8yucdTjfpYmdx5XQZS68UE5wgLwg7uFzqNgT type=direct dir=in addr=/ip4/127.0.0.1/tcp/44404/p2p/12D3KooWFbPT7aYS8yucdTjfpYmdx5XQZS68UE5wgLwg7uFzqNgT
+conn session peer=12D3KooWBhuVBBCrTaeYLx8A5mFNa17SZNYU4tohuVp5V8s6PqNF type=direct dir=out addr=/ip4/127.0.0.1/tcp/41095/p2p/12D3KooWBhuVBBCrTaeYLx8A5mFNa17SZNYU4tohuVp5V8s6PqNF
+Dial-back from 12D3KooWFbPT7aYS8yucdTjfpYmdx5XQZS68UE5wgLwg7uFzqNgT: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWBhuVBBCrTaeYLx8A5mFNa17SZNYU4tohuVp5V8s6PqNF: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWBhuVBBCrTaeYLx8A5mFNa17SZNYU4tohuVp5V8s6PqNF type=direct secs=0.2
+conn closed peer=12D3KooWFbPT7aYS8yucdTjfpYmdx5XQZS68UE5wgLwg7uFzqNgT type=direct secs=0.2
+✔ e: A stops during the transfer (726.846811ms)
+conn session peer=12D3KooWGk1nUj8njfoRp8CG58yUFghEAbKJuDdxynaksTPtU1xf type=direct dir=in addr=/ip4/127.0.0.1/tcp/45850/p2p/12D3KooWGk1nUj8njfoRp8CG58yUFghEAbKJuDdxynaksTPtU1xf
+conn session peer=12D3KooWEH6GGrpdAUXTffYzgmHgVewEnoqDiz7kus5YGKVGBFZP type=direct dir=out addr=/ip4/127.0.0.1/tcp/40451/p2p/12D3KooWEH6GGrpdAUXTffYzgmHgVewEnoqDiz7kus5YGKVGBFZP
+Dial-back from 12D3KooWGk1nUj8njfoRp8CG58yUFghEAbKJuDdxynaksTPtU1xf: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWEH6GGrpdAUXTffYzgmHgVewEnoqDiz7kus5YGKVGBFZP: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWGk1nUj8njfoRp8CG58yUFghEAbKJuDdxynaksTPtU1xf type=direct secs=0.2
+conn closed peer=12D3KooWEH6GGrpdAUXTffYzgmHgVewEnoqDiz7kus5YGKVGBFZP type=direct secs=0.2
+✔ f: B stops during the transfer (247.864876ms)
+conn session peer=12D3KooWLRLLpTvRU9HNe8BM6GuWG5tJx9WHJ5g1Hqn7xau3xJH5 type=direct dir=in addr=/ip4/127.0.0.1/tcp/58748/p2p/12D3KooWLRLLpTvRU9HNe8BM6GuWG5tJx9WHJ5g1Hqn7xau3xJH5
+conn session peer=12D3KooWJStSTwMKsZro9oAKHnwM8MsyE24phg2DPv8ir9zcVZoT type=direct dir=out addr=/ip4/127.0.0.1/tcp/41699/p2p/12D3KooWJStSTwMKsZro9oAKHnwM8MsyE24phg2DPv8ir9zcVZoT
+Dial-back from 12D3KooWJStSTwMKsZro9oAKHnwM8MsyE24phg2DPv8ir9zcVZoT: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWLRLLpTvRU9HNe8BM6GuWG5tJx9WHJ5g1Hqn7xau3xJH5: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWJStSTwMKsZro9oAKHnwM8MsyE24phg2DPv8ir9zcVZoT type=direct secs=0
+conn closed peer=12D3KooWLRLLpTvRU9HNe8BM6GuWG5tJx9WHJ5g1Hqn7xau3xJH5 type=direct secs=0
+✔ g: a file with the same name gets a free name (83.892601ms)
+conn session peer=12D3KooWL5zV7vZpNjNUo5yTYYtLV595y5JznhvU7RZjJRiqxbZ8 type=direct dir=in addr=/ip4/127.0.0.1/tcp/39420/p2p/12D3KooWL5zV7vZpNjNUo5yTYYtLV595y5JznhvU7RZjJRiqxbZ8
+conn session peer=12D3KooWMBiMtmTTa6GLbJek6XqZPDkiP2DyyJn5CLLobk4TJWq8 type=direct dir=out addr=/ip4/127.0.0.1/tcp/38533/p2p/12D3KooWMBiMtmTTa6GLbJek6XqZPDkiP2DyyJn5CLLobk4TJWq8
+Dial-back from 12D3KooWL5zV7vZpNjNUo5yTYYtLV595y5JznhvU7RZjJRiqxbZ8: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWMBiMtmTTa6GLbJek6XqZPDkiP2DyyJn5CLLobk4TJWq8: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWMBiMtmTTa6GLbJek6XqZPDkiP2DyyJn5CLLobk4TJWq8 type=direct secs=0
+conn closed peer=12D3KooWL5zV7vZpNjNUo5yTYYtLV595y5JznhvU7RZjJRiqxbZ8 type=direct secs=0
+✔ h: a file that grows after the offer fails (72.98454ms)
+conn session peer=12D3KooWGiLHmCRmQCmdYVTS8KXkWsfrGSDnGP45vqxeYc2GhL1U type=direct dir=in addr=/ip4/127.0.0.1/tcp/55722/p2p/12D3KooWGiLHmCRmQCmdYVTS8KXkWsfrGSDnGP45vqxeYc2GhL1U
+conn session peer=12D3KooWRzBbS9bfVvZC6PhPTXmyi18fgB7vudnhpYYbw9DMnUXu type=direct dir=out addr=/ip4/127.0.0.1/tcp/46359/p2p/12D3KooWRzBbS9bfVvZC6PhPTXmyi18fgB7vudnhpYYbw9DMnUXu
+Dial-back from 12D3KooWGiLHmCRmQCmdYVTS8KXkWsfrGSDnGP45vqxeYc2GhL1U: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWRzBbS9bfVvZC6PhPTXmyi18fgB7vudnhpYYbw9DMnUXu: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWRzBbS9bfVvZC6PhPTXmyi18fgB7vudnhpYYbw9DMnUXu type=direct secs=0
+conn closed peer=12D3KooWGiLHmCRmQCmdYVTS8KXkWsfrGSDnGP45vqxeYc2GhL1U type=direct secs=0.1
+✔ i: a changed byte gives a hash mismatch (84.91386ms)
+conn session peer=12D3KooWHJXh48rb4eLRjArB7rfcGioPY8YFpCy6DqpdWFkHFqEi type=direct dir=in addr=/ip4/127.0.0.1/tcp/38848/p2p/12D3KooWHJXh48rb4eLRjArB7rfcGioPY8YFpCy6DqpdWFkHFqEi
+conn session peer=12D3KooWBhzZwytuzNSmwrNAWNeXzeJ8dCDzw4Szwb37nR2wbvii type=direct dir=out addr=/ip4/127.0.0.1/tcp/43915/p2p/12D3KooWBhzZwytuzNSmwrNAWNeXzeJ8dCDzw4Szwb37nR2wbvii
+Dial-back from 12D3KooWHJXh48rb4eLRjArB7rfcGioPY8YFpCy6DqpdWFkHFqEi: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWBhzZwytuzNSmwrNAWNeXzeJ8dCDzw4Szwb37nR2wbvii: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWRc2H1D3DTZX645WyCWaV5rvkUchHjBJT9XAigHgwj7kb type=direct dir=in addr=/ip4/127.0.0.1/tcp/49250/p2p/12D3KooWRc2H1D3DTZX645WyCWaV5rvkUchHjBJT9XAigHgwj7kb
+conn session peer=12D3KooWHJXh48rb4eLRjArB7rfcGioPY8YFpCy6DqpdWFkHFqEi type=direct dir=out addr=/ip4/127.0.0.1/tcp/39235/p2p/12D3KooWHJXh48rb4eLRjArB7rfcGioPY8YFpCy6DqpdWFkHFqEi
+Dial-back from 12D3KooWRc2H1D3DTZX645WyCWaV5rvkUchHjBJT9XAigHgwj7kb: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWHJXh48rb4eLRjArB7rfcGioPY8YFpCy6DqpdWFkHFqEi: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWBhzZwytuzNSmwrNAWNeXzeJ8dCDzw4Szwb37nR2wbvii type=direct secs=0.3
+conn closed peer=12D3KooWRc2H1D3DTZX645WyCWaV5rvkUchHjBJT9XAigHgwj7kb type=direct secs=0.2
+conn closed peer=12D3KooWHJXh48rb4eLRjArB7rfcGioPY8YFpCy6DqpdWFkHFqEi type=direct secs=0.3
+conn closed peer=12D3KooWHJXh48rb4eLRjArB7rfcGioPY8YFpCy6DqpdWFkHFqEi type=direct secs=0.2
+✔ j: a peer that did not get the offer receives no data (295.172206ms)
+✔ k: safeFileName (0.453292ms)
+conn session peer=12D3KooWFDU25YvAXXwcoQYmK8uB3NAfAzawCytpk1L1ZVpCTUaz type=direct dir=in addr=/ip4/127.0.0.1/tcp/37820/p2p/12D3KooWFDU25YvAXXwcoQYmK8uB3NAfAzawCytpk1L1ZVpCTUaz
+conn session peer=12D3KooWBHxTFYwP7anChWLw26jcEMHW8bQJuW2GXhxQwoiWb1Pv type=direct dir=out addr=/ip4/127.0.0.1/tcp/46253/p2p/12D3KooWBHxTFYwP7anChWLw26jcEMHW8bQJuW2GXhxQwoiWb1Pv
+Dial-back from 12D3KooWFDU25YvAXXwcoQYmK8uB3NAfAzawCytpk1L1ZVpCTUaz: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWBHxTFYwP7anChWLw26jcEMHW8bQJuW2GXhxQwoiWb1Pv: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWFDU25YvAXXwcoQYmK8uB3NAfAzawCytpk1L1ZVpCTUaz type=direct dir=in addr=/ip4/127.0.0.1/tcp/49260/p2p/12D3KooWFDU25YvAXXwcoQYmK8uB3NAfAzawCytpk1L1ZVpCTUaz
+conn session peer=12D3KooWQ4BvEEtRv15g1ZC3Ubz5Z4fLM54rHLhR8LQuL5v2pUtx type=direct dir=out addr=/ip4/127.0.0.1/tcp/35687/p2p/12D3KooWQ4BvEEtRv15g1ZC3Ubz5Z4fLM54rHLhR8LQuL5v2pUtx
+Dial-back from 12D3KooWFDU25YvAXXwcoQYmK8uB3NAfAzawCytpk1L1ZVpCTUaz: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWQ4BvEEtRv15g1ZC3Ubz5Z4fLM54rHLhR8LQuL5v2pUtx: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWBHxTFYwP7anChWLw26jcEMHW8bQJuW2GXhxQwoiWb1Pv type=direct dir=in addr=/ip4/127.0.0.1/tcp/49276/p2p/12D3KooWBHxTFYwP7anChWLw26jcEMHW8bQJuW2GXhxQwoiWb1Pv
+conn session peer=12D3KooWQ4BvEEtRv15g1ZC3Ubz5Z4fLM54rHLhR8LQuL5v2pUtx type=direct dir=out addr=/ip4/127.0.0.1/tcp/35687/p2p/12D3KooWQ4BvEEtRv15g1ZC3Ubz5Z4fLM54rHLhR8LQuL5v2pUtx
+Dial-back from 12D3KooWBHxTFYwP7anChWLw26jcEMHW8bQJuW2GXhxQwoiWb1Pv: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWQ4BvEEtRv15g1ZC3Ubz5Z4fLM54rHLhR8LQuL5v2pUtx: ok, IP 127.0.0.1, full node false
+History sent to 12D3KooWFDU25YvAXXwcoQYmK8uB3NAfAzawCytpk1L1ZVpCTUaz: 0 messages
+History sent to 12D3KooWQ4BvEEtRv15g1ZC3Ubz5Z4fLM54rHLhR8LQuL5v2pUtx: 0 messages
+History applied: 0 of 0 messages are new
+History applied: 0 of 0 messages are new
+conn closed peer=12D3KooWBHxTFYwP7anChWLw26jcEMHW8bQJuW2GXhxQwoiWb1Pv type=direct secs=2.5
+conn closed peer=12D3KooWQ4BvEEtRv15g1ZC3Ubz5Z4fLM54rHLhR8LQuL5v2pUtx type=direct secs=2.4
+conn closed peer=12D3KooWFDU25YvAXXwcoQYmK8uB3NAfAzawCytpk1L1ZVpCTUaz type=direct secs=2.5
+conn closed peer=12D3KooWQ4BvEEtRv15g1ZC3Ubz5Z4fLM54rHLhR8LQuL5v2pUtx type=direct secs=2.4
+conn closed peer=12D3KooWFDU25YvAXXwcoQYmK8uB3NAfAzawCytpk1L1ZVpCTUaz type=direct secs=2.4
+conn closed peer=12D3KooWBHxTFYwP7anChWLw26jcEMHW8bQJuW2GXhxQwoiWb1Pv type=direct secs=2.4
+✔ l: A cancels only the transfer to B, and C gets the file (2524.945295ms)
+✔ m: a stream abort before the file-cancel line gives cancelled by peer on the sender (146.458551ms)
+✔ find.js loads with no DOM and gives findCore only (0.875693ms)
+✔ findAll finds each result, with no case, in list sequence, with no overlap (1.201191ms)
+✔ an empty query gives no result, a space is a query (0.1428ms)
+✔ the indexes are indexes of the original text when lower case changes the length (0.260666ms)
+✔ multiline text and quotation marks are searched as text (0.17321ms)
+✔ 200 loaded lines: all results, the count text, next and previous with wrap (2.545984ms)
+✔ the count text: empty query, no result, capped (0.294468ms)
+✔ findAll stops at the cap (1.436477ms)
+✔ sameResult compares the line key and the position (0.266561ms)
+✔ test/helpers/fake-dom.mjs (25.526618ms)
+✔ test/helpers/fake-igd.mjs (113.720778ms)
+✔ test/helpers/renderer-fixture.mjs (32.538532ms)
+conn session peer=12D3KooWJH77KzJVXPX8mV72A38h95HZaodFD9JKfPMhkEw2chCy type=direct dir=in addr=/ip4/127.0.0.1/tcp/47118/p2p/12D3KooWJH77KzJVXPX8mV72A38h95HZaodFD9JKfPMhkEw2chCy
+conn session peer=12D3KooWFkkJdEsdJAhAJ4YYrrYn4gHkB393yRRBP7c2tfNh87to type=direct dir=out addr=/ip4/127.0.0.1/tcp/41647/p2p/12D3KooWFkkJdEsdJAhAJ4YYrrYn4gHkB393yRRBP7c2tfNh87to
+Dial-back from 12D3KooWJH77KzJVXPX8mV72A38h95HZaodFD9JKfPMhkEw2chCy: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWFkkJdEsdJAhAJ4YYrrYn4gHkB393yRRBP7c2tfNh87to: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWJH77KzJVXPX8mV72A38h95HZaodFD9JKfPMhkEw2chCy type=direct dir=in addr=/ip4/127.0.0.1/tcp/36010/p2p/12D3KooWJH77KzJVXPX8mV72A38h95HZaodFD9JKfPMhkEw2chCy
+conn session peer=12D3KooWPjwtzUG6XWQzQeh1mtdNw4pZ18nZy6VFMfWJrtRdja29 type=direct dir=out addr=/ip4/127.0.0.1/tcp/40519/p2p/12D3KooWPjwtzUG6XWQzQeh1mtdNw4pZ18nZy6VFMfWJrtRdja29
+Dial-back from 12D3KooWJH77KzJVXPX8mV72A38h95HZaodFD9JKfPMhkEw2chCy: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWPjwtzUG6XWQzQeh1mtdNw4pZ18nZy6VFMfWJrtRdja29: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWFkkJdEsdJAhAJ4YYrrYn4gHkB393yRRBP7c2tfNh87to type=direct dir=in addr=/ip4/127.0.0.1/tcp/36024/p2p/12D3KooWFkkJdEsdJAhAJ4YYrrYn4gHkB393yRRBP7c2tfNh87to
+conn session peer=12D3KooWPjwtzUG6XWQzQeh1mtdNw4pZ18nZy6VFMfWJrtRdja29 type=direct dir=out addr=/ip4/127.0.0.1/tcp/40519/p2p/12D3KooWPjwtzUG6XWQzQeh1mtdNw4pZ18nZy6VFMfWJrtRdja29
+Dial-back from 12D3KooWFkkJdEsdJAhAJ4YYrrYn4gHkB393yRRBP7c2tfNh87to: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWPjwtzUG6XWQzQeh1mtdNw4pZ18nZy6VFMfWJrtRdja29: ok, IP 127.0.0.1, full node false
+History sent to 12D3KooWJH77KzJVXPX8mV72A38h95HZaodFD9JKfPMhkEw2chCy: 0 messages
+History sent to 12D3KooWPjwtzUG6XWQzQeh1mtdNw4pZ18nZy6VFMfWJrtRdja29: 0 messages
+History applied: 0 of 0 messages are new
+History applied: 0 of 0 messages are new
+conn session peer=12D3KooWLJhT2SknPXgZASXeuNvndTHJjVdgW3djZY5oVffVoazv type=direct dir=in addr=/ip4/127.0.0.1/tcp/34164/p2p/12D3KooWLJhT2SknPXgZASXeuNvndTHJjVdgW3djZY5oVffVoazv
+conn session peer=12D3KooWJH77KzJVXPX8mV72A38h95HZaodFD9JKfPMhkEw2chCy type=direct dir=out addr=/ip4/127.0.0.1/tcp/35377/p2p/12D3KooWJH77KzJVXPX8mV72A38h95HZaodFD9JKfPMhkEw2chCy
+Dial-back from 12D3KooWLJhT2SknPXgZASXeuNvndTHJjVdgW3djZY5oVffVoazv: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWJH77KzJVXPX8mV72A38h95HZaodFD9JKfPMhkEw2chCy: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWLJhT2SknPXgZASXeuNvndTHJjVdgW3djZY5oVffVoazv type=direct dir=in addr=/ip4/127.0.0.1/tcp/47142/p2p/12D3KooWLJhT2SknPXgZASXeuNvndTHJjVdgW3djZY5oVffVoazv
+History sent to 12D3KooWLJhT2SknPXgZASXeuNvndTHJjVdgW3djZY5oVffVoazv: 3 messages
+conn session peer=12D3KooWFkkJdEsdJAhAJ4YYrrYn4gHkB393yRRBP7c2tfNh87to type=direct dir=out addr=/ip4/127.0.0.1/tcp/41647/p2p/12D3KooWFkkJdEsdJAhAJ4YYrrYn4gHkB393yRRBP7c2tfNh87to
+History applied: 3 of 3 messages are new
+Dial-back from 12D3KooWLJhT2SknPXgZASXeuNvndTHJjVdgW3djZY5oVffVoazv: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWFkkJdEsdJAhAJ4YYrrYn4gHkB393yRRBP7c2tfNh87to: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWLJhT2SknPXgZASXeuNvndTHJjVdgW3djZY5oVffVoazv type=direct dir=in addr=/ip4/127.0.0.1/tcp/36042/p2p/12D3KooWLJhT2SknPXgZASXeuNvndTHJjVdgW3djZY5oVffVoazv
+conn session peer=12D3KooWPjwtzUG6XWQzQeh1mtdNw4pZ18nZy6VFMfWJrtRdja29 type=direct dir=out addr=/ip4/127.0.0.1/tcp/40519/p2p/12D3KooWPjwtzUG6XWQzQeh1mtdNw4pZ18nZy6VFMfWJrtRdja29
+test a: 124 ms
+Dial-back from 12D3KooWLJhT2SknPXgZASXeuNvndTHJjVdgW3djZY5oVffVoazv: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWPjwtzUG6XWQzQeh1mtdNw4pZ18nZy6VFMfWJrtRdja29: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWFkkJdEsdJAhAJ4YYrrYn4gHkB393yRRBP7c2tfNh87to type=direct secs=1.7
+conn closed peer=12D3KooWPjwtzUG6XWQzQeh1mtdNw4pZ18nZy6VFMfWJrtRdja29 type=direct secs=1.6
+conn closed peer=12D3KooWLJhT2SknPXgZASXeuNvndTHJjVdgW3djZY5oVffVoazv type=direct secs=0.6
+conn closed peer=12D3KooWJH77KzJVXPX8mV72A38h95HZaodFD9JKfPMhkEw2chCy type=direct secs=1.7
+conn closed peer=12D3KooWPjwtzUG6XWQzQeh1mtdNw4pZ18nZy6VFMfWJrtRdja29 type=direct secs=1.6
+conn closed peer=12D3KooWLJhT2SknPXgZASXeuNvndTHJjVdgW3djZY5oVffVoazv type=direct secs=0.6
+conn closed peer=12D3KooWJH77KzJVXPX8mV72A38h95HZaodFD9JKfPMhkEw2chCy type=direct secs=1.6
+conn closed peer=12D3KooWFkkJdEsdJAhAJ4YYrrYn4gHkB393yRRBP7c2tfNh87to type=direct secs=1.6
+conn closed peer=12D3KooWLJhT2SknPXgZASXeuNvndTHJjVdgW3djZY5oVffVoazv type=direct secs=0.5
+conn closed peer=12D3KooWJH77KzJVXPX8mV72A38h95HZaodFD9JKfPMhkEw2chCy type=direct secs=0.6
+conn closed peer=12D3KooWFkkJdEsdJAhAJ4YYrrYn4gHkB393yRRBP7c2tfNh87to type=direct secs=0.6
+conn closed peer=12D3KooWPjwtzUG6XWQzQeh1mtdNw4pZ18nZy6VFMfWJrtRdja29 type=direct secs=0.5
+✔ a: a late member gets the history from the host (1849.908942ms)
+conn session peer=12D3KooWEH8yuh21tR8nn39e7a1MPFAeMxxMRMjt4oZtPXaoPax1 type=direct dir=in addr=/ip4/127.0.0.1/tcp/58262/p2p/12D3KooWEH8yuh21tR8nn39e7a1MPFAeMxxMRMjt4oZtPXaoPax1
+conn session peer=12D3KooWQxLZKFyccNaTqpf3gcyiTDHyTeDP2uRVNmNabNvJRy4K type=direct dir=out addr=/ip4/127.0.0.1/tcp/34177/p2p/12D3KooWQxLZKFyccNaTqpf3gcyiTDHyTeDP2uRVNmNabNvJRy4K
+Dial-back from 12D3KooWEH8yuh21tR8nn39e7a1MPFAeMxxMRMjt4oZtPXaoPax1: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWQxLZKFyccNaTqpf3gcyiTDHyTeDP2uRVNmNabNvJRy4K: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWEH8yuh21tR8nn39e7a1MPFAeMxxMRMjt4oZtPXaoPax1 type=direct dir=in addr=/ip4/127.0.0.1/tcp/55906/p2p/12D3KooWEH8yuh21tR8nn39e7a1MPFAeMxxMRMjt4oZtPXaoPax1
+conn session peer=12D3KooWLn2pp9BEjz13A4MuDhwYAQniLy4yUCcBrCnYWiURvRBc type=direct dir=out addr=/ip4/127.0.0.1/tcp/42841/p2p/12D3KooWLn2pp9BEjz13A4MuDhwYAQniLy4yUCcBrCnYWiURvRBc
+Dial-back from 12D3KooWEH8yuh21tR8nn39e7a1MPFAeMxxMRMjt4oZtPXaoPax1: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWLn2pp9BEjz13A4MuDhwYAQniLy4yUCcBrCnYWiURvRBc: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWQxLZKFyccNaTqpf3gcyiTDHyTeDP2uRVNmNabNvJRy4K type=direct dir=in addr=/ip4/127.0.0.1/tcp/55910/p2p/12D3KooWQxLZKFyccNaTqpf3gcyiTDHyTeDP2uRVNmNabNvJRy4K
+conn session peer=12D3KooWLn2pp9BEjz13A4MuDhwYAQniLy4yUCcBrCnYWiURvRBc type=direct dir=out addr=/ip4/127.0.0.1/tcp/42841/p2p/12D3KooWLn2pp9BEjz13A4MuDhwYAQniLy4yUCcBrCnYWiURvRBc
+Dial-back from 12D3KooWLn2pp9BEjz13A4MuDhwYAQniLy4yUCcBrCnYWiURvRBc: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWQxLZKFyccNaTqpf3gcyiTDHyTeDP2uRVNmNabNvJRy4K: ok, IP 127.0.0.1, full node false
+History sent to 12D3KooWQxLZKFyccNaTqpf3gcyiTDHyTeDP2uRVNmNabNvJRy4K: 0 messages
+History sent to 12D3KooWLn2pp9BEjz13A4MuDhwYAQniLy4yUCcBrCnYWiURvRBc: 0 messages
+History applied: 0 of 0 messages are new
+History applied: 0 of 0 messages are new
+conn closed peer=12D3KooWQxLZKFyccNaTqpf3gcyiTDHyTeDP2uRVNmNabNvJRy4K type=direct secs=1.1
+conn closed peer=12D3KooWLn2pp9BEjz13A4MuDhwYAQniLy4yUCcBrCnYWiURvRBc type=direct secs=1.1
+conn closed peer=12D3KooWEH8yuh21tR8nn39e7a1MPFAeMxxMRMjt4oZtPXaoPax1 type=direct secs=1.1
+conn closed peer=12D3KooWEH8yuh21tR8nn39e7a1MPFAeMxxMRMjt4oZtPXaoPax1 type=direct secs=1.1
+History sent to 12D3KooWQxLZKFyccNaTqpf3gcyiTDHyTeDP2uRVNmNabNvJRy4K: 3 messages
+History applied: 0 of 3 messages are new
+conn session peer=12D3KooWCwP1rCEGUTQnpN7DvWhVJvJZqDLtxaQ94mcXX1eyfrA1 type=direct dir=in addr=/ip4/127.0.0.1/tcp/58290/p2p/12D3KooWCwP1rCEGUTQnpN7DvWhVJvJZqDLtxaQ94mcXX1eyfrA1
+conn session peer=12D3KooWQxLZKFyccNaTqpf3gcyiTDHyTeDP2uRVNmNabNvJRy4K type=direct dir=out addr=/ip4/127.0.0.1/tcp/34177/p2p/12D3KooWQxLZKFyccNaTqpf3gcyiTDHyTeDP2uRVNmNabNvJRy4K
+Dial-back from 12D3KooWCwP1rCEGUTQnpN7DvWhVJvJZqDLtxaQ94mcXX1eyfrA1: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWQxLZKFyccNaTqpf3gcyiTDHyTeDP2uRVNmNabNvJRy4K: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWCwP1rCEGUTQnpN7DvWhVJvJZqDLtxaQ94mcXX1eyfrA1 type=direct dir=in addr=/ip4/127.0.0.1/tcp/55936/p2p/12D3KooWCwP1rCEGUTQnpN7DvWhVJvJZqDLtxaQ94mcXX1eyfrA1
+History sent to 12D3KooWCwP1rCEGUTQnpN7DvWhVJvJZqDLtxaQ94mcXX1eyfrA1: 3 messages
+conn session peer=12D3KooWLn2pp9BEjz13A4MuDhwYAQniLy4yUCcBrCnYWiURvRBc type=direct dir=out addr=/ip4/127.0.0.1/tcp/42841/p2p/12D3KooWLn2pp9BEjz13A4MuDhwYAQniLy4yUCcBrCnYWiURvRBc
+History applied: 3 of 3 messages are new
+Dial-back from 12D3KooWLn2pp9BEjz13A4MuDhwYAQniLy4yUCcBrCnYWiURvRBc: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWCwP1rCEGUTQnpN7DvWhVJvJZqDLtxaQ94mcXX1eyfrA1: ok, IP 127.0.0.1, full node false
+test b: 130 ms
+conn closed peer=12D3KooWLn2pp9BEjz13A4MuDhwYAQniLy4yUCcBrCnYWiURvRBc type=direct secs=1.7
+conn closed peer=12D3KooWCwP1rCEGUTQnpN7DvWhVJvJZqDLtxaQ94mcXX1eyfrA1 type=direct secs=0.6
+conn closed peer=12D3KooWQxLZKFyccNaTqpf3gcyiTDHyTeDP2uRVNmNabNvJRy4K type=direct secs=1.7
+conn closed peer=12D3KooWCwP1rCEGUTQnpN7DvWhVJvJZqDLtxaQ94mcXX1eyfrA1 type=direct secs=0.6
+conn closed peer=12D3KooWQxLZKFyccNaTqpf3gcyiTDHyTeDP2uRVNmNabNvJRy4K type=direct secs=0.6
+conn closed peer=12D3KooWLn2pp9BEjz13A4MuDhwYAQniLy4yUCcBrCnYWiURvRBc type=direct secs=0.6
+test c: 0 ms
+✔ b: after a failover, the new host gives the history (1847.954167ms)
+✔ c: a buffer that gets 250 messages keeps the last 200 (0.688711ms)
+conn session peer=12D3KooWEUCH54wHvtB1S6BWkHKTKJDJ6VfB4Tp5PRfCtggA9TW5 type=direct dir=in addr=/ip4/127.0.0.1/tcp/36810/p2p/12D3KooWEUCH54wHvtB1S6BWkHKTKJDJ6VfB4Tp5PRfCtggA9TW5
+test d: 35 ms
+conn closed peer=12D3KooWEUCH54wHvtB1S6BWkHKTKJDJ6VfB4Tp5PRfCtggA9TW5 type=direct secs=0
+Dial-back from 12D3KooWEUCH54wHvtB1S6BWkHKTKJDJ6VfB4Tp5PRfCtggA9TW5: failed, IP 127.0.0.1, full node false
+✔ d: a chat line with no id gives a message event with an id (48.547526ms)
+conn session peer=12D3KooWMfxCxTfGcaK4Di1ojv4z3KsGrUcZX5i68inv7UChmwxr type=direct dir=in addr=/ip4/127.0.0.1/tcp/47456/p2p/12D3KooWMfxCxTfGcaK4Di1ojv4z3KsGrUcZX5i68inv7UChmwxr
+conn session peer=12D3KooWS3rQAnoLMdd4zSrDaXsLQE7mu6YKsv1BQbkAjWPAEBVZ type=direct dir=out addr=/ip4/127.0.0.1/tcp/33249/p2p/12D3KooWS3rQAnoLMdd4zSrDaXsLQE7mu6YKsv1BQbkAjWPAEBVZ
+Dial-back from 12D3KooWMfxCxTfGcaK4Di1ojv4z3KsGrUcZX5i68inv7UChmwxr: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWS3rQAnoLMdd4zSrDaXsLQE7mu6YKsv1BQbkAjWPAEBVZ: ok, IP 127.0.0.1, full node false
+History sent to 12D3KooWS3rQAnoLMdd4zSrDaXsLQE7mu6YKsv1BQbkAjWPAEBVZ: 1 messages
+History applied: 1 of 1 messages are new
+conn closed peer=12D3KooWS3rQAnoLMdd4zSrDaXsLQE7mu6YKsv1BQbkAjWPAEBVZ type=direct secs=1.5
+conn closed peer=12D3KooWMfxCxTfGcaK4Di1ojv4z3KsGrUcZX5i68inv7UChmwxr type=direct secs=1.5
+✔ e: a member with a session before the first election gets the history (1548.784419ms)
+✔ makeInvite then readInvite gives the same room, key and nodes (4.23222ms)
+✔ a bad invite code throws (1.024048ms)
+✔ layout.js installs layoutCore and a stub layout API without a room window (3.41818ms)
+✔ no stored value gives the defaults (1.063732ms)
+✔ malformed JSON gives the defaults (1.196634ms)
+✔ another version gives the defaults (0.950911ms)
+✔ wrong types recover field by field (2.083787ms)
+✔ NaN and Infinity give the default of the field (0.840241ms)
+✔ an unknown side gives the left side (0.968354ms)
+✔ missing fields get their defaults, the other fields stay (0.883556ms)
+✔ a size out of the absolute limits is clamped and rounded (0.986923ms)
+✔ storage that throws gives the defaults and no console output (1.165982ms)
+✔ layout.js loads with a throwing localStorage getter and makes no console output (1.583565ms)
+✔ write and read give the same preference (0.878369ms)
+✔ the responsive defaults are the old breakpoints (0.858988ms)
+✔ clamp at 1280 x 800: defaults, docked map and requested sizes (1.379054ms)
+✔ clamp at 800 x 600: the map is an overlay and the composer keeps its room (0.858108ms)
+✔ clamp at 560 x 480: the composer keeps its room, also with a full transfer list (0.990609ms)
+✔ a window too narrow for Buddies and the chat gives the Buddies drawer (0.786484ms)
+✔ a narrow viewport does not change the requested values, and the wide layout comes back (0.920201ms)
+✔ withSize clamps to the given limits and does not change the input (1.031858ms)
+✔ keyDelta: arrow steps and Shift steps (0.728298ms)
+✔ the default preference is the reset state (0.7748ms)
+conn session peer=12D3KooWMAsbcJqHB4UkaMmXJ4d82k69BRbL1V227yw7QPYfTP2A type=direct dir=in addr=/ip4/127.0.0.1/tcp/37030/p2p/12D3KooWMAsbcJqHB4UkaMmXJ4d82k69BRbL1V227yw7QPYfTP2A
+conn session peer=12D3KooWHavpZJhRxs2NYGXa11FM8DCj7iZtwp6ZoakcsGVf7FPz type=direct dir=out addr=/ip4/127.0.0.1/tcp/35567/p2p/12D3KooWHavpZJhRxs2NYGXa11FM8DCj7iZtwp6ZoakcsGVf7FPz
+Dial-back from 12D3KooWMAsbcJqHB4UkaMmXJ4d82k69BRbL1V227yw7QPYfTP2A: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWHavpZJhRxs2NYGXa11FM8DCj7iZtwp6ZoakcsGVf7FPz: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWHavpZJhRxs2NYGXa11FM8DCj7iZtwp6ZoakcsGVf7FPz type=direct secs=0.3
+conn closed peer=12D3KooWMAsbcJqHB4UkaMmXJ4d82k69BRbL1V227yw7QPYfTP2A type=direct secs=0.3
+✔ two nodes chat through createAsscrackNode (427.843855ms)
+conn session peer=12D3KooWLnRZsn8M4eUJFL9GTyYHWnBxFp7gmpSttp5SGUthwsFU type=direct dir=in addr=/ip4/127.0.0.1/tcp/54550/p2p/12D3KooWLnRZsn8M4eUJFL9GTyYHWnBxFp7gmpSttp5SGUthwsFU
+conn session peer=12D3KooWS69Z6jKngk2wCMDvS5psSXoRR9xMwhWe3XceGCdAfNw9 type=direct dir=out addr=/ip4/127.0.0.1/tcp/41629/p2p/12D3KooWS69Z6jKngk2wCMDvS5psSXoRR9xMwhWe3XceGCdAfNw9
+Dial-back from 12D3KooWLnRZsn8M4eUJFL9GTyYHWnBxFp7gmpSttp5SGUthwsFU: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWS69Z6jKngk2wCMDvS5psSXoRR9xMwhWe3XceGCdAfNw9: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWS69Z6jKngk2wCMDvS5psSXoRR9xMwhWe3XceGCdAfNw9 type=direct secs=0.3
+conn closed peer=12D3KooWLnRZsn8M4eUJFL9GTyYHWnBxFp7gmpSttp5SGUthwsFU type=direct secs=0.3
+✔ two nodes in one room connect through mDNS discovery (324.63928ms)
+✔ nodes in different rooms do not connect (5014.595087ms)
+conn session peer=12D3KooWMHLZWisqNgjywyZ27HLPrmLHpYsmuuRQeAMyAYXXjvhr type=direct dir=in addr=/ip4/127.0.0.1/tcp/55194/p2p/12D3KooWMHLZWisqNgjywyZ27HLPrmLHpYsmuuRQeAMyAYXXjvhr
+conn session peer=12D3KooWGQKdvGiEy9R7t1JQDmZGr7rec5HCp1RQmT7kybfwU44n type=direct dir=out addr=/ip4/127.0.0.1/tcp/40605/p2p/12D3KooWGQKdvGiEy9R7t1JQDmZGr7rec5HCp1RQmT7kybfwU44n
+Dial-back from 12D3KooWMHLZWisqNgjywyZ27HLPrmLHpYsmuuRQeAMyAYXXjvhr: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWGQKdvGiEy9R7t1JQDmZGr7rec5HCp1RQmT7kybfwU44n: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWGQKdvGiEy9R7t1JQDmZGr7rec5HCp1RQmT7kybfwU44n type=direct secs=0.3
+conn closed peer=12D3KooWMHLZWisqNgjywyZ27HLPrmLHpYsmuuRQeAMyAYXXjvhr type=direct secs=0.3
+✔ structured messages carry the sender name, text and time in both directions (321.840962ms)
+conn session peer=12D3KooW9ta5Nuoz2RkAK1o5zbfe3bhCeKEvSjMRiPYwjidq9QPK type=direct dir=in addr=/ip4/127.0.0.1/tcp/38986/p2p/12D3KooW9ta5Nuoz2RkAK1o5zbfe3bhCeKEvSjMRiPYwjidq9QPK
+Dial-back from 12D3KooW9ta5Nuoz2RkAK1o5zbfe3bhCeKEvSjMRiPYwjidq9QPK: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooW9ta5Nuoz2RkAK1o5zbfe3bhCeKEvSjMRiPYwjidq9QPK type=direct secs=0.3
+✔ a node ignores lines that are not valid and keeps the session open (300.045213ms)
+conn session peer=12D3KooWJqxgffZZvAvXatchUs1E2JboRQgyZUakpXR6tsH1nDpn type=direct dir=in addr=/ip4/127.0.0.1/tcp/39846/p2p/12D3KooWJqxgffZZvAvXatchUs1E2JboRQgyZUakpXR6tsH1nDpn
+conn session peer=12D3KooWAjZUR2yhkmdWogXbxD1FD4LripRu6G58iK2jAgYwtCRX type=direct dir=out addr=/ip4/127.0.0.1/tcp/44471/p2p/12D3KooWAjZUR2yhkmdWogXbxD1FD4LripRu6G58iK2jAgYwtCRX
+Dial-back from 12D3KooWJqxgffZZvAvXatchUs1E2JboRQgyZUakpXR6tsH1nDpn: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWAjZUR2yhkmdWogXbxD1FD4LripRu6G58iK2jAgYwtCRX: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWAjZUR2yhkmdWogXbxD1FD4LripRu6G58iK2jAgYwtCRX type=direct secs=0.1
+conn closed peer=12D3KooWJqxgffZZvAvXatchUs1E2JboRQgyZUakpXR6tsH1nDpn type=direct secs=0.1
+conn dial-failed peer=12D3KooWJqxgffZZvAvXatchUs1E2JboRQgyZUakpXR6tsH1nDpn via=discovery reason=refused addr=? error="connection error 127.0.0.1:40031: connect ECONNREFUSED 127.0.0.1:40031"
+✔ two nodes send their names in a hello line with no chat message (155.183186ms)
+conn session peer=12D3KooWRxjPEeDLVvunZqDe1fTJnWXuRcF82pSqACLmssudnHxL type=direct dir=in addr=/ip4/127.0.0.1/tcp/39234/p2p/12D3KooWRxjPEeDLVvunZqDe1fTJnWXuRcF82pSqACLmssudnHxL
+Dial-back from 12D3KooWRxjPEeDLVvunZqDe1fTJnWXuRcF82pSqACLmssudnHxL: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWRxjPEeDLVvunZqDe1fTJnWXuRcF82pSqACLmssudnHxL type=direct secs=0.3
+✔ a node ignores a hello line with a name that is not valid (300.698972ms)
+conn closed peer=12D3KooWDiYZryRp3g4sUjutLX1ognpz2oCLNo1e6hWdqpXMAehB type=direct secs=0.1
+conn closed peer=12D3KooWDiYZryRp3g4sUjutLX1ognpz2oCLNo1e6hWdqpXMAehB type=direct secs=1.1
+conn closed peer=12D3KooWH9cEX5JoXbPoMA1etRCFqniBpFtGFgYhoTecFqv4m2cj type=direct secs=0.1
+conn closed peer=12D3KooWFz9vonAZxVUTCY8ejf81YH1KXESDFRZjMJvwRRFygzaG type=direct secs=1.1
+✔ the host and the member log the history that they send and apply (1186.262514ms)
+conn session peer=12D3KooWBm3sG6614XUe6aAaGYu99NZa7Ef4CUuSLQUmUqoRC8zP type=direct dir=in addr=/ip4/127.0.0.1/tcp/50390/p2p/12D3KooWBm3sG6614XUe6aAaGYu99NZa7Ef4CUuSLQUmUqoRC8zP
+conn session peer=12D3KooWG4Aqpx2M4pWjz6S7yXj4cx6RUbXcB2mpJabtamJqxhqo type=direct dir=in addr=/ip4/127.0.0.1/tcp/50400/p2p/12D3KooWG4Aqpx2M4pWjz6S7yXj4cx6RUbXcB2mpJabtamJqxhqo
+conn session peer=12D3KooWBm3sG6614XUe6aAaGYu99NZa7Ef4CUuSLQUmUqoRC8zP type=direct dir=in addr=/ip4/127.0.0.1/tcp/53326/p2p/12D3KooWBm3sG6614XUe6aAaGYu99NZa7Ef4CUuSLQUmUqoRC8zP
+conn session peer=12D3KooWQeztbrh4sRy28kBBrp4mJBxnKGEAxvkw6Jw7oNwFDVjs type=direct dir=out addr=/ip4/127.0.0.1/tcp/43941/p2p/12D3KooWQeztbrh4sRy28kBBrp4mJBxnKGEAxvkw6Jw7oNwFDVjs
+conn session peer=12D3KooWQeztbrh4sRy28kBBrp4mJBxnKGEAxvkw6Jw7oNwFDVjs type=direct dir=out addr=/ip4/127.0.0.1/tcp/43941/p2p/12D3KooWQeztbrh4sRy28kBBrp4mJBxnKGEAxvkw6Jw7oNwFDVjs
+conn session peer=12D3KooWG4Aqpx2M4pWjz6S7yXj4cx6RUbXcB2mpJabtamJqxhqo type=direct dir=out addr=/ip4/127.0.0.1/tcp/44869/p2p/12D3KooWG4Aqpx2M4pWjz6S7yXj4cx6RUbXcB2mpJabtamJqxhqo
+conn closed peer=12D3KooWQeztbrh4sRy28kBBrp4mJBxnKGEAxvkw6Jw7oNwFDVjs type=direct secs=0
+conn closed peer=12D3KooWG4Aqpx2M4pWjz6S7yXj4cx6RUbXcB2mpJabtamJqxhqo type=direct secs=0
+Dial-back from 12D3KooWQeztbrh4sRy28kBBrp4mJBxnKGEAxvkw6Jw7oNwFDVjs: failed, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWBm3sG6614XUe6aAaGYu99NZa7Ef4CUuSLQUmUqoRC8zP: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWBm3sG6614XUe6aAaGYu99NZa7Ef4CUuSLQUmUqoRC8zP type=direct secs=0.1
+Dial-back from 12D3KooWBm3sG6614XUe6aAaGYu99NZa7Ef4CUuSLQUmUqoRC8zP: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWBm3sG6614XUe6aAaGYu99NZa7Ef4CUuSLQUmUqoRC8zP type=direct secs=0
+conn closed peer=12D3KooWG4Aqpx2M4pWjz6S7yXj4cx6RUbXcB2mpJabtamJqxhqo type=direct secs=0.1
+conn closed peer=12D3KooWQeztbrh4sRy28kBBrp4mJBxnKGEAxvkw6Jw7oNwFDVjs type=direct secs=0.1
+✔ three nodes in one room send links lines and show the full mesh, then the stopped node goes (196.958988ms)
+conn session peer=12D3KooWRsnDx8gvq8EwBpfYrSKNQ9JLtRcxsR3T55Dxgk5YUMEU type=direct dir=in addr=/ip4/127.0.0.1/tcp/60440/p2p/12D3KooWRsnDx8gvq8EwBpfYrSKNQ9JLtRcxsR3T55Dxgk5YUMEU
+Dial-back from 12D3KooWRsnDx8gvq8EwBpfYrSKNQ9JLtRcxsR3T55Dxgk5YUMEU: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWRsnDx8gvq8EwBpfYrSKNQ9JLtRcxsR3T55Dxgk5YUMEU type=direct secs=0.4
+✔ a links line that is not valid causes no topology change and no warning (447.031871ms)
+✔ a presence event sets the badge text and the note of the right buddy (22.121686ms)
+✔ two buddies with the same name keep their own states (10.765827ms)
+✔ peer-left removes the state: the same peer ID that joins again shows status unknown (10.526001ms)
+✔ a buddy with no state (an old client) shows status unknown; a state before the line applies at join (9.048861ms)
+✔ the set action sends the state and a note cut to 80 code points (22.066662ms)
+✔ a failed set shows the error and keeps the old own badge (14.14165ms)
+✔ the state read after login applies to the own line and the buddies (10.085756ms)
+✔ an event that comes while the state read runs is not overwritten by the older read (13.045883ms)
+✔ Do not disturb does not change the voice view and calls no voice function (23.645291ms)
+conn session peer=12D3KooWSFzv7dRY9nuVWvg5WXa68h7vcXVz3uWrwoFZQaTmYKmG type=direct dir=in addr=/ip4/127.0.0.1/tcp/45206/p2p/12D3KooWSFzv7dRY9nuVWvg5WXa68h7vcXVz3uWrwoFZQaTmYKmG
+conn session peer=12D3KooWDyCWjyMPvKoaNzVuxhrbQjzfRv2FTKqwiKRbJh3wXcdK type=direct dir=out addr=/ip4/127.0.0.1/tcp/34031/p2p/12D3KooWDyCWjyMPvKoaNzVuxhrbQjzfRv2FTKqwiKRbJh3wXcdK
+Dial-back from 12D3KooWSFzv7dRY9nuVWvg5WXa68h7vcXVz3uWrwoFZQaTmYKmG: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWDyCWjyMPvKoaNzVuxhrbQjzfRv2FTKqwiKRbJh3wXcdK: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWDyCWjyMPvKoaNzVuxhrbQjzfRv2FTKqwiKRbJh3wXcdK type=direct secs=0.2
+conn closed peer=12D3KooWSFzv7dRY9nuVWvg5WXa68h7vcXVz3uWrwoFZQaTmYKmG type=direct secs=0.2
+✔ presence: the note has a maximum of 80 code points at the sender and at the receiver (278.449824ms)
+conn session peer=12D3KooWHqE2UBAYtmXgwmhkUzRhyAQ341wiURGDbg91GGEPyPTe type=direct dir=in addr=/ip4/127.0.0.1/tcp/56178/p2p/12D3KooWHqE2UBAYtmXgwmhkUzRhyAQ341wiURGDbg91GGEPyPTe
+conn session peer=12D3KooWChsu59gY4ApCaLRn3ajWYgEwxNm6u9wZBbBo6HVwCXaX type=direct dir=out addr=/ip4/127.0.0.1/tcp/44121/p2p/12D3KooWChsu59gY4ApCaLRn3ajWYgEwxNm6u9wZBbBo6HVwCXaX
+Dial-back from 12D3KooWHqE2UBAYtmXgwmhkUzRhyAQ341wiURGDbg91GGEPyPTe: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWChsu59gY4ApCaLRn3ajWYgEwxNm6u9wZBbBo6HVwCXaX: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWChsu59gY4ApCaLRn3ajWYgEwxNm6u9wZBbBo6HVwCXaX type=direct secs=0.1
+conn closed peer=12D3KooWHqE2UBAYtmXgwmhkUzRhyAQ341wiURGDbg91GGEPyPTe type=direct secs=0.1
+✔ presence: a new session gets the current state at open (106.731135ms)
+conn session peer=12D3KooWAXL8jQPRV7yDv4FFCLjg7ATRBwa9nsAxqtVnzXjPLTdT type=direct dir=in addr=/ip4/127.0.0.1/tcp/35662/p2p/12D3KooWAXL8jQPRV7yDv4FFCLjg7ATRBwa9nsAxqtVnzXjPLTdT
+conn session peer=12D3KooWDgibUoxyQ8NkLMX4U2hDV337EKnLkdD9kD3FJLmsey2A type=direct dir=out addr=/ip4/127.0.0.1/tcp/35287/p2p/12D3KooWDgibUoxyQ8NkLMX4U2hDV337EKnLkdD9kD3FJLmsey2A
+Dial-back from 12D3KooWAXL8jQPRV7yDv4FFCLjg7ATRBwa9nsAxqtVnzXjPLTdT: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWDgibUoxyQ8NkLMX4U2hDV337EKnLkdD9kD3FJLmsey2A: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWC3rwQRB767392QiD3dKdeXBGTqkxp6DW2kpHzpTuZFzq type=direct dir=in addr=/ip4/127.0.0.1/tcp/35684/p2p/12D3KooWC3rwQRB767392QiD3dKdeXBGTqkxp6DW2kpHzpTuZFzq
+conn session peer=12D3KooWDgibUoxyQ8NkLMX4U2hDV337EKnLkdD9kD3FJLmsey2A type=direct dir=out addr=/ip4/127.0.0.1/tcp/35287/p2p/12D3KooWDgibUoxyQ8NkLMX4U2hDV337EKnLkdD9kD3FJLmsey2A
+Dial-back from 12D3KooWC3rwQRB767392QiD3dKdeXBGTqkxp6DW2kpHzpTuZFzq: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWDgibUoxyQ8NkLMX4U2hDV337EKnLkdD9kD3FJLmsey2A: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWDgibUoxyQ8NkLMX4U2hDV337EKnLkdD9kD3FJLmsey2A type=direct secs=0.1
+conn closed peer=12D3KooWDgibUoxyQ8NkLMX4U2hDV337EKnLkdD9kD3FJLmsey2A type=direct secs=0.2
+conn closed peer=12D3KooWAXL8jQPRV7yDv4FFCLjg7ATRBwa9nsAxqtVnzXjPLTdT type=direct secs=0.2
+conn closed peer=12D3KooWC3rwQRB767392QiD3dKdeXBGTqkxp6DW2kpHzpTuZFzq type=direct secs=0.1
+✔ presence: a late joiner gets the current state (245.18867ms)
+conn session peer=12D3KooWSbjYMM6CeU4idtUjQWC8UgzoCY91hXXQgf7i3euyyhrP type=direct dir=in addr=/ip4/127.0.0.1/tcp/54516/p2p/12D3KooWSbjYMM6CeU4idtUjQWC8UgzoCY91hXXQgf7i3euyyhrP
+conn session peer=12D3KooWRk1E9XcALFZ4rFhE1PwKpWV3ijY9pmpALHmE8o2xm4fX type=direct dir=out addr=/ip4/127.0.0.1/tcp/43909/p2p/12D3KooWRk1E9XcALFZ4rFhE1PwKpWV3ijY9pmpALHmE8o2xm4fX
+Dial-back from 12D3KooWSbjYMM6CeU4idtUjQWC8UgzoCY91hXXQgf7i3euyyhrP: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWRk1E9XcALFZ4rFhE1PwKpWV3ijY9pmpALHmE8o2xm4fX: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWSbjYMM6CeU4idtUjQWC8UgzoCY91hXXQgf7i3euyyhrP type=direct secs=0.1
+conn closed peer=12D3KooWRk1E9XcALFZ4rFhE1PwKpWV3ijY9pmpALHmE8o2xm4fX type=direct secs=0.1
+conn session peer=12D3KooWGiqzHJM91kRW42LbwaxdLWE4cmc3ePRK9xfxWC7FPSQn type=direct dir=in addr=/ip4/127.0.0.1/tcp/55144/p2p/12D3KooWGiqzHJM91kRW42LbwaxdLWE4cmc3ePRK9xfxWC7FPSQn
+conn session peer=12D3KooWSbjYMM6CeU4idtUjQWC8UgzoCY91hXXQgf7i3euyyhrP type=direct dir=out addr=/ip4/127.0.0.1/tcp/46445/p2p/12D3KooWSbjYMM6CeU4idtUjQWC8UgzoCY91hXXQgf7i3euyyhrP
+Dial-back from 12D3KooWGiqzHJM91kRW42LbwaxdLWE4cmc3ePRK9xfxWC7FPSQn: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWSbjYMM6CeU4idtUjQWC8UgzoCY91hXXQgf7i3euyyhrP: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWSbjYMM6CeU4idtUjQWC8UgzoCY91hXXQgf7i3euyyhrP type=direct secs=0.1
+conn closed peer=12D3KooWGiqzHJM91kRW42LbwaxdLWE4cmc3ePRK9xfxWC7FPSQn type=direct secs=0.1
+✔ presence: a replaced peer (same name, new peer ID) has no old state (185.212559ms)
+conn session peer=12D3KooWBugCNSZwunj46CnXNrLfMjtChbkwFJLVL3abem7STrKk type=direct dir=in addr=/ip4/127.0.0.1/tcp/57618/p2p/12D3KooWBugCNSZwunj46CnXNrLfMjtChbkwFJLVL3abem7STrKk
+conn session peer=12D3KooWGJzeZ4VybdVNZ4PFZ8PvmtaGpy2dmAucHt7ePVBHTbfQ type=direct dir=out addr=/ip4/127.0.0.1/tcp/41319/p2p/12D3KooWGJzeZ4VybdVNZ4PFZ8PvmtaGpy2dmAucHt7ePVBHTbfQ
+Dial-back from 12D3KooWBugCNSZwunj46CnXNrLfMjtChbkwFJLVL3abem7STrKk: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWGJzeZ4VybdVNZ4PFZ8PvmtaGpy2dmAucHt7ePVBHTbfQ: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWGJzeZ4VybdVNZ4PFZ8PvmtaGpy2dmAucHt7ePVBHTbfQ type=direct secs=0.6
+conn closed peer=12D3KooWBugCNSZwunj46CnXNrLfMjtChbkwFJLVL3abem7STrKk type=direct secs=0.6
+✔ presence: the close of a second stream of the same peer does not delete the state (636.375621ms)
+conn session peer=12D3KooWGMcxHcBurvGUdgtEWXv4mkYkjkEqypQ2oQycWQBEdQnq type=direct dir=in addr=/ip4/127.0.0.1/tcp/37608/p2p/12D3KooWGMcxHcBurvGUdgtEWXv4mkYkjkEqypQ2oQycWQBEdQnq
+conn session peer=12D3KooWN9mS7k9hDAwBim73fui7nwvQjeWsyaLHxz3vnZnFg5LZ type=direct dir=out addr=/ip4/127.0.0.1/tcp/43589/p2p/12D3KooWN9mS7k9hDAwBim73fui7nwvQjeWsyaLHxz3vnZnFg5LZ
+Dial-back from 12D3KooWGMcxHcBurvGUdgtEWXv4mkYkjkEqypQ2oQycWQBEdQnq: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWN9mS7k9hDAwBim73fui7nwvQjeWsyaLHxz3vnZnFg5LZ: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWN9mS7k9hDAwBim73fui7nwvQjeWsyaLHxz3vnZnFg5LZ type=direct secs=0.3
+conn closed peer=12D3KooWGMcxHcBurvGUdgtEWXv4mkYkjkEqypQ2oQycWQBEdQnq type=direct secs=0.3
+✔ presence: a presence line makes no history entry, no message event and no console line (350.627606ms)
+conn session peer=12D3KooWQuB4r8usXE3yLPLa5YQzhbQTnvDDw9j2un4DsNwuLSM4 type=direct dir=in addr=/ip4/127.0.0.1/tcp/52020/p2p/12D3KooWQuB4r8usXE3yLPLa5YQzhbQTnvDDw9j2un4DsNwuLSM4
+Dial-back from 12D3KooWQuB4r8usXE3yLPLa5YQzhbQTnvDDw9j2un4DsNwuLSM4: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWQuB4r8usXE3yLPLa5YQzhbQTnvDDw9j2un4DsNwuLSM4 type=direct secs=0.3
+✔ presence: a bad presence line causes no change and no event (369.591569ms)
+✔ the Quote button and the row menu pick the same line, show the same chip and keep the draft (25.367948ms)
+✔ the Quote button goes through the row action dispatcher (9.519462ms)
+✔ a replayed line with no peer ID gets the name alone, never the tag of this user (11.451117ms)
+✔ a failed send keeps the full edited draft and the quote, and no line appears (22.871009ms)
+✔ Shift+Enter does not send; Enter sends the quote and clears the draft (22.21405ms)
+✔ a reply that starts with "> " stays out of a one-line excerpt (1.718998ms)
+✔ the header count gives the exact excerpt lines, also for 4 lines and two "> " reply lines (1.275934ms)
+✔ a header with a count but missing excerpt lines is not a quotation (0.259061ms)
+✔ stored 0.6.0-era text: one excerpt line before a plain reply is still a quote (0.230715ms)
+✔ stored text with two possible boundaries is not a quote: no line goes to an author (0.277881ms)
+✔ the rendered quotation block has only the words of Sam; the reply keeps its "> " outside it (46.38546ms)
+✔ a stored message with two possible boundaries shows its text with no quotation block (9.400071ms)
+conn session peer=12D3KooWCjrXS2xX5hsSxuPqpqgCGFdXVJjW16xmEcy2hDALZbsy type=direct dir=in addr=/ip4/127.0.0.1/tcp/50222/p2p/12D3KooWCjrXS2xX5hsSxuPqpqgCGFdXVJjW16xmEcy2hDALZbsy
+conn session peer=12D3KooWKsKyJDrKq8Z9stk3Syb5cZSJzxcY51TGqb26CE6jkPeY type=direct dir=out addr=/ip4/127.0.0.1/tcp/39971/p2p/12D3KooWKsKyJDrKq8Z9stk3Syb5cZSJzxcY51TGqb26CE6jkPeY
+Dial-back from 12D3KooWCjrXS2xX5hsSxuPqpqgCGFdXVJjW16xmEcy2hDALZbsy: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWKsKyJDrKq8Z9stk3Syb5cZSJzxcY51TGqb26CE6jkPeY: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWCjrXS2xX5hsSxuPqpqgCGFdXVJjW16xmEcy2hDALZbsy type=direct dir=in addr=/ip4/127.0.0.1/tcp/45952/p2p/12D3KooWCjrXS2xX5hsSxuPqpqgCGFdXVJjW16xmEcy2hDALZbsy
+conn session peer=12D3KooWRDMZQYJg2R4DVuFkvQVfGcMJtPrCwbAydaLU2Ep5rcoK type=direct dir=out addr=/ip4/127.0.0.1/tcp/37515/p2p/12D3KooWRDMZQYJg2R4DVuFkvQVfGcMJtPrCwbAydaLU2Ep5rcoK
+Dial-back from 12D3KooWCjrXS2xX5hsSxuPqpqgCGFdXVJjW16xmEcy2hDALZbsy: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWRDMZQYJg2R4DVuFkvQVfGcMJtPrCwbAydaLU2Ep5rcoK: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWKsKyJDrKq8Z9stk3Syb5cZSJzxcY51TGqb26CE6jkPeY type=direct dir=in addr=/ip4/127.0.0.1/tcp/45954/p2p/12D3KooWKsKyJDrKq8Z9stk3Syb5cZSJzxcY51TGqb26CE6jkPeY
+conn session peer=12D3KooWRDMZQYJg2R4DVuFkvQVfGcMJtPrCwbAydaLU2Ep5rcoK type=direct dir=out addr=/ip4/127.0.0.1/tcp/37515/p2p/12D3KooWRDMZQYJg2R4DVuFkvQVfGcMJtPrCwbAydaLU2Ep5rcoK
+Dial-back from 12D3KooWKsKyJDrKq8Z9stk3Syb5cZSJzxcY51TGqb26CE6jkPeY: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWRDMZQYJg2R4DVuFkvQVfGcMJtPrCwbAydaLU2Ep5rcoK: ok, IP 127.0.0.1, full node false
+History sent to 12D3KooWKsKyJDrKq8Z9stk3Syb5cZSJzxcY51TGqb26CE6jkPeY: 0 messages
+History sent to 12D3KooWRDMZQYJg2R4DVuFkvQVfGcMJtPrCwbAydaLU2Ep5rcoK: 0 messages
+History applied: 0 of 0 messages are new
+History applied: 0 of 0 messages are new
+conn closed peer=12D3KooWKsKyJDrKq8Z9stk3Syb5cZSJzxcY51TGqb26CE6jkPeY type=direct secs=1.3
+conn closed peer=12D3KooWRDMZQYJg2R4DVuFkvQVfGcMJtPrCwbAydaLU2Ep5rcoK type=direct secs=1.2
+conn closed peer=12D3KooWCjrXS2xX5hsSxuPqpqgCGFdXVJjW16xmEcy2hDALZbsy type=direct secs=1.3
+History sent to 12D3KooWRDMZQYJg2R4DVuFkvQVfGcMJtPrCwbAydaLU2Ep5rcoK: 200 messages
+conn closed peer=12D3KooWCjrXS2xX5hsSxuPqpqgCGFdXVJjW16xmEcy2hDALZbsy type=direct secs=1.2
+History applied: 0 of 200 messages are new
+conn session peer=12D3KooWHbEcrdcexHSSGDnc8rAeJiSFqcJAESQzXEFfNzV9URW6 type=direct dir=in addr=/ip4/127.0.0.1/tcp/50256/p2p/12D3KooWHbEcrdcexHSSGDnc8rAeJiSFqcJAESQzXEFfNzV9URW6
+History sent to 12D3KooWHbEcrdcexHSSGDnc8rAeJiSFqcJAESQzXEFfNzV9URW6: 200 messages
+conn session peer=12D3KooWKsKyJDrKq8Z9stk3Syb5cZSJzxcY51TGqb26CE6jkPeY type=direct dir=out addr=/ip4/127.0.0.1/tcp/39971/p2p/12D3KooWKsKyJDrKq8Z9stk3Syb5cZSJzxcY51TGqb26CE6jkPeY
+History applied: 200 of 200 messages are new
+Dial-back from 12D3KooWHbEcrdcexHSSGDnc8rAeJiSFqcJAESQzXEFfNzV9URW6: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWKsKyJDrKq8Z9stk3Syb5cZSJzxcY51TGqb26CE6jkPeY: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWHbEcrdcexHSSGDnc8rAeJiSFqcJAESQzXEFfNzV9URW6 type=direct dir=in addr=/ip4/127.0.0.1/tcp/45980/p2p/12D3KooWHbEcrdcexHSSGDnc8rAeJiSFqcJAESQzXEFfNzV9URW6
+conn session peer=12D3KooWRDMZQYJg2R4DVuFkvQVfGcMJtPrCwbAydaLU2Ep5rcoK type=direct dir=out addr=/ip4/127.0.0.1/tcp/37515/p2p/12D3KooWRDMZQYJg2R4DVuFkvQVfGcMJtPrCwbAydaLU2Ep5rcoK
+conn closed peer=12D3KooWRDMZQYJg2R4DVuFkvQVfGcMJtPrCwbAydaLU2Ep5rcoK type=direct secs=1.3
+conn closed peer=12D3KooWHbEcrdcexHSSGDnc8rAeJiSFqcJAESQzXEFfNzV9URW6 type=direct secs=0.1
+conn closed peer=12D3KooWKsKyJDrKq8Z9stk3Syb5cZSJzxcY51TGqb26CE6jkPeY type=direct secs=1.3
+conn closed peer=12D3KooWHbEcrdcexHSSGDnc8rAeJiSFqcJAESQzXEFfNzV9URW6 type=direct secs=0
+conn closed peer=12D3KooWKsKyJDrKq8Z9stk3Syb5cZSJzxcY51TGqb26CE6jkPeY type=direct secs=0.1
+conn closed peer=12D3KooWRDMZQYJg2R4DVuFkvQVfGcMJtPrCwbAydaLU2Ep5rcoK type=direct secs=0
+conn dial-failed peer=12D3KooWHbEcrdcexHSSGDnc8rAeJiSFqcJAESQzXEFfNzV9URW6 via=dial-back reason=other addr=/ip4/127.0.0.1/tcp/45980/p2p/12D3KooWHbEcrdcexHSSGDnc8rAeJiSFqcJAESQzXEFfNzV9URW6 error="unexpected end of input"
+conn dial-failed peer=12D3KooWRDMZQYJg2R4DVuFkvQVfGcMJtPrCwbAydaLU2Ep5rcoK via=dial-back reason=other addr=/ip4/127.0.0.1/tcp/37515/p2p/12D3KooWRDMZQYJg2R4DVuFkvQVfGcMJtPrCwbAydaLU2Ep5rcoK error="unexpected end of input"
+✔ a quote of a repeated name is read live, and after a host change and a replay with the original evicted (1557.425587ms)
+conn session peer=12D3KooWLJECYTb91NDSKi4tfrL9Mz3Kc47LFNxD6BobCyq8Ma2z type=direct dir=in addr=/ip4/127.0.0.1/tcp/45144/p2p/12D3KooWLJECYTb91NDSKi4tfrL9Mz3Kc47LFNxD6BobCyq8Ma2z
+conn session peer=12D3KooWSXbUvnqPk3facpCK6isoKdHem79XTmMxyY7ABCjA61c4 type=direct dir=out addr=/ip4/127.0.0.1/tcp/42759/p2p/12D3KooWSXbUvnqPk3facpCK6isoKdHem79XTmMxyY7ABCjA61c4
+Dial-back from 12D3KooWLJECYTb91NDSKi4tfrL9Mz3Kc47LFNxD6BobCyq8Ma2z: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWSXbUvnqPk3facpCK6isoKdHem79XTmMxyY7ABCjA61c4: ok, IP 127.0.0.1, full node false
+History sent to 12D3KooWSXbUvnqPk3facpCK6isoKdHem79XTmMxyY7ABCjA61c4: 2 messages
+History applied: 2 of 2 messages are new
+conn closed peer=12D3KooWSXbUvnqPk3facpCK6isoKdHem79XTmMxyY7ABCjA61c4 type=direct secs=1
+conn closed peer=12D3KooWLJECYTb91NDSKi4tfrL9Mz3Kc47LFNxD6BobCyq8Ma2z type=direct secs=1
+✔ a quote sent with zero peers goes in the local history and a later member gets it in a replay (1053.51723ms)
+✔ quote.js loads with no DOM and gives quoteCore (0.915502ms)
+✔ compose gives the quotation lines, then the reply, in one plain text (0.687561ms)
+✔ a repeated name gets the peer tag of the quoted line, not of the other user (0.33228ms)
+✔ the excerpt has at most 4 lines and 280 characters, with an ellipsis when cut (1.439679ms)
+✔ an emoji at the limit is not cut into two halves (0.437037ms)
+✔ multiline clipboard text: CR LF becomes LF in the excerpt and in the reply (0.262411ms)
+✔ a quote of a quote takes only the reply part (0.290015ms)
+✔ the name in the header is one line with no control characters, at most 48 characters (0.151974ms)
+✔ the quotation part is bounded for any input (4.365557ms)
+✔ a bad clock gives 00:00, a missing text gives an ellipsis line (0.341514ms)
+✔ split finds the quotation at the start, and quote + rest is the full text (0.350778ms)
+✔ the find hold keeps the unread count and the marker, and restorePosition goes back (2.916841ms)
+✔ restorePosition of a following list goes to the end and follows again (0.88697ms)
+✔ reading.js loads with no DOM and gives no window.reading (1.757973ms)
+✔ anchor is the first visible line with its offset (0.816732ms)
+✔ scrolled back 20 lines, 3 live lines and an older history insert keep the anchor (0.393082ms)
+✔ restore is a change from the current position (0.10984ms)
+✔ fallback when the anchor line is removed: next line below, else the line above (0.197632ms)
+✔ equal timestamps keep the arrival sequence (0.203467ms)
+✔ each unread line counts one time and the first one is the marker (0.116642ms)
+✔ jump to latest clears the count and the marker (0.131961ms)
+✔ a history replay of shown lines adds no line and no unread (0.302987ms)
+✔ history lines: duplicates in a batch go out, the rest is sorted by time, stable (0.40171ms)
+✔ at end uses a 24 px limit (0.124663ms)
+conn session peer=12D3KooWLPPK4FXKZNjMoo1BmmhUuVXjLNjPGuPTr13okkMGtMmf type=direct dir=in addr=/ip4/127.0.0.1/tcp/43416/p2p/12D3KooWLPPK4FXKZNjMoo1BmmhUuVXjLNjPGuPTr13okkMGtMmf
+conn session peer=12D3KooWNVdbiDaP7FVMc5hH4zutATEYTS2FVBXeFQU3R2a1o6M9 type=direct dir=out addr=/ip4/127.0.0.1/tcp/44019/p2p/12D3KooWNVdbiDaP7FVMc5hH4zutATEYTS2FVBXeFQU3R2a1o6M9
+conn closed peer=12D3KooWLPPK4FXKZNjMoo1BmmhUuVXjLNjPGuPTr13okkMGtMmf type=direct secs=0
+Relay reservation on 12D3KooWNVdbiDaP7FVMc5hH4zutATEYTS2FVBXeFQU3R2a1o6M9: ok
+conn closed peer=12D3KooWNVdbiDaP7FVMc5hH4zutATEYTS2FVBXeFQU3R2a1o6M9 type=direct secs=0
+conn dial-failed peer=12D3KooWNVdbiDaP7FVMc5hH4zutATEYTS2FVBXeFQU3R2a1o6M9 via=full-node reason=other addr=/ip4/127.0.0.1/tcp/44019/p2p/12D3KooWNVdbiDaP7FVMc5hH4zutATEYTS2FVBXeFQU3R2a1o6M9 error="Error occurred during XX handshake: Error occurred while verifying signed payload: Payload identity key 12D3KooWKoztzdeZyQKRQ8w9rNTKJ8k5b5xBFbTSzYXpcVkw46uM does not match expected remote peer 12D3Koo"
+conn session peer=12D3KooWLPPK4FXKZNjMoo1BmmhUuVXjLNjPGuPTr13okkMGtMmf type=direct dir=in addr=/ip4/127.0.0.1/tcp/43442/p2p/12D3KooWLPPK4FXKZNjMoo1BmmhUuVXjLNjPGuPTr13okkMGtMmf
+conn session peer=12D3KooWKoztzdeZyQKRQ8w9rNTKJ8k5b5xBFbTSzYXpcVkw46uM type=direct dir=out addr=/ip4/127.0.0.1/tcp/44019/p2p/12D3KooWKoztzdeZyQKRQ8w9rNTKJ8k5b5xBFbTSzYXpcVkw46uM
+Relay reservation on 12D3KooWKoztzdeZyQKRQ8w9rNTKJ8k5b5xBFbTSzYXpcVkw46uM: ok
+B session with A2 after 425 ms (127.0.0.1)
+conn closed peer=12D3KooWKoztzdeZyQKRQ8w9rNTKJ8k5b5xBFbTSzYXpcVkw46uM type=direct secs=0
+conn closed peer=12D3KooWLPPK4FXKZNjMoo1BmmhUuVXjLNjPGuPTr13okkMGtMmf type=direct secs=0
+✔ rejoin: a member finds the full node again after it starts with a new peer ID (682.55229ms)
+conn dial-failed peer=12D3KooWDedbdzGbDjY8opkVbCnLtcXzJFXZbJ1QG7Dz84tfDVK9 via=full-node reason=other addr=/ip4/127.0.0.1/tcp/45075/p2p/12D3KooWDedbdzGbDjY8opkVbCnLtcXzJFXZbJ1QG7Dz84tfDVK9 error="Error occurred during XX handshake: Error occurred while verifying signed payload: Payload identity key 12D3KooWE1tS4kz5YZVXyHDAApgtB8BFFMrT6Fokj29bo99axf8A does not match expected remote peer 12D3Koo"
+conn session peer=12D3KooWBdJzyeVKT185pr1qz79v22hmy8D13mjE1qjRE9UWyGJy type=direct dir=in addr=/ip4/127.0.0.1/tcp/39816/p2p/12D3KooWBdJzyeVKT185pr1qz79v22hmy8D13mjE1qjRE9UWyGJy
+conn session peer=12D3KooWE1tS4kz5YZVXyHDAApgtB8BFFMrT6Fokj29bo99axf8A type=direct dir=out addr=/ip4/127.0.0.1/tcp/45075/p2p/12D3KooWE1tS4kz5YZVXyHDAApgtB8BFFMrT6Fokj29bo99axf8A
+Relay reservation on 12D3KooWE1tS4kz5YZVXyHDAApgtB8BFFMrT6Fokj29bo99axf8A: ok
+conn closed peer=12D3KooWBdJzyeVKT185pr1qz79v22hmy8D13mjE1qjRE9UWyGJy type=direct secs=0
+conn closed peer=12D3KooWE1tS4kz5YZVXyHDAApgtB8BFFMrT6Fokj29bo99axf8A type=direct secs=0
+✔ rejoin: an invite node with an old peer ID connects to the new node at that address (79.551092ms)
+conn dial-failed peer=12D3KooWE1TRmUkndbaifVYno5NJd2NvCuriwhsS9SoViRr28s1V via=full-node reason=other addr=/ip4/127.0.0.1/tcp/38413/p2p/12D3KooWE1TRmUkndbaifVYno5NJd2NvCuriwhsS9SoViRr28s1V error="Error occurred during XX handshake: Error occurred while verifying signed payload: Payload identity key 12D3KooWCvichbyEjmER9DZJUcxxeEs31g3sEWjPZUzUmchxL4Yn does not match expected remote peer 12D3Koo"
+conn dial-failed peer=? via=address reason=other addr=/ip4/127.0.0.1/tcp/38413 error="not valid Id"
+conn session peer=12D3KooWFDvmBLDkUePJTyM69FaYya9dCh4zuRwCZKQ5WuttsPJy type=direct dir=in addr=/ip4/127.0.0.1/tcp/39202/p2p/12D3KooWFDvmBLDkUePJTyM69FaYya9dCh4zuRwCZKQ5WuttsPJy
+conn session peer=12D3KooWCvichbyEjmER9DZJUcxxeEs31g3sEWjPZUzUmchxL4Yn type=direct dir=out addr=/ip4/127.0.0.1/tcp/38413/p2p/12D3KooWCvichbyEjmER9DZJUcxxeEs31g3sEWjPZUzUmchxL4Yn
+conn closed peer=12D3KooWFDvmBLDkUePJTyM69FaYya9dCh4zuRwCZKQ5WuttsPJy type=direct secs=0
+conn closed peer=12D3KooWCvichbyEjmER9DZJUcxxeEs31g3sEWjPZUzUmchxL4Yn type=direct secs=0
+✔ rejoin: an invite node at the own address gives no session with self and no stop (2591.363896ms)
+conn session peer=12D3KooWEydzbBoLGKkvCvpP66CBaR2h11aqMeKMqfCPLPRfPQYR type=direct dir=in addr=/ip4/127.0.0.1/tcp/51314/p2p/12D3KooWEydzbBoLGKkvCvpP66CBaR2h11aqMeKMqfCPLPRfPQYR
+conn session peer=12D3KooWKHZ1RBrUxkQoxrwLLUYABGp6CpGVEF5xkt7sMKEGz5Jp type=direct dir=out addr=/ip4/127.0.0.1/tcp/44995/p2p/12D3KooWKHZ1RBrUxkQoxrwLLUYABGp6CpGVEF5xkt7sMKEGz5Jp
+Relay reservation on 12D3KooWKHZ1RBrUxkQoxrwLLUYABGp6CpGVEF5xkt7sMKEGz5Jp: ok
+conn session peer=12D3KooWNMdx62nktRdLAc5jji2HnuMAS7dRyvvFWoH4uxKaen6g type=direct dir=in addr=/ip4/127.0.0.1/tcp/51328/p2p/12D3KooWNMdx62nktRdLAc5jji2HnuMAS7dRyvvFWoH4uxKaen6g
+conn session peer=12D3KooWKHZ1RBrUxkQoxrwLLUYABGp6CpGVEF5xkt7sMKEGz5Jp type=direct dir=out addr=/ip4/127.0.0.1/tcp/44995/p2p/12D3KooWKHZ1RBrUxkQoxrwLLUYABGp6CpGVEF5xkt7sMKEGz5Jp
+Relay reservation on 12D3KooWKHZ1RBrUxkQoxrwLLUYABGp6CpGVEF5xkt7sMKEGz5Jp: ok
+conn session peer=12D3KooWEydzbBoLGKkvCvpP66CBaR2h11aqMeKMqfCPLPRfPQYR type=relay dir=in relay=12D3KooWKHZ1RBrUxkQoxrwLLUYABGp6CpGVEF5xkt7sMKEGz5Jp addr=/ip4/127.0.0.1/tcp/44995/p2p/12D3KooWKHZ1RBrUxkQoxrwLLUYABGp6CpGVEF5xkt7sMKEGz5Jp/p2p-circuit/p2p/12D3KooWEydzbBoLGKkvCvpP66CBaR2h11aqMeKMqfCPLPRfPQYR
+conn session peer=12D3KooWNMdx62nktRdLAc5jji2HnuMAS7dRyvvFWoH4uxKaen6g type=relay dir=out relay=12D3KooWKHZ1RBrUxkQoxrwLLUYABGp6CpGVEF5xkt7sMKEGz5Jp addr=/ip4/127.0.0.1/tcp/44995/p2p/12D3KooWKHZ1RBrUxkQoxrwLLUYABGp6CpGVEF5xkt7sMKEGz5Jp/p2p-circuit/p2p/12D3KooWNMdx62nktRdLAc5jji2HnuMAS7dRyvvFWoH4uxKaen6g
+History sent to 12D3KooWEydzbBoLGKkvCvpP66CBaR2h11aqMeKMqfCPLPRfPQYR: 3 messages
+History sent to 12D3KooWNMdx62nktRdLAc5jji2HnuMAS7dRyvvFWoH4uxKaen6g: 3 messages
+History applied: 0 of 3 messages are new
+History applied: 0 of 3 messages are new
+conn session peer=12D3KooWS3JqFtbeTG2fEbWcqwU6BQCmS4sXbXuQcv2YmDfuka7p type=direct dir=in addr=/ip4/127.0.0.1/tcp/51340/p2p/12D3KooWS3JqFtbeTG2fEbWcqwU6BQCmS4sXbXuQcv2YmDfuka7p
+History sent to 12D3KooWS3JqFtbeTG2fEbWcqwU6BQCmS4sXbXuQcv2YmDfuka7p: 3 messages
+conn session peer=12D3KooWKHZ1RBrUxkQoxrwLLUYABGp6CpGVEF5xkt7sMKEGz5Jp type=direct dir=out addr=/ip4/127.0.0.1/tcp/44995/p2p/12D3KooWKHZ1RBrUxkQoxrwLLUYABGp6CpGVEF5xkt7sMKEGz5Jp
+History applied: 3 of 3 messages are new
+Relay reservation on 12D3KooWKHZ1RBrUxkQoxrwLLUYABGp6CpGVEF5xkt7sMKEGz5Jp: ok
+conn session peer=12D3KooWEydzbBoLGKkvCvpP66CBaR2h11aqMeKMqfCPLPRfPQYR type=relay dir=in relay=12D3KooWKHZ1RBrUxkQoxrwLLUYABGp6CpGVEF5xkt7sMKEGz5Jp addr=/ip4/127.0.0.1/tcp/44995/p2p/12D3KooWKHZ1RBrUxkQoxrwLLUYABGp6CpGVEF5xkt7sMKEGz5Jp/p2p-circuit/p2p/12D3KooWEydzbBoLGKkvCvpP66CBaR2h11aqMeKMqfCPLPRfPQYR
+conn session peer=12D3KooWNMdx62nktRdLAc5jji2HnuMAS7dRyvvFWoH4uxKaen6g type=relay dir=in relay=12D3KooWKHZ1RBrUxkQoxrwLLUYABGp6CpGVEF5xkt7sMKEGz5Jp addr=/ip4/127.0.0.1/tcp/44995/p2p/12D3KooWKHZ1RBrUxkQoxrwLLUYABGp6CpGVEF5xkt7sMKEGz5Jp/p2p-circuit/p2p/12D3KooWNMdx62nktRdLAc5jji2HnuMAS7dRyvvFWoH4uxKaen6g
+conn session peer=12D3KooWS3JqFtbeTG2fEbWcqwU6BQCmS4sXbXuQcv2YmDfuka7p type=relay dir=out relay=12D3KooWKHZ1RBrUxkQoxrwLLUYABGp6CpGVEF5xkt7sMKEGz5Jp addr=/ip4/127.0.0.1/tcp/44995/p2p/12D3KooWKHZ1RBrUxkQoxrwLLUYABGp6CpGVEF5xkt7sMKEGz5Jp/p2p-circuit/p2p/12D3KooWS3JqFtbeTG2fEbWcqwU6BQCmS4sXbXuQcv2YmDfuka7p
+conn session peer=12D3KooWS3JqFtbeTG2fEbWcqwU6BQCmS4sXbXuQcv2YmDfuka7p type=relay dir=out relay=12D3KooWKHZ1RBrUxkQoxrwLLUYABGp6CpGVEF5xkt7sMKEGz5Jp addr=/ip4/127.0.0.1/tcp/44995/p2p/12D3KooWKHZ1RBrUxkQoxrwLLUYABGp6CpGVEF5xkt7sMKEGz5Jp/p2p-circuit/p2p/12D3KooWS3JqFtbeTG2fEbWcqwU6BQCmS4sXbXuQcv2YmDfuka7p
+conn closed peer=12D3KooWEydzbBoLGKkvCvpP66CBaR2h11aqMeKMqfCPLPRfPQYR type=direct secs=1.3
+conn closed peer=12D3KooWNMdx62nktRdLAc5jji2HnuMAS7dRyvvFWoH4uxKaen6g type=direct secs=1.2
+conn closed peer=12D3KooWS3JqFtbeTG2fEbWcqwU6BQCmS4sXbXuQcv2YmDfuka7p type=direct secs=0.7
+conn closed peer=12D3KooWKHZ1RBrUxkQoxrwLLUYABGp6CpGVEF5xkt7sMKEGz5Jp type=direct secs=1.3
+conn closed peer=12D3KooWNMdx62nktRdLAc5jji2HnuMAS7dRyvvFWoH4uxKaen6g type=relay secs=1.1
+conn closed peer=12D3KooWS3JqFtbeTG2fEbWcqwU6BQCmS4sXbXuQcv2YmDfuka7p type=relay secs=0.5
+conn closed peer=12D3KooWKHZ1RBrUxkQoxrwLLUYABGp6CpGVEF5xkt7sMKEGz5Jp type=direct secs=1.2
+conn closed peer=12D3KooWEydzbBoLGKkvCvpP66CBaR2h11aqMeKMqfCPLPRfPQYR type=relay secs=1.1
+conn closed peer=12D3KooWS3JqFtbeTG2fEbWcqwU6BQCmS4sXbXuQcv2YmDfuka7p type=relay secs=0.5
+conn closed peer=12D3KooWKHZ1RBrUxkQoxrwLLUYABGp6CpGVEF5xkt7sMKEGz5Jp type=direct secs=0.7
+conn closed peer=12D3KooWEydzbBoLGKkvCvpP66CBaR2h11aqMeKMqfCPLPRfPQYR type=relay secs=0.5
+conn closed peer=12D3KooWNMdx62nktRdLAc5jji2HnuMAS7dRyvvFWoH4uxKaen6g type=relay secs=0.5
+✔ history: a late relay-only member gets the earlier lines through R (1457.320505ms)
+conn session peer=12D3KooWDZXXsLbw2e7bq4S2RJYYf2WPArEMNs5KcGBBvUWZCQbw type=direct dir=in addr=/ip4/127.0.0.1/tcp/58040/p2p/12D3KooWDZXXsLbw2e7bq4S2RJYYf2WPArEMNs5KcGBBvUWZCQbw
+conn session peer=12D3KooWLxpQC1b3afPFcB3rr1FxHKChRLcBLtwFMUFwTHt8Zn1Z type=direct dir=out addr=/ip4/127.0.0.1/tcp/42015/p2p/12D3KooWLxpQC1b3afPFcB3rr1FxHKChRLcBLtwFMUFwTHt8Zn1Z
+Relay reservation on 12D3KooWLxpQC1b3afPFcB3rr1FxHKChRLcBLtwFMUFwTHt8Zn1Z: ok
+conn session peer=12D3KooWSvEwzJ3GtijdyUvsGesxo1nSR7SArPG6JShTRsnAU2eC type=direct dir=in addr=/ip4/127.0.0.1/tcp/58056/p2p/12D3KooWSvEwzJ3GtijdyUvsGesxo1nSR7SArPG6JShTRsnAU2eC
+conn session peer=12D3KooWLxpQC1b3afPFcB3rr1FxHKChRLcBLtwFMUFwTHt8Zn1Z type=direct dir=out addr=/ip4/127.0.0.1/tcp/42015/p2p/12D3KooWLxpQC1b3afPFcB3rr1FxHKChRLcBLtwFMUFwTHt8Zn1Z
+Relay reservation on 12D3KooWLxpQC1b3afPFcB3rr1FxHKChRLcBLtwFMUFwTHt8Zn1Z: ok
+conn session peer=12D3KooWDZXXsLbw2e7bq4S2RJYYf2WPArEMNs5KcGBBvUWZCQbw type=relay dir=in relay=12D3KooWLxpQC1b3afPFcB3rr1FxHKChRLcBLtwFMUFwTHt8Zn1Z addr=/ip4/127.0.0.1/tcp/42015/p2p/12D3KooWLxpQC1b3afPFcB3rr1FxHKChRLcBLtwFMUFwTHt8Zn1Z/p2p-circuit/p2p/12D3KooWDZXXsLbw2e7bq4S2RJYYf2WPArEMNs5KcGBBvUWZCQbw
+conn session peer=12D3KooWSvEwzJ3GtijdyUvsGesxo1nSR7SArPG6JShTRsnAU2eC type=relay dir=out relay=12D3KooWLxpQC1b3afPFcB3rr1FxHKChRLcBLtwFMUFwTHt8Zn1Z addr=/ip4/127.0.0.1/tcp/42015/p2p/12D3KooWLxpQC1b3afPFcB3rr1FxHKChRLcBLtwFMUFwTHt8Zn1Z/p2p-circuit/p2p/12D3KooWSvEwzJ3GtijdyUvsGesxo1nSR7SArPG6JShTRsnAU2eC
+conn closed peer=12D3KooWDZXXsLbw2e7bq4S2RJYYf2WPArEMNs5KcGBBvUWZCQbw type=direct secs=0.2
+conn closed peer=12D3KooWSvEwzJ3GtijdyUvsGesxo1nSR7SArPG6JShTRsnAU2eC type=direct secs=0.1
+conn closed peer=12D3KooWLxpQC1b3afPFcB3rr1FxHKChRLcBLtwFMUFwTHt8Zn1Z type=direct secs=0.2
+conn closed peer=12D3KooWSvEwzJ3GtijdyUvsGesxo1nSR7SArPG6JShTRsnAU2eC type=relay secs=0
+conn closed peer=12D3KooWLxpQC1b3afPFcB3rr1FxHKChRLcBLtwFMUFwTHt8Zn1Z type=direct secs=0.1
+conn closed peer=12D3KooWDZXXsLbw2e7bq4S2RJYYf2WPArEMNs5KcGBBvUWZCQbw type=relay secs=0
+✔ voice signal: voice state and signal go from A to B through R (232.004938ms)
+conn session peer=12D3KooWMCdLXJLsjXZ47B2n1BHsLnF57a7Dj5PNaVm1FAH9ySrN type=direct dir=in addr=/ip4/127.0.0.1/tcp/54884/p2p/12D3KooWMCdLXJLsjXZ47B2n1BHsLnF57a7Dj5PNaVm1FAH9ySrN
+conn session peer=12D3KooWK8fy6r2GYUgrAbkP4QZgYLsWGUZrx1MhjRQvbjBpgHux type=direct dir=out addr=/ip4/127.0.0.1/tcp/44101/p2p/12D3KooWK8fy6r2GYUgrAbkP4QZgYLsWGUZrx1MhjRQvbjBpgHux
+Relay reservation on 12D3KooWK8fy6r2GYUgrAbkP4QZgYLsWGUZrx1MhjRQvbjBpgHux: ok
+conn session peer=12D3KooWDgycoHFJupwhgSGJrA2zZKQVzy8kPUhq2fzoh2CFTgTr type=direct dir=in addr=/ip4/127.0.0.1/tcp/54892/p2p/12D3KooWDgycoHFJupwhgSGJrA2zZKQVzy8kPUhq2fzoh2CFTgTr
+conn session peer=12D3KooWK8fy6r2GYUgrAbkP4QZgYLsWGUZrx1MhjRQvbjBpgHux type=direct dir=out addr=/ip4/127.0.0.1/tcp/44101/p2p/12D3KooWK8fy6r2GYUgrAbkP4QZgYLsWGUZrx1MhjRQvbjBpgHux
+Relay reservation on 12D3KooWK8fy6r2GYUgrAbkP4QZgYLsWGUZrx1MhjRQvbjBpgHux: ok
+conn session peer=12D3KooWDgycoHFJupwhgSGJrA2zZKQVzy8kPUhq2fzoh2CFTgTr type=relay dir=in relay=12D3KooWK8fy6r2GYUgrAbkP4QZgYLsWGUZrx1MhjRQvbjBpgHux addr=/ip4/127.0.0.1/tcp/44101/p2p/12D3KooWK8fy6r2GYUgrAbkP4QZgYLsWGUZrx1MhjRQvbjBpgHux/p2p-circuit/p2p/12D3KooWDgycoHFJupwhgSGJrA2zZKQVzy8kPUhq2fzoh2CFTgTr
+conn session peer=12D3KooWMCdLXJLsjXZ47B2n1BHsLnF57a7Dj5PNaVm1FAH9ySrN type=relay dir=out relay=12D3KooWK8fy6r2GYUgrAbkP4QZgYLsWGUZrx1MhjRQvbjBpgHux addr=/ip4/127.0.0.1/tcp/44101/p2p/12D3KooWK8fy6r2GYUgrAbkP4QZgYLsWGUZrx1MhjRQvbjBpgHux/p2p-circuit/p2p/12D3KooWMCdLXJLsjXZ47B2n1BHsLnF57a7Dj5PNaVm1FAH9ySrN
+History sent to 12D3KooWMCdLXJLsjXZ47B2n1BHsLnF57a7Dj5PNaVm1FAH9ySrN: 0 messages
+History sent to 12D3KooWDgycoHFJupwhgSGJrA2zZKQVzy8kPUhq2fzoh2CFTgTr: 0 messages
+History applied: 0 of 0 messages are new
+History applied: 0 of 0 messages are new
+127.0.0.1 relay file: 3 MiB in 508 ms, 5.91 MiB/s
+conn closed peer=12D3KooWMCdLXJLsjXZ47B2n1BHsLnF57a7Dj5PNaVm1FAH9ySrN type=direct secs=0.7
+conn closed peer=12D3KooWDgycoHFJupwhgSGJrA2zZKQVzy8kPUhq2fzoh2CFTgTr type=direct secs=0.6
+conn closed peer=12D3KooWK8fy6r2GYUgrAbkP4QZgYLsWGUZrx1MhjRQvbjBpgHux type=direct secs=0.7
+conn closed peer=12D3KooWDgycoHFJupwhgSGJrA2zZKQVzy8kPUhq2fzoh2CFTgTr type=relay secs=0.5
+conn closed peer=12D3KooWK8fy6r2GYUgrAbkP4QZgYLsWGUZrx1MhjRQvbjBpgHux type=direct secs=0.6
+conn closed peer=12D3KooWMCdLXJLsjXZ47B2n1BHsLnF57a7Dj5PNaVm1FAH9ySrN type=relay secs=0.5
+✔ file transfer: 3 MiB from A to B through R with the same SHA-256 (717.52538ms)
+conn session peer=12D3KooWHGd7DvTVabwe7C4YefFMY9zY9i6vfCZoVr3skSNT7xJC type=direct dir=in addr=/ip4/127.0.0.1/tcp/48402/p2p/12D3KooWHGd7DvTVabwe7C4YefFMY9zY9i6vfCZoVr3skSNT7xJC
+conn session peer=12D3KooWHYrY3ivSYonZnrKLkkcSt7Npr6aM5bmiCcgiHBY9ymo1 type=direct dir=out addr=/ip4/127.0.0.1/tcp/41493/p2p/12D3KooWHYrY3ivSYonZnrKLkkcSt7Npr6aM5bmiCcgiHBY9ymo1
+Relay reservation on 12D3KooWHYrY3ivSYonZnrKLkkcSt7Npr6aM5bmiCcgiHBY9ymo1: ok
+conn session peer=12D3KooWKDaTT11qNUfPBvX5zyystSYw2iowHahFMf5Q1prQAuSB type=direct dir=in addr=/ip4/127.0.0.1/tcp/48418/p2p/12D3KooWKDaTT11qNUfPBvX5zyystSYw2iowHahFMf5Q1prQAuSB
+conn session peer=12D3KooWHYrY3ivSYonZnrKLkkcSt7Npr6aM5bmiCcgiHBY9ymo1 type=direct dir=out addr=/ip4/127.0.0.1/tcp/41493/p2p/12D3KooWHYrY3ivSYonZnrKLkkcSt7Npr6aM5bmiCcgiHBY9ymo1
+Relay reservation on 12D3KooWHYrY3ivSYonZnrKLkkcSt7Npr6aM5bmiCcgiHBY9ymo1: ok
+conn session peer=12D3KooWHGd7DvTVabwe7C4YefFMY9zY9i6vfCZoVr3skSNT7xJC type=relay dir=in relay=12D3KooWHYrY3ivSYonZnrKLkkcSt7Npr6aM5bmiCcgiHBY9ymo1 addr=/ip4/127.0.0.1/tcp/41493/p2p/12D3KooWHYrY3ivSYonZnrKLkkcSt7Npr6aM5bmiCcgiHBY9ymo1/p2p-circuit/p2p/12D3KooWHGd7DvTVabwe7C4YefFMY9zY9i6vfCZoVr3skSNT7xJC
+conn session peer=12D3KooWKDaTT11qNUfPBvX5zyystSYw2iowHahFMf5Q1prQAuSB type=relay dir=out relay=12D3KooWHYrY3ivSYonZnrKLkkcSt7Npr6aM5bmiCcgiHBY9ymo1 addr=/ip4/127.0.0.1/tcp/41493/p2p/12D3KooWHYrY3ivSYonZnrKLkkcSt7Npr6aM5bmiCcgiHBY9ymo1/p2p-circuit/p2p/12D3KooWKDaTT11qNUfPBvX5zyystSYw2iowHahFMf5Q1prQAuSB
+History sent to 12D3KooWHGd7DvTVabwe7C4YefFMY9zY9i6vfCZoVr3skSNT7xJC: 0 messages
+History sent to 12D3KooWKDaTT11qNUfPBvX5zyystSYw2iowHahFMf5Q1prQAuSB: 0 messages
+History applied: 0 of 0 messages are new
+History applied: 0 of 0 messages are new
+conn closed peer=12D3KooWHGd7DvTVabwe7C4YefFMY9zY9i6vfCZoVr3skSNT7xJC type=direct secs=0.7
+conn closed peer=12D3KooWKDaTT11qNUfPBvX5zyystSYw2iowHahFMf5Q1prQAuSB type=direct secs=0.6
+conn closed peer=12D3KooWHYrY3ivSYonZnrKLkkcSt7Npr6aM5bmiCcgiHBY9ymo1 type=direct secs=0.7
+conn closed peer=12D3KooWKDaTT11qNUfPBvX5zyystSYw2iowHahFMf5Q1prQAuSB type=relay secs=0.5
+conn closed peer=12D3KooWHYrY3ivSYonZnrKLkkcSt7Npr6aM5bmiCcgiHBY9ymo1 type=direct secs=0.6
+conn closed peer=12D3KooWHGd7DvTVabwe7C4YefFMY9zY9i6vfCZoVr3skSNT7xJC type=relay secs=0.5
+✔ gater: a peer with no session gets no reservation on R; A has one (723.095845ms)
+conn session peer=12D3KooWLeRVmcrUcMDPAry1TxuDnPGcdcPrE7ChsgtiKSmsB6y1 type=direct dir=in addr=/ip4/127.0.0.1/tcp/33958/p2p/12D3KooWLeRVmcrUcMDPAry1TxuDnPGcdcPrE7ChsgtiKSmsB6y1
+conn session peer=12D3KooWG2xiB61RCXhtKDQfyJcPHd7Gdo2gvEZXnBRsHD9vEPaB type=direct dir=out addr=/ip4/127.0.0.1/tcp/43509/p2p/12D3KooWG2xiB61RCXhtKDQfyJcPHd7Gdo2gvEZXnBRsHD9vEPaB
+conn session peer=12D3KooWSuCmwka6xm29z82G1L7X5TbvhSCEWTTVwY3occas5Wgj type=direct dir=in addr=/ip4/127.0.0.1/tcp/33964/p2p/12D3KooWSuCmwka6xm29z82G1L7X5TbvhSCEWTTVwY3occas5Wgj
+conn session peer=12D3KooWSuCmwka6xm29z82G1L7X5TbvhSCEWTTVwY3occas5Wgj type=direct dir=in addr=/ip4/127.0.0.1/tcp/40012/p2p/12D3KooWSuCmwka6xm29z82G1L7X5TbvhSCEWTTVwY3occas5Wgj
+conn session peer=12D3KooWLeRVmcrUcMDPAry1TxuDnPGcdcPrE7ChsgtiKSmsB6y1 type=direct dir=out addr=/ip4/127.0.0.1/tcp/34545/p2p/12D3KooWLeRVmcrUcMDPAry1TxuDnPGcdcPrE7ChsgtiKSmsB6y1
+conn session peer=12D3KooWG2xiB61RCXhtKDQfyJcPHd7Gdo2gvEZXnBRsHD9vEPaB type=direct dir=out addr=/ip4/127.0.0.1/tcp/43509/p2p/12D3KooWG2xiB61RCXhtKDQfyJcPHd7Gdo2gvEZXnBRsHD9vEPaB
+conn session peer=12D3KooWEqyVP7e2hHzAXoKPxhCzJFwBp8xtAvCaMTHqdSCBkBUn type=direct dir=in addr=/ip4/127.0.0.1/tcp/40016/p2p/12D3KooWEqyVP7e2hHzAXoKPxhCzJFwBp8xtAvCaMTHqdSCBkBUn
+conn session peer=12D3KooWEqyVP7e2hHzAXoKPxhCzJFwBp8xtAvCaMTHqdSCBkBUn type=direct dir=in addr=/ip4/127.0.0.1/tcp/33980/p2p/12D3KooWEqyVP7e2hHzAXoKPxhCzJFwBp8xtAvCaMTHqdSCBkBUn
+conn session peer=12D3KooWG2xiB61RCXhtKDQfyJcPHd7Gdo2gvEZXnBRsHD9vEPaB type=direct dir=out addr=/ip4/127.0.0.1/tcp/43509/p2p/12D3KooWG2xiB61RCXhtKDQfyJcPHd7Gdo2gvEZXnBRsHD9vEPaB
+conn session peer=12D3KooWLeRVmcrUcMDPAry1TxuDnPGcdcPrE7ChsgtiKSmsB6y1 type=direct dir=out addr=/ip4/127.0.0.1/tcp/34545/p2p/12D3KooWLeRVmcrUcMDPAry1TxuDnPGcdcPrE7ChsgtiKSmsB6y1
+conn session peer=12D3KooWDyg9EDFoyNppRmg3ysZgeUwid33D9r7rsNZekraRRZGu type=direct dir=in addr=/ip4/127.0.0.1/tcp/40026/p2p/12D3KooWDyg9EDFoyNppRmg3ysZgeUwid33D9r7rsNZekraRRZGu
+conn session peer=12D3KooWDyg9EDFoyNppRmg3ysZgeUwid33D9r7rsNZekraRRZGu type=direct dir=in addr=/ip4/127.0.0.1/tcp/33990/p2p/12D3KooWDyg9EDFoyNppRmg3ysZgeUwid33D9r7rsNZekraRRZGu
+Relay reservation on 12D3KooWG2xiB61RCXhtKDQfyJcPHd7Gdo2gvEZXnBRsHD9vEPaB: ok
+conn session peer=12D3KooWG2xiB61RCXhtKDQfyJcPHd7Gdo2gvEZXnBRsHD9vEPaB type=direct dir=out addr=/ip4/127.0.0.1/tcp/43509/p2p/12D3KooWG2xiB61RCXhtKDQfyJcPHd7Gdo2gvEZXnBRsHD9vEPaB
+conn dial-failed peer=12D3KooWSuCmwka6xm29z82G1L7X5TbvhSCEWTTVwY3occas5Wgj via=relay reason=no-reservation addr=/ip4/127.0.0.1/tcp/34545/p2p/12D3KooWLeRVmcrUcMDPAry1TxuDnPGcdcPrE7ChsgtiKSmsB6y1/p2p-circuit/p2p/12D3KooWSuCmwka6xm29z82G1L7X5TbvhSCEWTTVwY3occas5Wgj error="failed to connect via relay with status NO_RESERVATION"
+Relay reservation on 12D3KooWLeRVmcrUcMDPAry1TxuDnPGcdcPrE7ChsgtiKSmsB6y1: ok
+conn session peer=12D3KooWLeRVmcrUcMDPAry1TxuDnPGcdcPrE7ChsgtiKSmsB6y1 type=direct dir=out addr=/ip4/127.0.0.1/tcp/34545/p2p/12D3KooWLeRVmcrUcMDPAry1TxuDnPGcdcPrE7ChsgtiKSmsB6y1
+Relay reservation on 12D3KooWG2xiB61RCXhtKDQfyJcPHd7Gdo2gvEZXnBRsHD9vEPaB: ok
+conn dial-failed peer=12D3KooWSuCmwka6xm29z82G1L7X5TbvhSCEWTTVwY3occas5Wgj via=relay reason=no-reservation addr=/ip4/127.0.0.1/tcp/34545/p2p/12D3KooWLeRVmcrUcMDPAry1TxuDnPGcdcPrE7ChsgtiKSmsB6y1/p2p-circuit/p2p/12D3KooWSuCmwka6xm29z82G1L7X5TbvhSCEWTTVwY3occas5Wgj error="failed to connect via relay with status NO_RESERVATION"
+Relay reservation on 12D3KooWLeRVmcrUcMDPAry1TxuDnPGcdcPrE7ChsgtiKSmsB6y1: ok
+Relay reservation on 12D3KooWG2xiB61RCXhtKDQfyJcPHd7Gdo2gvEZXnBRsHD9vEPaB: ok
+Relay reservation on 12D3KooWLeRVmcrUcMDPAry1TxuDnPGcdcPrE7ChsgtiKSmsB6y1: ok
+History sent to 12D3KooWLeRVmcrUcMDPAry1TxuDnPGcdcPrE7ChsgtiKSmsB6y1: 0 messages
+History sent to 12D3KooWSuCmwka6xm29z82G1L7X5TbvhSCEWTTVwY3occas5Wgj: 0 messages
+History sent to 12D3KooWEqyVP7e2hHzAXoKPxhCzJFwBp8xtAvCaMTHqdSCBkBUn: 0 messages
+History sent to 12D3KooWDyg9EDFoyNppRmg3ysZgeUwid33D9r7rsNZekraRRZGu: 0 messages
+History applied: 0 of 0 messages are new
+History applied: 0 of 0 messages are new
+History applied: 0 of 0 messages are new
+History applied: 0 of 0 messages are new
+conn session peer=12D3KooWDyg9EDFoyNppRmg3ysZgeUwid33D9r7rsNZekraRRZGu type=relay dir=in relay=12D3KooWG2xiB61RCXhtKDQfyJcPHd7Gdo2gvEZXnBRsHD9vEPaB addr=/ip4/127.0.0.1/tcp/43509/p2p/12D3KooWG2xiB61RCXhtKDQfyJcPHd7Gdo2gvEZXnBRsHD9vEPaB/p2p-circuit/p2p/12D3KooWDyg9EDFoyNppRmg3ysZgeUwid33D9r7rsNZekraRRZGu
+conn session peer=12D3KooWEqyVP7e2hHzAXoKPxhCzJFwBp8xtAvCaMTHqdSCBkBUn type=relay dir=out relay=12D3KooWG2xiB61RCXhtKDQfyJcPHd7Gdo2gvEZXnBRsHD9vEPaB addr=/ip4/127.0.0.1/tcp/43509/p2p/12D3KooWG2xiB61RCXhtKDQfyJcPHd7Gdo2gvEZXnBRsHD9vEPaB/p2p-circuit/p2p/12D3KooWEqyVP7e2hHzAXoKPxhCzJFwBp8xtAvCaMTHqdSCBkBUn
+conn session peer=12D3KooWEqyVP7e2hHzAXoKPxhCzJFwBp8xtAvCaMTHqdSCBkBUn type=relay dir=in relay=12D3KooWLeRVmcrUcMDPAry1TxuDnPGcdcPrE7ChsgtiKSmsB6y1 addr=/ip4/127.0.0.1/tcp/34545/p2p/12D3KooWLeRVmcrUcMDPAry1TxuDnPGcdcPrE7ChsgtiKSmsB6y1/p2p-circuit/p2p/12D3KooWEqyVP7e2hHzAXoKPxhCzJFwBp8xtAvCaMTHqdSCBkBUn
+conn session peer=12D3KooWSuCmwka6xm29z82G1L7X5TbvhSCEWTTVwY3occas5Wgj type=relay dir=out relay=12D3KooWLeRVmcrUcMDPAry1TxuDnPGcdcPrE7ChsgtiKSmsB6y1 addr=/ip4/127.0.0.1/tcp/34545/p2p/12D3KooWLeRVmcrUcMDPAry1TxuDnPGcdcPrE7ChsgtiKSmsB6y1/p2p-circuit/p2p/12D3KooWSuCmwka6xm29z82G1L7X5TbvhSCEWTTVwY3occas5Wgj
+conn session peer=12D3KooWDyg9EDFoyNppRmg3ysZgeUwid33D9r7rsNZekraRRZGu type=relay dir=in relay=12D3KooWLeRVmcrUcMDPAry1TxuDnPGcdcPrE7ChsgtiKSmsB6y1 addr=/ip4/127.0.0.1/tcp/34545/p2p/12D3KooWLeRVmcrUcMDPAry1TxuDnPGcdcPrE7ChsgtiKSmsB6y1/p2p-circuit/p2p/12D3KooWDyg9EDFoyNppRmg3ysZgeUwid33D9r7rsNZekraRRZGu
+conn session peer=12D3KooWSuCmwka6xm29z82G1L7X5TbvhSCEWTTVwY3occas5Wgj type=relay dir=out relay=12D3KooWLeRVmcrUcMDPAry1TxuDnPGcdcPrE7ChsgtiKSmsB6y1 addr=/ip4/127.0.0.1/tcp/34545/p2p/12D3KooWLeRVmcrUcMDPAry1TxuDnPGcdcPrE7ChsgtiKSmsB6y1/p2p-circuit/p2p/12D3KooWSuCmwka6xm29z82G1L7X5TbvhSCEWTTVwY3occas5Wgj
+conn closed peer=12D3KooWG2xiB61RCXhtKDQfyJcPHd7Gdo2gvEZXnBRsHD9vEPaB type=direct secs=1.5
+conn closed peer=12D3KooWSuCmwka6xm29z82G1L7X5TbvhSCEWTTVwY3occas5Wgj type=direct secs=1.2
+conn closed peer=12D3KooWEqyVP7e2hHzAXoKPxhCzJFwBp8xtAvCaMTHqdSCBkBUn type=direct secs=1.2
+conn closed peer=12D3KooWDyg9EDFoyNppRmg3ysZgeUwid33D9r7rsNZekraRRZGu type=direct secs=1.2
+conn closed peer=12D3KooWLeRVmcrUcMDPAry1TxuDnPGcdcPrE7ChsgtiKSmsB6y1 type=direct secs=1.5
+conn closed peer=12D3KooWSuCmwka6xm29z82G1L7X5TbvhSCEWTTVwY3occas5Wgj type=direct secs=1.3
+conn closed peer=12D3KooWEqyVP7e2hHzAXoKPxhCzJFwBp8xtAvCaMTHqdSCBkBUn type=direct secs=1.2
+conn closed peer=12D3KooWDyg9EDFoyNppRmg3ysZgeUwid33D9r7rsNZekraRRZGu type=direct secs=1.2
+conn closed peer=12D3KooWG2xiB61RCXhtKDQfyJcPHd7Gdo2gvEZXnBRsHD9vEPaB type=direct secs=1.2
+conn closed peer=12D3KooWLeRVmcrUcMDPAry1TxuDnPGcdcPrE7ChsgtiKSmsB6y1 type=direct secs=1.2
+conn closed peer=12D3KooWEqyVP7e2hHzAXoKPxhCzJFwBp8xtAvCaMTHqdSCBkBUn type=relay secs=0.9
+conn closed peer=12D3KooWDyg9EDFoyNppRmg3ysZgeUwid33D9r7rsNZekraRRZGu type=relay secs=0
+conn closed peer=12D3KooWLeRVmcrUcMDPAry1TxuDnPGcdcPrE7ChsgtiKSmsB6y1 type=direct secs=1.2
+conn closed peer=12D3KooWG2xiB61RCXhtKDQfyJcPHd7Gdo2gvEZXnBRsHD9vEPaB type=direct secs=1.2
+conn closed peer=12D3KooWDyg9EDFoyNppRmg3ysZgeUwid33D9r7rsNZekraRRZGu type=relay secs=0.9
+conn closed peer=12D3KooWSuCmwka6xm29z82G1L7X5TbvhSCEWTTVwY3occas5Wgj type=relay secs=0.9
+conn closed peer=12D3KooWG2xiB61RCXhtKDQfyJcPHd7Gdo2gvEZXnBRsHD9vEPaB type=direct secs=1.2
+conn closed peer=12D3KooWLeRVmcrUcMDPAry1TxuDnPGcdcPrE7ChsgtiKSmsB6y1 type=direct secs=1.2
+conn closed peer=12D3KooWEqyVP7e2hHzAXoKPxhCzJFwBp8xtAvCaMTHqdSCBkBUn type=relay secs=0.9
+conn closed peer=12D3KooWSuCmwka6xm29z82G1L7X5TbvhSCEWTTVwY3occas5Wgj type=relay secs=0
+✔ spread: the member sessions use both full nodes as relays (1607.499359ms)
+conn session peer=12D3KooWApkjjwFz4w5y177JKBTnuixaLx3rkiV2y4aCD9GCKaPS type=direct dir=in addr=/ip4/127.0.0.1/tcp/59226/p2p/12D3KooWApkjjwFz4w5y177JKBTnuixaLx3rkiV2y4aCD9GCKaPS
+conn session peer=12D3KooWLsUSJPqGBXhvkk4fxTz4wARm94tu3NZgfULAY8e9ZDRw type=direct dir=out addr=/ip4/127.0.0.1/tcp/45973/p2p/12D3KooWLsUSJPqGBXhvkk4fxTz4wARm94tu3NZgfULAY8e9ZDRw
+conn session peer=12D3KooWM9nvZWoUztLFVHrekxeLTnaABq1oGNP83sZjP149RYFr type=direct dir=in addr=/ip4/127.0.0.1/tcp/53136/p2p/12D3KooWM9nvZWoUztLFVHrekxeLTnaABq1oGNP83sZjP149RYFr
+conn session peer=12D3KooWApkjjwFz4w5y177JKBTnuixaLx3rkiV2y4aCD9GCKaPS type=direct dir=out addr=/ip4/127.0.0.1/tcp/37563/p2p/12D3KooWApkjjwFz4w5y177JKBTnuixaLx3rkiV2y4aCD9GCKaPS
+conn session peer=12D3KooWM9nvZWoUztLFVHrekxeLTnaABq1oGNP83sZjP149RYFr type=direct dir=in addr=/ip4/127.0.0.1/tcp/59242/p2p/12D3KooWM9nvZWoUztLFVHrekxeLTnaABq1oGNP83sZjP149RYFr
+conn session peer=12D3KooWLsUSJPqGBXhvkk4fxTz4wARm94tu3NZgfULAY8e9ZDRw type=direct dir=out addr=/ip4/127.0.0.1/tcp/45973/p2p/12D3KooWLsUSJPqGBXhvkk4fxTz4wARm94tu3NZgfULAY8e9ZDRw
+conn session peer=12D3KooWCfZt6P4yGvYqbZmLN8SsiZEH6cuEjdih4rLtWvuBErZx type=direct dir=in addr=/ip4/127.0.0.1/tcp/53142/p2p/12D3KooWCfZt6P4yGvYqbZmLN8SsiZEH6cuEjdih4rLtWvuBErZx
+conn session peer=12D3KooWCfZt6P4yGvYqbZmLN8SsiZEH6cuEjdih4rLtWvuBErZx type=direct dir=in addr=/ip4/127.0.0.1/tcp/59252/p2p/12D3KooWCfZt6P4yGvYqbZmLN8SsiZEH6cuEjdih4rLtWvuBErZx
+conn session peer=12D3KooWLsUSJPqGBXhvkk4fxTz4wARm94tu3NZgfULAY8e9ZDRw type=direct dir=out addr=/ip4/127.0.0.1/tcp/45973/p2p/12D3KooWLsUSJPqGBXhvkk4fxTz4wARm94tu3NZgfULAY8e9ZDRw
+conn session peer=12D3KooWApkjjwFz4w5y177JKBTnuixaLx3rkiV2y4aCD9GCKaPS type=direct dir=out addr=/ip4/127.0.0.1/tcp/37563/p2p/12D3KooWApkjjwFz4w5y177JKBTnuixaLx3rkiV2y4aCD9GCKaPS
+Relay reservation on 12D3KooWApkjjwFz4w5y177JKBTnuixaLx3rkiV2y4aCD9GCKaPS: ok
+Relay reservation on 12D3KooWApkjjwFz4w5y177JKBTnuixaLx3rkiV2y4aCD9GCKaPS: ok
+conn dial-failed peer=12D3KooWM9nvZWoUztLFVHrekxeLTnaABq1oGNP83sZjP149RYFr via=relay reason=no-reservation addr=/ip4/127.0.0.1/tcp/45973/p2p/12D3KooWLsUSJPqGBXhvkk4fxTz4wARm94tu3NZgfULAY8e9ZDRw/p2p-circuit/p2p/12D3KooWM9nvZWoUztLFVHrekxeLTnaABq1oGNP83sZjP149RYFr error="failed to connect via relay with status NO_RESERVATION"
+Relay reservation on 12D3KooWLsUSJPqGBXhvkk4fxTz4wARm94tu3NZgfULAY8e9ZDRw: ok
+Relay reservation on 12D3KooWLsUSJPqGBXhvkk4fxTz4wARm94tu3NZgfULAY8e9ZDRw: ok
+History sent to 12D3KooWLsUSJPqGBXhvkk4fxTz4wARm94tu3NZgfULAY8e9ZDRw: 0 messages
+History sent to 12D3KooWM9nvZWoUztLFVHrekxeLTnaABq1oGNP83sZjP149RYFr: 0 messages
+History sent to 12D3KooWCfZt6P4yGvYqbZmLN8SsiZEH6cuEjdih4rLtWvuBErZx: 0 messages
+History applied: 0 of 0 messages are new
+History applied: 0 of 0 messages are new
+History applied: 0 of 0 messages are new
+conn session peer=12D3KooWCfZt6P4yGvYqbZmLN8SsiZEH6cuEjdih4rLtWvuBErZx type=relay dir=in relay=12D3KooWLsUSJPqGBXhvkk4fxTz4wARm94tu3NZgfULAY8e9ZDRw addr=/ip4/127.0.0.1/tcp/45973/p2p/12D3KooWLsUSJPqGBXhvkk4fxTz4wARm94tu3NZgfULAY8e9ZDRw/p2p-circuit/p2p/12D3KooWCfZt6P4yGvYqbZmLN8SsiZEH6cuEjdih4rLtWvuBErZx
+conn session peer=12D3KooWM9nvZWoUztLFVHrekxeLTnaABq1oGNP83sZjP149RYFr type=relay dir=out relay=12D3KooWLsUSJPqGBXhvkk4fxTz4wARm94tu3NZgfULAY8e9ZDRw addr=/ip4/127.0.0.1/tcp/45973/p2p/12D3KooWLsUSJPqGBXhvkk4fxTz4wARm94tu3NZgfULAY8e9ZDRw/p2p-circuit/p2p/12D3KooWM9nvZWoUztLFVHrekxeLTnaABq1oGNP83sZjP149RYFr
+conn closed peer=12D3KooWApkjjwFz4w5y177JKBTnuixaLx3rkiV2y4aCD9GCKaPS type=direct secs=1.3
+conn closed peer=12D3KooWM9nvZWoUztLFVHrekxeLTnaABq1oGNP83sZjP149RYFr type=direct secs=1.2
+conn closed peer=12D3KooWCfZt6P4yGvYqbZmLN8SsiZEH6cuEjdih4rLtWvuBErZx type=direct secs=1.2
+conn closed peer=12D3KooWLsUSJPqGBXhvkk4fxTz4wARm94tu3NZgfULAY8e9ZDRw type=direct secs=1.2
+conn closed peer=12D3KooWM9nvZWoUztLFVHrekxeLTnaABq1oGNP83sZjP149RYFr type=relay secs=0
+conn closed peer=12D3KooWLsUSJPqGBXhvkk4fxTz4wARm94tu3NZgfULAY8e9ZDRw type=direct secs=1.3
+conn closed peer=12D3KooWLsUSJPqGBXhvkk4fxTz4wARm94tu3NZgfULAY8e9ZDRw type=direct secs=1.2
+conn closed peer=12D3KooWCfZt6P4yGvYqbZmLN8SsiZEH6cuEjdih4rLtWvuBErZx type=relay secs=0
+conn session peer=12D3KooWCfZt6P4yGvYqbZmLN8SsiZEH6cuEjdih4rLtWvuBErZx type=relay dir=in relay=12D3KooWApkjjwFz4w5y177JKBTnuixaLx3rkiV2y4aCD9GCKaPS addr=/ip4/127.0.0.1/tcp/37563/p2p/12D3KooWApkjjwFz4w5y177JKBTnuixaLx3rkiV2y4aCD9GCKaPS/p2p-circuit/p2p/12D3KooWCfZt6P4yGvYqbZmLN8SsiZEH6cuEjdih4rLtWvuBErZx
+conn session peer=12D3KooWM9nvZWoUztLFVHrekxeLTnaABq1oGNP83sZjP149RYFr type=relay dir=out relay=12D3KooWApkjjwFz4w5y177JKBTnuixaLx3rkiV2y4aCD9GCKaPS addr=/ip4/127.0.0.1/tcp/37563/p2p/12D3KooWApkjjwFz4w5y177JKBTnuixaLx3rkiV2y4aCD9GCKaPS/p2p-circuit/p2p/12D3KooWM9nvZWoUztLFVHrekxeLTnaABq1oGNP83sZjP149RYFr
+conn closed peer=12D3KooWM9nvZWoUztLFVHrekxeLTnaABq1oGNP83sZjP149RYFr type=direct secs=4.3
+conn closed peer=12D3KooWCfZt6P4yGvYqbZmLN8SsiZEH6cuEjdih4rLtWvuBErZx type=direct secs=4.3
+conn closed peer=12D3KooWApkjjwFz4w5y177JKBTnuixaLx3rkiV2y4aCD9GCKaPS type=direct secs=4.3
+conn closed peer=12D3KooWCfZt6P4yGvYqbZmLN8SsiZEH6cuEjdih4rLtWvuBErZx type=relay secs=0
+conn closed peer=12D3KooWApkjjwFz4w5y177JKBTnuixaLx3rkiV2y4aCD9GCKaPS type=direct secs=4.3
+conn closed peer=12D3KooWM9nvZWoUztLFVHrekxeLTnaABq1oGNP83sZjP149RYFr type=relay secs=0
+✔ spread: when the relay stops, the member session opens again through the other full node (4543.487096ms)
+conn session peer=12D3KooWQJnNpT2MCFSfi2rJkPZAbpU7FCq5WBVAGLZaHJKKBtYE type=direct dir=in addr=/ip4/127.0.0.1/tcp/59024/p2p/12D3KooWQJnNpT2MCFSfi2rJkPZAbpU7FCq5WBVAGLZaHJKKBtYE
+conn session peer=12D3KooWQHbP422k6Fe7mteV7yKqWPAztN4JgbjttB2sUM5QDqev type=direct dir=out addr=/ip4/127.0.0.1/tcp/36747/p2p/12D3KooWQHbP422k6Fe7mteV7yKqWPAztN4JgbjttB2sUM5QDqev
+Relay reservation on 12D3KooWQHbP422k6Fe7mteV7yKqWPAztN4JgbjttB2sUM5QDqev: ok
+conn session peer=12D3KooWHTVLJUuQGEFBcPGTsmXLfmgAsGSjsub4xKWAR6VTqAdU type=direct dir=in addr=/ip4/127.0.0.1/tcp/59028/p2p/12D3KooWHTVLJUuQGEFBcPGTsmXLfmgAsGSjsub4xKWAR6VTqAdU
+conn session peer=12D3KooWQHbP422k6Fe7mteV7yKqWPAztN4JgbjttB2sUM5QDqev type=direct dir=out addr=/ip4/127.0.0.1/tcp/36747/p2p/12D3KooWQHbP422k6Fe7mteV7yKqWPAztN4JgbjttB2sUM5QDqev
+Relay reservation on 12D3KooWQHbP422k6Fe7mteV7yKqWPAztN4JgbjttB2sUM5QDqev: ok
+conn session peer=12D3KooWHTVLJUuQGEFBcPGTsmXLfmgAsGSjsub4xKWAR6VTqAdU type=relay dir=in relay=12D3KooWQHbP422k6Fe7mteV7yKqWPAztN4JgbjttB2sUM5QDqev addr=/ip4/127.0.0.1/tcp/36747/p2p/12D3KooWQHbP422k6Fe7mteV7yKqWPAztN4JgbjttB2sUM5QDqev/p2p-circuit/p2p/12D3KooWHTVLJUuQGEFBcPGTsmXLfmgAsGSjsub4xKWAR6VTqAdU
+conn session peer=12D3KooWQJnNpT2MCFSfi2rJkPZAbpU7FCq5WBVAGLZaHJKKBtYE type=relay dir=out relay=12D3KooWQHbP422k6Fe7mteV7yKqWPAztN4JgbjttB2sUM5QDqev addr=/ip4/127.0.0.1/tcp/36747/p2p/12D3KooWQHbP422k6Fe7mteV7yKqWPAztN4JgbjttB2sUM5QDqev/p2p-circuit/p2p/12D3KooWQJnNpT2MCFSfi2rJkPZAbpU7FCq5WBVAGLZaHJKKBtYE
+History sent to 12D3KooWQJnNpT2MCFSfi2rJkPZAbpU7FCq5WBVAGLZaHJKKBtYE: 200 messages
+History sent to 12D3KooWHTVLJUuQGEFBcPGTsmXLfmgAsGSjsub4xKWAR6VTqAdU: 200 messages
+History applied: 0 of 200 messages are new
+History applied: 0 of 200 messages are new
+conn closed peer=12D3KooWQJnNpT2MCFSfi2rJkPZAbpU7FCq5WBVAGLZaHJKKBtYE type=direct secs=0.8
+conn closed peer=12D3KooWHTVLJUuQGEFBcPGTsmXLfmgAsGSjsub4xKWAR6VTqAdU type=direct secs=0.8
+conn closed peer=12D3KooWQHbP422k6Fe7mteV7yKqWPAztN4JgbjttB2sUM5QDqev type=direct secs=0.8
+conn closed peer=12D3KooWHTVLJUuQGEFBcPGTsmXLfmgAsGSjsub4xKWAR6VTqAdU type=relay secs=0.7
+conn closed peer=12D3KooWQHbP422k6Fe7mteV7yKqWPAztN4JgbjttB2sUM5QDqev type=direct secs=0.8
+conn closed peer=12D3KooWQJnNpT2MCFSfi2rJkPZAbpU7FCq5WBVAGLZaHJKKBtYE type=relay secs=0.6
+✔ two relay-only nodes chat through a full node, beyond the default relay data limit (962.365956ms)
+conn session peer=12D3KooWE1pFQQGY8diauE5XqfZFL2pg2d55m5yaXwTWmJxK9BCA type=direct dir=in addr=/ip4/127.0.0.1/tcp/49776/p2p/12D3KooWE1pFQQGY8diauE5XqfZFL2pg2d55m5yaXwTWmJxK9BCA
+conn session peer=12D3KooWAWLrkiiGMukMneg2bvUYWkmRjgAj6WpC6J4hruDnJBgU type=direct dir=out addr=/ip4/127.0.0.1/tcp/38647/p2p/12D3KooWAWLrkiiGMukMneg2bvUYWkmRjgAj6WpC6J4hruDnJBgU
+Dial-back from 12D3KooWE1pFQQGY8diauE5XqfZFL2pg2d55m5yaXwTWmJxK9BCA: ok, IP 127.0.0.1, full node true
+Full node: true
+Relay reservation on 12D3KooWAWLrkiiGMukMneg2bvUYWkmRjgAj6WpC6J4hruDnJBgU: ok
+History sent to 12D3KooWE1pFQQGY8diauE5XqfZFL2pg2d55m5yaXwTWmJxK9BCA: 0 messages
+History applied: 0 of 0 messages are new
+conn closed peer=12D3KooWE1pFQQGY8diauE5XqfZFL2pg2d55m5yaXwTWmJxK9BCA type=direct secs=0.5
+conn closed peer=12D3KooWAWLrkiiGMukMneg2bvUYWkmRjgAj6WpC6J4hruDnJBgU type=direct secs=0.5
+✔ 'auto' with allowPrivateFullNode makes a full node on 127.0.0.1; relayOnly does not (564.003121ms)
+conn session peer=12D3KooWKdFtjxhgkJ5AJLrUGxyPqnc7o9zLPowRkHkfNfh246mU type=direct dir=in addr=/ip4/127.0.0.1/tcp/51944/p2p/12D3KooWKdFtjxhgkJ5AJLrUGxyPqnc7o9zLPowRkHkfNfh246mU
+conn session peer=12D3KooWQxsLFy3geHgwfqSivfWpQBL273KCBRdzAuZ4jWrDkSzD type=direct dir=out addr=/ip4/127.0.0.1/tcp/42209/p2p/12D3KooWQxsLFy3geHgwfqSivfWpQBL273KCBRdzAuZ4jWrDkSzD
+Dial-back from 12D3KooWKdFtjxhgkJ5AJLrUGxyPqnc7o9zLPowRkHkfNfh246mU: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWQxsLFy3geHgwfqSivfWpQBL273KCBRdzAuZ4jWrDkSzD: ok, IP 127.0.0.1, full node false
+History sent to 12D3KooWQxsLFy3geHgwfqSivfWpQBL273KCBRdzAuZ4jWrDkSzD: 0 messages
+History applied: 0 of 0 messages are new
+conn closed peer=12D3KooWKdFtjxhgkJ5AJLrUGxyPqnc7o9zLPowRkHkfNfh246mU type=direct secs=1.5
+conn closed peer=12D3KooWQxsLFy3geHgwfqSivfWpQBL273KCBRdzAuZ4jWrDkSzD type=direct secs=1.5
+✔ 'auto' without allowPrivateFullNode gives no full node on 127.0.0.1 (1551.489625ms)
+✔ fingerprint: format and known value (1.546505ms)
+✔ fingerprint: name and key change the result, encoding has one meaning (0.40612ms)
+✔ fingerprint: bad inputs throw TypeError (0.432322ms)
+✔ key: missing key file with existing database (161.455209ms)
+✔ key: a key that does not unwrap, then unlock (503.441392ms)
+✔ key: key file is not JSON (163.795129ms)
+✔ key: protection not available makes no file (0.339423ms)
+✔ interrupted first start: only archive.key.tmp exists (160.43265ms)
+✔ interrupted first start: key exists, no database (341.562608ms)
+✔ rooms: save, update, list, remove (175.149531ms)
+✔ rows: one row per (room, message ID), order and limit (177.966038ms)
+✔ rows: plain open and wrong key cannot read, file has no plaintext (324.294409ms)
+✔ key: key unwraps but does not open the database (database-unreadable) (479.471298ms)
+conn session peer=12D3KooWGvXyddbKtS7SZAMogjhPh4T7tBy1xT2Y8tVgaNybQ8da type=direct dir=in addr=/ip4/127.0.0.1/tcp/58166/p2p/12D3KooWGvXyddbKtS7SZAMogjhPh4T7tBy1xT2Y8tVgaNybQ8da
+conn session peer=12D3KooWK5rKMPixXViycZ2f1aLVfboYfPue68X3KLkVgQNSywSD type=direct dir=out addr=/ip4/127.0.0.1/tcp/33495/p2p/12D3KooWK5rKMPixXViycZ2f1aLVfboYfPue68X3KLkVgQNSywSD
+Relay reservation on 12D3KooWK5rKMPixXViycZ2f1aLVfboYfPue68X3KLkVgQNSywSD: ok
+conn session peer=12D3KooWS8AUmDYh9S8LbH6c99Dmi3WVeCTFA2ChTdSqz1WT9nsp type=direct dir=in addr=/ip4/127.0.0.1/tcp/58168/p2p/12D3KooWS8AUmDYh9S8LbH6c99Dmi3WVeCTFA2ChTdSqz1WT9nsp
+conn session peer=12D3KooWK5rKMPixXViycZ2f1aLVfboYfPue68X3KLkVgQNSywSD type=direct dir=out addr=/ip4/127.0.0.1/tcp/33495/p2p/12D3KooWK5rKMPixXViycZ2f1aLVfboYfPue68X3KLkVgQNSywSD
+Relay reservation on 12D3KooWK5rKMPixXViycZ2f1aLVfboYfPue68X3KLkVgQNSywSD: ok
+conn session peer=12D3KooWGvXyddbKtS7SZAMogjhPh4T7tBy1xT2Y8tVgaNybQ8da type=relay dir=in relay=12D3KooWK5rKMPixXViycZ2f1aLVfboYfPue68X3KLkVgQNSywSD addr=/ip4/127.0.0.1/tcp/33495/p2p/12D3KooWK5rKMPixXViycZ2f1aLVfboYfPue68X3KLkVgQNSywSD/p2p-circuit/p2p/12D3KooWGvXyddbKtS7SZAMogjhPh4T7tBy1xT2Y8tVgaNybQ8da
+conn session peer=12D3KooWS8AUmDYh9S8LbH6c99Dmi3WVeCTFA2ChTdSqz1WT9nsp type=relay dir=out relay=12D3KooWK5rKMPixXViycZ2f1aLVfboYfPue68X3KLkVgQNSywSD addr=/ip4/127.0.0.1/tcp/33495/p2p/12D3KooWK5rKMPixXViycZ2f1aLVfboYfPue68X3KLkVgQNSywSD/p2p-circuit/p2p/12D3KooWS8AUmDYh9S8LbH6c99Dmi3WVeCTFA2ChTdSqz1WT9nsp
+Room proof from 12D3KooWG1LYYBnsYVR28ru5QUCqRQK1AETgyh2Yfyzkx7rLngCP failed: wrong proof
+Room proof from 12D3KooWK5rKMPixXViycZ2f1aLVfboYfPue68X3KLkVgQNSywSD failed: wrong proof
+History sent to 12D3KooWGvXyddbKtS7SZAMogjhPh4T7tBy1xT2Y8tVgaNybQ8da: 1 messages
+History sent to 12D3KooWS8AUmDYh9S8LbH6c99Dmi3WVeCTFA2ChTdSqz1WT9nsp: 1 messages
+History applied: 0 of 1 messages are new
+History applied: 0 of 1 messages are new
+conn closed peer=12D3KooWGvXyddbKtS7SZAMogjhPh4T7tBy1xT2Y8tVgaNybQ8da type=direct secs=3.3
+conn closed peer=12D3KooWS8AUmDYh9S8LbH6c99Dmi3WVeCTFA2ChTdSqz1WT9nsp type=direct secs=3.2
+conn closed peer=12D3KooWK5rKMPixXViycZ2f1aLVfboYfPue68X3KLkVgQNSywSD type=direct secs=3.3
+conn closed peer=12D3KooWS8AUmDYh9S8LbH6c99Dmi3WVeCTFA2ChTdSqz1WT9nsp type=relay secs=3.1
+conn closed peer=12D3KooWK5rKMPixXViycZ2f1aLVfboYfPue68X3KLkVgQNSywSD type=direct secs=3.2
+conn closed peer=12D3KooWGvXyddbKtS7SZAMogjhPh4T7tBy1xT2Y8tVgaNybQ8da type=relay secs=3.1
+✔ keyed room: relay chat works with key K; a wrong key gets no session and no reservation (3424.835178ms)
+conn session peer=12D3KooWBNmv7t2voTtz77JLDdwrmVjoWnu8nfWgZyxT74veyXWs type=direct dir=out addr=/ip4/127.0.0.1/tcp/38073/p2p/12D3KooWBNmv7t2voTtz77JLDdwrmVjoWnu8nfWgZyxT74veyXWs
+Room proof from 12D3KooWEbqGJ36b6htaZPYKEjdXfWAeBz3Wq3jNeYdJBCqdTH3W failed: hello with no nonce
+conn closed peer=12D3KooWBNmv7t2voTtz77JLDdwrmVjoWnu8nfWgZyxT74veyXWs type=direct secs=0
+conn session peer=12D3KooWBNmv7t2voTtz77JLDdwrmVjoWnu8nfWgZyxT74veyXWs type=direct dir=out addr=/ip4/127.0.0.1/tcp/38073/p2p/12D3KooWBNmv7t2voTtz77JLDdwrmVjoWnu8nfWgZyxT74veyXWs
+History sent to 12D3KooWBNmv7t2voTtz77JLDdwrmVjoWnu8nfWgZyxT74veyXWs: 0 messages
+Room proof from 12D3KooWEbqGJ36b6htaZPYKEjdXfWAeBz3Wq3jNeYdJBCqdTH3W failed: hello with no nonce
+conn closed peer=12D3KooWBNmv7t2voTtz77JLDdwrmVjoWnu8nfWgZyxT74veyXWs type=direct secs=0
+Dial-back request from 12D3KooWEbqGJ36b6htaZPYKEjdXfWAeBz3Wq3jNeYdJBCqdTH3W refused: no session
+conn dial-failed peer=12D3KooWBNmv7t2voTtz77JLDdwrmVjoWnu8nfWgZyxT74veyXWs via=dial-back reason=other addr=/ip4/127.0.0.1/tcp/38073/p2p/12D3KooWBNmv7t2voTtz77JLDdwrmVjoWnu8nfWgZyxT74veyXWs error="stream reset"
+✔ a keyed node and a node with no key in the same room get no session (3047.945294ms)
+conn session peer=12D3KooWB41EStzcufzhvntBxa8VcHy48GkzyV7F1gBazcJb6MMX type=direct dir=in addr=/ip4/127.0.0.1/tcp/39054/p2p/12D3KooWB41EStzcufzhvntBxa8VcHy48GkzyV7F1gBazcJb6MMX
+conn session peer=12D3KooWNZgtj6Frp1k91cFNo71NKPhGe8FydzTXKaoySYHGuzKk type=direct dir=out addr=/ip4/127.0.0.1/tcp/33375/p2p/12D3KooWNZgtj6Frp1k91cFNo71NKPhGe8FydzTXKaoySYHGuzKk
+Dial-back from 12D3KooWB41EStzcufzhvntBxa8VcHy48GkzyV7F1gBazcJb6MMX: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWNZgtj6Frp1k91cFNo71NKPhGe8FydzTXKaoySYHGuzKk: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWB41EStzcufzhvntBxa8VcHy48GkzyV7F1gBazcJb6MMX type=direct secs=0
+conn closed peer=12D3KooWNZgtj6Frp1k91cFNo71NKPhGe8FydzTXKaoySYHGuzKk type=direct secs=0
+✔ two LAN nodes with no key get a session with an old-style hello (78.06319ms)
+Store /tmp/asscrack-store-qkTNX4/room.json not read, the store is empty: ENOENT
+conn session peer=12D3KooWAryU4VRGmkogVuYMPgzJiju42XEn8GSmNUqnRLzPwTV4 type=direct dir=in addr=/ip4/127.0.0.1/tcp/56206/p2p/12D3KooWAryU4VRGmkogVuYMPgzJiju42XEn8GSmNUqnRLzPwTV4
+conn session peer=12D3KooWLFG6UcGEr1uYdLtUhy4khTqkvCohHFoWYzpzKwHmzoTE type=direct dir=out addr=/ip4/127.0.0.1/tcp/33981/p2p/12D3KooWLFG6UcGEr1uYdLtUhy4khTqkvCohHFoWYzpzKwHmzoTE
+Relay reservation on 12D3KooWLFG6UcGEr1uYdLtUhy4khTqkvCohHFoWYzpzKwHmzoTE: ok
+conn closed peer=12D3KooWLFG6UcGEr1uYdLtUhy4khTqkvCohHFoWYzpzKwHmzoTE type=direct secs=0
+conn closed peer=12D3KooWAryU4VRGmkogVuYMPgzJiju42XEn8GSmNUqnRLzPwTV4 type=direct secs=0
+conn session peer=12D3KooWPMQBscBQWpESb878tchc88ityM3spXJYijtXeoNoARa1 type=direct dir=in addr=/ip4/127.0.0.1/tcp/56210/p2p/12D3KooWPMQBscBQWpESb878tchc88ityM3spXJYijtXeoNoARa1
+conn session peer=12D3KooWLFG6UcGEr1uYdLtUhy4khTqkvCohHFoWYzpzKwHmzoTE type=direct dir=out addr=/ip4/127.0.0.1/tcp/33981/p2p/12D3KooWLFG6UcGEr1uYdLtUhy4khTqkvCohHFoWYzpzKwHmzoTE
+Relay reservation on 12D3KooWLFG6UcGEr1uYdLtUhy4khTqkvCohHFoWYzpzKwHmzoTE: ok
+conn closed peer=12D3KooWPMQBscBQWpESb878tchc88ityM3spXJYijtXeoNoARa1 type=direct secs=0
+conn closed peer=12D3KooWLFG6UcGEr1uYdLtUhy4khTqkvCohHFoWYzpzKwHmzoTE type=direct secs=0
+✔ store: A joins R again after a restart with no connect() (155.024317ms)
+conn session peer=12D3KooWDtbMVSggijqow5fF2qKps3iUsrGopKLNT3WD3jBCFaGn type=direct dir=in addr=/ip4/127.0.0.1/tcp/51984/p2p/12D3KooWDtbMVSggijqow5fF2qKps3iUsrGopKLNT3WD3jBCFaGn
+conn session peer=12D3KooWBzQ1grGyP5YxPw7hNC7nRCohf2A353ETfgYuMhv2tWk8 type=direct dir=out addr=/ip4/127.0.0.1/tcp/46387/p2p/12D3KooWBzQ1grGyP5YxPw7hNC7nRCohf2A353ETfgYuMhv2tWk8
+Dial-back from 12D3KooWDtbMVSggijqow5fF2qKps3iUsrGopKLNT3WD3jBCFaGn: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWBzQ1grGyP5YxPw7hNC7nRCohf2A353ETfgYuMhv2tWk8: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWBzQ1grGyP5YxPw7hNC7nRCohf2A353ETfgYuMhv2tWk8 type=direct secs=0.1
+conn closed peer=12D3KooWDtbMVSggijqow5fF2qKps3iUsrGopKLNT3WD3jBCFaGn type=direct secs=0.1
+✔ sendRecord gives the same id, from, text and time as the received message (172.151985ms)
+✔ sendRecord with no session gives accepted 0 and adds the record to history (8.523311ms)
+conn session peer=12D3KooWAnT6yxB9mBkFQo2NuHPuyd9U9RPLCpjcLew3Nobo9Kkw type=direct dir=in addr=/ip4/127.0.0.1/tcp/37476/p2p/12D3KooWAnT6yxB9mBkFQo2NuHPuyd9U9RPLCpjcLew3Nobo9Kkw
+conn session peer=12D3KooWFgcF8GUsqx774TEL8yD5aniyDJGuqtieBVtZZRKEg1ii type=direct dir=out addr=/ip4/127.0.0.1/tcp/33445/p2p/12D3KooWFgcF8GUsqx774TEL8yD5aniyDJGuqtieBVtZZRKEg1ii
+conn closed peer=12D3KooWFgcF8GUsqx774TEL8yD5aniyDJGuqtieBVtZZRKEg1ii type=direct secs=0
+conn dial-failed peer=12D3KooWFgcF8GUsqx774TEL8yD5aniyDJGuqtieBVtZZRKEg1ii via=dial-back reason=other addr=/ip4/127.0.0.1/tcp/33445/p2p/12D3KooWFgcF8GUsqx774TEL8yD5aniyDJGuqtieBVtZZRKEg1ii error="unexpected end of input"
+conn closed peer=12D3KooWAnT6yxB9mBkFQo2NuHPuyd9U9RPLCpjcLew3Nobo9Kkw type=direct secs=0
+conn dial-failed peer=12D3KooWAnT6yxB9mBkFQo2NuHPuyd9U9RPLCpjcLew3Nobo9Kkw via=dial-back reason=other addr=/ip4/127.0.0.1/tcp/37476/p2p/12D3KooWAnT6yxB9mBkFQo2NuHPuyd9U9RPLCpjcLew3Nobo9Kkw error="unexpected end of input"
+✔ send still returns the session count (66.704772ms)
+conn session peer=12D3KooWK8Wz9aoh3bXXkmwPrF56ZtYC21jgwbjpWRZJwqbDyMR4 type=direct dir=in addr=/ip4/127.0.0.1/tcp/42836/p2p/12D3KooWK8Wz9aoh3bXXkmwPrF56ZtYC21jgwbjpWRZJwqbDyMR4
+conn session peer=12D3KooWQ3nSkAQ4s3coaHxmNBitnQk2yvmLRJ2rfS6cbz7dnL8X type=direct dir=out addr=/ip4/127.0.0.1/tcp/33373/p2p/12D3KooWQ3nSkAQ4s3coaHxmNBitnQk2yvmLRJ2rfS6cbz7dnL8X
+Dial-back from 12D3KooWK8Wz9aoh3bXXkmwPrF56ZtYC21jgwbjpWRZJwqbDyMR4: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWQ3nSkAQ4s3coaHxmNBitnQk2yvmLRJ2rfS6cbz7dnL8X: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWK8Wz9aoh3bXXkmwPrF56ZtYC21jgwbjpWRZJwqbDyMR4 type=direct secs=0.3
+conn closed peer=12D3KooWQ3nSkAQ4s3coaHxmNBitnQk2yvmLRJ2rfS6cbz7dnL8X type=direct secs=0.3
+✔ sendTo sends a signal line to one peer (379.237763ms)
+conn session peer=12D3KooWRDaucX12uYMxQAtx5aL61TmaYawxLEUQRqqtKuQESkp3 type=direct dir=in addr=/ip4/127.0.0.1/tcp/55036/p2p/12D3KooWRDaucX12uYMxQAtx5aL61TmaYawxLEUQRqqtKuQESkp3
+conn session peer=12D3KooWG8owVocU6BaWx8KBZUZgW7KCPvx5YnR7wjzzvEDrrUY4 type=direct dir=out addr=/ip4/127.0.0.1/tcp/44169/p2p/12D3KooWG8owVocU6BaWx8KBZUZgW7KCPvx5YnR7wjzzvEDrrUY4
+Dial-back from 12D3KooWRDaucX12uYMxQAtx5aL61TmaYawxLEUQRqqtKuQESkp3: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWG8owVocU6BaWx8KBZUZgW7KCPvx5YnR7wjzzvEDrrUY4: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWRDaucX12uYMxQAtx5aL61TmaYawxLEUQRqqtKuQESkp3 type=direct secs=0.2
+conn closed peer=12D3KooWG8owVocU6BaWx8KBZUZgW7KCPvx5YnR7wjzzvEDrrUY4 type=direct secs=0.2
+✔ setVoice sends the voice state to open and new sessions (211.549203ms)
+upnp mapped ip=93.184.216.34 port=37751 local=192.0.2.2
+upnp unmapped port=37751
+✔ a public IP maps the listen port, and stop() unmaps it (75.595493ms)
+upnp none reason=private-ip error="external IP 100.64.1.5 is private"
+✔ a CGNAT external IP does not map (250.556579ms)
+upnp none reason=no-gateway error="Could not discover gateway"
+conn session peer=12D3KooWLjTxkdNmS6qcHULRuATP64JMVeVxUfi4HGu2kZiUTU8c type=direct dir=in addr=/ip4/127.0.0.1/tcp/36356/p2p/12D3KooWLjTxkdNmS6qcHULRuATP64JMVeVxUfi4HGu2kZiUTU8c
+conn session peer=12D3KooWRGygzWC6VUP2aNXLG2mPaLVbyYdW5jiHUqN5pGoNXFKb type=direct dir=out addr=/ip4/127.0.0.1/tcp/40201/p2p/12D3KooWRGygzWC6VUP2aNXLG2mPaLVbyYdW5jiHUqN5pGoNXFKb
+conn closed peer=12D3KooWRGygzWC6VUP2aNXLG2mPaLVbyYdW5jiHUqN5pGoNXFKb type=direct secs=0
+Dial-back from 12D3KooWRGygzWC6VUP2aNXLG2mPaLVbyYdW5jiHUqN5pGoNXFKb: failed, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWLjTxkdNmS6qcHULRuATP64JMVeVxUfi4HGu2kZiUTU8c: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWLjTxkdNmS6qcHULRuATP64JMVeVxUfi4HGu2kZiUTU8c type=direct secs=0
+✔ no gateway: the node starts and chat works (120.401575ms)
+upnp none reason=timeout error="no result after 200 ms"
+✔ the task timeout gives reason timeout (210.261465ms)
+✔ HTTP 500 on AddPortMapping: the guard logs router-error and the process exits with code 0 (1704.35626ms)
+✔ an error that does not match the guard filter still exits with code 1 (49.558557ms)
+upnp unmapped port=33291
+✔ a stop during a slow AddPortMapping unmaps before stop() returns (515.387135ms)
+✔ a stop during a slow discovery sends no AddPortMapping (1611.555054ms)
+upnp mapped ip=93.184.216.34 port=39855 local=192.0.2.2
+conn session peer=12D3KooWGWVdyoXrjhwFoRaa19CrUpExg36ga7yyk5qj4higNkGW type=direct dir=in addr=/ip4/127.0.0.1/tcp/57110/p2p/12D3KooWGWVdyoXrjhwFoRaa19CrUpExg36ga7yyk5qj4higNkGW
+conn session peer=12D3KooWN1JBdtHt8EFc9MU6QJSRikrCz6HnugLwgMjU6uuKv8UL type=direct dir=out addr=/ip4/127.0.0.1/tcp/39855/p2p/12D3KooWN1JBdtHt8EFc9MU6QJSRikrCz6HnugLwgMjU6uuKv8UL
+Dial-back from 12D3KooWGWVdyoXrjhwFoRaa19CrUpExg36ga7yyk5qj4higNkGW: failed, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWN1JBdtHt8EFc9MU6QJSRikrCz6HnugLwgMjU6uuKv8UL type=direct secs=0
+conn closed peer=12D3KooWGWVdyoXrjhwFoRaa19CrUpExg36ga7yyk5qj4higNkGW type=direct secs=0
+upnp unmapped port=39855
+✔ the dial-back request carries the mapped public port (109.480066ms)
+✔ upnp false: no UPnP service (6.107087ms)
+conn session peer=12D3KooWJrMHkf5ZfVpHMUXWUmwr4SxYrdmZhFySNwAenUTJ844T type=direct dir=in addr=/ip4/127.0.0.1/tcp/34272/p2p/12D3KooWJrMHkf5ZfVpHMUXWUmwr4SxYrdmZhFySNwAenUTJ844T
+conn session peer=12D3KooWSYW1Hrgbz9xqH9zbuA3CD23f2ULabK2VbdeLDnTw1KvX type=direct dir=out addr=/ip4/127.0.0.1/tcp/37901/p2p/12D3KooWSYW1Hrgbz9xqH9zbuA3CD23f2ULabK2VbdeLDnTw1KvX
+Relay reservation on 12D3KooWSYW1Hrgbz9xqH9zbuA3CD23f2ULabK2VbdeLDnTw1KvX: ok
+conn session peer=12D3KooWHKzVE4AqWmhkVgy8f2SeVcNDiEu9MgnNPzL2KJFfGDBG type=direct dir=in addr=/ip4/127.0.0.1/tcp/34282/p2p/12D3KooWHKzVE4AqWmhkVgy8f2SeVcNDiEu9MgnNPzL2KJFfGDBG
+conn session peer=12D3KooWSYW1Hrgbz9xqH9zbuA3CD23f2ULabK2VbdeLDnTw1KvX type=direct dir=out addr=/ip4/127.0.0.1/tcp/37901/p2p/12D3KooWSYW1Hrgbz9xqH9zbuA3CD23f2ULabK2VbdeLDnTw1KvX
+Relay reservation on 12D3KooWSYW1Hrgbz9xqH9zbuA3CD23f2ULabK2VbdeLDnTw1KvX: ok
+conn session peer=12D3KooWJrMHkf5ZfVpHMUXWUmwr4SxYrdmZhFySNwAenUTJ844T type=direct dir=in addr=/ip4/127.0.0.1/tcp/38398/p2p/12D3KooWJrMHkf5ZfVpHMUXWUmwr4SxYrdmZhFySNwAenUTJ844T
+conn session peer=12D3KooWHKzVE4AqWmhkVgy8f2SeVcNDiEu9MgnNPzL2KJFfGDBG type=direct dir=out addr=/ip4/127.0.0.1/tcp/36361/p2p/12D3KooWHKzVE4AqWmhkVgy8f2SeVcNDiEu9MgnNPzL2KJFfGDBG
+conn session peer=12D3KooWLwtz121xsAUzNPki3SyoJNP5jphzbSbkJ6Uon9SkuBo8 type=direct dir=in addr=/ip4/127.0.0.1/tcp/34294/p2p/12D3KooWLwtz121xsAUzNPki3SyoJNP5jphzbSbkJ6Uon9SkuBo8
+conn session peer=12D3KooWSYW1Hrgbz9xqH9zbuA3CD23f2ULabK2VbdeLDnTw1KvX type=direct dir=out addr=/ip4/127.0.0.1/tcp/37901/p2p/12D3KooWSYW1Hrgbz9xqH9zbuA3CD23f2ULabK2VbdeLDnTw1KvX
+Relay reservation on 12D3KooWSYW1Hrgbz9xqH9zbuA3CD23f2ULabK2VbdeLDnTw1KvX: ok
+conn session peer=12D3KooWJrMHkf5ZfVpHMUXWUmwr4SxYrdmZhFySNwAenUTJ844T type=relay dir=in relay=12D3KooWSYW1Hrgbz9xqH9zbuA3CD23f2ULabK2VbdeLDnTw1KvX addr=/ip4/127.0.0.1/tcp/37901/p2p/12D3KooWSYW1Hrgbz9xqH9zbuA3CD23f2ULabK2VbdeLDnTw1KvX/p2p-circuit/p2p/12D3KooWJrMHkf5ZfVpHMUXWUmwr4SxYrdmZhFySNwAenUTJ844T
+conn session peer=12D3KooWLwtz121xsAUzNPki3SyoJNP5jphzbSbkJ6Uon9SkuBo8 type=relay dir=out relay=12D3KooWSYW1Hrgbz9xqH9zbuA3CD23f2ULabK2VbdeLDnTw1KvX addr=/ip4/127.0.0.1/tcp/37901/p2p/12D3KooWSYW1Hrgbz9xqH9zbuA3CD23f2ULabK2VbdeLDnTw1KvX/p2p-circuit/p2p/12D3KooWLwtz121xsAUzNPki3SyoJNP5jphzbSbkJ6Uon9SkuBo8
+conn session peer=12D3KooWHKzVE4AqWmhkVgy8f2SeVcNDiEu9MgnNPzL2KJFfGDBG type=relay dir=in relay=12D3KooWSYW1Hrgbz9xqH9zbuA3CD23f2ULabK2VbdeLDnTw1KvX addr=/ip4/127.0.0.1/tcp/37901/p2p/12D3KooWSYW1Hrgbz9xqH9zbuA3CD23f2ULabK2VbdeLDnTw1KvX/p2p-circuit/p2p/12D3KooWHKzVE4AqWmhkVgy8f2SeVcNDiEu9MgnNPzL2KJFfGDBG
+conn session peer=12D3KooWLwtz121xsAUzNPki3SyoJNP5jphzbSbkJ6Uon9SkuBo8 type=relay dir=out relay=12D3KooWSYW1Hrgbz9xqH9zbuA3CD23f2ULabK2VbdeLDnTw1KvX addr=/ip4/127.0.0.1/tcp/37901/p2p/12D3KooWSYW1Hrgbz9xqH9zbuA3CD23f2ULabK2VbdeLDnTw1KvX/p2p-circuit/p2p/12D3KooWLwtz121xsAUzNPki3SyoJNP5jphzbSbkJ6Uon9SkuBo8
+History sent to 12D3KooWJrMHkf5ZfVpHMUXWUmwr4SxYrdmZhFySNwAenUTJ844T: 0 messages
+History sent to 12D3KooWHKzVE4AqWmhkVgy8f2SeVcNDiEu9MgnNPzL2KJFfGDBG: 0 messages
+History sent to 12D3KooWLwtz121xsAUzNPki3SyoJNP5jphzbSbkJ6Uon9SkuBo8: 0 messages
+History applied: 0 of 0 messages are new
+History applied: 0 of 0 messages are new
+History applied: 0 of 0 messages are new
+127.0.0.1 direct voice: B got 100, C got 100, A directSent 100, B directReceived 100, B duplicates 0, H forwarded A->B 0 (before 0), H forwarded A->C 100, H forwarded total 100
+conn closed peer=12D3KooWJrMHkf5ZfVpHMUXWUmwr4SxYrdmZhFySNwAenUTJ844T type=direct secs=3.3
+conn closed peer=12D3KooWHKzVE4AqWmhkVgy8f2SeVcNDiEu9MgnNPzL2KJFfGDBG type=direct secs=3.2
+conn closed peer=12D3KooWLwtz121xsAUzNPki3SyoJNP5jphzbSbkJ6Uon9SkuBo8 type=direct secs=3.1
+conn closed peer=12D3KooWSYW1Hrgbz9xqH9zbuA3CD23f2ULabK2VbdeLDnTw1KvX type=direct secs=3.3
+conn closed peer=12D3KooWHKzVE4AqWmhkVgy8f2SeVcNDiEu9MgnNPzL2KJFfGDBG type=direct secs=3.2
+conn closed peer=12D3KooWLwtz121xsAUzNPki3SyoJNP5jphzbSbkJ6Uon9SkuBo8 type=relay secs=2.9
+conn closed peer=12D3KooWSYW1Hrgbz9xqH9zbuA3CD23f2ULabK2VbdeLDnTw1KvX type=direct secs=3.2
+conn closed peer=12D3KooWJrMHkf5ZfVpHMUXWUmwr4SxYrdmZhFySNwAenUTJ844T type=direct secs=3.2
+conn closed peer=12D3KooWLwtz121xsAUzNPki3SyoJNP5jphzbSbkJ6Uon9SkuBo8 type=relay secs=2.8
+conn closed peer=12D3KooWSYW1Hrgbz9xqH9zbuA3CD23f2ULabK2VbdeLDnTw1KvX type=direct secs=3.1
+conn closed peer=12D3KooWJrMHkf5ZfVpHMUXWUmwr4SxYrdmZhFySNwAenUTJ844T type=relay secs=2.9
+conn closed peer=12D3KooWHKzVE4AqWmhkVgy8f2SeVcNDiEu9MgnNPzL2KJFfGDBG type=relay secs=2.9
+✔ voice: A sends directly to B, H forwards no frame of A to B, relay-only C gets A through H (3467.516143ms)
+conn session peer=12D3KooWQ6TNxkTgFdYRZtq9TjEY2EHvjrxaPN1zHqfYAnZ1EGTE type=direct dir=in addr=/ip4/127.0.0.1/tcp/59736/p2p/12D3KooWQ6TNxkTgFdYRZtq9TjEY2EHvjrxaPN1zHqfYAnZ1EGTE
+conn session peer=12D3KooWBJZSYUNRQtEHxRZdm78iNV5WWF5eTQvskcn6aqAMnN8A type=direct dir=out addr=/ip4/127.0.0.1/tcp/39415/p2p/12D3KooWBJZSYUNRQtEHxRZdm78iNV5WWF5eTQvskcn6aqAMnN8A
+Relay reservation on 12D3KooWBJZSYUNRQtEHxRZdm78iNV5WWF5eTQvskcn6aqAMnN8A: ok
+conn session peer=12D3KooWBAGVRERGhUSzSQrrRZuQmnmVZJs9NAf4RNzUs98wzDHW type=direct dir=in addr=/ip4/127.0.0.1/tcp/59738/p2p/12D3KooWBAGVRERGhUSzSQrrRZuQmnmVZJs9NAf4RNzUs98wzDHW
+conn session peer=12D3KooWBJZSYUNRQtEHxRZdm78iNV5WWF5eTQvskcn6aqAMnN8A type=direct dir=out addr=/ip4/127.0.0.1/tcp/39415/p2p/12D3KooWBJZSYUNRQtEHxRZdm78iNV5WWF5eTQvskcn6aqAMnN8A
+Relay reservation on 12D3KooWBJZSYUNRQtEHxRZdm78iNV5WWF5eTQvskcn6aqAMnN8A: ok
+conn session peer=12D3KooWQ6TNxkTgFdYRZtq9TjEY2EHvjrxaPN1zHqfYAnZ1EGTE type=direct dir=in addr=/ip4/127.0.0.1/tcp/55632/p2p/12D3KooWQ6TNxkTgFdYRZtq9TjEY2EHvjrxaPN1zHqfYAnZ1EGTE
+conn session peer=12D3KooWBAGVRERGhUSzSQrrRZuQmnmVZJs9NAf4RNzUs98wzDHW type=direct dir=out addr=/ip4/127.0.0.1/tcp/33585/p2p/12D3KooWBAGVRERGhUSzSQrrRZuQmnmVZJs9NAf4RNzUs98wzDHW
+conn session peer=12D3KooWQx5MdcC3mNZrwfZzcAthXgjMTvEhwrMuV3EHf8hJn7dT type=direct dir=in addr=/ip4/127.0.0.1/tcp/59742/p2p/12D3KooWQx5MdcC3mNZrwfZzcAthXgjMTvEhwrMuV3EHf8hJn7dT
+conn session peer=12D3KooWBJZSYUNRQtEHxRZdm78iNV5WWF5eTQvskcn6aqAMnN8A type=direct dir=out addr=/ip4/127.0.0.1/tcp/39415/p2p/12D3KooWBJZSYUNRQtEHxRZdm78iNV5WWF5eTQvskcn6aqAMnN8A
+conn dial-failed peer=12D3KooWQx5MdcC3mNZrwfZzcAthXgjMTvEhwrMuV3EHf8hJn7dT via=relay reason=no-reservation addr=/ip4/127.0.0.1/tcp/39415/p2p/12D3KooWBJZSYUNRQtEHxRZdm78iNV5WWF5eTQvskcn6aqAMnN8A/p2p-circuit/p2p/12D3KooWQx5MdcC3mNZrwfZzcAthXgjMTvEhwrMuV3EHf8hJn7dT error="failed to connect via relay with status NO_RESERVATION"
+Relay reservation on 12D3KooWBJZSYUNRQtEHxRZdm78iNV5WWF5eTQvskcn6aqAMnN8A: ok
+conn session peer=12D3KooWQ6TNxkTgFdYRZtq9TjEY2EHvjrxaPN1zHqfYAnZ1EGTE type=relay dir=in relay=12D3KooWBJZSYUNRQtEHxRZdm78iNV5WWF5eTQvskcn6aqAMnN8A addr=/ip4/127.0.0.1/tcp/39415/p2p/12D3KooWBJZSYUNRQtEHxRZdm78iNV5WWF5eTQvskcn6aqAMnN8A/p2p-circuit/p2p/12D3KooWQ6TNxkTgFdYRZtq9TjEY2EHvjrxaPN1zHqfYAnZ1EGTE
+conn session peer=12D3KooWQx5MdcC3mNZrwfZzcAthXgjMTvEhwrMuV3EHf8hJn7dT type=relay dir=out relay=12D3KooWBJZSYUNRQtEHxRZdm78iNV5WWF5eTQvskcn6aqAMnN8A addr=/ip4/127.0.0.1/tcp/39415/p2p/12D3KooWBJZSYUNRQtEHxRZdm78iNV5WWF5eTQvskcn6aqAMnN8A/p2p-circuit/p2p/12D3KooWQx5MdcC3mNZrwfZzcAthXgjMTvEhwrMuV3EHf8hJn7dT
+History sent to 12D3KooWQ6TNxkTgFdYRZtq9TjEY2EHvjrxaPN1zHqfYAnZ1EGTE: 0 messages
+History sent to 12D3KooWBAGVRERGhUSzSQrrRZuQmnmVZJs9NAf4RNzUs98wzDHW: 0 messages
+History sent to 12D3KooWQx5MdcC3mNZrwfZzcAthXgjMTvEhwrMuV3EHf8hJn7dT: 0 messages
+History applied: 0 of 0 messages are new
+History applied: 0 of 0 messages are new
+History applied: 0 of 0 messages are new
+Voice frame dropped: origin 12D3KooWQx5MdcC3mNZrwfZzcAthXgjMTvEhwrMuV3EHf8hJn7dT is not the sender 12D3KooWQ6TNxkTgFdYRZtq9TjEY2EHvjrxaPN1zHqfYAnZ1EGTE (direct)
+conn closed peer=12D3KooWQ6TNxkTgFdYRZtq9TjEY2EHvjrxaPN1zHqfYAnZ1EGTE type=direct secs=0.6
+conn closed peer=12D3KooWBAGVRERGhUSzSQrrRZuQmnmVZJs9NAf4RNzUs98wzDHW type=direct secs=0.5
+conn closed peer=12D3KooWQx5MdcC3mNZrwfZzcAthXgjMTvEhwrMuV3EHf8hJn7dT type=direct secs=0.4
+conn closed peer=12D3KooWBJZSYUNRQtEHxRZdm78iNV5WWF5eTQvskcn6aqAMnN8A type=direct secs=0.6
+conn closed peer=12D3KooWBAGVRERGhUSzSQrrRZuQmnmVZJs9NAf4RNzUs98wzDHW type=direct secs=0.5
+conn closed peer=12D3KooWQx5MdcC3mNZrwfZzcAthXgjMTvEhwrMuV3EHf8hJn7dT type=relay secs=0.3
+conn closed peer=12D3KooWBJZSYUNRQtEHxRZdm78iNV5WWF5eTQvskcn6aqAMnN8A type=direct secs=0.5
+conn closed peer=12D3KooWQ6TNxkTgFdYRZtq9TjEY2EHvjrxaPN1zHqfYAnZ1EGTE type=direct secs=0.5
+conn closed peer=12D3KooWBJZSYUNRQtEHxRZdm78iNV5WWF5eTQvskcn6aqAMnN8A type=direct secs=0.4
+conn closed peer=12D3KooWQ6TNxkTgFdYRZtq9TjEY2EHvjrxaPN1zHqfYAnZ1EGTE type=relay secs=0.3
+✔ voice: the receiver drops a frame with a false origin on a direct voice stream (626.097343ms)
+✔ a closed direct voice stream opens again with no host change (127.0.0.1) (1210.839265ms)
+✔ the host keeps forwardedTo below a cap, and peerLeft removes the rows (fake streams) (189.04645ms)
+✔ sendFrame returns false when it sent no frame (host with no voice member) (0.498252ms)
+✔ sendFrame returns false for a member with no host connection and no direct stream (0.31764ms)
+conn session peer=12D3KooWMyyTXPoCRuPirVHypafu1mVvK3htaQPWc2DPr5fTTZpn type=direct dir=in addr=/ip4/127.0.0.1/tcp/51354/p2p/12D3KooWMyyTXPoCRuPirVHypafu1mVvK3htaQPWc2DPr5fTTZpn
+conn session peer=12D3KooWGA7SSnYvr4fXN2nC8orpVjE8YEq5AejDEDuxRPuqF1Cu type=direct dir=out addr=/ip4/127.0.0.1/tcp/43343/p2p/12D3KooWGA7SSnYvr4fXN2nC8orpVjE8YEq5AejDEDuxRPuqF1Cu
+Relay reservation on 12D3KooWGA7SSnYvr4fXN2nC8orpVjE8YEq5AejDEDuxRPuqF1Cu: ok
+conn session peer=12D3KooWAQattfDP71qC3uePLviVXVSonA3UJEWSNeXao4xqfaot type=direct dir=in addr=/ip4/127.0.0.1/tcp/51362/p2p/12D3KooWAQattfDP71qC3uePLviVXVSonA3UJEWSNeXao4xqfaot
+conn session peer=12D3KooWGA7SSnYvr4fXN2nC8orpVjE8YEq5AejDEDuxRPuqF1Cu type=direct dir=out addr=/ip4/127.0.0.1/tcp/43343/p2p/12D3KooWGA7SSnYvr4fXN2nC8orpVjE8YEq5AejDEDuxRPuqF1Cu
+Relay reservation on 12D3KooWGA7SSnYvr4fXN2nC8orpVjE8YEq5AejDEDuxRPuqF1Cu: ok
+conn session peer=12D3KooWAQattfDP71qC3uePLviVXVSonA3UJEWSNeXao4xqfaot type=relay dir=in relay=12D3KooWGA7SSnYvr4fXN2nC8orpVjE8YEq5AejDEDuxRPuqF1Cu addr=/ip4/127.0.0.1/tcp/43343/p2p/12D3KooWGA7SSnYvr4fXN2nC8orpVjE8YEq5AejDEDuxRPuqF1Cu/p2p-circuit/p2p/12D3KooWAQattfDP71qC3uePLviVXVSonA3UJEWSNeXao4xqfaot
+conn session peer=12D3KooWMyyTXPoCRuPirVHypafu1mVvK3htaQPWc2DPr5fTTZpn type=relay dir=out relay=12D3KooWGA7SSnYvr4fXN2nC8orpVjE8YEq5AejDEDuxRPuqF1Cu addr=/ip4/127.0.0.1/tcp/43343/p2p/12D3KooWGA7SSnYvr4fXN2nC8orpVjE8YEq5AejDEDuxRPuqF1Cu/p2p-circuit/p2p/12D3KooWMyyTXPoCRuPirVHypafu1mVvK3htaQPWc2DPr5fTTZpn
+History sent to 12D3KooWMyyTXPoCRuPirVHypafu1mVvK3htaQPWc2DPr5fTTZpn: 0 messages
+History sent to 12D3KooWAQattfDP71qC3uePLviVXVSonA3UJEWSNeXao4xqfaot: 0 messages
+History applied: 0 of 0 messages are new
+History applied: 0 of 0 messages are new
+127.0.0.1 voice latency keyed room A->R->B: median 0.91 ms, p95 1.64 ms, frames 200
+conn closed peer=12D3KooWMyyTXPoCRuPirVHypafu1mVvK3htaQPWc2DPr5fTTZpn type=direct secs=4.6
+conn closed peer=12D3KooWAQattfDP71qC3uePLviVXVSonA3UJEWSNeXao4xqfaot type=direct secs=4.6
+conn closed peer=12D3KooWGA7SSnYvr4fXN2nC8orpVjE8YEq5AejDEDuxRPuqF1Cu type=direct secs=4.6
+conn closed peer=12D3KooWAQattfDP71qC3uePLviVXVSonA3UJEWSNeXao4xqfaot type=relay secs=4.4
+conn closed peer=12D3KooWGA7SSnYvr4fXN2nC8orpVjE8YEq5AejDEDuxRPuqF1Cu type=direct secs=4.6
+conn closed peer=12D3KooWMyyTXPoCRuPirVHypafu1mVvK3htaQPWc2DPr5fTTZpn type=relay secs=4.4
+✔ keyed room: voice from relay-only A through full node R (host) to relay-only B (4754.165453ms)
+conn session peer=12D3KooWHzS5cxGBBHer2UAW3iWYpbExkRPCQmtx3qiC6TQq7Fmq type=direct dir=in addr=/ip4/127.0.0.1/tcp/53378/p2p/12D3KooWHzS5cxGBBHer2UAW3iWYpbExkRPCQmtx3qiC6TQq7Fmq
+conn session peer=12D3KooWQgXMRKmykeHaYbb6ZdVX2JjL71qwUfed9KdaXfmUZpei type=direct dir=out addr=/ip4/127.0.0.1/tcp/40401/p2p/12D3KooWQgXMRKmykeHaYbb6ZdVX2JjL71qwUfed9KdaXfmUZpei
+Dial-back from 12D3KooWHzS5cxGBBHer2UAW3iWYpbExkRPCQmtx3qiC6TQq7Fmq: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWQgXMRKmykeHaYbb6ZdVX2JjL71qwUfed9KdaXfmUZpei: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWHzS5cxGBBHer2UAW3iWYpbExkRPCQmtx3qiC6TQq7Fmq type=direct dir=in addr=/ip4/127.0.0.1/tcp/41896/p2p/12D3KooWHzS5cxGBBHer2UAW3iWYpbExkRPCQmtx3qiC6TQq7Fmq
+conn session peer=12D3KooWE9DdyqKMPCu7Ec3qZqX2pkSKkSYwcSaofKXP7Z5ZrFkY type=direct dir=out addr=/ip4/127.0.0.1/tcp/46841/p2p/12D3KooWE9DdyqKMPCu7Ec3qZqX2pkSKkSYwcSaofKXP7Z5ZrFkY
+Dial-back from 12D3KooWE9DdyqKMPCu7Ec3qZqX2pkSKkSYwcSaofKXP7Z5ZrFkY: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWHzS5cxGBBHer2UAW3iWYpbExkRPCQmtx3qiC6TQq7Fmq: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWQgXMRKmykeHaYbb6ZdVX2JjL71qwUfed9KdaXfmUZpei type=direct dir=in addr=/ip4/127.0.0.1/tcp/41908/p2p/12D3KooWQgXMRKmykeHaYbb6ZdVX2JjL71qwUfed9KdaXfmUZpei
+conn session peer=12D3KooWE9DdyqKMPCu7Ec3qZqX2pkSKkSYwcSaofKXP7Z5ZrFkY type=direct dir=out addr=/ip4/127.0.0.1/tcp/46841/p2p/12D3KooWE9DdyqKMPCu7Ec3qZqX2pkSKkSYwcSaofKXP7Z5ZrFkY
+Dial-back from 12D3KooWQgXMRKmykeHaYbb6ZdVX2JjL71qwUfed9KdaXfmUZpei: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWE9DdyqKMPCu7Ec3qZqX2pkSKkSYwcSaofKXP7Z5ZrFkY: ok, IP 127.0.0.1, full node false
+History sent to 12D3KooWHzS5cxGBBHer2UAW3iWYpbExkRPCQmtx3qiC6TQq7Fmq: 0 messages
+History sent to 12D3KooWQgXMRKmykeHaYbb6ZdVX2JjL71qwUfed9KdaXfmUZpei: 0 messages
+History applied: 0 of 0 messages are new
+History applied: 0 of 0 messages are new
+127.0.0.1 voice latency LAN room A->host->B: median 0.60 ms, p95 0.95 ms, frames 200
+conn closed peer=12D3KooWQgXMRKmykeHaYbb6ZdVX2JjL71qwUfed9KdaXfmUZpei type=direct secs=4.7
+conn closed peer=12D3KooWE9DdyqKMPCu7Ec3qZqX2pkSKkSYwcSaofKXP7Z5ZrFkY type=direct secs=4.6
+conn closed peer=12D3KooWHzS5cxGBBHer2UAW3iWYpbExkRPCQmtx3qiC6TQq7Fmq type=direct secs=4.7
+conn closed peer=12D3KooWE9DdyqKMPCu7Ec3qZqX2pkSKkSYwcSaofKXP7Z5ZrFkY type=direct secs=4.6
+conn closed peer=12D3KooWHzS5cxGBBHer2UAW3iWYpbExkRPCQmtx3qiC6TQq7Fmq type=direct secs=4.6
+conn closed peer=12D3KooWQgXMRKmykeHaYbb6ZdVX2JjL71qwUfed9KdaXfmUZpei type=direct secs=4.6
+✔ LAN room (no key): voice from member A through the host to member B (4747.292023ms)
+conn session peer=12D3KooWSAQuRrXksjh2RvHHkRCAvpyrNvgUCcQ2YoqpYjUdWFsZ type=direct dir=in addr=/ip4/127.0.0.1/tcp/59014/p2p/12D3KooWSAQuRrXksjh2RvHHkRCAvpyrNvgUCcQ2YoqpYjUdWFsZ
+conn session peer=12D3KooWNcc9FyyS8wR9d5QDxu3pd4Lqy9Fckt1KFiacE6vWcMdP type=direct dir=out addr=/ip4/127.0.0.1/tcp/45077/p2p/12D3KooWNcc9FyyS8wR9d5QDxu3pd4Lqy9Fckt1KFiacE6vWcMdP
+Relay reservation on 12D3KooWNcc9FyyS8wR9d5QDxu3pd4Lqy9Fckt1KFiacE6vWcMdP: ok
+History sent to 12D3KooWSAQuRrXksjh2RvHHkRCAvpyrNvgUCcQ2YoqpYjUdWFsZ: 0 messages
+History applied: 0 of 0 messages are new
+wrong-key voice stream opened on W: true
+conn closed peer=12D3KooWSAQuRrXksjh2RvHHkRCAvpyrNvgUCcQ2YoqpYjUdWFsZ type=direct secs=1.5
+conn closed peer=12D3KooWNcc9FyyS8wR9d5QDxu3pd4Lqy9Fckt1KFiacE6vWcMdP type=direct secs=1.5
+✔ keyed room: a node with a wrong key cannot send voice frames through the host (1513.25773ms)
+127.0.0.1 voice latency A->H->B: median 1.15 ms, p95 2.03 ms, frames 200
+✔ voice frames go from member A through host H to member B (127.0.0.1) (4320.410091ms)
+✔ voice relay drops a frame with a body above 4,000 bytes (127.0.0.1) (124.962604ms)
+✔ the host drops a frame whose origin is not the sender of the stream (127.0.0.1) (99.800624ms)
+voice start slow open (127.0.0.1): median 106.8 ms, runs 109.4 ms first seq 0 got 149/149 opens 1; 106.6 ms first seq 0 got 149/149 opens 1; 107.8 ms first seq 0 got 149/149 opens 1; 105.7 ms first seq 0 got 149/149 opens 1; 106.8 ms first seq 0 got 148/148 opens 1
+✔ voice start with a slow stream open: one stream, frames from the start, no gap (127.0.0.1) (16998.150274ms)
+conn session peer=12D3KooWRaf3QKvE29ANdXpZr8Ky9CJ7P1nQx8wKkUWgExwecG1k type=direct dir=in addr=/ip4/127.0.0.1/tcp/57312/p2p/12D3KooWRaf3QKvE29ANdXpZr8Ky9CJ7P1nQx8wKkUWgExwecG1k
+conn session peer=12D3KooWNrkuXQXUmjzvsBWSUBCz563smJDpcFxqmpvGnHsTYjm7 type=direct dir=out addr=/ip4/127.0.0.1/tcp/37673/p2p/12D3KooWNrkuXQXUmjzvsBWSUBCz563smJDpcFxqmpvGnHsTYjm7
+Relay reservation on 12D3KooWNrkuXQXUmjzvsBWSUBCz563smJDpcFxqmpvGnHsTYjm7: ok
+conn session peer=12D3KooWQCtnxteBQhx4Y6DSqWutE8RRx3Dw6XEzJ9CiuK9ACfhr type=direct dir=in addr=/ip4/127.0.0.1/tcp/57318/p2p/12D3KooWQCtnxteBQhx4Y6DSqWutE8RRx3Dw6XEzJ9CiuK9ACfhr
+conn session peer=12D3KooWNrkuXQXUmjzvsBWSUBCz563smJDpcFxqmpvGnHsTYjm7 type=direct dir=out addr=/ip4/127.0.0.1/tcp/37673/p2p/12D3KooWNrkuXQXUmjzvsBWSUBCz563smJDpcFxqmpvGnHsTYjm7
+Relay reservation on 12D3KooWNrkuXQXUmjzvsBWSUBCz563smJDpcFxqmpvGnHsTYjm7: ok
+conn session peer=12D3KooWQCtnxteBQhx4Y6DSqWutE8RRx3Dw6XEzJ9CiuK9ACfhr type=relay dir=in relay=12D3KooWNrkuXQXUmjzvsBWSUBCz563smJDpcFxqmpvGnHsTYjm7 addr=/ip4/127.0.0.1/tcp/37673/p2p/12D3KooWNrkuXQXUmjzvsBWSUBCz563smJDpcFxqmpvGnHsTYjm7/p2p-circuit/p2p/12D3KooWQCtnxteBQhx4Y6DSqWutE8RRx3Dw6XEzJ9CiuK9ACfhr
+conn session peer=12D3KooWRaf3QKvE29ANdXpZr8Ky9CJ7P1nQx8wKkUWgExwecG1k type=relay dir=out relay=12D3KooWNrkuXQXUmjzvsBWSUBCz563smJDpcFxqmpvGnHsTYjm7 addr=/ip4/127.0.0.1/tcp/37673/p2p/12D3KooWNrkuXQXUmjzvsBWSUBCz563smJDpcFxqmpvGnHsTYjm7/p2p-circuit/p2p/12D3KooWRaf3QKvE29ANdXpZr8Ky9CJ7P1nQx8wKkUWgExwecG1k
+History sent to 12D3KooWRaf3QKvE29ANdXpZr8Ky9CJ7P1nQx8wKkUWgExwecG1k: 0 messages
+History sent to 12D3KooWQCtnxteBQhx4Y6DSqWutE8RRx3Dw6XEzJ9CiuK9ACfhr: 0 messages
+History applied: 0 of 0 messages are new
+History applied: 0 of 0 messages are new
+conn closed peer=12D3KooWNrkuXQXUmjzvsBWSUBCz563smJDpcFxqmpvGnHsTYjm7 type=direct secs=1.8
+conn closed peer=12D3KooWRaf3QKvE29ANdXpZr8Ky9CJ7P1nQx8wKkUWgExwecG1k type=relay secs=1.7
+conn closed peer=12D3KooWQCtnxteBQhx4Y6DSqWutE8RRx3Dw6XEzJ9CiuK9ACfhr type=direct secs=1.8
+conn closed peer=12D3KooWNrkuXQXUmjzvsBWSUBCz563smJDpcFxqmpvGnHsTYjm7 type=direct secs=1.9
+conn closed peer=12D3KooWQCtnxteBQhx4Y6DSqWutE8RRx3Dw6XEzJ9CiuK9ACfhr type=relay secs=1.7
+conn closed peer=12D3KooWRaf3QKvE29ANdXpZr8Ky9CJ7P1nQx8wKkUWgExwecG1k type=direct secs=1.9
+conn session peer=12D3KooWM9UCcLoosseVEM2qz6i7h9Z6nwhME3CFY15ZUuED8wuZ type=direct dir=in addr=/ip4/127.0.0.1/tcp/35196/p2p/12D3KooWM9UCcLoosseVEM2qz6i7h9Z6nwhME3CFY15ZUuED8wuZ
+conn session peer=12D3KooWQzQXFizU1RXEzkwoB2PW51g8ZA8rsTfcQF5RGUFjYdPJ type=direct dir=out addr=/ip4/127.0.0.1/tcp/39505/p2p/12D3KooWQzQXFizU1RXEzkwoB2PW51g8ZA8rsTfcQF5RGUFjYdPJ
+Relay reservation on 12D3KooWQzQXFizU1RXEzkwoB2PW51g8ZA8rsTfcQF5RGUFjYdPJ: ok
+conn session peer=12D3KooWJYkHEatuyiZAZiCSgvssoh2vm5hCCs1ZWBqyMSNYn4FX type=direct dir=in addr=/ip4/127.0.0.1/tcp/35204/p2p/12D3KooWJYkHEatuyiZAZiCSgvssoh2vm5hCCs1ZWBqyMSNYn4FX
+conn session peer=12D3KooWQzQXFizU1RXEzkwoB2PW51g8ZA8rsTfcQF5RGUFjYdPJ type=direct dir=out addr=/ip4/127.0.0.1/tcp/39505/p2p/12D3KooWQzQXFizU1RXEzkwoB2PW51g8ZA8rsTfcQF5RGUFjYdPJ
+Relay reservation on 12D3KooWQzQXFizU1RXEzkwoB2PW51g8ZA8rsTfcQF5RGUFjYdPJ: ok
+conn session peer=12D3KooWJYkHEatuyiZAZiCSgvssoh2vm5hCCs1ZWBqyMSNYn4FX type=relay dir=in relay=12D3KooWQzQXFizU1RXEzkwoB2PW51g8ZA8rsTfcQF5RGUFjYdPJ addr=/ip4/127.0.0.1/tcp/39505/p2p/12D3KooWQzQXFizU1RXEzkwoB2PW51g8ZA8rsTfcQF5RGUFjYdPJ/p2p-circuit/p2p/12D3KooWJYkHEatuyiZAZiCSgvssoh2vm5hCCs1ZWBqyMSNYn4FX
+conn session peer=12D3KooWM9UCcLoosseVEM2qz6i7h9Z6nwhME3CFY15ZUuED8wuZ type=relay dir=out relay=12D3KooWQzQXFizU1RXEzkwoB2PW51g8ZA8rsTfcQF5RGUFjYdPJ addr=/ip4/127.0.0.1/tcp/39505/p2p/12D3KooWQzQXFizU1RXEzkwoB2PW51g8ZA8rsTfcQF5RGUFjYdPJ/p2p-circuit/p2p/12D3KooWM9UCcLoosseVEM2qz6i7h9Z6nwhME3CFY15ZUuED8wuZ
+History sent to 12D3KooWM9UCcLoosseVEM2qz6i7h9Z6nwhME3CFY15ZUuED8wuZ: 0 messages
+History sent to 12D3KooWJYkHEatuyiZAZiCSgvssoh2vm5hCCs1ZWBqyMSNYn4FX: 0 messages
+History applied: 0 of 0 messages are new
+History applied: 0 of 0 messages are new
+conn closed peer=12D3KooWQzQXFizU1RXEzkwoB2PW51g8ZA8rsTfcQF5RGUFjYdPJ type=direct secs=1.8
+conn closed peer=12D3KooWM9UCcLoosseVEM2qz6i7h9Z6nwhME3CFY15ZUuED8wuZ type=relay secs=1.7
+conn closed peer=12D3KooWJYkHEatuyiZAZiCSgvssoh2vm5hCCs1ZWBqyMSNYn4FX type=direct secs=1.8
+conn closed peer=12D3KooWQzQXFizU1RXEzkwoB2PW51g8ZA8rsTfcQF5RGUFjYdPJ type=direct secs=1.8
+conn closed peer=12D3KooWJYkHEatuyiZAZiCSgvssoh2vm5hCCs1ZWBqyMSNYn4FX type=relay secs=1.7
+conn closed peer=12D3KooWM9UCcLoosseVEM2qz6i7h9Z6nwhME3CFY15ZUuED8wuZ type=direct secs=1.9
+conn session peer=12D3KooWSC5WZert2ALcSxbnQPS3o7jKcnDseQYfWcHhaZCH4FkC type=direct dir=in addr=/ip4/127.0.0.1/tcp/36850/p2p/12D3KooWSC5WZert2ALcSxbnQPS3o7jKcnDseQYfWcHhaZCH4FkC
+conn session peer=12D3KooWQuZ7Rk81Hyb4Bcs1PmBbQbcxFD3L2UyoM92Wgr2DRku1 type=direct dir=out addr=/ip4/127.0.0.1/tcp/35133/p2p/12D3KooWQuZ7Rk81Hyb4Bcs1PmBbQbcxFD3L2UyoM92Wgr2DRku1
+Relay reservation on 12D3KooWQuZ7Rk81Hyb4Bcs1PmBbQbcxFD3L2UyoM92Wgr2DRku1: ok
+conn session peer=12D3KooWESrvgH5DzG4e66tp3d57Z3aCsBFNcrPqsHUrtSNCm68g type=direct dir=in addr=/ip4/127.0.0.1/tcp/36858/p2p/12D3KooWESrvgH5DzG4e66tp3d57Z3aCsBFNcrPqsHUrtSNCm68g
+conn session peer=12D3KooWQuZ7Rk81Hyb4Bcs1PmBbQbcxFD3L2UyoM92Wgr2DRku1 type=direct dir=out addr=/ip4/127.0.0.1/tcp/35133/p2p/12D3KooWQuZ7Rk81Hyb4Bcs1PmBbQbcxFD3L2UyoM92Wgr2DRku1
+Relay reservation on 12D3KooWQuZ7Rk81Hyb4Bcs1PmBbQbcxFD3L2UyoM92Wgr2DRku1: ok
+conn session peer=12D3KooWESrvgH5DzG4e66tp3d57Z3aCsBFNcrPqsHUrtSNCm68g type=relay dir=in relay=12D3KooWQuZ7Rk81Hyb4Bcs1PmBbQbcxFD3L2UyoM92Wgr2DRku1 addr=/ip4/127.0.0.1/tcp/35133/p2p/12D3KooWQuZ7Rk81Hyb4Bcs1PmBbQbcxFD3L2UyoM92Wgr2DRku1/p2p-circuit/p2p/12D3KooWESrvgH5DzG4e66tp3d57Z3aCsBFNcrPqsHUrtSNCm68g
+conn session peer=12D3KooWSC5WZert2ALcSxbnQPS3o7jKcnDseQYfWcHhaZCH4FkC type=relay dir=out relay=12D3KooWQuZ7Rk81Hyb4Bcs1PmBbQbcxFD3L2UyoM92Wgr2DRku1 addr=/ip4/127.0.0.1/tcp/35133/p2p/12D3KooWQuZ7Rk81Hyb4Bcs1PmBbQbcxFD3L2UyoM92Wgr2DRku1/p2p-circuit/p2p/12D3KooWSC5WZert2ALcSxbnQPS3o7jKcnDseQYfWcHhaZCH4FkC
+History sent to 12D3KooWSC5WZert2ALcSxbnQPS3o7jKcnDseQYfWcHhaZCH4FkC: 0 messages
+History sent to 12D3KooWESrvgH5DzG4e66tp3d57Z3aCsBFNcrPqsHUrtSNCm68g: 0 messages
+History applied: 0 of 0 messages are new
+History applied: 0 of 0 messages are new
+conn closed peer=12D3KooWQuZ7Rk81Hyb4Bcs1PmBbQbcxFD3L2UyoM92Wgr2DRku1 type=direct secs=1.8
+conn closed peer=12D3KooWSC5WZert2ALcSxbnQPS3o7jKcnDseQYfWcHhaZCH4FkC type=relay secs=1.7
+conn closed peer=12D3KooWESrvgH5DzG4e66tp3d57Z3aCsBFNcrPqsHUrtSNCm68g type=direct secs=1.8
+conn closed peer=12D3KooWQuZ7Rk81Hyb4Bcs1PmBbQbcxFD3L2UyoM92Wgr2DRku1 type=direct secs=1.9
+conn closed peer=12D3KooWESrvgH5DzG4e66tp3d57Z3aCsBFNcrPqsHUrtSNCm68g type=relay secs=1.8
+conn closed peer=12D3KooWSC5WZert2ALcSxbnQPS3o7jKcnDseQYfWcHhaZCH4FkC type=direct secs=1.9
+conn session peer=12D3KooWJXPTszba2pq7z3TyDv5d8aGUKuVrzmynagZtHgD1dRa5 type=direct dir=in addr=/ip4/127.0.0.1/tcp/38274/p2p/12D3KooWJXPTszba2pq7z3TyDv5d8aGUKuVrzmynagZtHgD1dRa5
+conn session peer=12D3KooWCk5ArPN6WnMr74A1qorCmU3oZnE1RqmKpCPXTw6Z1ECD type=direct dir=out addr=/ip4/127.0.0.1/tcp/37947/p2p/12D3KooWCk5ArPN6WnMr74A1qorCmU3oZnE1RqmKpCPXTw6Z1ECD
+Relay reservation on 12D3KooWCk5ArPN6WnMr74A1qorCmU3oZnE1RqmKpCPXTw6Z1ECD: ok
+conn session peer=12D3KooWJLbkTYHK35NaQiaHAHQaPKKcrjuNyyVJYymwPhYgn4TQ type=direct dir=in addr=/ip4/127.0.0.1/tcp/38288/p2p/12D3KooWJLbkTYHK35NaQiaHAHQaPKKcrjuNyyVJYymwPhYgn4TQ
+conn session peer=12D3KooWCk5ArPN6WnMr74A1qorCmU3oZnE1RqmKpCPXTw6Z1ECD type=direct dir=out addr=/ip4/127.0.0.1/tcp/37947/p2p/12D3KooWCk5ArPN6WnMr74A1qorCmU3oZnE1RqmKpCPXTw6Z1ECD
+Relay reservation on 12D3KooWCk5ArPN6WnMr74A1qorCmU3oZnE1RqmKpCPXTw6Z1ECD: ok
+conn session peer=12D3KooWJLbkTYHK35NaQiaHAHQaPKKcrjuNyyVJYymwPhYgn4TQ type=relay dir=in relay=12D3KooWCk5ArPN6WnMr74A1qorCmU3oZnE1RqmKpCPXTw6Z1ECD addr=/ip4/127.0.0.1/tcp/37947/p2p/12D3KooWCk5ArPN6WnMr74A1qorCmU3oZnE1RqmKpCPXTw6Z1ECD/p2p-circuit/p2p/12D3KooWJLbkTYHK35NaQiaHAHQaPKKcrjuNyyVJYymwPhYgn4TQ
+conn session peer=12D3KooWJXPTszba2pq7z3TyDv5d8aGUKuVrzmynagZtHgD1dRa5 type=relay dir=out relay=12D3KooWCk5ArPN6WnMr74A1qorCmU3oZnE1RqmKpCPXTw6Z1ECD addr=/ip4/127.0.0.1/tcp/37947/p2p/12D3KooWCk5ArPN6WnMr74A1qorCmU3oZnE1RqmKpCPXTw6Z1ECD/p2p-circuit/p2p/12D3KooWJXPTszba2pq7z3TyDv5d8aGUKuVrzmynagZtHgD1dRa5
+History sent to 12D3KooWJXPTszba2pq7z3TyDv5d8aGUKuVrzmynagZtHgD1dRa5: 0 messages
+History sent to 12D3KooWJLbkTYHK35NaQiaHAHQaPKKcrjuNyyVJYymwPhYgn4TQ: 0 messages
+History applied: 0 of 0 messages are new
+History applied: 0 of 0 messages are new
+conn closed peer=12D3KooWCk5ArPN6WnMr74A1qorCmU3oZnE1RqmKpCPXTw6Z1ECD type=direct secs=1.8
+conn closed peer=12D3KooWJXPTszba2pq7z3TyDv5d8aGUKuVrzmynagZtHgD1dRa5 type=relay secs=1.7
+conn closed peer=12D3KooWJLbkTYHK35NaQiaHAHQaPKKcrjuNyyVJYymwPhYgn4TQ type=direct secs=1.8
+conn closed peer=12D3KooWCk5ArPN6WnMr74A1qorCmU3oZnE1RqmKpCPXTw6Z1ECD type=direct secs=1.8
+conn closed peer=12D3KooWJLbkTYHK35NaQiaHAHQaPKKcrjuNyyVJYymwPhYgn4TQ type=relay secs=1.8
+conn closed peer=12D3KooWJXPTszba2pq7z3TyDv5d8aGUKuVrzmynagZtHgD1dRa5 type=direct secs=1.9
+conn session peer=12D3KooWEuGS6nvUdNXZavvfwu2t1QRVbo13PZxkE5QokChYQKnZ type=direct dir=in addr=/ip4/127.0.0.1/tcp/51782/p2p/12D3KooWEuGS6nvUdNXZavvfwu2t1QRVbo13PZxkE5QokChYQKnZ
+conn session peer=12D3KooWRDVVR4ERdBaNBjoUT91Q9XpBkqcEEGHrDrHj8mX4NnLA type=direct dir=out addr=/ip4/127.0.0.1/tcp/40597/p2p/12D3KooWRDVVR4ERdBaNBjoUT91Q9XpBkqcEEGHrDrHj8mX4NnLA
+Relay reservation on 12D3KooWRDVVR4ERdBaNBjoUT91Q9XpBkqcEEGHrDrHj8mX4NnLA: ok
+conn session peer=12D3KooWGsyEyCWvoRrsk8oTHz8CR7kyiY8eMXoohwdVmLcsKTDN type=direct dir=in addr=/ip4/127.0.0.1/tcp/51794/p2p/12D3KooWGsyEyCWvoRrsk8oTHz8CR7kyiY8eMXoohwdVmLcsKTDN
+conn session peer=12D3KooWRDVVR4ERdBaNBjoUT91Q9XpBkqcEEGHrDrHj8mX4NnLA type=direct dir=out addr=/ip4/127.0.0.1/tcp/40597/p2p/12D3KooWRDVVR4ERdBaNBjoUT91Q9XpBkqcEEGHrDrHj8mX4NnLA
+conn dial-failed peer=12D3KooWGsyEyCWvoRrsk8oTHz8CR7kyiY8eMXoohwdVmLcsKTDN via=relay reason=no-reservation addr=/ip4/127.0.0.1/tcp/40597/p2p/12D3KooWRDVVR4ERdBaNBjoUT91Q9XpBkqcEEGHrDrHj8mX4NnLA/p2p-circuit/p2p/12D3KooWGsyEyCWvoRrsk8oTHz8CR7kyiY8eMXoohwdVmLcsKTDN error="failed to connect via relay with status NO_RESERVATION"
+Relay reservation on 12D3KooWRDVVR4ERdBaNBjoUT91Q9XpBkqcEEGHrDrHj8mX4NnLA: ok
+History sent to 12D3KooWEuGS6nvUdNXZavvfwu2t1QRVbo13PZxkE5QokChYQKnZ: 0 messages
+History sent to 12D3KooWGsyEyCWvoRrsk8oTHz8CR7kyiY8eMXoohwdVmLcsKTDN: 0 messages
+History applied: 0 of 0 messages are new
+History applied: 0 of 0 messages are new
+conn session peer=12D3KooWEuGS6nvUdNXZavvfwu2t1QRVbo13PZxkE5QokChYQKnZ type=relay dir=in relay=12D3KooWRDVVR4ERdBaNBjoUT91Q9XpBkqcEEGHrDrHj8mX4NnLA addr=/ip4/127.0.0.1/tcp/40597/p2p/12D3KooWRDVVR4ERdBaNBjoUT91Q9XpBkqcEEGHrDrHj8mX4NnLA/p2p-circuit/p2p/12D3KooWEuGS6nvUdNXZavvfwu2t1QRVbo13PZxkE5QokChYQKnZ
+conn session peer=12D3KooWGsyEyCWvoRrsk8oTHz8CR7kyiY8eMXoohwdVmLcsKTDN type=relay dir=out relay=12D3KooWRDVVR4ERdBaNBjoUT91Q9XpBkqcEEGHrDrHj8mX4NnLA addr=/ip4/127.0.0.1/tcp/40597/p2p/12D3KooWRDVVR4ERdBaNBjoUT91Q9XpBkqcEEGHrDrHj8mX4NnLA/p2p-circuit/p2p/12D3KooWGsyEyCWvoRrsk8oTHz8CR7kyiY8eMXoohwdVmLcsKTDN
+conn closed peer=12D3KooWRDVVR4ERdBaNBjoUT91Q9XpBkqcEEGHrDrHj8mX4NnLA type=direct secs=1.8
+conn closed peer=12D3KooWEuGS6nvUdNXZavvfwu2t1QRVbo13PZxkE5QokChYQKnZ type=relay secs=0.7
+conn closed peer=12D3KooWGsyEyCWvoRrsk8oTHz8CR7kyiY8eMXoohwdVmLcsKTDN type=direct secs=1.8
+conn closed peer=12D3KooWRDVVR4ERdBaNBjoUT91Q9XpBkqcEEGHrDrHj8mX4NnLA type=direct secs=1.8
+conn closed peer=12D3KooWGsyEyCWvoRrsk8oTHz8CR7kyiY8eMXoohwdVmLcsKTDN type=relay secs=0.7
+conn closed peer=12D3KooWEuGS6nvUdNXZavvfwu2t1QRVbo13PZxkE5QokChYQKnZ type=direct secs=1.9
+voice start (127.0.0.1): median 6.3 ms, runs 20.8 ms first seq 0 got 51/51; 6.3 ms first seq 0 got 51/51; 5.5 ms first seq 0 got 51/51; 8.5 ms first seq 0 got 51/51; 3.1 ms first seq 0 got 49/49
+✔ voice start: the other member gets the frames of A soon after Join voice, with no gap (127.0.0.1) (9612.724248ms)
+ℹ tests 214
+ℹ suites 0
+ℹ pass 214
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 62998.444367

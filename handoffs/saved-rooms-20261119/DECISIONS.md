@@ -112,3 +112,56 @@ Sources:
   project rule for the cloud: stop at the context limit and report the state. The state is in `CONTINUE.md`.
 - Operator answer (question form, 2026-11-19): "Push handoff, new session (Recommended)". Thus I push
   `handoffs/saved-rooms-20261119` with the goal folder and a copy of this file.
+
+## S8. WP2: the room archive and the send record (2026-11-19, session 2)
+
+- New VM: `npm ci` with Node 24.22.3 (exit 0). `gnome-keyring` installed with apt (VM test tool only).
+- Builder A (builder-t1): `src/application/room-archive.mjs` and 13 tests. The orchestrator asked for one more test
+  (`database-unreadable`). Builder B (builder-t1): `sendRecord(text)` in `src/network/node.mjs` and 3 tests.
+- Orchestrator change: `sendRecord` is a local function, and `send` calls it with no `this`. Reason: a caller that
+  takes `send` off the node object must still work.
+- Decision: `close()` sets the state `locked` with reason `closed`. `unlock()` opens the archive again.
+- Decision: the database key is the pragma passphrase of 64 hex digits (as in the design). SQLCipher uses its KDF at
+  each open. A raw key is a possible later change. It is not tested.
+- Result (127.0.0.1, Linux VM): `node --test test/room-archive.test.mjs` 13 of 13 pass. `test/send-record.test.mjs`
+  and `test/node.test.mjs` 13 of 13 pass. `npm test` 214 of 214 pass, 63 s. Commit `ec546d0` (pushed).
+- Evidence: `.repro/regress/wp2-npmtest.console.txt`, `.repro/regress/wp2-b-module.console.txt`.
+
+## S9. WP3 work in progress (2026-11-19, session 2)
+
+- Builder C (builder-t1, `brief-C-app.md`): commit `5f5dc2c` (pushed). The Stop hook asked for a commit. The commit
+  message says that the examination is not complete. Examined: `saved-rooms.mjs` and `main.js`. Not examined:
+  `renderer.js`, `preload.cjs`, `index.html`, `styles.css`, `saved-rooms-ui.js`, `test/saved-rooms.test.mjs`.
+- `npm test` of builder C: 216 of 218 pass. 2 failures in `test/voice-direct.test.mjs` ("Too many outbound protocol
+  streams"). An Electron start ran at the same time.
+- Compare (127.0.0.1, 5 runs each, the Electron runs of builder D ran at the same time): base `ec546d0` failed 4 of
+  5 runs. The branch failed 1 of 5 runs. Thus the change did not cause the failure. It is the open item of `GOAL.md`.
+  Evidence: `.repro/regress/voice-direct-compare.txt`.
+
+## S10. WP3 results (2026-11-19, session 2, 127.0.0.1)
+
+- The orchestrator examined the window files of builder C: no fault found.
+- Builder D (builder-t1): `evidence/wp3/check-saved-rooms.cjs` (Playwright, Electron 40.5.0, 2 profiles).
+- Decision: in the check script, each host types `127.0.0.1:<port>` as its public address. Reason: this VM has no
+  router, and the UPnP wait (60 s) is longer than the 30 s wait limit. The check does not cover the UPnP path.
+- Decision: the archive state line stays in the app log only (`writeLog`). The check reads the log file.
+- `safeStorage` backend in the check runs: `gnome_libsecret` (log line "Saved rooms archive opened: state open,
+  reason none, safeStorage backend gnome_libsecret"). Without the keyring the state is `unavailable` (builder C run).
+- Orchestrator run (`evidence/wp3/orch/`): check script 11 of 11 pass. `npm test` 218 of 218 pass.
+  `test/rejoin.test.mjs` 3 of 3 pass. One app start: 0 error lines in the app log (with the developer console).
+  The terminal has 5 VM lines (D-Bus, `NODE_OPTIONS=--use-openssl-ca`). The base `ec546d0` gives the same 5 lines.
+- Electron needs `--no-sandbox` in this VM, because the process runs as root.
+
+## S11. Operator answers at the goal end (2026-11-19, question form)
+
+- Merge: "Merge now (Recommended)". Merge the newest `main` into the branch first, run `npm test` and one app start,
+  then merge into `main` and push `main` with the progress notes.
+- Handoff: "Push handoff (Recommended)". Push `handoffs/saved-rooms-20261119` with the final goal folder.
+
+## S12. Merge and goal end (2026-11-19, session 2)
+
+- Merge of `origin/main` (`5e33f5d`, 5C) into the branch: commit `b5b5228`. A builder-t2 resolved 6 conflicts. The
+  orchestrator examined `package.json` (only the approved dependency differs from `main`), the markers and `main.js`.
+- Checks on the merged tree (127.0.0.1): check script 11 of 11, `npm test` 241 of 241, `test/rejoin.test.mjs` 3 of 3,
+  one app start with 0 error lines in the app log (5 VM lines in the terminal, as on the base).
+- `main` at `5982914` (pushed). The goal is complete. Open: the packaged Windows checks of `GOAL.md`.

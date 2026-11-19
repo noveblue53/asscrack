@@ -1,0 +1,35 @@
+conn session peer=12D3KooWEEJSjwH6kD8HstE6sm6bDcEyhHk1MQJJptooAiHNkecF type=direct dir=in addr=/ip4/127.0.0.1/tcp/53838/p2p/12D3KooWEEJSjwH6kD8HstE6sm6bDcEyhHk1MQJJptooAiHNkecF
+conn session peer=12D3KooWLVicz9KkBdp4WPQTCRsbX3yWNM5B7DsFvsyCDFM9xgbX type=direct dir=out addr=/ip4/127.0.0.1/tcp/40987/p2p/12D3KooWLVicz9KkBdp4WPQTCRsbX3yWNM5B7DsFvsyCDFM9xgbX
+conn closed peer=12D3KooWEEJSjwH6kD8HstE6sm6bDcEyhHk1MQJJptooAiHNkecF type=direct secs=0
+conn closed peer=12D3KooWLVicz9KkBdp4WPQTCRsbX3yWNM5B7DsFvsyCDFM9xgbX type=direct secs=0
+Relay reservation on 12D3KooWLVicz9KkBdp4WPQTCRsbX3yWNM5B7DsFvsyCDFM9xgbX: ok
+conn dial-failed peer=12D3KooWLVicz9KkBdp4WPQTCRsbX3yWNM5B7DsFvsyCDFM9xgbX via=full-node reason=other addr=/ip4/127.0.0.1/tcp/40987/p2p/12D3KooWLVicz9KkBdp4WPQTCRsbX3yWNM5B7DsFvsyCDFM9xgbX error="Error occurred during XX handshake: Error occurred while verifying signed payload: Payload identity key 12D3KooWG5abUYkHbPnrbtQpuvYxbv5r6RJFp8n1ayQkRfWY1jdX does not match expected remote peer 12D3Koo"
+conn session peer=12D3KooWEEJSjwH6kD8HstE6sm6bDcEyhHk1MQJJptooAiHNkecF type=direct dir=in addr=/ip4/127.0.0.1/tcp/53850/p2p/12D3KooWEEJSjwH6kD8HstE6sm6bDcEyhHk1MQJJptooAiHNkecF
+conn session peer=12D3KooWG5abUYkHbPnrbtQpuvYxbv5r6RJFp8n1ayQkRfWY1jdX type=direct dir=out addr=/ip4/127.0.0.1/tcp/40987/p2p/12D3KooWG5abUYkHbPnrbtQpuvYxbv5r6RJFp8n1ayQkRfWY1jdX
+Relay reservation on 12D3KooWG5abUYkHbPnrbtQpuvYxbv5r6RJFp8n1ayQkRfWY1jdX: ok
+B session with A2 after 452 ms (127.0.0.1)
+conn closed peer=12D3KooWG5abUYkHbPnrbtQpuvYxbv5r6RJFp8n1ayQkRfWY1jdX type=direct secs=0
+conn closed peer=12D3KooWEEJSjwH6kD8HstE6sm6bDcEyhHk1MQJJptooAiHNkecF type=direct secs=0
+✔ rejoin: a member finds the full node again after it starts with a new peer ID (648.293752ms)
+conn dial-failed peer=12D3KooWLLviKVgbPPNxU26n4BV2rGMF35yaBJtRYAp3FmgX3HJy via=full-node reason=other addr=/ip4/127.0.0.1/tcp/37527/p2p/12D3KooWLLviKVgbPPNxU26n4BV2rGMF35yaBJtRYAp3FmgX3HJy error="Error occurred during XX handshake: Error occurred while verifying signed payload: Payload identity key 12D3KooWFjrBLUQsfpFk4Tc9oVjtUGET34fiHCZ1wTjFgbMRSvJH does not match expected remote peer 12D3Koo"
+conn session peer=12D3KooWSp4aMRb5x8nZAgBniDSwpBYxnfoLdZSKMzthQk3P3eV6 type=direct dir=in addr=/ip4/127.0.0.1/tcp/53590/p2p/12D3KooWSp4aMRb5x8nZAgBniDSwpBYxnfoLdZSKMzthQk3P3eV6
+conn session peer=12D3KooWFjrBLUQsfpFk4Tc9oVjtUGET34fiHCZ1wTjFgbMRSvJH type=direct dir=out addr=/ip4/127.0.0.1/tcp/37527/p2p/12D3KooWFjrBLUQsfpFk4Tc9oVjtUGET34fiHCZ1wTjFgbMRSvJH
+Relay reservation on 12D3KooWFjrBLUQsfpFk4Tc9oVjtUGET34fiHCZ1wTjFgbMRSvJH: ok
+conn closed peer=12D3KooWSp4aMRb5x8nZAgBniDSwpBYxnfoLdZSKMzthQk3P3eV6 type=direct secs=0
+conn closed peer=12D3KooWFjrBLUQsfpFk4Tc9oVjtUGET34fiHCZ1wTjFgbMRSvJH type=direct secs=0
+✔ rejoin: an invite node with an old peer ID connects to the new node at that address (79.936142ms)
+conn dial-failed peer=12D3KooWK8UsJYa4QciQpQDEBdEw2WFigXivztyP3LbPsDxqbYiY via=full-node reason=other addr=/ip4/127.0.0.1/tcp/37143/p2p/12D3KooWK8UsJYa4QciQpQDEBdEw2WFigXivztyP3LbPsDxqbYiY error="Error occurred during XX handshake: Error occurred while verifying signed payload: Payload identity key 12D3KooWDjhHMAcKrv1BevGm2FtLVcqsdYUmPidFNgnrjxp6yZj1 does not match expected remote peer 12D3Koo"
+conn dial-failed peer=? via=address reason=other addr=/ip4/127.0.0.1/tcp/37143 error="not valid Id"
+conn session peer=12D3KooWNmnNN8xrHqfr2FXoxpsWeZz5rAyUNNxN7mm4AbyxCuJw type=direct dir=in addr=/ip4/127.0.0.1/tcp/49740/p2p/12D3KooWNmnNN8xrHqfr2FXoxpsWeZz5rAyUNNxN7mm4AbyxCuJw
+conn session peer=12D3KooWDjhHMAcKrv1BevGm2FtLVcqsdYUmPidFNgnrjxp6yZj1 type=direct dir=out addr=/ip4/127.0.0.1/tcp/37143/p2p/12D3KooWDjhHMAcKrv1BevGm2FtLVcqsdYUmPidFNgnrjxp6yZj1
+conn closed peer=12D3KooWNmnNN8xrHqfr2FXoxpsWeZz5rAyUNNxN7mm4AbyxCuJw type=direct secs=0
+conn closed peer=12D3KooWDjhHMAcKrv1BevGm2FtLVcqsdYUmPidFNgnrjxp6yZj1 type=direct secs=0
+✔ rejoin: an invite node at the own address gives no session with self and no stop (2577.48483ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4603.055442

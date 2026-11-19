@@ -1,0 +1,50 @@
+dbus-daemon[7633]: [session uid=0 pid=7633] org.freedesktop.DBus.Error.AccessDenied: Failed to set fd limit to 65536: Operation not permitted
+GNOME_KEYRING_CONTROL=/root/.cache/keyring-NUAPY3
+{
+  "network": "127.0.0.1 (cloud VM, not LAN)",
+  "profiles": "/tmp/wp3-cRUM6n",
+  "checks": {
+    "1 H creates keyed room team with save and history": "pass",
+    "2 M joins with invite, save and history": "pass",
+    "3 session and both lines on both copies": "pass",
+    "4 no Electron process stays": "pass",
+    "5a one saved room": "pass",
+    "5b reopen shows both lines and waiting-peer within 3 s": "pass",
+    "6a M creates second room team with save and history": "pass",
+    "6b H joins without save, line three arrives": "pass",
+    "7a two saved rooms": "pass",
+    "7b each room shows only its own history": {
+      "result": "pass",
+      "detail": [
+        {
+          "one": false,
+          "two": false,
+          "three": true
+        },
+        {
+          "one": true,
+          "two": true,
+          "three": false
+        }
+      ]
+    },
+    "8 no Electron process stays at end": "pass"
+  },
+  "archiveLines": [
+    "H1 log: 2026-11-19T20:11:52.932Z INFO Saved rooms archive opened: state open, reason none, safeStorage backend gnome_libsecret",
+    "H2 log: 2026-11-19T20:12:00.631Z INFO Saved rooms archive opened: state open, reason none, safeStorage backend gnome_libsecret",
+    "M1 log: 2026-11-19T20:11:54.615Z INFO Saved rooms archive opened: state open, reason none, safeStorage backend gnome_libsecret",
+    "M2 log: 2026-11-19T20:11:57.604Z INFO Saved rooms archive opened: state open, reason none, safeStorage backend gnome_libsecret",
+    "M3 log: 2026-11-19T20:11:59.037Z INFO Saved rooms archive opened: state open, reason none, safeStorage backend gnome_libsecret",
+    "M4 log: 2026-11-19T20:12:02.488Z INFO Saved rooms archive opened: state open, reason none, safeStorage backend gnome_libsecret",
+    "M6 log: 2026-11-19T20:12:04.802Z INFO Saved rooms archive opened: state open, reason none, safeStorage backend gnome_libsecret"
+  ],
+  "errorLines": [
+    "M2 term: conn dial-failed peer=12D3KooWFFrMM3uafuA4mFo9FLiG9xT7y7YivZDiebrL7kYabxgW via=full-node reason=refused addr=/ip4/127.0.0.1/tcp/42907/p2p/12D3KooWFFrMM3uafuA4mFo9FLiG9xT7y7YivZDiebrL7kYabxgW error=\"connection error 127.0.0.1:42907: connect ECONNREFUSED 127.0.0.1:42907\"",
+    "M2 term: conn dial-failed peer=? via=address reason=refused addr=/ip4/127.0.0.1/tcp/42907 error=\"connection error 127.0.0.1:42907: connect ECONNREFUSED 127.0.0.1:42907\"",
+    "M6 term: conn dial-failed peer=12D3KooWFFrMM3uafuA4mFo9FLiG9xT7y7YivZDiebrL7kYabxgW via=full-node reason=refused addr=/ip4/127.0.0.1/tcp/42907/p2p/12D3KooWFFrMM3uafuA4mFo9FLiG9xT7y7YivZDiebrL7kYabxgW error=\"connection error 127.0.0.1:42907: connect ECONNREFUSED 127.0.0.1:42907\"",
+    "M6 term: conn dial-failed peer=? via=address reason=refused addr=/ip4/127.0.0.1/tcp/42907 error=\"connection error 127.0.0.1:42907: connect ECONNREFUSED 127.0.0.1:42907\"",
+    "M2 log: 2026-11-19T20:11:57.886Z EVENT event dial-failed peer \"12D3KooWFFrMM3uafuA4mFo9FLiG9xT7y7YivZDiebrL7kYabxgW\" via \"full-node\" reason \"refused\" addr \"/ip4/127.0.0.1/tcp/42907/p2p/12D3KooWFFrMM3uafuA4mFo9FLiG9xT7y7YivZDiebrL7kYabxgW\" error \"connection error 127.0.0.1:42907: connect ECONNREFUSED 127.0.0.1:42907\"",
+    "M2 log: 2026-11-19T20:11:57.891Z EVENT event dial-failed peer \"?\" via \"address\" reason \"refused\" addr \"/ip4/127.0.0.1/tcp/42907\" error \"connection error 127.0.0.1:42907: connect ECONNREFUSED 127.0.0.1:42907\""
+  ]
+}

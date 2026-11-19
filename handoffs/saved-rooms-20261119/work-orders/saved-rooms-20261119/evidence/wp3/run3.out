@@ -1,0 +1,39 @@
+dbus-daemon[6277]: [session uid=0 pid=6277] org.freedesktop.DBus.Error.AccessDenied: Failed to set fd limit to 65536: Operation not permitted
+{
+  "network": "127.0.0.1 (cloud VM, not LAN)",
+  "profiles": "/tmp/wp3-CUEcyV",
+  "checks": {
+    "1 H creates keyed room team with save and history": "pass",
+    "2 M joins with invite, save and history": "pass",
+    "3 session and both lines on both copies": "pass",
+    "4 no Electron process stays": "pass",
+    "5a one saved room": "pass",
+    "5b reopen shows both lines and waiting-peer within 3 s": "pass",
+    "6a M creates second room team with save and history": "pass",
+    "6b H joins without save, line three arrives": "pass",
+    "7a two saved rooms": "pass",
+    "7b each room shows only its own history": {
+      "result": "pass",
+      "detail": [
+        {
+          "one": false,
+          "two": false,
+          "three": true
+        },
+        {
+          "one": true,
+          "two": true,
+          "three": false
+        }
+      ]
+    },
+    "8 no Electron process stays at end": "pass"
+  },
+  "archiveLines": [],
+  "errorLines": [
+    "M2 term: conn dial-failed peer=12D3KooWAuW22MErZFdnA6PGCM762Z4tQ6xhc8PAPdwKGqbjB3nc via=full-node reason=refused addr=/ip4/127.0.0.1/tcp/42128/p2p/12D3KooWAuW22MErZFdnA6PGCM762Z4tQ6xhc8PAPdwKGqbjB3nc error=\"connection error 127.0.0.1:42128: connect ECONNREFUSED 127.0.0.1:42128\"",
+    "M2 term: conn dial-failed peer=? via=address reason=refused addr=/ip4/127.0.0.1/tcp/42128 error=\"connection error 127.0.0.1:42128: connect ECONNREFUSED 127.0.0.1:42128\"",
+    "M6 term: conn dial-failed peer=12D3KooWAuW22MErZFdnA6PGCM762Z4tQ6xhc8PAPdwKGqbjB3nc via=full-node reason=refused addr=/ip4/127.0.0.1/tcp/42128/p2p/12D3KooWAuW22MErZFdnA6PGCM762Z4tQ6xhc8PAPdwKGqbjB3nc error=\"connection error 127.0.0.1:42128: connect ECONNREFUSED 127.0.0.1:42128\"",
+    "M6 term: conn dial-failed peer=? via=address reason=refused addr=/ip4/127.0.0.1/tcp/42128 error=\"connection error 127.0.0.1:42128: connect ECONNREFUSED 127.0.0.1:42128\""
+  ]
+}
