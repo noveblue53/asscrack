@@ -7,6 +7,46 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased: voice processing and push-to-talk, milestone 5C (on main)
+
+The operator asked for the merge of branch `opus/voice-processing` on 2026-11-19, before the test on 2 computers.
+Base: `main` at `c42baf5`, then `main` at `598725f` (manual status) merged in. All results in this entry are
+127.0.0.1 results on one Windows 10 PC (Electron 40.5.0). There is no LAN result and no internet result yet.
+- **Echo cancellation:** the capture asks for echo cancellation, noise suppression and automatic gain control
+  explicitly, and logs the values of `track.getSettings()`. A measurement with 2 virtual audio cables showed that
+  the echo canceller of Chromium uses the playback worklet as its reference. On a 48 kHz cable the echo was about
+  64 dB lower. A control from a second process gave 0.4 dB less. Thus no fix was necessary. This is a digital
+  loopback, not an acoustic echo through speakers.
+- **Noise suppression:** RNNoise (`@sapphi-red/web-noise-suppressor` 0.4.1, new dependency, operator approval)
+  works in an AudioWorklet after the noise suppression of Chromium. The panel has RNNoise (default), Standard
+  (Chromium only) and Off. Measured on a steady white hiss: Off -33 dBFS, Standard -50 dBFS, RNNoise -70 dBFS.
+  Speech loses 1 to 2 dB. A synthetic keyboard click test showed only 2 to 4 dB less. The CSP of the window now has
+  `'wasm-unsafe-eval'` for the RNNoise WASM.
+- **Voice activity:** a send gate after the noise suppressor. Default: voice activity at -50 dBFS with a 300 ms
+  release delay. Before, the microphone sent all the time. A closed gate sends no frames, the same as Mute, thus the
+  relay and 0.6.0 peers need no change. The own buddy line shows "speaking" while the gate is open.
+- **Push to talk:** a key or a side mouse button that the user sets, with a release delay. The option "Also when
+  ASSCRACK is in the back" is on by default. Then a key hook of the system gives the key also while the window is
+  not in front. The hook is `uiohook-napi` 1.5.5, a new dependency with operator approval. The hook runs only while
+  the user is in voice in push-to-talk mode. It sends only the state of the one key, and it logs no key.
+- **Voice settings panel:** a "Voice settings" button opens the panel. It has the mode, a live input meter with the
+  threshold line, the release delays and the key. It also has echo cancellation, noise suppression, gain control,
+  microphone and speakers. The settings are in `voice-settings.json` in the profile and stay after a restart.
+- **Build:** `npmRebuild` is false. `uiohook-napi` has N-API binaries, and the build PC has no compiler for a
+  rebuild. The packaged app loads the Windows binary.
+- **Checks (127.0.0.1):**
+  - `npm test`: 221 of 221 pass (198 on `main` and 23 new tests for the gate, the settings store and the key hook).
+  - Two app copies in one LAN room on one PC. Voice activity sends about 8,000 bytes in 3 s above the threshold
+    and nothing below it. Push to talk sends only while the key is down, and nothing after a window blur in
+    window-only mode. Push to talk through the key hook sends only while a synthetic F24 key is down. Do not disturb
+    does not change mute, voice activity or push to talk.
+  - Packaged build and the 0.6.0 build (`d5ad3af`) in one room: frames go in both directions. While the new client
+    has a closed gate, it sends 0 bytes and the 0.6.0 window shows it as "in voice". A normal close with the key
+    hook on: the process exits in 0.3 s.
+- **Open checks:** the test card on 2 Windows computers with speakers: echo, noise, push to talk in the back, and a
+  0.6.0 client. A known limit: after a join with a synthetic hiss, RNNoise removed more than the standard
+  suppressor in 2 of 3 joins only.
+
 ## Unreleased: manual status, milestone 3 (on main)
 
 The operator accepted branch `opus/manual-status` on 2026-11-19 without the LAN checks. Base: `main` at `c42baf5`.
