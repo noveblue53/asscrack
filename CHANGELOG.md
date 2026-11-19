@@ -10,6 +10,9 @@ Each result has one of these labels:
 ## Unreleased: faults of 0.6.0 (branch `opus/faults`)
 
 All results in this entry are 127.0.0.1 results (one PC). There is no LAN or internet result yet.
+- **Invite panel (commit `2a55770`):** the panel waits for the UPnP result and then shows the invite code. Copy
+  goes through the main process. The operator saw these faults in an internet test of 0.6.0 (2026-11-19). The fix
+  has 127.0.0.1 checks only, and the panel has no window test.
 - **Second start (F1):** the portable launcher does not delete or unpack when a copy of the app runs from
   `%TEMP%\ASSCRACK`. It starts the running exe again, and the single instance lock of the packaged app shows the
   first window. The unpack folder stays the same, thus the firewall question stays one time for each build.
