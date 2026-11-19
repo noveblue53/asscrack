@@ -67,12 +67,38 @@ function formatTime(ms) {
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-// A message line: <li><span.from/><span.bubble-text><span.text/><span.time/></span></li>.
+// The text of a chat line. A message with a quotation (quote.js) gets a quotation block. The text nodes keep all the
+// characters, thus textContent is the message text (copy and find use it). The marks "> " are in span.qmark.
+function fillMessageText(span, text) {
+    const value = String(text ?? '');
+    const parts = window.quoteCore?.split(value) ?? null;
+    if (!parts) {
+        span.textContent = value;
+        return;
+    }
+    const block = document.createElement('span');
+    block.className = 'quote';
+    parts.quote.split(/(?<=\n)/).forEach((line, i) => {
+        const lineSpan = document.createElement('span');
+        lineSpan.className = i === 0 ? 'quote-head' : 'quote-line';
+        const mark = document.createElement('span');
+        mark.className = 'qmark';
+        mark.textContent = line.slice(0, 2);
+        lineSpan.append(mark, line.slice(2));
+        block.append(lineSpan);
+    });
+    span.append(block);
+    if (parts.rest) span.append(parts.rest);
+}
+
+// A message line: <li><span.from/><span.bubble-text><span.text/><span.time/><button.btn-quote/></span></li>.
 // Use textContent only for peer text. The class "own" is for a line of this user.
 // id: the network message id (data-id). An optimistic own line has no id.
-function makeMessageItem(from, text, time, own = false, id = null) {
+// peerId: the peer ID of the sender (data-peer-id), when it is known. A history line has no peer ID.
+function makeMessageItem(from, text, time, own = false, id = null, peerId = null) {
     const item = document.createElement('li');
     if (id !== null && id !== undefined && id !== '') item.dataset.id = String(id);
+    if (typeof peerId === 'string' && peerId) item.dataset.peerId = peerId;
     const fromText = String(from ?? '');
     if (own) item.classList.add('own');
     else item.classList.add(nameColorClass(fromText));
@@ -83,11 +109,15 @@ function makeMessageItem(from, text, time, own = false, id = null) {
     bubble.className = 'bubble-text';
     const textSpan = document.createElement('span');
     textSpan.className = 'text';
-    textSpan.textContent = String(text ?? '');
+    fillMessageText(textSpan, text);
     const timeSpan = document.createElement('span');
     timeSpan.className = 'time';
     timeSpan.textContent = formatTime(time);
-    bubble.append(textSpan, timeSpan);
+    // The visible Quote control. It runs the row action 'quote', as the context menu does. Not a tab stop:
+    // the keyboard uses the row menu (Menu key or Shift+F10).
+    const quoteButton = makeButton('Quote', () => runRowAction('quote', item), 'quote', 'btn-quote');
+    quoteButton.tabIndex = -1;
+    bubble.append(textSpan, timeSpan, quoteButton);
     item.append(fromSpan, bubble);
     item.dataset.time = String(Number(time) || 0);
     return item;
@@ -110,12 +140,12 @@ const shownMessageIds = new Set();
 
 // Add a line at the end. Returns the new <li>, or null when the id is already shown.
 // The caller calls window.reading.beforeChange() and afterChange() around it.
-function addMessage(from, text, time, own = false, id = null) {
+function addMessage(from, text, time, own = false, id = null, peerId = null) {
     if (id !== null && id !== undefined && id !== '') {
         if (shownMessageIds.has(String(id))) return null;
         shownMessageIds.add(String(id));
     }
-    const item = makeMessageItem(from, text, time, own, id);
+    const item = makeMessageItem(from, text, time, own, id, peerId);
     messageList.appendChild(item);
     groupWithPrevious(item);
     return item;
@@ -175,7 +205,9 @@ let selfLine = null;
 const peerNames = new Map();
 
 // The status line after a send with no peer. A peer that joins makes this text false, so addPeer removes it.
-const NO_PEERS_TEXT = 'No peers in this room yet.';
+// The message is in the history of this computer. A host sends its history to each member, thus a peer can get the
+// message later in a history replay.
+const NO_PEERS_TEXT = 'No peers in this room yet. The message is in the local history. A peer that joins later can get it in a history replay.';
 
 function addPeer(peerId) {
     if (peerItems.has(peerId)) return;
@@ -216,7 +248,7 @@ window.asscrack.onMessage(data => {
     const item = peerItems.get(data.peerId);
     if (item && data.from) setPeerName(item, data.from);
     const state = window.reading.beforeChange();
-    const line = addMessage(data.from, data.text, data.time, false, data.id);
+    const line = addMessage(data.from, data.text, data.time, false, data.id, data.peerId);
     if (line) window.reading.noteIncoming(line);
     window.reading.afterChange(state);
 });
@@ -307,19 +339,96 @@ async function login() {
     }
 }
 
-async function sendMessage() {
-    const text = messageInput.value;
-    if (!text.trim()) return;
-    messageInput.value = '';
-    // An own send goes to the newest line on purpose.
-    addMessage(ownName, text, Date.now(), true);
-    window.reading.followLatest();
-    status.textContent = peerItems.size === 0 ? NO_PEERS_TEXT : '';
-    try {
-        await window.asscrack.send(text);
-    } catch (err) {
-        status.textContent = `Error: ${err?.message ?? err}`;
+// ---- Quote ----
+// The quote of the next message: a snapshot (quoteCore.makeQuote) of one chat line, or null. The chip above the
+// message box shows it. The remove button, or Escape with the focus in the composer, removes it.
+const composer = document.getElementById('composer');
+const quoteChip = document.getElementById('quote-chip');
+const quoteFrom = document.getElementById('quote-from');
+const quoteTime = document.getElementById('quote-time');
+const quoteExcerpt = document.getElementById('quote-excerpt');
+const quoteRemove = document.getElementById('quote-remove');
+let pendingQuote = null;
+
+// The names in the buddy list now (the own name too): two users can have the same name.
+function buddyNames() {
+    const names = selfLine ? [ownName] : [];
+    for (const item of peerItems.values()) names.push(item.querySelector('.name').textContent);
+    return names;
+}
+
+function setQuote(quote) {
+    pendingQuote = quote;
+    quoteChip.hidden = quote === null;
+    if (quote === null) {
+        quoteFrom.textContent = '';
+        quoteTime.textContent = '';
+        quoteExcerpt.textContent = '';
+        return;
     }
+    quoteFrom.textContent = quote.tag ? `${quote.from} (${quote.tag})` : quote.from;
+    quoteTime.textContent = `at ${quote.clock}`;
+    quoteExcerpt.textContent = quote.lines.join('\n');
+    setNameColor(quoteChip, quote.from);
+}
+
+function removeQuote() {
+    if (pendingQuote === null) return false;
+    setQuote(null);
+    messageInput.focus({ preventScroll: true });
+    return true;
+}
+
+// Quote one chat line. The name, the peer ID and the text come from the row itself, not from a name search:
+// with two buddies of the same name, the quote names the sender of this row. A peer tag shows when the name repeats.
+function quoteMessage(row) {
+    if (!row || row.parentElement !== messageList || !selfLine) return false;
+    const textEl = row.querySelector('.text');
+    if (!textEl) return false;
+    const from = row.querySelector('.from')?.textContent ?? '';
+    setQuote(window.quoteCore.makeQuote({
+        from,
+        peerId: row.dataset.peerId ?? null,
+        repeats: window.quoteCore.nameRepeats(from, buddyNames()),
+        clock: row.querySelector('.time')?.textContent ?? '',
+        text: textEl.textContent
+    }));
+    messageInput.focus({ preventScroll: true });
+    return true;
+}
+
+quoteRemove.addEventListener('click', removeQuote);
+
+// Send the text of the message box, with the quote when there is one. The draft (the text and the quote) stays
+// until the send is done: a failed send keeps it.
+let sendBusy = false;
+async function sendMessage() {
+    if (sendBusy) return;
+    const reply = messageInput.value;
+    const quote = pendingQuote;
+    if (!reply.trim()) {
+        if (quote) status.textContent = 'Type a reply to the quote.';
+        return;
+    }
+    const text = window.quoteCore.compose(quote, reply);
+    sendBusy = true;
+    let count;
+    try {
+        count = await window.asscrack.send(text);
+    } catch (err) {
+        status.textContent = `Not sent: ${err?.message ?? err}. The message stays in the message box.`;
+        return;
+    } finally {
+        sendBusy = false;
+    }
+    // A change of the draft while the send ran stays.
+    if (messageInput.value === reply) messageInput.value = '';
+    if (pendingQuote === quote) setQuote(null);
+    // An own send goes to the newest line on purpose.
+    addMessage(ownName, text, Date.now(), true, null, selfId ?? topologySelf);
+    window.reading.followLatest();
+    const none = typeof count === 'number' ? count === 0 : peerItems.size === 0;
+    status.textContent = none ? NO_PEERS_TEXT : '';
 }
 
 loginButton.addEventListener('click', login);
@@ -329,8 +438,12 @@ for (const input of [usernameInput, roomInput, publicAddressInput]) {
     });
 }
 sendButton.addEventListener('click', sendMessage);
+// Enter sends. Shift+Enter makes a new line. An IME composition keeps its Enter.
 messageInput.addEventListener('keydown', e => {
-    if (e.key === 'Enter') sendMessage();
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+        e.preventDefault();
+        sendMessage();
+    }
 });
 
 // ---- Voice user interface ----
@@ -692,7 +805,9 @@ function rowInfo(row) {
         if (row === selfLine) return { kind: 'buddy', self: true, onMap: buddyId(row) !== null };
         return buddyId(row) === null ? null : { kind: 'buddy', self: false, onMap: true };
     }
-    if (row.parentElement === messageList) return { kind: 'message' };
+    if (row.parentElement === messageList) {
+        return { kind: 'message', quotable: selfLine !== null && row.querySelector('.text') !== null };
+    }
     if (row.parentElement === transferList) {
         if (row.classList.contains('offer-head')) {
             const head = offerHeads.get(row.dataset.offerId);
@@ -717,6 +832,7 @@ function runRowAction(action, row) {
         case 'copy-name': return copyBuddyName(row);
         case 'show-on-map': return showBuddyOnMap(buddyId(row));
         case 'copy-message': return copyMessageText(row);
+        case 'quote': return quoteMessage(row);
         case 'accept': return acceptTransfer(transferKey(row));
         case 'refuse': return refuseTransfer(transferKey(row));
         case 'cancel-receive': return cancelReceive(transferKey(row));
@@ -1064,7 +1180,8 @@ window.asscrack.onPeerLeft(() => showFullNodeState());
 
 // ---- The one Escape dispatcher ----
 // Escape closes only the top layer, in this sequence: the context menu (menu.js), the View menu and the Buddies
-// drawer (layout.js), the invite panel, the map. The View menu and the drawer stop their own Escape when the focus is
+// drawer (layout.js), the find bar (find.js, it puts the list back at its old position), the quote chip (only with
+// the focus in the composer), the invite panel, the map. The View menu and the drawer stop their own Escape when the focus is
 // in them. A separator drag stops its Escape in the capture phase on window. Then this listener gets no event.
 function focusIsIn(element) {
     const active = document.activeElement;
@@ -1080,6 +1197,16 @@ document.addEventListener('keydown', e => {
     }
     if (window.layout?.closeTopLayer()) {
         e.preventDefault();
+        return;
+    }
+    if (window.findBar?.isOpen()) {
+        e.preventDefault();
+        window.findBar.close();
+        return;
+    }
+    if (pendingQuote !== null && composer.contains(document.activeElement)) {
+        e.preventDefault();
+        removeQuote();
         return;
     }
     if (!invitePanel.hidden) {

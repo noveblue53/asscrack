@@ -186,3 +186,49 @@ test('menuCore keys and position', async () => {
     assert.deepEqual({ ...clampPosition(-20, 10, 160, 60, 800, 600) }, { x: 4, y: 10 });
     assert.deepEqual({ ...clampPosition(NaN, 10, 160, 60, 100, 600) }, { x: 4, y: 10 });
 });
+
+// ---- Milestone 2: Quote and Find ----
+
+test('the Escape dispatcher closes the find bar and then the quote chip, between layout and the invite panel', async () => {
+    const source = await read('renderer.js');
+    const at = source.indexOf("e.key !== 'Escape'");
+    const order = ['window.layout?.closeTopLayer()', 'window.findBar?.isOpen()', 'removeQuote()', 'setInvitePanelOpen(false)']
+        .map(text => source.indexOf(text, at));
+    for (const index of order) assert.ok(index > at);
+    assert.deepEqual([...order].sort((a, b) => a - b), order);
+    // The quote chip goes only with the focus in the composer.
+    assert.ok(source.includes('pendingQuote !== null && composer.contains(document.activeElement)'));
+});
+
+test('find.js and quote.js handle no Escape and set no inline style', async () => {
+    for (const name of ['find.js', 'quote.js']) {
+        const source = await read(name);
+        assert.doesNotMatch(source, /'Escape'/, name);
+        assert.doesNotMatch(source, /\.style\b|setAttribute\('style'/, name);
+    }
+});
+
+test('the Quote button and the menu action Quote run the same row action', async () => {
+    const source = await read('renderer.js');
+    assert.ok(source.includes("case 'quote': return quoteMessage(row);"));
+    assert.match(source, /makeButton\('Quote', \(\) => runRowAction\('quote', item\), 'quote', 'btn-quote'\)/);
+});
+
+test('index.html loads find.js and quote.js before renderer.js, and has the find bar and the quote chip', async () => {
+    const html = await read('index.html');
+    const at = name => html.indexOf(`<script src="${name}"></script>`);
+    assert.ok(at('reading.js') < at('find.js') && at('find.js') < at('renderer.js'));
+    assert.ok(at('quote.js') > 0 && at('quote.js') < at('renderer.js'));
+    for (const id of ['find-bar', 'find-input', 'find-count', 'find-prev', 'find-next', 'find-close', 'quote-chip', 'quote-remove']) {
+        assert.ok(html.includes(`id="${id}"`), id);
+    }
+    assert.doesNotMatch(html, /\sstyle=/);
+});
+
+test('menuCore gives Quote for a quotable message line', async () => {
+    const { actionsFor, allowed, label } = (await loadMenuCore()).window.menuCore;
+    assert.deepEqual([...actionsFor({ kind: 'message', quotable: true })], ['quote', 'copy-message']);
+    assert.deepEqual([...actionsFor({ kind: 'message', quotable: false })], ['copy-message']);
+    assert.equal(allowed('quote', { kind: 'message' }), false);
+    assert.equal(label('quote'), 'Quote');
+});

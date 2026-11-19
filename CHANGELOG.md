@@ -7,6 +7,75 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased: milestone 2 fixes, quote boundary and Quote button (branch `opus/quote-fix`)
+
+Base: `opus/quote` at `a099d88` (the reviewed commit). All results in this entry are same-computer results
+(127.0.0.1) on Windows 10, Node 24.13.1. There is no LAN result yet.
+- **Quote boundary:** the header of a new quote gives the number of excerpt lines, for example
+  `> Sam at 14:05, 1 line:` / `> old line` / `> these are my words` / `and this is my second line`. The reply can
+  start with "> ": the window shows those lines as words of the replier, outside the quotation. Before this fix, a
+  reply line that started with "> " showed as a line of the quoted user. The message is still one plain text message.
+  The limits (4 lines, 280 characters), the network format and the history format do not change. A 0.6.0 window shows
+  the text as plain lines.
+- **Old quotes in the history:** a quote from before this fix has no number in its header. When one "> " line follows
+  the header, the window shows the quotation block as before. When more "> " lines follow, the boundary is not known,
+  thus the window shows the text as plain text. No line goes to an author.
+- **Quote button:** the visible Quote button runs the row action `quote` (`runRowAction`), as the message menu does.
+- **Checks (127.0.0.1):** `npm test`, 2 full runs with one test file at a time: 182 of 182 pass in each run (168 on
+  `a099d88`). The new tests load the real scripts of the window in a small fake DOM (`test/helpers/fake-dom.mjs`,
+  `test/helpers/renderer-fixture.mjs`):
+  - `test/quote-boundary.test.mjs`: the formatter, the parser and the rendered line. The cases are a reply that starts
+    with "> ", two "> " reply lines, a quote of that reply and old stored text.
+  - `test/quote-actions.test.mjs`: the Quote button and the row menu on one line with a draft, and Remove and Escape.
+    Other cases are a history line with no peer ID, and a failed send that waits while the user types.
+  - 6 of the 12 new tests fail on `a099d88`: the boundary and format tests. The other 6 tests pass on `a099d88` too.
+    They test behavior that had no test before.
+  - 5 expected texts in the earlier tests changed for the new header.
+- **Open field checks:** the packaged .exe on two Windows computers in one LAN room, with a 0.6.0 client and a host
+  change.
+
+## Unreleased: milestone 2, Quote and Find (branch `opus/quote`)
+
+All results in this entry are same-computer results (127.0.0.1). There is no LAN result and no packaged .exe result
+yet. Environment: a Linux cloud container, Node 22.23.5, Electron 40.5.0 (Chromium 144) under Xvfb. Base `ad31372`.
+- **Quote (commit `cada0a2`):** the message menu has Quote, and each chat line has a Quote button (mouse hover or line
+  focus shows it). Both call the same function. A chip above the message box shows the author, the time and the
+  excerpt. Remove, or Escape with the focus in the composer, removes the quote. The send makes one ordinary text
+  message: a header line, at most 4 excerpt lines (280 characters in all, "…" when cut), then the reply. Example:
+  `> Sam (a1b2c3) at 14:05:` / `> the old line` / `my reply`. The network format and the history format do not
+  change. The quotation is a snapshot, thus a quote stays readable when the original line leaves the history.
+- **Same names:** when two users in the buddy list have the name, the header gets a peer tag (the last 6 characters
+  of the peer ID of the quoted line). A history line that this window did not get live has no peer ID, thus no tag.
+- **Message box:** it is a textarea now. A pasted text keeps its lines (CR LF becomes LF). Enter sends, Shift+Enter
+  makes a new line. A failed send keeps the text and the quote. A send with no peers shows "No peers in this room yet.
+  The message is in the local history. A peer that joins later can get it in a history replay."
+- **Find (commit `01be12b`):** Ctrl+F opens a find bar. It searches the text of the lines in the list now (not the
+  names, not the times). Enter, F3 or Next: next result. Shift+Enter, Shift+F3 or Previous: previous result. The bar
+  shows "n of m". The results use the CSS Custom Highlight API: the lines do not change. While the bar is open, the
+  unread count and the "New messages" marker stay, and a new line counts as unread. Escape or Close puts the list back
+  at the old position. Escape order: menu, View menu and drawer, find bar, quote chip, invite panel, map.
+- **Checks (127.0.0.1):** `npm test` on `opus/quote`, 2 full runs: 168 of 168 pass, then 167 of 168 (one failure in
+  `test/voice-direct.test.mjs`). On `main` (`ad31372`) in the same container: 137 of 139 pass, the 2 failures are in
+  the same file. The cause is the same in each case: `ERR_TOO_MANY_OUTBOUND_PROTOCOL_STREAMS` in `connect()` (a race
+  of the chat stream). Repeated runs of that file: 3 of 5 fail on `main`, 1 of 3 fail on `opus/quote`. Milestone 2
+  does not change `src/network`.
+  New tests: the quote format and its limits, the find matcher with 200 lines, the find hold of reading.js, and quotes
+  through the chat and history code: live, after a host change, after a replay with the original evicted, and after a
+  send with zero peers.
+- **0.6.0 check (127.0.0.1, script not in the repo):** the network code of 0.6.0 (`d5ad3af`) and the current code in
+  one room. A 0.6.0 node got the quote live with the same text. A late 0.6.0 node and a late current node got it in a
+  history replay. After the host stopped, a late node got it from the new host. 6 of 6 runs pass, with each
+  combination of old and new hosts. The 0.6.0 window shows the quote as plain lines (its chat text has
+  `white-space: pre-wrap`).
+- **Window checks (127.0.0.1):** a browser drive of `index.html` with a fake bridge, 40 of 40 checks pass, 0 console
+  errors. Three Electron copies (Sam, Sam, Ann) in one LAN room on one container: 10 of 10 checks pass, 0 console
+  errors, 0 ERROR or WARN lines in the 3 logs.
+- **Known, not changed:** the body of the window can scroll by 15 px when a focused chat line goes into view (also on
+  `main`).
+- **Open field checks:** the packaged .exe on Windows, a LAN room with a 0.6.0 client, and a replay after a host change
+  on 2 or 3 computers.
+- **Next milestone:** not started.
+
 ## Unreleased: room window, milestone 1 (branch `opus/room-window`)
 
 All results in this entry are same-PC results (127.0.0.1 tests, and app instances on one PC). There is no LAN
