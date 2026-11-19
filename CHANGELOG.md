@@ -7,6 +7,27 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased: milestone 2, Quote and Find (branch opus/quote-kit)
+
+All results in this entry are same-PC results (127.0.0.1 tests, and one app instance in a Linux cloud VM). There is
+no LAN result and no packaged .exe result yet. Base `ad31372` (milestone 1).
+- **Quote (commit `20315b8`):** "Quote" in the message menu and a Quote button beside each line. A chip above the
+  input shows the author and the excerpt. The remove button or Escape closes it. A send gives one plain text message:
+  the line `> Author: excerpt`, then the reply. The network code and the history format do not change, so a 0.6.0
+  client shows the same two lines.
+  - The excerpt has a limit of 120 characters and the author a limit of 40. Line breaks in the excerpt become spaces.
+  - When two people have the same name, the author shows as `Name (abcd)` with the last 4 characters of the peer ID.
+  - A failed send puts the draft and the quote back. A send with nobody online stays in the local history, and the
+    status line says so.
+- **Find (commit `20315b8`):** Ctrl+F opens a find bar for the loaded lines, with previous, next (Enter,
+  Shift+Enter) and "n of m". Escape closes it and returns to the position from before Find. The unread count and the
+  marker do not change.
+- **Fix:** the Quote button is beside the bubble, so it does not cover the time of a short line.
+- **Checks:** `npm test` 159 of 159 pass (127.0.0.1, 139 on `ad31372`). New tests: quote format and limits, find
+  matcher with 200 lines, and a quote through the unchanged network code, live and after a history replay. A drive
+  script ran 9 checks in the running app (VM, same PC): all pass, 0 console errors.
+- **Open field checks:** the Windows .exe, a LAN test with a 0.6.0 client, and a history replay after a host change.
+
 ## Unreleased: room window, milestone 1 (branch `opus/room-window`)
 
 All results in this entry are same-PC results (127.0.0.1 tests, and app instances on one PC). There is no LAN
