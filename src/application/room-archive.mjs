@@ -75,9 +75,23 @@ CREATE TABLE IF NOT EXISTS rooms(room_id TEXT PRIMARY KEY, name TEXT NOT NULL, r
 CREATE TABLE IF NOT EXISTS messages(room_id TEXT NOT NULL REFERENCES rooms(room_id) ON DELETE CASCADE,
   msg_id TEXT NOT NULL, sender TEXT, body TEXT NOT NULL, time INTEGER NOT NULL, own INTEGER NOT NULL,
   source TEXT NOT NULL, peer_id TEXT, PRIMARY KEY(room_id, msg_id));
+CREATE INDEX IF NOT EXISTS messages_order ON messages(room_id, time, msg_id);
 `;
 
-export function openRoomArchive({ dir, protector }) {
+// Limits of each room and of each row (DECISIONS.md P6).
+export const ARCHIVE_LIMITS = Object.freeze({ maxRows: 10000, maxBytes: 8388608, maxRowBytes: 65536 });
+
+const ROW_BYTES_SQL = "length(CAST(body AS BLOB)) + length(CAST(coalesce(sender, '') AS BLOB))";
+
+function mapRow(r) {
+  return {
+    id: r.msg_id, from: r.sender, text: r.body, time: r.time, own: r.own === 1, source: r.source,
+    peerId: r.peer_id,
+  };
+}
+
+export function openRoomArchive({ dir, protector, limits = null }) {
+  const lim = { ...ARCHIVE_LIMITS, ...(limits || {}) };
   const dbFile = path.join(dir, 'archive.db');
   const keyFile = path.join(dir, 'archive.key');
   const tmpFile = path.join(dir, 'archive.key.tmp');
@@ -127,7 +141,7 @@ export function openRoomArchive({ dir, protector }) {
       handle.pragma('temp_store=MEMORY');
       handle.pragma('foreign_keys=ON');
       handle.exec(SCHEMA);
-      handle.pragma('user_version=1');
+      handle.pragma('user_version=2');
     } catch {
       try { handle.close(); } catch { /* ignore */ }
       return setState('locked', 'database-unreadable');
@@ -191,17 +205,68 @@ export function openRoomArchive({ dir, protector }) {
     addMessage(roomId, { id, from = null, text, time, own = false, source, peerId = null }) {
       const d = need();
       if (source !== 'send' && source !== 'live') throw new Error(`addMessage: bad source ${source}`);
-      const info = d.prepare(`INSERT OR IGNORE INTO messages(room_id, msg_id, sender, body, time, own, source, peer_id)
-        VALUES(?, ?, ?, ?, ?, ?, ?, ?)`).run(roomId, String(id), from ?? null, String(text), time, own ? 1 : 0,
-        source, peerId ?? null);
-      return info.changes === 1;
+      const body = String(text);
+      const size = Buffer.byteLength(body, 'utf8') + Buffer.byteLength(from ?? '', 'utf8');
+      if (size > lim.maxRowBytes) {
+        const err = new RangeError(`addMessage: row is ${size} bytes, limit ${lim.maxRowBytes}`);
+        err.code = 'row-too-large';
+        throw err;
+      }
+      return d.transaction(() => {
+        const info = d.prepare(`INSERT OR IGNORE INTO messages(room_id, msg_id, sender, body, time, own, source,
+          peer_id) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`).run(roomId, String(id), from ?? null, body, time, own ? 1 : 0,
+          source, peerId ?? null);
+        if (info.changes !== 1) return false;
+        // Prune the oldest rows by (time, msg_id) until the room is in the limits.
+        const usage = d.prepare(`SELECT count(*) AS n, coalesce(sum(${ROW_BYTES_SQL}), 0) AS b FROM messages
+          WHERE room_id = ?`).get(roomId);
+        let rows = usage.n;
+        let bytes = usage.b;
+        if (rows > lim.maxRows || bytes > lim.maxBytes) {
+          const del = d.prepare('DELETE FROM messages WHERE room_id = ? AND msg_id = ?');
+          const it = d.prepare(`SELECT msg_id, ${ROW_BYTES_SQL} AS sz FROM messages WHERE room_id = ?
+            ORDER BY time ASC, msg_id ASC`).iterate(roomId);
+          const victims = [];
+          for (const r of it) {
+            if (rows <= lim.maxRows && bytes <= lim.maxBytes) break;
+            victims.push(r.msg_id);
+            rows -= 1;
+            bytes -= r.sz;
+          }
+          for (const m of victims) del.run(roomId, m);
+        }
+        return true;
+      })();
     },
-    listMessages(roomId, { limit = 200 } = {}) {
-      return need().prepare(`SELECT * FROM (SELECT * FROM messages WHERE room_id = ?
-        ORDER BY time DESC, msg_id DESC LIMIT ?) ORDER BY time ASC, msg_id ASC`).all(roomId, limit).map((r) => ({
-        id: r.msg_id, from: r.sender, text: r.body, time: r.time, own: r.own === 1, source: r.source,
-        peerId: r.peer_id,
-      }));
+    listMessages(roomId, { limit = 200, before = null } = {}) {
+      const d = need();
+      let n = Math.trunc(Number(limit));
+      if (!Number.isFinite(n) || n < 1) n = 1;
+      if (n > 500) n = 500;
+      let rows;
+      if (before) {
+        rows = d.prepare(`SELECT * FROM (SELECT * FROM messages WHERE room_id = ?
+          AND (time < ? OR (time = ? AND msg_id < ?))
+          ORDER BY time DESC, msg_id DESC LIMIT ?) ORDER BY time ASC, msg_id ASC`)
+          .all(roomId, before.time, before.time, String(before.id), n);
+      } else {
+        rows = d.prepare(`SELECT * FROM (SELECT * FROM messages WHERE room_id = ?
+          ORDER BY time DESC, msg_id DESC LIMIT ?) ORDER BY time ASC, msg_id ASC`).all(roomId, n);
+      }
+      return rows.map(mapRow);
+    },
+    clearMessages(roomId) {
+      const d = need();
+      return d.transaction(() => {
+        const ids = d.prepare('SELECT msg_id FROM messages WHERE room_id = ?').all(roomId).map((r) => r.msg_id);
+        d.prepare('DELETE FROM messages WHERE room_id = ?').run(roomId);
+        return ids;
+      })();
+    },
+    roomUsage(roomId) {
+      const r = need().prepare(`SELECT count(*) AS n, coalesce(sum(${ROW_BYTES_SQL}), 0) AS b FROM messages
+        WHERE room_id = ?`).get(roomId);
+      return { rows: r.n, bytes: r.b };
     },
     close() {
       if (db) { try { db.close(); } catch { /* ignore */ } }

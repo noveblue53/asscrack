@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import Database from 'better-sqlite3-multiple-ciphers';
-import { roomFingerprint, openRoomArchive } from '../src/application/room-archive.mjs';
+import { roomFingerprint, openRoomArchive, ARCHIVE_LIMITS } from '../src/application/room-archive.mjs';
 
 function tmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'room-archive-'));
@@ -235,4 +235,132 @@ test('key: key unwraps but does not open the database (database-unreadable)', ()
   assert.deepEqual(a.state(), { state: 'locked', reason: 'database-unreadable' });
   a.close();
   assert.deepEqual(snapshot(x), before);
+});
+
+function openRoom(t, limits) {
+  const dir = tmpDir();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const a = openRoomArchive({ dir, protector: fakeProtector('k'), limits });
+  t.after(() => a.close());
+  const { roomId } = a.saveRoom({ name: 'room', roomKey: KEY, userName: 'u' });
+  return { dir, a, roomId };
+}
+
+const row = (id, time, text = 't', from = 'u') => ({ id, from, text, time, source: 'live' });
+
+test('limits: default values', () => {
+  assert.deepEqual({ ...ARCHIVE_LIMITS }, { maxRows: 10000, maxBytes: 8388608, maxRowBytes: 65536 });
+});
+
+test('paging with before gives older rows in ascending order, limit clamps to 1..500', (t) => {
+  const { a, roomId } = openRoom(t);
+  for (let i = 1; i <= 10; i++) a.addMessage(roomId, row(`m${String(i).padStart(2, '0')}`, i));
+  a.addMessage(roomId, row('a', 5));
+  a.addMessage(roomId, row('z', 5));
+  // Order by (time, msg_id): ... m04(4), a(5), m05(5), z(5), m06(6) ...
+  assert.deepEqual(a.listMessages(roomId, { limit: 3, before: { time: 5, id: 'z' } }).map((x) => x.id), ['m04', 'a', 'm05']);
+  assert.deepEqual(a.listMessages(roomId, { limit: 2, before: { time: 5, id: 'a' } }).map((x) => x.id), ['m03', 'm04']);
+  assert.deepEqual(a.listMessages(roomId, { before: { time: 1, id: 'm01' } }), []);
+  assert.equal(a.listMessages(roomId, { limit: 0 }).length, 1);
+  assert.equal(a.listMessages(roomId, { limit: -5 }).length, 1);
+  for (let i = 0; i < 600; i++) a.addMessage(roomId, row(`n${i}`, 100 + i));
+  assert.equal(a.listMessages(roomId, { limit: 9999 }).length, 500);
+});
+
+test('clearMessages deletes the rows of one room and gives the IDs', (t) => {
+  const { a, roomId } = openRoom(t);
+  const other = a.saveRoom({ name: 'other', roomKey: KEY, userName: 'u' }).roomId;
+  a.addMessage(roomId, row('x', 1));
+  a.addMessage(roomId, row('y', 2));
+  a.addMessage(other, row('x', 1));
+  assert.deepEqual(a.clearMessages(roomId).sort(), ['x', 'y']);
+  assert.deepEqual(a.listMessages(roomId), []);
+  assert.equal(a.listMessages(other).length, 1);
+  assert.deepEqual(a.roomUsage(roomId), { rows: 0, bytes: 0 });
+  assert.equal(a.getRoom(roomId).name, 'room');
+  assert.deepEqual(a.clearMessages(roomId), []);
+});
+
+test('row limit: the oldest rows by (time, msg_id) go', (t) => {
+  const { a, roomId } = openRoom(t, { maxRows: 3 });
+  a.addMessage(roomId, row('b', 1));
+  a.addMessage(roomId, row('a', 1));
+  a.addMessage(roomId, row('c', 2));
+  assert.equal(a.addMessage(roomId, row('d', 3)), true);
+  assert.deepEqual(a.listMessages(roomId).map((x) => x.id), ['b', 'c', 'd']);
+  // An older row than all others is inserted, then pruned at once.
+  assert.equal(a.addMessage(roomId, row('old', 0)), true);
+  assert.deepEqual(a.listMessages(roomId).map((x) => x.id), ['b', 'c', 'd']);
+  assert.equal(a.roomUsage(roomId).rows, 3);
+});
+
+test('byte limit: body plus sender in UTF-8 bytes, the oldest rows go', (t) => {
+  const { a, roomId } = openRoom(t, { maxBytes: 20 });
+  a.addMessage(roomId, row('1', 1, 'ää', 'u')); // 4 + 1 = 5
+  a.addMessage(roomId, row('2', 2, 'abcd', 'u')); // 5
+  a.addMessage(roomId, row('3', 3, 'abcd', null)); // 4
+  assert.deepEqual(a.roomUsage(roomId), { rows: 3, bytes: 14 });
+  a.addMessage(roomId, row('4', 4, 'abcdefgh', 'u')); // 9, total 23 > 20
+  assert.deepEqual(a.listMessages(roomId).map((x) => x.id), ['2', '3', '4']);
+  assert.deepEqual(a.roomUsage(roomId), { rows: 3, bytes: 18 });
+});
+
+test('row size limit: a larger row throws row-too-large and adds nothing', (t) => {
+  const { a, roomId } = openRoom(t, { maxRowBytes: 10 });
+  assert.equal(a.addMessage(roomId, row('ok', 1, 'abcdefghi', 'u')), true); // 10
+  assert.throws(() => a.addMessage(roomId, row('big', 2, 'äbcdefghi', 'u')), (err) => {
+    assert.ok(err instanceof RangeError);
+    assert.equal(err.code, 'row-too-large');
+    return true;
+  });
+  assert.deepEqual(a.listMessages(roomId).map((x) => x.id), ['ok']);
+});
+
+test('a closed archive throws on addMessage', (t) => {
+  const { a, roomId } = openRoom(t);
+  a.close();
+  assert.throws(() => a.addMessage(roomId, row('x', 1)), /locked/);
+});
+
+test('250 rows: after a reopen, 200 newest rows, then one page of 50 older rows, each ID one time', (t) => {
+  const dir = tmpDir();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const p = fakeProtector('k');
+  let a = openRoomArchive({ dir, protector: p });
+  const { roomId } = a.saveRoom({ name: 'room', roomKey: KEY, userName: 'u' });
+  for (let i = 1; i <= 250; i++) a.addMessage(roomId, row(`m${String(i).padStart(3, '0')}`, 1000 + i, `line ${i}`));
+  a.close();
+  a = openRoomArchive({ dir, protector: p });
+  t.after(() => a.close());
+  assert.equal(a.state().state, 'open');
+  const first = a.listMessages(roomId);
+  assert.equal(first.length, 200);
+  assert.equal(first[0].text, 'line 51');
+  assert.equal(first[199].text, 'line 250');
+  const page = a.listMessages(roomId, { limit: 100, before: { time: first[0].time, id: first[0].id } });
+  assert.equal(page.length, 50);
+  assert.equal(page[0].text, 'line 1');
+  const ids = [...page, ...first].map((x) => x.id);
+  assert.equal(new Set(ids).size, 250);
+  assert.deepEqual(ids, Array.from({ length: 250 }, (_, i) => `m${String(i + 1).padStart(3, '0')}`));
+});
+
+test('a version 1 database opens and goes to version 2 with its rows', (t) => {
+  const dir = tmpDir();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const p = fakeProtector('k');
+  const roomId = seed(dir, p);
+  // Make the file a version 1 file: no index, user_version 1.
+  const key = p.unwrap(Buffer.from(JSON.parse(fs.readFileSync(path.join(dir, 'archive.key'), 'utf8')).wrapped, 'base64'));
+  const db = new Database(path.join(dir, 'archive.db'));
+  db.pragma("cipher='sqlcipher'");
+  db.pragma('legacy=4');
+  db.pragma(`key='${key.toString('hex')}'`);
+  db.exec('DROP INDEX IF EXISTS messages_order');
+  db.pragma('user_version=1');
+  db.close();
+  const a = openRoomArchive({ dir, protector: p });
+  t.after(() => a.close());
+  assert.equal(a.state().state, 'open');
+  assert.equal(a.listMessages(roomId)[0].text, 'secret-plaintext-xyz');
 });

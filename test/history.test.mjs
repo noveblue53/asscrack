@@ -11,9 +11,9 @@ const base = {
     heartbeatInterval: 300, hostTimeout: 1500, electionDelay: 1000
 }
 
-async function makeNodes(count) {
+async function makeNodes(count, seeds = []) {
     const nodes = []
-    for (let i = 0; i < count; i++) nodes.push(await createAsscrackNode(base))
+    for (let i = 0; i < count; i++) nodes.push(await createAsscrackNode({ ...base, seedHistory: seeds[i] ?? [] }))
     return nodes
 }
 
@@ -142,11 +142,14 @@ test('d: a chat line with no id gives a message event with an id', { timeout: 15
 })
 
 test('e: a member with a session before the first election gets the history', { timeout: 30000 }, async () => {
-    const nodes = await makeNodes(2)
+    // Each node has a line that the other node does not have. No host exists yet.
+    // A send with no session stays local (milestone 6), thus the lines come from seedHistory.
+    const now = Date.now()
+    const nodes = await makeNodes(2, [
+        [{ id: 'solo-0', from: 'zero', text: 'solo zero', time: now }],
+        [{ id: 'solo-1', from: 'one', text: 'solo one', time: now + 1 }]
+    ])
     try {
-        // Each node has a line that the other node does not have. No host exists yet.
-        nodes[0].send('solo zero')
-        nodes[1].send('solo one')
         await connectPair(nodes[0], nodes[1])
         assert.equal(nodes[0].host(), null)
         await waitUntil(() => agree(nodes), 5000)

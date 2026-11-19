@@ -2,7 +2,7 @@ import { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, safeStorage, sess
 import { fileURLToPath, pathToFileURL } from 'url';
 import { createRequire } from 'module';
 import path from 'path';
-import { mkdirSync, appendFileSync, existsSync, readFileSync, writeFileSync } from 'fs';
+import { mkdirSync, appendFileSync, existsSync, readFileSync, writeFileSync, rmSync } from 'fs';
 import { format } from 'util';
 import { createAsscrackNode, keyedServiceTag } from '../network/node.mjs';
 import { newRoomKey, readInvite } from '../network/invite.mjs';
@@ -345,16 +345,39 @@ function getSavedRooms() {
             dir: path.join(app.getPath('userData'), 'saved-rooms'),
             protector: makeProtector(safeStorage),
             log: writeLog,
-            backend: process.platform === 'linux' ? () => safeStorage.getSelectedStorageBackend() : null
+            backend: process.platform === 'linux' ? () => safeStorage.getSelectedStorageBackend() : null,
+            // Saved rooms (milestone 6): the result of each archive write goes to the window. Only the ID and the reason.
+            notify: (type, data) => {
+                if (type === 'line-saved') sendToWindow('asscrack:line-saved', { id: String(data?.id ?? '') });
+                else if (type === 'save-failed') {
+                    sendToWindow('asscrack:save-failed', { id: String(data?.id ?? ''), reason: String(data?.reason ?? 'unknown') });
+                }
+            },
+            forgetHints
         });
     }
     return savedRooms;
 }
 
+// Saved rooms (milestone 6). Forget deletes the room hint files userData/rooms/<tag>.json and <tag>.host.json.
+function forgetHints(row) {
+    if (!row?.name || !row?.roomKey) return;
+    const dir = path.join(app.getPath('userData'), 'rooms');
+    const tag = keyedServiceTag(row.name, row.roomKey);
+    for (const file of [`${tag}.json`, `${tag}.host.json`]) {
+        rmSync(path.join(dir, file), { force: true });
+    }
+}
+
+// Saved rooms (milestone 6). The check of a roomId from the window.
+function validRoomId(roomId) {
+    return typeof roomId === 'string' && roomId.length > 0 && roomId.length <= 128;
+}
+
 // Saved rooms (milestone 6). Save the keyed room and mark the active room. A save failure does not stop the login.
 function afterRoomStart(result, { invite = null, userName, save = false, keepHistory = true }) {
     const roomKey = node?.roomKey() ?? null;
-    let saveInfo = { roomId: null, saved: false, saveError: null };
+    let saveInfo = { roomId: null, saved: false, saveError: null, savedRoom: false, keepHistory: null };
     try {
         saveInfo = getSavedRooms().afterLogin({ room: result.room, roomKey, invite, userName, save: save === true, keepHistory });
     } catch (err) {
@@ -386,10 +409,16 @@ ipcMain.handle('asscrack:saved-rooms', () => getSavedRooms().status());
 
 ipcMain.handle('asscrack:unlock-archive', () => getSavedRooms().unlock());
 
-ipcMain.handle('asscrack:saved-room-lines', (_event, roomId) => {
-    if (typeof roomId !== 'string' || roomId.length > 128) return [];
+ipcMain.handle('asscrack:saved-room-lines', (_event, roomId, opts) => {
+    if (!validRoomId(roomId)) return [];
+    // Paging: before is { time, id } of the first shown line, or null.
+    let before = null;
+    const b = opts?.before;
+    if (b && Number.isFinite(Number(b.time)) && typeof b.id === 'string' && b.id.length <= 256) {
+        before = { time: Number(b.time), id: b.id };
+    }
     try {
-        return getSavedRooms().lines(roomId);
+        return before ? getSavedRooms().lines(roomId, { before, limit: 100 }) : getSavedRooms().lines(roomId);
     } catch (err) {
         writeLog('WARN', `Saved lines not read: ${err?.message ?? err}`);
         return [];
@@ -417,6 +446,26 @@ ipcMain.handle('asscrack:reopen-room', async (_event, roomId) => {
     return afterRoomStart(result, { invite: row.invite, userName: row.userName, save: false, keepHistory: row.keepHistory });
 });
 
+// Saved rooms (milestone 6): the room storage controls and Forget.
+ipcMain.handle('asscrack:set-keep-history', (_event, roomId, on) => {
+    if (!validRoomId(roomId)) throw new Error('Saved room not found');
+    return getSavedRooms().setKeepHistory(roomId, on === true);
+});
+
+ipcMain.handle('asscrack:clear-history', (_event, roomId) => {
+    if (!validRoomId(roomId)) throw new Error('Saved room not found');
+    const result = getSavedRooms().clear(roomId);
+    writeLog('INFO', `Saved history cleared (${result?.cleared ?? 0} rows)`);
+    return result;
+});
+
+ipcMain.handle('asscrack:forget-room', (_event, roomId) => {
+    if (!validRoomId(roomId)) throw new Error('Saved room not found');
+    const result = getSavedRooms().forget(roomId);
+    writeLog('INFO', 'Saved room forgotten');
+    return result;
+});
+
 ipcMain.handle('asscrack:invite', () => {
     if (!node) throw new Error('Not logged in');
     if (node.roomKey() === null) return { code: null, reason: 'lan' };
@@ -441,12 +490,15 @@ ipcMain.handle('asscrack:send', (_event, text) => {
     if (!node) throw new Error('Not logged in');
     // Saved rooms (milestone 6): the window gets the record. An archive error does not stop the send.
     const record = node.sendRecord(text);
+    let save = { saved: false, saveError: null };
     try {
-        savedRooms?.recordSend(record);
+        const result = savedRooms?.recordSend(record);
+        if (result) save = { saved: result.saved === true, saveError: result.saveError ?? null };
     } catch (err) {
         writeLog('WARN', `Saved line not written: ${err?.message ?? err}`);
+        save = { saved: false, saveError: String(err?.message ?? err) };
     }
-    return record;
+    return { ...record, ...save };
 });
 
 ipcMain.handle('asscrack:signal', (_event, { peerId, data } = {}) => {
