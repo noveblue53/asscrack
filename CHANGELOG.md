@@ -7,6 +7,33 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased: milestone 2 fixes, quote boundary and Quote button (branch `opus/quote-fix`)
+
+Base: `opus/quote` at `a099d88` (the reviewed commit). All results in this entry are same-computer results
+(127.0.0.1) on Windows 10, Node 24.13.1. There is no LAN result yet.
+- **Quote boundary:** the header of a new quote gives the number of excerpt lines, for example
+  `> Sam at 14:05, 1 line:` / `> old line` / `> these are my words` / `and this is my second line`. The reply can
+  start with "> ": the window shows those lines as words of the replier, outside the quotation. Before this fix, a
+  reply line that started with "> " showed as a line of the quoted user. The message is still one plain text message.
+  The limits (4 lines, 280 characters), the network format and the history format do not change. A 0.6.0 window shows
+  the text as plain lines.
+- **Old quotes in the history:** a quote from before this fix has no number in its header. When one "> " line follows
+  the header, the window shows the quotation block as before. When more "> " lines follow, the boundary is not known,
+  thus the window shows the text as plain text. No line goes to an author.
+- **Quote button:** the visible Quote button runs the row action `quote` (`runRowAction`), as the message menu does.
+- **Checks (127.0.0.1):** `npm test`, 2 full runs with one test file at a time: 182 of 182 pass in each run (168 on
+  `a099d88`). The new tests load the real scripts of the window in a small fake DOM (`test/helpers/fake-dom.mjs`,
+  `test/helpers/renderer-fixture.mjs`):
+  - `test/quote-boundary.test.mjs`: the formatter, the parser and the rendered line. The cases are a reply that starts
+    with "> ", two "> " reply lines, a quote of that reply and old stored text.
+  - `test/quote-actions.test.mjs`: the Quote button and the row menu on one line with a draft, and Remove and Escape.
+    Other cases are a history line with no peer ID, and a failed send that waits while the user types.
+  - 6 of the 12 new tests fail on `a099d88`: the boundary and format tests. The other 6 tests pass on `a099d88` too.
+    They test behavior that had no test before.
+  - 5 expected texts in the earlier tests changed for the new header.
+- **Open field checks:** the packaged .exe on two Windows computers in one LAN room, with a 0.6.0 client and a host
+  change.
+
 ## Unreleased: milestone 2, Quote and Find (branch `opus/quote`)
 
 All results in this entry are same-computer results (127.0.0.1). There is no LAN result and no packaged .exe result
