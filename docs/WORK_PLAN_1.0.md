@@ -155,6 +155,8 @@ Offer a small, optional always-on-top window showing current speakers and the lo
 
 Added 2026-11-19. Operator request, 2026-11-19: "I can tell there is not much processing or suppression applied to the voice frames before they are transferred ... I think it needs to have inbuilt echo/noise suppression. i know discord uses 'Krisp' ... another thing i like about discord is the voice activity/push to talk customization". Work started on branch `opus/voice-processing`.
 
+**State (2026-11-19).** On `main`, not released. All parts below have 127.0.0.1 results, also the two optional parts (the operator approved both dependencies). The echo canceller uses the playback worklet as its reference (measured with virtual audio cables). The exit checks on computers with speakers wait for the operator. See `CHANGELOG.md`.
+
 **Baseline.** `src/application/voice.js` calls `getUserMedia({ audio: true })` with no explicit constraints. Playback is an AudioWorklet, not a WebRTC peer connection. It is not known if the Chromium echo canceller uses that playback as its reference.
 
 **Required for 1.0.**

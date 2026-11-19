@@ -28,10 +28,12 @@
     "@libp2p/utils": "^5.0.0",
     "@libp2p/websockets": "^8.1.4",
     "@nodeutils/defaults-deep": "^1.1.0",
+    "@sapphi-red/web-noise-suppressor": "0.4.1",
     "it-pipe": "^3.0.1",
     "it-pushable": "^3.2.4",
     "libp2p": "^1.9.4",
-    "uint8arrays": "^5.1.0"
+    "uint8arrays": "^5.1.0",
+    "uiohook-napi": "1.5.5"
   },
   "devDependencies": {
     "electron": "^40.5.0",
@@ -51,6 +53,7 @@
       "output": "dist"
     },
     "artifactBuildStarted": "./build/portable-launcher.cjs",
+    "npmRebuild": false,
     "win": {
       "target": "portable"
     },

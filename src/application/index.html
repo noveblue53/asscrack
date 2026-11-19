@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="styles.css">
@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="menu.css">
   <link rel="stylesheet" href="quote.css">
   <link rel="stylesheet" href="find.css">
+  <link rel="stylesheet" href="voice-panel.css">
   <title>ASSCRACK</title>
 </head>
 <body>
@@ -93,11 +94,76 @@
       </div>
     </div>
 
+    <!-- voice-panel.js: the voice settings. The microphone runs for the meter while the panel is open. -->
+    <div id="voice-settings" role="dialog" aria-labelledby="vs-title" hidden>
+      <div class="vs-head">
+        <h2 id="vs-title">Voice settings</h2>
+        <button id="vs-close" type="button">Close</button>
+      </div>
+
+      <fieldset class="vs-section">
+        <legend>Input mode</legend>
+        <div class="vs-choice">
+          <label><input type="radio" name="vs-mode" id="vs-mode-voice" value="voice"> Voice activity</label>
+          <label><input type="radio" name="vs-mode" id="vs-mode-ptt" value="ptt"> Push to talk</label>
+        </div>
+
+        <div class="vs-meter" aria-hidden="true">
+          <div id="vs-meter-fill"></div>
+          <div id="vs-meter-line"></div>
+        </div>
+        <p id="vs-meter-note" class="vs-hint">Speak to test your microphone. Nothing goes out while you are not in voice.</p>
+
+        <div id="vs-voice-group">
+          <label class="vs-slider" for="vs-threshold">Sensitivity <output id="vs-threshold-value" for="vs-threshold"></output></label>
+          <input type="range" id="vs-threshold" min="-80" max="-10" step="1">
+          <p class="vs-hint">Your voice goes out when the bar is to the right of the line. Move the line to the right if noise opens it.</p>
+          <label class="vs-slider" for="vs-vad-release">Release delay <output id="vs-vad-release-value" for="vs-vad-release"></output></label>
+          <input type="range" id="vs-vad-release" min="0" max="2000" step="50">
+        </div>
+
+        <div id="vs-ptt-group" hidden>
+          <div class="vs-key-row">
+            <span>Key</span>
+            <kbd id="vs-ptt-key">Not set</kbd>
+            <button id="vs-ptt-set" type="button">Set key</button>
+          </div>
+          <label class="vs-check"><input type="checkbox" id="vs-ptt-global"> Also when ASSCRACK is in the back</label>
+          <p id="vs-ptt-note" class="vs-hint" role="status"></p>
+          <label class="vs-slider" for="vs-ptt-release">Release delay <output id="vs-ptt-release-value" for="vs-ptt-release"></output></label>
+          <input type="range" id="vs-ptt-release" min="0" max="2000" step="50">
+        </div>
+      </fieldset>
+
+      <fieldset class="vs-section">
+        <legend>Processing</legend>
+        <label class="vs-check"><input type="checkbox" id="vs-ec"> Echo cancellation</label>
+        <label class="vs-device" for="vs-ns">Noise suppression</label>
+        <select id="vs-ns">
+          <option value="rnnoise">RNNoise (strong)</option>
+          <option value="standard">Standard (light, steady noise only)</option>
+          <option value="off">Off</option>
+        </select>
+        <p id="vs-ns-note" class="vs-hint" role="status"></p>
+        <label class="vs-check"><input type="checkbox" id="vs-agc"> Automatic gain control</label>
+      </fieldset>
+
+      <fieldset class="vs-section">
+        <legend>Devices</legend>
+        <label class="vs-device" for="vs-input">Microphone</label>
+        <select id="vs-input"></select>
+        <label class="vs-device" for="vs-output">Speakers</label>
+        <select id="vs-output"></select>
+        <p id="vs-device-note" class="vs-hint" role="status"></p>
+      </fieldset>
+    </div>
+
     <div id="toolbar">
       <div id="voice-controls" class="tool-group">
         <button id="join-voice" type="button">Join voice</button>
         <button id="leave-voice" type="button" hidden>Leave voice</button>
         <button id="mute" type="button" aria-pressed="false" hidden>Mute</button>
+        <button id="voice-settings-toggle" type="button" aria-expanded="false" aria-controls="voice-settings">Voice settings</button>
       </div>
       <div id="file-controls" class="tool-group">
         <input type="file" id="file-input">
@@ -172,6 +238,7 @@
     </footer>
   </section>
 
+  <script src="voice-gate.js"></script>
   <script src="voice.js"></script>
   <script src="nodemap.js"></script>
   <script src="layout.js"></script>
@@ -179,6 +246,7 @@
   <script src="find.js"></script>
   <script src="quote.js"></script>
   <script src="renderer.js"></script>
+  <script src="voice-panel.js"></script>
   <script src="menu.js"></script>
 </body>
 </html>
