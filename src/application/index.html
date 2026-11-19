@@ -7,6 +7,8 @@
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="reading.css">
   <link rel="stylesheet" href="menu.css">
+  <link rel="stylesheet" href="quote.css">
+  <link rel="stylesheet" href="find.css">
   <title>ASSCRACK</title>
 </head>
 <body>
@@ -111,6 +113,14 @@
       </section>
       <div id="buddy-sep" class="layout-sep" role="separator" tabindex="0" aria-orientation="vertical" aria-controls="buddy-panel" aria-label="Resize Buddies" aria-valuenow="192" aria-valuemin="120" aria-valuemax="480"></div>
       <section id="message-panel" class="panel">
+        <!-- find.js: Ctrl+F shows this bar. It searches the lines in the list now. -->
+        <div id="find-bar" role="search" aria-label="Find in the loaded messages" hidden>
+          <input type="text" id="find-input" placeholder="Find in the loaded messages" aria-label="Find in the loaded messages" aria-describedby="find-count" autocomplete="off" spellcheck="false">
+          <span id="find-count" role="status" aria-live="polite"></span>
+          <button id="find-prev" type="button" title="Previous result (Shift+Enter)" disabled>Previous</button>
+          <button id="find-next" type="button" title="Next result (Enter)" disabled>Next</button>
+          <button id="find-close" type="button" title="Close and go back (Escape)">Close</button>
+        </div>
         <ul id="messages" role="log"></ul>
         <!-- reading.js shows this button when the user reads older lines. -->
         <button id="jump-latest" type="button" hidden>Jump to latest <span id="unread-count" class="count"></span></button>
@@ -145,7 +155,14 @@
     </section>
 
     <div id="composer">
-      <input type="text" id="message-input" placeholder="Type a message" autocomplete="off">
+      <!-- renderer.js: the quote of the next message. The remove button or Escape removes it. -->
+      <div id="quote-chip" role="group" aria-labelledby="quote-head" hidden>
+        <span id="quote-head" class="quote-head">Reply to <span id="quote-from"></span> <span id="quote-time"></span></span>
+        <span id="quote-excerpt"></span>
+        <button id="quote-remove" type="button" aria-label="Remove the quote" title="Remove the quote (Escape)">Remove</button>
+      </div>
+      <!-- Enter sends. Shift+Enter starts a new line. -->
+      <textarea id="message-input" rows="1" placeholder="Type a message" autocomplete="off" aria-label="Message"></textarea>
       <button id="send" type="button">Send</button>
     </div>
 
@@ -159,6 +176,8 @@
   <script src="nodemap.js"></script>
   <script src="layout.js"></script>
   <script src="reading.js"></script>
+  <script src="find.js"></script>
+  <script src="quote.js"></script>
   <script src="renderer.js"></script>
   <script src="menu.js"></script>
 </body>

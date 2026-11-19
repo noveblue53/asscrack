@@ -132,6 +132,9 @@
     // True while a smooth scroll of Jump to latest runs. The scroll events then do not stop following.
     let jumping = false;
     let jumpTimer = null;
+    // True while the find bar (find.js) is open. The find bar moves the list, not the user: the list does not follow,
+    // and a scroll to the end does not clear the unread count and the marker. restorePosition sets the old state.
+    let hold = false;
     const unread = createUnread();
 
     function lines() {
@@ -231,6 +234,14 @@
 
     list.addEventListener('scroll', () => {
         const atEnd = isAtEnd(list.scrollHeight, list.scrollTop, list.clientHeight);
+        if (hold && !jumping) {
+            // The find bar moved the list. It does not follow: a new line counts as unread and does not move the
+            // list away from the result. The count and the marker stay.
+            following = false;
+            anchor = captureAnchor();
+            showUnread();
+            return;
+        }
         if (jumping) {
             if (atEnd) endJump();
             following = true;
@@ -270,11 +281,40 @@
 
     if (jumpButton) jumpButton.addEventListener('click', () => followLatest({ smooth: true }));
 
+    // The position now, for restorePosition: following, or the first visible line and its offset.
+    function savePosition() {
+        return { following, anchor: following ? null : captureAnchor() };
+    }
+
+    // Put the list back at a saved position. The unread count and the marker do not change.
+    function restorePosition(saved) {
+        if (!saved) return;
+        endJump();
+        following = saved.following === true;
+        if (following) scrollToEnd();
+        else restoreAnchor(saved.anchor);
+        anchor = following ? null : captureAnchor();
+        showUnread();
+    }
+
+    // on: true while the find bar is open (see hold).
+    function setHold(on) {
+        hold = on === true;
+        if (hold) {
+            following = false;
+            anchor = captureAnchor();
+            showUnread();
+        }
+    }
+
     window.reading = {
         beforeChange,
         afterChange,
         noteIncoming,
         followLatest,
+        savePosition,
+        restorePosition,
+        setHold,
         isFollowing: () => following,
         unreadCount: () => unread.count
     };

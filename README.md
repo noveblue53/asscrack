@@ -14,8 +14,8 @@ members elect a new host with no user action.
 | Item | State (2026-11-19) |
 |---|---|
 | Latest build | **0.6.0**, a portable Windows `.exe`. There is no public download yet. |
-| `main` | 0.6.0 plus fixes for faults F1 to F6, the stale "No peers" status line, and room window milestone 1. Not released. |
-| Next candidate | Quote and Find (milestone 2), branch `opus/quote-fix`. Its LAN field test is open. Not on `main`. |
+| `main` | 0.6.0 plus fixes for faults F1 to F6, the stale "No peers" status line, room window milestone 1, and Quote and Find (milestone 2). Not released. |
+| Open field checks | The packaged Windows check of Quote and Find on a LAN, with a 0.6.0 client and a host change. The internet test card 7. |
 | Current phase | Phase 8 (internet rooms) and Phase 7 (desktop experience), toward release 1.0. |
 | Plan | [`docs/WORK_PLAN_1.0.md`](docs/WORK_PLAN_1.0.md) gives the release order, the scope and the exit checks of 1.0. |
 
@@ -43,8 +43,8 @@ Each result in this file and in [`CHANGELOG.md`](CHANGELOG.md) has one of these 
 | UPnP host | With an empty Public address field, the app asks the router for a port. | Port map on a real router: internet (0.6.0). A join through that code: not tested. |
 | Full nodes and relays | A member with a reachable port is a full node. It relays chat, history, files and voice for members that cannot connect directly. The relays spread across the full nodes. | 127.0.0.1 |
 | Network map | A panel shows the members, the host, the direct and relay links, the speakers and the file transfers. | 127.0.0.1 |
-| Room window (on `main`) | Panels with saved sizes, a View menu, context menus, the reading position and an unread count. | 127.0.0.1 (same PC) |
-| Quote and Find (candidate) | Quote a line in a reply. Ctrl+F finds text in the loaded lines. | 127.0.0.1 (same PC) |
+| Room window (not released) | Panels with saved sizes, a View menu, context menus, the reading position and an unread count. | 127.0.0.1 (same PC) |
+| Quote and Find (not released) | Quote a line in a reply. Ctrl+F finds text in the loaded lines. | 127.0.0.1 (same PC) |
 
 ## Known limits
 
@@ -138,9 +138,9 @@ The network code is in `src/network/`. The Electron app is in `src/application/`
 | 2. Host election and failover | Done. LAN tested on 2 computers. |
 | 3. Mumble server | Not planned. Voice uses Opus on libp2p streams. |
 | 4. Voice with reconnect | Done. LAN tested (WebRTC, 0.2.0 and 0.3.1). Voice on libp2p streams internet tested (0.5.0). |
-| 5. Chat | Done: chat and history after a restart (LAN). Next: Quote and Find, manual status, a room topic, unread highlights and saved rooms. |
+| 5. Chat | Done: chat and history after a restart (LAN). Quote and Find (127.0.0.1). Next: manual status, a room topic, unread highlights and saved rooms. |
 | 6. File sharing | Done. LAN tested (0.3.1), internet tested (0.5.0). Next: a Shared shelf for the room. |
-| 7. Desktop experience | In progress. The new look and the map (0.4.0) and room window milestone 1 have 127.0.0.1 results only. |
+| 7. Desktop experience | In progress. The new look and the map (0.4.0), room window milestone 1 and Quote and Find have 127.0.0.1 results only. |
 | 8. Internet rooms | In progress. Invite codes and rejoin are internet tested. UPnP join, relays and failover on the internet are open. |
 
 Release 1.0 is a portable messenger for a game night. A friend joins from a different network. The group can continue to

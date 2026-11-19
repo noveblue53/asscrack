@@ -1,0 +1,165 @@
+/* Quote (quote.js, renderer.js): the composer with a textarea, the quote chip above it, the Quote button of a chat
+   line and the quotation in a chat line. CSP style-src 'self': only classes and this file, no style attribute. */
+
+/* The composer: the chip takes a full row above the textarea and Send. */
+#composer {
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+/* The message box is a textarea (a pasted text keeps its lines). It has the look of input[type="text"] and it grows
+   with its text up to 6 lines, then it scrolls. */
+#message-input {
+  box-sizing: border-box;
+  min-height: 32px;
+  max-height: 120px;
+  padding: 6px 13px;
+  border: 1px solid #86b4dc;
+  border-radius: 16px;
+  font: 14px/18px var(--font-ui);
+  color: var(--ink);
+  resize: none;
+  overflow-y: auto;
+  field-sizing: content;
+  background: linear-gradient(180deg, #e9f3fb 0%, #ffffff 42%);
+  box-shadow: inset 0 2px 3px rgba(20, 70, 130, 0.18), 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+#message-input::placeholder {
+  color: #8aa3bc;
+}
+
+#message-input:focus {
+  border-color: #2a8fec;
+  outline: 3px solid rgba(72, 176, 255, 0.45);
+  outline-offset: 0;
+}
+
+/* The quote chip: the name of the quoted buddy, the excerpt and Remove. */
+#quote-chip {
+  flex: 1 0 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "head remove" "excerpt remove";
+  align-items: center;
+  gap: 1px 10px;
+  min-width: 0;
+  padding: 4px 6px 5px 10px;
+  border: 1px solid #b4d5f1;
+  border-left: 4px solid var(--nc, var(--blue));
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--ink-soft);
+  background: linear-gradient(180deg, #ffffff 0%, #eef7ff 100%);
+  box-shadow: 0 1px 2px rgba(20, 70, 130, 0.14), inset 0 1px 0 #ffffff;
+  animation: quote-in 160ms var(--ease);
+}
+
+#quote-chip[hidden] {
+  display: none;
+}
+
+#quote-chip .quote-head {
+  grid-area: head;
+  overflow: hidden;
+  font: 11.5px var(--font-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#quote-from {
+  font-weight: 700;
+  color: var(--nc, var(--blue));
+}
+
+#quote-excerpt {
+  grid-area: excerpt;
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+#quote-remove {
+  grid-area: remove;
+  height: 24px;
+  padding: 0 10px;
+  font-size: 11.5px;
+  color: #9b2018;
+}
+
+@keyframes quote-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* The Quote button of a chat line: it floats on the top corner of the bubble. It takes no space, thus a hover does
+   not move the lines (the reading position stays). The mouse and the focus of the line show it. */
+#messages .bubble-text {
+  position: relative;
+}
+
+#messages button.btn-quote {
+  position: absolute;
+  top: -9px;
+  right: -6px;
+  z-index: 1;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+#messages li.own button.btn-quote {
+  right: auto;
+  left: -6px;
+}
+
+#messages li:hover button.btn-quote,
+#messages li:focus-within button.btn-quote,
+#messages li:focus button.btn-quote {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* The quotation in a chat line (quote.js split): a block with a bar at the left. The marks "> " stay in the text
+   (copy and find use the text), but they do not show. */
+#messages .text .quote {
+  display: block;
+  margin: 1px 0 3px;
+  padding: 1px 8px 2px;
+  border-left: 3px solid #8fbde6;
+  border-radius: 2px;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  background: rgba(15, 98, 196, 0.06);
+}
+
+#messages li.own .text .quote {
+  border-left-color: #7cc04f;
+  background: rgba(47, 156, 19, 0.08);
+}
+
+#messages .text .quote-head {
+  font-weight: 700;
+}
+
+#messages .text .qmark {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #quote-chip,
+  #messages button.btn-quote {
+    animation: none;
+    transition: none;
+  }
+}
