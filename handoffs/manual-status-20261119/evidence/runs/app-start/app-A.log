@@ -1,0 +1,15 @@
+2026-11-19T18:52:13.365Z INFO ASSCRACK 0.6.0 Electron 40.5.0 args ["/home/user/asscrack/node_modules/electron/dist/electron","--inspect=0","--remote-debugging-port=0","/home/user/asscrack","--no-sandbox","--profile","/tmp/claude-0/-home-user-asscrack/23416945-c578-595d-be0c-fee850a95973/scratchpad/app-A-q636Ui","--log-dir","/tmp/claude-0/-home-user-asscrack/23416945-c578-595d-be0c-fee850a95973/scratchpad/app-A-q636Ui"] log /tmp/claude-0/-home-user-asscrack/23416945-c578-595d-be0c-fee850a95973/scratchpad/app-A-q636Ui/asscrack-20261119-185213.log
+2026-11-19T18:52:15.543Z EVENT event peer-discovered peer 12D3KooWCXHi3ZZ1TChoufYUUUYuTgvBc9NdzxPB5iTzisvsKNLy
+2026-11-19T18:52:15.545Z WINDOW info peer-discovered [object Object] (file:///home/user/asscrack/src/application/renderer.js:238)
+2026-11-19T18:52:15.612Z EVENT event peer-joined peer 12D3KooWCXHi3ZZ1TChoufYUUUYuTgvBc9NdzxPB5iTzisvsKNLy
+2026-11-19T18:52:15.614Z INFO conn session peer=12D3KooWCXHi3ZZ1TChoufYUUUYuTgvBc9NdzxPB5iTzisvsKNLy type=direct dir=in addr=/ip4/127.0.0.1/tcp/36778/p2p/12D3KooWCXHi3ZZ1TChoufYUUUYuTgvBc9NdzxPB5iTzisvsKNLy
+2026-11-19T18:52:15.614Z EVENT event connection state "session" peer "12D3KooWCXHi3ZZ1TChoufYUUUYuTgvBc9NdzxPB5iTzisvsKNLy" type "direct" dir "in" addr "/ip4/127.0.0.1/tcp/36778/p2p/12D3KooWCXHi3ZZ1TChoufYUUUYuTgvBc9NdzxPB5iTzisvsKNLy"
+2026-11-19T18:52:15.615Z EVENT event topology
+2026-11-19T18:52:15.638Z EVENT event peer-name peer 12D3KooWCXHi3ZZ1TChoufYUUUYuTgvBc9NdzxPB5iTzisvsKNLy
+2026-11-19T18:52:15.639Z EVENT event presence peer 12D3KooWCXHi3ZZ1TChoufYUUUYuTgvBc9NdzxPB5iTzisvsKNLy
+2026-11-19T18:52:15.640Z EVENT event topology
+2026-11-19T18:52:15.650Z INFO Dial-back from 12D3KooWCXHi3ZZ1TChoufYUUUYuTgvBc9NdzxPB5iTzisvsKNLy: ok, IP 127.0.0.1, full node false
+2026-11-19T18:52:16.963Z INFO conn closed peer=12D3KooWCXHi3ZZ1TChoufYUUUYuTgvBc9NdzxPB5iTzisvsKNLy type=direct secs=1.4
+2026-11-19T18:52:16.963Z EVENT event connection state "closed" peer "12D3KooWCXHi3ZZ1TChoufYUUUYuTgvBc9NdzxPB5iTzisvsKNLy" type "direct" secs 1.4
+2026-11-19T18:52:16.963Z EVENT event peer-left peer 12D3KooWCXHi3ZZ1TChoufYUUUYuTgvBc9NdzxPB5iTzisvsKNLy
+2026-11-19T18:52:16.964Z EVENT event topology
