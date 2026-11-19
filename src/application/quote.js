@@ -5,10 +5,19 @@
 // A 0.6.0 client shows the same text: its chat line has white-space: pre-wrap, thus the lines stay lines.
 //
 // The text of a message with a quote:
-//   > Sam (a1b2c3) at 14:05:      the header: the name, a peer tag when two users have that name, the clock time
-//   > first line of the excerpt   at most LIMITS.lines lines and LIMITS.chars characters, "…" when cut
+//   > Sam (a1b2c3) at 14:05, 2 lines:   the header: the name, a peer tag when two users have that name, the clock
+//                                       time and the number of excerpt lines
+//   > first line of the excerpt         at most LIMITS.lines lines and LIMITS.chars characters, "…" when cut
 //   > second line of the excerpt
-//   the reply                     the text that the user typed (one or more lines)
+//   the reply                           the text that the user typed (one or more lines, it can start with "> ")
+//
+// The number in the header is the boundary between the excerpt and the reply. A reply line that starts with "> "
+// is thus a line of the reply.
+//
+// Text from before the number (header "> Sam at 14:05:", no number): the excerpt is the "> " lines after the
+// header. When only one "> " line follows the header, that line is the excerpt. When more "> " lines follow, the
+// boundary is not known (the old reply could start with "> "), thus the text shows as plain text with no author
+// for those lines.
 //
 // The quotation is a snapshot: the excerpt goes in the message. The original line can leave the history
 // (the history keeps 200 lines) and the quote stays readable.
@@ -18,8 +27,10 @@
     const LIMITS = Object.freeze({ lines: 4, chars: 280, name: 48, tag: 6 });
     const MARK = '> ';
     const ELLIPSIS = '…';
-    // A header line: "> name at HH:MM:" or "> name (tag) at HH:MM:".
-    const HEADER = /^> (.+?)(?: \(([0-9A-Za-z]{1,16})\))? at (\d{1,2}:\d{2}):$/;
+    // A header line: "> name at HH:MM, N lines:" or "> name (tag) at HH:MM, 1 line:".
+    const HEADER = /^> (.+?)(?: \(([0-9A-Za-z]{1,16})\))? at (\d{1,2}:\d{2}), ([1-4]) lines?:$/;
+    // A header line of the text from before the number: "> name at HH:MM:" or "> name (tag) at HH:MM:".
+    const OLD_HEADER = /^> (.+?)(?: \(([0-9A-Za-z]{1,16})\))? at (\d{1,2}:\d{2}):$/;
 
     // CR LF and CR become LF. A paste from the Windows clipboard has CR LF.
     function normalize(text) {
@@ -60,29 +71,41 @@
         return count > 1;
     }
 
+    // The position after the "> " line that starts at at: after its line end, or the text end. -1: no "> " line.
+    function markLineEnd(value, at) {
+        if (at >= value.length || !value.startsWith(MARK, at)) return -1;
+        const end = value.indexOf('\n', at);
+        return end < 0 ? value.length : end + 1;
+    }
+
     // Split a text into its leading quotation and the rest. Returns { quote, rest } or null when the text has no
-    // quotation at the start. quote: the lines with the marks and the line ends, rest: the text after them.
-    // quote + rest is the full text.
+    // quotation at the start, or when the boundary of an old quotation is not known.
+    // quote: the lines with the marks and the line ends, rest: the text after them. quote + rest is the full text.
     function split(text) {
         const value = String(text ?? '');
         const firstEnd = value.indexOf('\n');
-        if (firstEnd < 0 || !HEADER.test(value.slice(0, firstEnd))) return null;
+        if (firstEnd < 0) return null;
+        const head = value.slice(0, firstEnd);
+        const counted = HEADER.exec(head);
         let at = firstEnd + 1;
-        for (let i = 0; i < LIMITS.lines; i++) {
-            if (!value.startsWith(MARK, at)) break;
-            const end = value.indexOf('\n', at);
-            if (end < 0) {
-                at = value.length;
-                break;
+        if (counted) {
+            for (let i = 0; i < Number(counted[4]); i++) {
+                at = markLineEnd(value, at);
+                if (at < 0) return null;
             }
-            at = end + 1;
+            return { quote: value.slice(0, at), rest: value.slice(at) };
         }
-        return { quote: value.slice(0, at), rest: value.slice(at) };
+        if (!OLD_HEADER.test(head)) return null;
+        // Old text: exactly one "> " line after the header gives a known boundary.
+        const end = markLineEnd(value, at);
+        if (end < 0 || markLineEnd(value, end) >= 0) return null;
+        return { quote: value.slice(0, end), rest: value.slice(end) };
     }
 
     // The header data of a quotation line, or null. { from, tag, clock }.
     function parseHeader(line) {
-        const match = HEADER.exec(String(line ?? ''));
+        const value = String(line ?? '');
+        const match = HEADER.exec(value) ?? OLD_HEADER.exec(value);
         return match ? { from: match[1], tag: match[2] ?? '', clock: match[3] } : null;
     }
 
@@ -133,10 +156,11 @@
         return `${quote.from}${quote.tag ? ` (${quote.tag})` : ''} at ${quote.clock}`;
     }
 
-    // The quotation lines of a quote (with the marks), with no reply.
+    // The quotation lines of a quote (with the marks), with no reply. The header gives the number of excerpt lines.
     function quotation(quote) {
         const lines = quote.lines.length > 0 ? quote.lines : [ELLIPSIS];
-        return [`${MARK}${headerText(quote)}:`, ...lines.map(l => `${MARK}${l}`)].join('\n');
+        const count = `${lines.length} ${lines.length === 1 ? 'line' : 'lines'}`;
+        return [`${MARK}${headerText(quote)}, ${count}:`, ...lines.map(l => `${MARK}${l}`)].join('\n');
     }
 
     // The reply text: CR LF becomes LF, no empty lines at the start and at the end.
@@ -151,7 +175,7 @@
     }
 
     // The most characters that a quotation can have (the header and the excerpt, with the marks and the line ends).
-    const MAX_QUOTATION = MARK.length * (LIMITS.lines + 1) + (LIMITS.name + 1) + ' (xxxxxx) at 00:00:'.length
+    const MAX_QUOTATION = MARK.length * (LIMITS.lines + 1) + (LIMITS.name + 1) + ' (xxxxxx) at 00:00, 4 lines:'.length
         + LIMITS.chars + 1 + LIMITS.lines;
 
     window.quoteCore = Object.freeze({

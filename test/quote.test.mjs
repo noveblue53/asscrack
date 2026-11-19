@@ -20,7 +20,7 @@ test('quote.js loads with no DOM and gives quoteCore', () => {
 
 test('compose gives the quotation lines, then the reply, in one plain text', () => {
     const quote = q.makeQuote({ from: 'Sam', clock: '14:05', text: 'hello there' });
-    assert.equal(q.compose(quote, 'my reply'), '> Sam at 14:05:\n> hello there\nmy reply');
+    assert.equal(q.compose(quote, 'my reply'), '> Sam at 14:05, 1 line:\n> hello there\nmy reply');
     // No quote: the text as the user typed it (the 0.6.0 message, unchanged).
     assert.equal(q.compose(null, '  keep  my spaces '), '  keep  my spaces ');
 });
@@ -64,7 +64,7 @@ test('multiline clipboard text: CR LF becomes LF in the excerpt and in the reply
     const quote = q.makeQuote({ from: 'Ann', clock: '7:30', text: 'one\r\ntwo\rthree\r\n\r\n  \r\nfour   ' });
     assert.deepEqual(plain(quote.lines), ['one', 'two', 'three', 'four']);
     const text = q.compose(quote, '\r\n\r\nfirst\r\nsecond\r\n\r\n');
-    assert.equal(text, '> Ann at 7:30:\n> one\n> two\n> three\n> four\nfirst\nsecond');
+    assert.equal(text, '> Ann at 7:30, 4 lines:\n> one\n> two\n> three\n> four\nfirst\nsecond');
     assert.doesNotMatch(text, /\r/);
 });
 
@@ -104,16 +104,18 @@ test('the quotation part is bounded for any input', () => {
 test('a bad clock gives 00:00, a missing text gives an ellipsis line', () => {
     const quote = q.makeQuote({ from: 'Sam', clock: 'soon', text: '   ' });
     assert.equal(quote.clock, '00:00');
-    assert.equal(q.compose(quote, 'hi'), '> Sam at 00:00:\n> …\nhi');
+    assert.equal(q.compose(quote, 'hi'), '> Sam at 00:00, 1 line:\n> …\nhi');
 });
 
 test('split finds the quotation at the start, and quote + rest is the full text', () => {
     const quote = q.makeQuote({ from: 'Sam', peerId: '12D3KooWabcdefAAAAaaaa11', repeats: true, clock: '14:05', text: 'a\nb\nc\nd\ne' });
     const text = q.compose(quote, 'reply\n> not a quote line');
     const parts = q.split(text);
-    assert.equal(parts.quote, '> Sam (aaaa11) at 14:05:\n> a\n> b\n> c\n> d…\n');
+    assert.equal(parts.quote, '> Sam (aaaa11) at 14:05, 4 lines:\n> a\n> b\n> c\n> d…\n');
     assert.equal(parts.rest, 'reply\n> not a quote line');
     assert.equal(parts.quote + parts.rest, text);
+    assert.deepEqual(plain(q.parseHeader('> Sam (aaaa11) at 14:05, 4 lines:')), { from: 'Sam', tag: 'aaaa11', clock: '14:05' });
+    // The header of the text from before the line count.
     assert.deepEqual(plain(q.parseHeader('> Sam (aaaa11) at 14:05:')), { from: 'Sam', tag: 'aaaa11', clock: '14:05' });
     // A name with " at " in it.
     assert.deepEqual(plain(q.parseHeader('> Bob at 10:00 at 14:05:')), { from: 'Bob at 10:00', tag: '', clock: '14:05' });

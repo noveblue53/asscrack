@@ -69,7 +69,7 @@ test('a quote of a repeated name is read live, and after a host change and a rep
             from: 'Sam', peerId: samA.peerId, repeats: q.nameRepeats('Sam', ['Sam', 'Sam', 'Ann']), clock: '14:05', text: original
         })
         const text = q.compose(quote, 'my reply\r\nwith two lines')
-        assert.equal(text, `> Sam (${q.peerTag(samA.peerId)}) at 14:05:\n> the original line\n> with a second line\nmy reply\nwith two lines`)
+        assert.equal(text, `> Sam (${q.peerTag(samA.peerId)}) at 14:05, 2 lines:\n> the original line\n> with a second line\nmy reply\nwith two lines`)
         assert.notEqual(q.peerTag(samA.peerId), q.peerTag(samB.peerId))
         // 199 lines after the original: with the quote, the history (200 lines) evicts the original.
         for (let i = 0; i < 199; i++) ann.send(`filler ${i}`)

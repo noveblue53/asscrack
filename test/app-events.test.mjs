@@ -208,10 +208,10 @@ test('find.js and quote.js handle no Escape and set no inline style', async () =
     }
 });
 
-test('the Quote button and the menu action Quote call the same function', async () => {
+test('the Quote button and the menu action Quote run the same row action', async () => {
     const source = await read('renderer.js');
     assert.ok(source.includes("case 'quote': return quoteMessage(row);"));
-    assert.match(source, /makeButton\('Quote', \(\) => quoteMessage\(item\), 'quote', 'btn-quote'\)/);
+    assert.match(source, /makeButton\('Quote', \(\) => runRowAction\('quote', item\), 'quote', 'btn-quote'\)/);
 });
 
 test('index.html loads find.js and quote.js before renderer.js, and has the find bar and the quote chip', async () => {

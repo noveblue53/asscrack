@@ -113,9 +113,9 @@ function makeMessageItem(from, text, time, own = false, id = null, peerId = null
     const timeSpan = document.createElement('span');
     timeSpan.className = 'time';
     timeSpan.textContent = formatTime(time);
-    // The visible Quote control. The context menu action 'quote' calls the same function. Not a tab stop:
+    // The visible Quote control. It runs the row action 'quote', as the context menu does. Not a tab stop:
     // the keyboard uses the row menu (Menu key or Shift+F10).
-    const quoteButton = makeButton('Quote', () => quoteMessage(item), 'quote', 'btn-quote');
+    const quoteButton = makeButton('Quote', () => runRowAction('quote', item), 'quote', 'btn-quote');
     quoteButton.tabIndex = -1;
     bubble.append(textSpan, timeSpan, quoteButton);
     item.append(fromSpan, bubble);
