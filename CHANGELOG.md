@@ -27,6 +27,9 @@ All results in this entry are 127.0.0.1 results (one PC). There is no LAN or int
   a row). The host counts forwarded frames for at most 64 peers. `sendFrame` returns false when it sent no frame.
 - **Dial warnings (F5):** a relay dial or a discovery dial does not open a second chat stream. 20 runs before the fix:
   the relay warning in 6 runs, the discovery warning in 12 runs. 25 runs after the fix: 0 and 0.
+- **Status line (merge `60588aa`):** the line "No peers in this room yet." goes away when a peer joins. Before, it
+  stayed until the next send, also with the peer in the list (operator check of 0.6.0 on 2 computers, 2026-11-19).
+  `npm test` 96 of 96 pass and one app start with no error (127.0.0.1). No LAN result yet.
 - **Election test (F6):** test f does not depend on random peer IDs (10 of 10 runs).
 - **File speed (F7):** no change. The receiver log has the size, the Accept line and the done line, thus it gives
   the speed. Example: 200 MiB in 5.04 s.
