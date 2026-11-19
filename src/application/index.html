@@ -5,6 +5,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="reading.css">
+  <link rel="stylesheet" href="menu.css">
   <title>ASSCRACK</title>
 </head>
 <body>
@@ -65,6 +67,18 @@
       </span>
       <button id="invite-toggle" type="button" aria-expanded="false" aria-controls="invite-panel" hidden>Invite</button>
       <button id="map-toggle" type="button" aria-expanded="false" aria-controls="map-panel">Network map</button>
+      <!-- layout.js: the Buddies drawer button (narrow window only) and the View menu. -->
+      <button id="buddy-toggle" type="button" aria-expanded="false" aria-controls="buddy-panel">Buddies</button>
+      <button id="view-toggle" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="view-menu">View</button>
+      <ul id="view-menu" role="menu" aria-labelledby="view-toggle" hidden>
+        <li id="view-buddies" role="menuitemcheckbox" aria-checked="true" tabindex="-1">Buddies</li>
+        <li id="view-buddy-drawer" role="menuitem" tabindex="-1" hidden>Open Buddies</li>
+        <li id="view-transfers" role="menuitemcheckbox" aria-checked="true" tabindex="-1">Transfers</li>
+        <li id="view-map" role="menuitemcheckbox" aria-checked="false" tabindex="-1">Network map</li>
+        <li class="view-rule" role="separator"></li>
+        <li id="view-side" role="menuitem" tabindex="-1">Move Buddies to the right</li>
+        <li id="view-reset" role="menuitem" tabindex="-1">Reset layout</li>
+      </ul>
     </header>
 
     <!-- The invite panel. renderer.js fills #invite-code with getInvite(). -->
@@ -91,13 +105,17 @@
     </div>
 
     <div id="chat-body">
-      <section id="buddy-panel" class="panel">
+      <section id="buddy-panel" class="panel" tabindex="-1" aria-label="Buddies">
         <h2 class="panel-head">Buddies <span id="peer-count" class="count">1</span></h2>
         <ul id="peers"></ul>
       </section>
+      <div id="buddy-sep" class="layout-sep" role="separator" tabindex="0" aria-orientation="vertical" aria-controls="buddy-panel" aria-label="Resize Buddies" aria-valuenow="192" aria-valuemin="120" aria-valuemax="480"></div>
       <section id="message-panel" class="panel">
         <ul id="messages" role="log"></ul>
+        <!-- reading.js shows this button when the user reads older lines. -->
+        <button id="jump-latest" type="button" hidden>Jump to latest <span id="unread-count" class="count"></span></button>
       </section>
+      <div id="map-sep" class="layout-sep" role="separator" tabindex="0" aria-orientation="vertical" aria-controls="map-panel" aria-label="Resize the network map" aria-valuenow="320" aria-valuemin="260" aria-valuemax="900"></div>
       <!-- The node map panel. nodemap.js draws one SVG into #node-map. -->
       <aside id="map-panel" class="panel" aria-hidden="true">
         <h2 class="panel-head">Network map <button id="map-close" type="button">Close</button></h2>
@@ -116,6 +134,7 @@
     </div>
 
     <section id="transfer-panel" class="panel">
+      <div id="transfer-sep" class="layout-sep" role="separator" tabindex="0" aria-orientation="horizontal" aria-controls="transfers" aria-label="Resize Transfers" aria-valuenow="90" aria-valuemin="32" aria-valuemax="800"></div>
       <h2 class="panel-head">Transfers <span id="transfer-count" class="count">0</span>
         <span class="hint">No transfers. Select a file, then press Send file.</span>
       </h2>
@@ -138,6 +157,9 @@
 
   <script src="voice.js"></script>
   <script src="nodemap.js"></script>
+  <script src="layout.js"></script>
+  <script src="reading.js"></script>
   <script src="renderer.js"></script>
+  <script src="menu.js"></script>
 </body>
 </html>
