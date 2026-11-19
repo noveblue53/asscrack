@@ -2,74 +2,162 @@
 
 **Automated Server Switch in Case Relays Are Crashed or Killed**
 
-A decentralized P2P voice and chat application with automatic failover. When your host goes down, ASSCRACK automatically switches to the next available node.
+ASSCRACK is a peer-to-peer desktop app for a small group: text chat, voice and file sharing with no central server.
+On a local network, the members find each other with no address input. When the host of a room closes, the other
+members elect a new host with no user action.
 
-**⚠️ EARLY DEVELOPMENT - TEST COPY ONLY ⚠️**
-This project is in active development. A test copy works on one local network (LAN).
-Don't use it for real voice chat yet. See [CHANGELOG.md](CHANGELOG.md) for what works and what was tested.
-
-**Want to help build it?** Check out [CONTRIBUTING.md](CONTRIBUTING.md)
-## Features
-
-- **Decentralized P2P Architecture** - No single point of failure
-- **Automatic Failover** - Primary host crashes? Next node takes over instantly
-- **Zero Configuration** - No IP addresses, no port forwarding wizards
-- **Built-in Voice** - Opus frames on a libp2p stream, with the host as the relay.
-- **Text Chat** - Full-featured P2P messaging
-- **File Sharing** - P2P file transfers, no size limits
-- **Network Map** - See who is connected, who relays the voice, who speaks and which files move
-- **Internet Rooms** - Join with an invite code. Members with a forwarded port are full nodes and relay for the others
-- **Self-Healing Network** - Mesh stays connected even when nodes drop
+> **Test copy only.** ASSCRACK is in early development. Use it with friends who want to help test it. Do not use it
+> for private or important conversations. The chat history and the voice are not end-to-end encrypted.
 
 ## Status
 
-**Early Development** - Test copy on one LAN. Not ready for use.
+| Item | State (2026-11-19) |
+|---|---|
+| Latest build | **0.6.0**, a portable Windows `.exe`. There is no public download yet. |
+| `main` | 0.6.0 plus fixes for faults F1 to F6, the stale "No peers" status line, room window milestone 1, and Quote and Find (milestone 2). Not released. |
+| Open field checks | The packaged Windows check of Quote and Find on a LAN, with a 0.6.0 client and a host change. The internet test card 7. |
+| Current phase | Phase 8 (internet rooms) and Phase 7 (desktop experience), toward release 1.0. |
+| Plan | [`docs/WORK_PLAN_1.0.md`](docs/WORK_PLAN_1.0.md) gives the release order, the scope and the exit checks of 1.0. |
 
-Current Phase: Phase 8 (internet rooms). Version 0.6.0 lets a host with no port forward become a full node through
-UPnP. It also adds connection log lines, spreads the relayed sessions across the full nodes, and sends voice directly
-between two members with a direct connection. These passed the checks on one PC (127.0.0.1). Goal 7
-(not in a release yet, see `CHANGELOG.md` "Unreleased") fixes the faults F1 to F6 of 0.6.0. These fixes have results
-on one PC (127.0.0.1) only.
-Internet result of the operator (2026-11-19, 0.6.0, real router, empty Public address field): UPnP mapped a port.
-The invite panel showed a code after a wait. A join through that code is not tested yet. Test card 7 gives the full
-internet test. The rejoin of 0.5.2 passed an internet test (R0). Version 0.5.0 has internet rooms with invite codes
-and a room key. Members with a forwarded port are full nodes and relay the chat, history and files for the others.
-Voice now uses libp2p streams in place of WebRTC. Internet result of the operator (2026-11-18, 0.5.0): a host with a
-forwarded TCP port 4001 made a room, and a laptop on a phone hotspot joined with the invite code. Chat, voice and file
-sharing worked. The laptop showed no room name (fixed after 0.5.0, decision 54). Version 0.4.0 has a new look and a network map of the room. These passed the checks on
-one PC (127.0.0.1) and have no LAN test yet. Test card 5 gives the LAN test. Version 0.3.1 has peer
-discovery, the host election and failover, voice, chat with the history after a restart, and file sharing. All of
-these passed a LAN test. Each result in
-[CHANGELOG.md](CHANGELOG.md) has a label: LAN (real computers on one network), internet (computers on different networks) or 127.0.0.1 (one PC
-only).
+### How to read the results
 
-## Architecture
+Each result in this file and in [`CHANGELOG.md`](CHANGELOG.md) has one of these labels:
 
-**Key Technologies:**
-- libp2p - P2P mesh networking
-- Circuit relay v2 - Full nodes relay for members behind a NAT
-- WebCodecs Opus on libp2p streams - Voice, with the host as the relay
-- Host election with terms and heartbeats - Role management and failover
-- Electron - Desktop application (one portable Windows .exe)
-- SQLite - Local storage (not used yet: the chat history is in memory)
+- **LAN**: a test on 2 or more real computers on one local network.
+- **Internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
+- **127.0.0.1**: a test on one computer only. It does not prove that the feature works on a LAN or on the internet.
+
+## Features and evidence
+
+| Feature | What it does | Best result so far |
+|---|---|---|
+| LAN discovery | The members of a room on one network find each other through mDNS. No address input. | LAN |
+| Text chat | Chat lines go to each member of the room. Names show as soon as a member joins. | LAN, internet (0.5.0) |
+| Host election and failover | The members elect one host with terms and heartbeats. When the host closes, a new host takes the role. | LAN (0.2.0). Recovery time on the internet: not measured. |
+| Chat history | The host sends up to 200 recent lines to each new or restarted member. | LAN (0.3.1) |
+| Voice | Opus frames on a libp2p stream. The host forwards the frames. Two members with a direct connection send frames directly (0.6.0). | Voice through the host: LAN, internet (0.5.0). Direct voice: 127.0.0.1 |
+| File sharing | Offer a file to the room. Each member can accept or refuse it. The receiver checks the SHA-256 and keeps no partial file. | LAN (0.3.1), internet (0.5.0) |
+| Cancel for one receiver | The sender can stop the transfer to one receiver. The other receivers continue. | 127.0.0.1 |
+| Internet rooms | Make a room with a room key and share an invite code (`asscrack1:…`). Other people join with the code. | Internet (0.5.0, forwarded port) |
+| Rejoin with the invite code | The host leaves and comes back with the same code. The members find the host again. | Internet (0.5.2) |
+| UPnP host | With an empty Public address field, the app asks the router for a port. | Port map on a real router: internet (0.6.0). A join through that code: not tested. |
+| Full nodes and relays | A member with a reachable port is a full node. It relays chat, history, files and voice for members that cannot connect directly. The relays spread across the full nodes. | 127.0.0.1 |
+| Network map | A panel shows the members, the host, the direct and relay links, the speakers and the file transfers. | 127.0.0.1 |
+| Room window (not released) | Panels with saved sizes, a View menu, context menus, the reading position and an unread count. | 127.0.0.1 (same PC) |
+| Quote and Find (not released) | Quote a line in a reply. Ctrl+F finds text in the loaded lines. | 127.0.0.1 (same PC) |
+
+## Known limits
+
+- **Windows only.** The build target is a portable Windows `.exe`. Other operating systems have no test.
+- **No saved history.** The chat history is in memory on the members (200 lines). When all members close the app, the
+  history is gone. Encrypted local history is milestone 6 of the 1.0 plan.
+- **Internet rooms need one reachable member.** At least one member must have a forwarded TCP port or a router that
+  allows UPnP. A member behind a carrier-grade NAT (CGNAT) cannot be a full node.
+- **No fallback route, no connection.** Members that connect only through one relay lose the connection when that relay
+  leaves. They dial the known full nodes again every 5 seconds.
+- **Privacy.** Noise encrypts each peer connection, and a room key keeps other people out of an internet room. But the
+  host that forwards voice can access the audio, and a relay can see connection metadata.
+- **Firewall question.** Windows asks one time for each build. Allow the app on private networks.
+
+## Get started
+
+ASSCRACK has no public release yet. The test team copies a portable `.exe` to each computer.
+
+### Build and run from source
+
+Use Node 24 and the lockfile of the project.
+
+```bash
+npm ci
+```
+
+```bash
+npm start
+```
+
+To start two copies on one computer, give each copy its own profile folder:
+
+```bash
+npm start -- --profile ./profile-a
+```
+
+```bash
+npm start -- --profile ./profile-b
+```
+
+To make the portable Windows build (`dist/ASSCRACK-<version>-portable.exe`), run this command on Windows:
+
+```bash
+npm run dist
+```
+
+### Run the tests
+
+The tests start real libp2p nodes on 127.0.0.1.
+
+```bash
+npm test
+```
+
+### Terminal demo
+
+The terminal demo sends chat lines with no window. The team uses it to test the network layer.
+
+```bash
+node src/network/transceiver.mjs --room <name> --name <name>
+```
+
+### Host an internet room
+
+1. Select **New internet room** and type a room name.
+2. If you forwarded a TCP port to this computer, type your public IP and that port in **Public address**. Else, keep
+   the field empty: the app then asks the router for a port (UPnP).
+3. Select **Invite**, then **Copy**. Send the code to your friends through a different app.
+4. Your friends select **Join with invite code** and paste the code.
+
+## How it works
+
+| Part | Technology |
+|---|---|
+| Peer-to-peer network | libp2p with TCP, Noise encryption and Yamux |
+| LAN discovery | mDNS |
+| Internet reachability | Circuit relay v2 through full nodes, a dial-back check, UPnP |
+| Roles | Host election with terms and heartbeats |
+| Voice | WebCodecs Opus (48 kHz, 20 ms, 32 kbps) on libp2p streams |
+| Files | Chunks on a libp2p stream, direct from the sender to each receiver, with a SHA-256 check |
+| Desktop app | Electron, packaged as one portable Windows `.exe` |
+| Logs | One log file for each start in `%APPDATA%\asscrack\logs`, with no chat text |
+
+The network code is in `src/network/`. The Electron app is in `src/application/`. The tests are in `test/`.
 
 ## Roadmap
 
-- [x] Phase 1: P2P mesh network with peer discovery (LAN tested)
-- [x] Phase 2: Consensus & role management (host election, LAN tested on 2 computers)
-- [ ] Phase 3: Mumble server integration (deferred: voice uses WebRTC)
-- [x] Phase 4: Voice client with auto-reconnect (WebRTC, LAN tested on 2 computers)
-- [x] Phase 5: P2P chat system (LAN tested on 2 computers, with the history after a restart in 0.3.1)
-- [x] Phase 6: File sharing (LAN tested on 2 computers with 0.3.1)
-- [ ] Phase 7: UI/UX polish (0.4.0: new look and network map, 127.0.0.1 only, LAN test open; room window milestone 1 (not released): saved panel sizes, context menus, reading position, same-PC only; milestone 2 (not released, branch `opus/quote`): Quote a line and Find in the loaded messages, same-PC only)
-- [ ] Phase 8: Internet rooms (0.5.0: invite codes, full nodes, relay links, voice over libp2p, internet tested 2026-11-18; 0.5.2 rejoin internet tested; 0.6.0: UPnP host, relay spread, direct voice, UPnP port map internet tested 2026-11-19, join through UPnP open. Goal 7 (not released) fixes the faults F1 to F6 of 0.6.0 and the stale no-peers status line, 127.0.0.1 only)
+| Phase | State |
+|---|---|
+| 1. Peer-to-peer mesh and LAN discovery | Done. LAN tested. |
+| 2. Host election and failover | Done. LAN tested on 2 computers. |
+| 3. Mumble server | Not planned. Voice uses Opus on libp2p streams. |
+| 4. Voice with reconnect | Done. LAN tested (WebRTC, 0.2.0 and 0.3.1). Voice on libp2p streams internet tested (0.5.0). |
+| 5. Chat | Done: chat and history after a restart (LAN). Quote and Find (127.0.0.1). Next: manual status, a room topic, unread highlights and saved rooms. |
+| 6. File sharing | Done. LAN tested (0.3.1), internet tested (0.5.0). Next: a Shared shelf for the room. |
+| 7. Desktop experience | In progress. The new look and the map (0.4.0), room window milestone 1 and Quote and Find have 127.0.0.1 results only. |
+| 8. Internet rooms | In progress. Invite codes and rejoin are internet tested. UPnP join, relays and failover on the internet are open. |
+
+Release 1.0 is a portable messenger for a game night. A friend joins from a different network. The group can continue to
+talk when a host closes. People reopen the same room the next day. See [`docs/WORK_PLAN_1.0.md`](docs/WORK_PLAN_1.0.md).
+
+## Documents
+
+- [`CHANGELOG.md`](CHANGELOG.md): each release and each unreleased change, with its results and labels.
+- [`src/network/chatreadme.md`](src/network/chatreadme.md): the LAN and internet test cards.
+- [`docs/WORK_PLAN_1.0.md`](docs/WORK_PLAN_1.0.md): the 1.0 release plan.
 
 ## License
 
-MIT License.
+MIT License. See [`LICENSE`](LICENSE).
 
 ## Acknowledgments
 
-- libp2p team for P2P networking
+- The libp2p team, for the peer-to-peer network stack
 - Noveblue, Parker, Sunmanga, HBO Max Verstappen
 - Discord ;)

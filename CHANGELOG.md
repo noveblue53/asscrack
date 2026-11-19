@@ -7,6 +7,22 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased: Quote and Find on main, the 1.0 work plan and a new README
+
+All results in this entry are 127.0.0.1 results. There is no LAN result and no packaged .exe result yet.
+- **Integration (step 1 of the 1.0 plan):** the operator accepted `opus/quote-fix` (`d324f7d`) on 2026-11-19 without
+  the LAN checks. Merge commit `8feb5e8` puts Quote and Find on `main`. The packaged Windows LAN check moves to step 3
+  of the plan.
+- **Checks at `8feb5e8` (Linux cloud VM, Node 24.22.3, Electron 40.5.0):** `npm ci` passes. `npm test` passes 182 of
+  182. One app start under Xvfb logs in to a LAN room. It gives 0 developer console messages and 0 error or warning
+  lines in the app log. The app closes normally.
+- **Work plan:** `docs/WORK_PLAN_1.0.md` gives the release order, the scope, the field procedure and the exit checks
+  of release 1.0. It is the text of the operator, with one private link removed.
+- **README:** the README now gives the status of each build and the known limits and the start commands. Each
+  feature has its best result label (LAN, internet or 127.0.0.1). The README has no claim without a test result.
+- **Open field checks:** Quote and Find on the packaged .exe, on two Windows computers in one LAN room. Use a 0.6.0
+  client and a host change. The internet test card 7. The operator deferred the LAN test.
+
 ## Unreleased: milestone 2 fixes, quote boundary and Quote button (branch `opus/quote-fix`)
 
 Base: `opus/quote` at `a099d88` (the reviewed commit). All results in this entry are same-computer results
