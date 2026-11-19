@@ -2,9 +2,11 @@
 
 // Voice over libp2p. The main process sends the Opus frames on a libp2p stream to the room host,
 // and the host forwards them to the other voice members (star topology). There is no RTCPeerConnection.
-// Capture: microphone (echo cancellation, gain control and the 'standard' noise suppression of Chromium)
+// Capture: microphone (echo cancellation, gain control and noise suppression of Chromium)
 //   -> RNNoise worklet (noise suppression 'rnnoise', @sapphi-red/web-noise-suppressor) -> AudioWorklet (20 ms blocks)
 //   -> send gate (voice-gate.js: voice activity or push to talk) -> AudioEncoder (Opus) -> api.sendVoiceFrame.
+// 'rnnoise' keeps the noise suppression of Chromium on and adds RNNoise after it: RNNoise alone did not always
+// suppress a steady noise in the first seconds after a join (measured, DECISIONS.md). 'standard': Chromium only.
 // RNNoise comes before the gate, thus noise that RNNoise removes does not open voice activity.
 // Playback: api.onVoiceFrame -> one AudioDecoder for each origin -> playback worklet (60 ms jitter buffer, mix).
 // Chromium's echo canceller uses all audio that this window plays as its reference, also the playback worklet
@@ -269,7 +271,7 @@
         const s = settings ?? {};
         const audio = {
             echoCancellation: s.echoCancellation !== false,
-            noiseSuppression: suppressor() === 'standard',
+            noiseSuppression: suppressor() !== 'off',
             autoGainControl: s.autoGainControl !== false,
             channelCount: { ideal: 1 },
             sampleRate: { ideal: SAMPLE_RATE }
@@ -417,10 +419,11 @@
         }
     }
 
-    // The fields that change the track. 'rnnoise' and 'off' both open the track with no Chromium noise suppression.
+    // The fields that change the track. 'rnnoise' and 'standard' both open the track with Chromium noise
+    // suppression, thus a failure of RNNoise does not change the track.
     function captureKey(s) {
         if (!s) return '';
-        const ns = s.noiseSuppression === 'standard' || (s.noiseSuppression === 'rnnoise' && rnnoiseError) ? 'on' : 'off';
+        const ns = s.noiseSuppression === 'off' ? 'off' : 'on';
         return `${s.echoCancellation}|${ns}|${s.autoGainControl}|${s.inputDeviceId}`;
     }
 
