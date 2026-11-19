@@ -383,7 +383,9 @@ async function sendMessage() {
             messageInput.value = reply;
             if (quote) showQuote(quote);
         }
-        status.textContent = `Not sent: ${err?.message ?? err}. Your draft is back in the box.`;
+        // Electron puts "Error invoking remote method '...': Error: " before the message. The user needs only the message.
+        const reason = String(err?.message ?? err).replace(/^Error invoking remote method '[^']*': (Error: )?/, '');
+        status.textContent = `Not sent: ${reason}. Your draft is back in the box.`;
     }
 }
 
