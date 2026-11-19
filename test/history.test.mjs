@@ -140,3 +140,24 @@ test('d: a chat line with no id gives a message event with an id', { timeout: 15
         await stopAll(nodes)
     }
 })
+
+test('e: a member with a session before the first election gets the history', { timeout: 30000 }, async () => {
+    const nodes = await makeNodes(2)
+    try {
+        // Each node has a line that the other node does not have. No host exists yet.
+        nodes[0].send('solo zero')
+        nodes[1].send('solo one')
+        await connectPair(nodes[0], nodes[1])
+        assert.equal(nodes[0].host(), null)
+        await waitUntil(() => agree(nodes), 5000)
+        const hostNode = nodes.find(n => n.isHost())
+        const member = nodes.find(n => !n.isHost())
+        const hostLine = hostNode.history().find(m => m.text.startsWith('solo'))
+        await waitUntil(() => member.history().some(m => m.id === hostLine.id), 5000)
+        await delay(500)
+        assert.ok(noDuplicates(member.history()))
+        assert.equal(member.history().length, 2)
+    } finally {
+        await stopAll(nodes)
+    }
+})
