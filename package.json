@@ -50,6 +50,7 @@
     "directories": {
       "output": "dist"
     },
+    "artifactBuildStarted": "./build/portable-launcher.cjs",
     "win": {
       "target": "portable"
     },

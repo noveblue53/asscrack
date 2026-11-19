@@ -22,6 +22,15 @@ if (profileIndex !== -1 && process.argv[profileIndex + 1]) {
     app.setPath('userData', path.resolve(process.argv[profileIndex + 1]));
 }
 
+// Single instance lock (F1, goal 7): only for the packaged build with the default user data folder. Electron keys the
+// lock on the user data folder. The check scripts start 2 or more copies with --profile, and npm start has no lock.
+// A second start of the same copy shows the window of the first copy and exits.
+const singleInstance = app.isPackaged && profileIndex === -1;
+const isFirstInstance = !singleInstance || app.requestSingleInstanceLock();
+if (!isFirstInstance) {
+    app.exit(0);
+}
+
 // Log file: one file for each start, in app.getPath('logs') or in the folder of --log-dir <dir>.
 // A failure to write the log must not stop the app.
 let logFile = null;
@@ -427,7 +436,17 @@ app.on('before-quit', event => {
 
 app.on('window-all-closed', () => app.quit());
 
+if (singleInstance && isFirstInstance) {
+    app.on('second-instance', () => {
+        if (!mainWindow || mainWindow.isDestroyed()) return;
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+    });
+}
+
 app.whenReady().then(() => {
+    if (!isFirstInstance) return;
     setPermissions();
     createMainWindow();
 });
