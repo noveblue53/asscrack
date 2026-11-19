@@ -821,7 +821,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         const wanted = new Set()
         for (const [from, list] of links) {
             if (!sessions.has(from)) continue
-            for (const p of list) if (p !== selfId && !sessions.has(p) && selfId < p) wanted.add(p)
+            for (const p of list) if (p !== selfId && !sessions.has(p) && !pendingChats.has(p) && selfId < p) wanted.add(p)
         }
         // Clear the hold time of each target that is not wanted now (for example, its session is open).
         for (const target of wantedSince.keys()) if (!wanted.has(target)) wantedSince.delete(target)
@@ -847,9 +847,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             relayDialVia.set(target, relay)
             const addr = `${addrOf(relay)}/p2p-circuit/p2p/${target}`
             node.dial(multiaddr(addr))
-                .then(conn => conn.newStream(CHAT_PROTOCOL, { runOnTransientConnection: true })
+                .then(conn => chatStreamOn(conn, target)
                     .then(stream => {
-                        attachChat(stream, target, conn)
+                        if (stream) attachChat(stream, target, conn)
                         relayDialTries.delete(target)
                         lastRelay.delete(target)
                         wantedSince.delete(target)
@@ -918,6 +918,18 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
 
     const discovered = new Set()
     const dialing = new Set()
+    // True when the peer has a session, a session that waits for the room proof, or a dial in flight.
+    function chatBusy(peerId) {
+        return sessions.has(peerId) || pendingChats.has(peerId) || dialing.has(peerId)
+    }
+    // Open the chat stream on a connection after a dial. node.dial() can give a connection that exists already, and
+    // the session can open on another path while the dial is in flight. Then a second chat stream gets the limit error
+    // (maxOutboundStreams 1) or an abort from the remote peer. Returns null when the chat stream is not necessary.
+    async function chatStreamOn(conn, peerId) {
+        if (sessions.has(peerId) || pendingChats.has(peerId)) return null
+        if (conn.streams.some(st => st.protocol === CHAT_PROTOCOL)) return null
+        return conn.newStream(CHAT_PROTOCOL, { runOnTransientConnection: true })
+    }
     node.addEventListener('peer:discovery', ({ detail }) => {
         const remoteId = detail.id.toString()
         const self = node.peerId.toString()
@@ -944,12 +956,16 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     let stopped = false
     function dialDiscovered(id, attempt) {
         const remoteId = id.toString()
-        if (stopped || sessions.has(remoteId) || dialing.has(remoteId)) return
+        if (stopped || chatBusy(remoteId)) return
         if (attempt === 0 && waitingDial.has(remoteId)) return
-        const streams = node.getConnections(id).flatMap(c => c.streams)
+        const conns = node.getConnections(id)
+        const streams = conns.flatMap(c => c.streams)
         // Do not dial when a chat stream to that peer is already open.
         if (streams.some(st => st.protocol === CHAT_PROTOCOL)) return
-        if (streams.some(st => !st.protocol) && attempt < NEGOTIATION_CHECKS) {
+        // A connection that exists already can get its chat stream from the other path (connect(), a relay dial, a
+        // full-node dial or the remote peer). That path can open the stream after identify. Thus also wait while a
+        // connection exists, so that the two paths do not both open a chat stream.
+        if ((conns.length > 0 || streams.some(st => !st.protocol)) && attempt < NEGOTIATION_CHECKS) {
             waitingDial.set(remoteId, setTimeout(() => {
                 waitingDial.delete(remoteId)
                 dialDiscovered(id, attempt + 1)
@@ -958,8 +974,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         }
         dialing.add(remoteId)
         node.dial(id)
-            .then(conn => conn.newStream(CHAT_PROTOCOL, { runOnTransientConnection: true })
-                .then(stream => attachChat(stream, remoteId, conn)))
+            .then(conn => chatStreamOn(conn, remoteId)
+                .then(stream => { if (stream) attachChat(stream, remoteId, conn) }))
             .catch(err => dialFailed({ peer: remoteId, addr: node.getConnections(id)[0]?.remoteAddr?.toString() ?? '?', via: 'discovery', err }))
             .finally(() => dialing.delete(remoteId))
     }
