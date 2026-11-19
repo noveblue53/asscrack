@@ -27,9 +27,11 @@ Don't use it for real voice chat yet. See [CHANGELOG.md](CHANGELOG.md) for what 
 
 Current Phase: Phase 8 (internet rooms). Version 0.6.0 lets a host with no port forward become a full node through
 UPnP. It also adds connection log lines, spreads the relayed sessions across the full nodes, and sends voice directly
-between two members with a direct connection. These passed the checks on one PC (127.0.0.1). Internet result of
-the operator (2026-11-19, 0.6.0, real router, empty Public address field): UPnP mapped a port on the router, and the
-invite panel showed a code after a wait. A join through that code is not tested yet. Test card 7 gives the full
+between two members with a direct connection. These passed the checks on one PC (127.0.0.1). Goal 7
+(not in a release yet, see `CHANGELOG.md` "Unreleased") fixes the faults F1 to F6 of 0.6.0. These fixes have results
+on one PC (127.0.0.1) only.
+Internet result of the operator (2026-11-19, 0.6.0, real router, empty Public address field): UPnP mapped a port.
+The invite panel showed a code after a wait. A join through that code is not tested yet. Test card 7 gives the full
 internet test. The rejoin of 0.5.2 passed an internet test (R0). Version 0.5.0 has internet rooms with invite codes
 and a room key. Members with a forwarded port are full nodes and relay the chat, history and files for the others.
 Voice now uses libp2p streams in place of WebRTC. Internet result of the operator (2026-11-18, 0.5.0): a host with a
