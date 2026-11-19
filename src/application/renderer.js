@@ -71,8 +71,10 @@ function formatTime(ms) {
 
 // A message line: <li><span.from/><span.bubble-text><span.text/><span.time/></span></li>.
 // Use textContent only for peer text. The class "own" is for a line of this user.
-function makeMessageItem(from, text, time, own = false) {
+// id: the network message id (data-id). An optimistic own line has no id.
+function makeMessageItem(from, text, time, own = false, id = null) {
     const item = document.createElement('li');
+    if (id !== null && id !== undefined && id !== '') item.dataset.id = String(id);
     const fromText = String(from ?? '');
     if (own) item.classList.add('own');
     else item.classList.add(nameColorClass(fromText));
@@ -104,31 +106,39 @@ function groupWithPrevious(item) {
     item.classList.toggle('cont', same);
 }
 
-// View only: when the list gets a new height (the transfer table opens), keep the newest line in view.
-let messagesAtEnd = true;
-messageList.addEventListener('scroll', () => {
-    messagesAtEnd = messageList.scrollHeight - messageList.scrollTop - messageList.clientHeight < 24;
-});
-new ResizeObserver(() => {
-    if (messagesAtEnd) messageList.scrollTop = messageList.scrollHeight;
-}).observe(messageList);
+// The reading position, the resize behavior and the unread count are in reading.js (window.reading).
+// The ids of the lines in the list. A live line and a history line with the same id are the same line.
+const shownMessageIds = new Set();
 
-function addMessage(from, text, time, own = false) {
-    const item = makeMessageItem(from, text, time, own);
+// Add a line at the end. Returns the new <li>, or null when the id is already shown.
+// The caller calls window.reading.beforeChange() and afterChange() around it.
+function addMessage(from, text, time, own = false, id = null) {
+    if (id !== null && id !== undefined && id !== '') {
+        if (shownMessageIds.has(String(id))) return null;
+        shownMessageIds.add(String(id));
+    }
+    const item = makeMessageItem(from, text, time, own, id);
     messageList.appendChild(item);
     groupWithPrevious(item);
-    messageList.scrollTop = messageList.scrollHeight;
+    return item;
 }
 
 // Put a history line before the first line that is newer. Equal times keep the arrival sequence.
-function insertMessage(from, text, time) {
+// Returns the new <li>, or null when the id is already shown.
+function insertMessage(from, text, time, id = null) {
+    if (id !== null && id !== undefined && id !== '') {
+        if (shownMessageIds.has(String(id))) return null;
+        shownMessageIds.add(String(id));
+    }
     // A history line has no peer ID: a line with the name of this user shows as an own line.
-    const item = makeMessageItem(from, text, time, String(from ?? '') === ownName);
+    const item = makeMessageItem(from, text, time, String(from ?? '') === ownName, id);
     const t = Number(item.dataset.time);
-    const next = Array.from(messageList.children).find(li => Number(li.dataset.time) > t);
-    messageList.insertBefore(item, next ?? null);
+    const items = Array.from(messageList.children);
+    const next = items[window.readingCore.insertIndex(items.map(li => li.dataset.time), t)] ?? null;
+    messageList.insertBefore(item, next);
     groupWithPrevious(item);
     groupWithPrevious(next);
+    return item;
 }
 
 // A peer line: <li><span.avatar/><span.name/><span.host/><span.voice/></li>. All text goes in with textContent.
@@ -207,14 +217,25 @@ window.asscrack.onPeerName(data => {
 window.asscrack.onMessage(data => {
     const item = peerItems.get(data.peerId);
     if (item && data.from) setPeerName(item, data.from);
-    addMessage(data.from, data.text, data.time);
+    const state = window.reading.beforeChange();
+    const line = addMessage(data.from, data.text, data.time, false, data.id);
+    if (line) window.reading.noteIncoming(line);
+    window.reading.afterChange(state);
 });
+// A history event can come more than one time (each host election, each new session). Only lines with an id
+// that is not shown go in. History lines are not unread. The first history with lines on an empty list
+// starts at the newest line. A later history keeps the reading position.
+let historyShown = false;
 window.asscrack.onHistory(data => {
-    const lines = Array.isArray(data?.messages) ? [...data.messages] : [];
-    lines.sort((a, b) => (Number(a.time) || 0) - (Number(b.time) || 0));
-    for (const line of lines) insertMessage(line.from, line.text, line.time);
-    console.info(`History shown: ${lines.length} lines`);
-    messageList.scrollTop = messageList.scrollHeight;
+    const lines = window.readingCore.newHistoryLines(data?.messages, id => shownMessageIds.has(id));
+    const first = !historyShown && lines.length > 0 && messageList.children.length === 0;
+    const state = window.reading.beforeChange();
+    let added = 0;
+    for (const line of lines) if (insertMessage(line.from, line.text, line.time, line.id)) added++;
+    if (lines.length > 0) historyShown = true;
+    console.info(`History shown: ${added} lines`);
+    if (first) window.reading.followLatest();
+    else window.reading.afterChange(state);
 });
 
 // ---- Room type on the login screen ----
@@ -292,7 +313,9 @@ async function sendMessage() {
     const text = messageInput.value;
     if (!text.trim()) return;
     messageInput.value = '';
+    // An own send goes to the newest line on purpose.
     addMessage(ownName, text, Date.now(), true);
+    window.reading.followLatest();
     status.textContent = peerItems.size === 0 ? NO_PEERS_TEXT : '';
     try {
         await window.asscrack.send(text);
