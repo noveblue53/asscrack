@@ -737,7 +737,9 @@ const copyInviteButton = document.getElementById('copy-invite');
 const inviteNote = document.getElementById('invite-note');
 const fullNodeState = document.getElementById('full-node-state');
 
-const NO_FULL_NODE_TEXT = 'No full node yet. A member with a forwarded TCP port must join.';
+const NO_FULL_NODE_TEXT = 'No invite code: this room has no address that the internet can reach. '
+    + 'Log in again and type the public address of a forwarded TCP port, or turn on UPnP on the router.';
+const UPNP_WAIT_TEXT = 'Asking the router to open a port. This can take up to 70 seconds. The code shows here when it is ready.';
 
 function hasApi(name) {
     return typeof window.asscrack?.[name] === 'function';
@@ -802,7 +804,8 @@ async function refreshInvite() {
             copyInviteButton.disabled = false;
         } else {
             inviteCode.value = '';
-            inviteNote.textContent = info?.reason === 'no-full-node' ? NO_FULL_NODE_TEXT : '';
+            inviteNote.textContent = info?.reason === 'upnp-wait' ? UPNP_WAIT_TEXT
+                : info?.reason === 'no-full-node' ? NO_FULL_NODE_TEXT : '';
             copyInviteButton.disabled = true;
         }
     } catch (err) {
@@ -821,7 +824,7 @@ document.addEventListener('keydown', e => {
 copyInviteButton.addEventListener('click', async () => {
     if (!inviteCode.value) return;
     try {
-        await navigator.clipboard.writeText(inviteCode.value);
+        await window.asscrack.copyText(inviteCode.value);
         inviteNote.textContent = 'Copied';
     } catch (err) {
         inviteNote.textContent = `Copy failed: ${err?.message ?? err}`;
@@ -842,6 +845,10 @@ if (hasApi('onFullNode')) {
 }
 if (hasApi('onFullNodeAddrs')) {
     window.asscrack.onFullNodeAddrs(() => refreshInvite());
+}
+// The UPnP result (mapped or none) changes the invite code or the note.
+if (hasApi('onUpnp')) {
+    window.asscrack.onUpnp(() => refreshInvite());
 }
 // The name of a full node can come later, and a full node can leave.
 window.asscrack.onPeerName(() => showFullNodeState());

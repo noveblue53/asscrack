@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, dialog, ipcMain, session } from 'electron';
+import { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, session } from 'electron';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import { mkdirSync, appendFileSync, readFileSync, writeFileSync } from 'fs';
@@ -324,7 +324,15 @@ ipcMain.handle('asscrack:invite', () => {
     if (!node) throw new Error('Not logged in');
     if (node.roomKey() === null) return { code: null, reason: 'lan' };
     const code = node.invite();
-    return code ? { code } : { code: null, reason: 'no-full-node' };
+    if (code) return { code };
+    // While the router can still open a port, the window tells the user to wait (not that a full node is missing).
+    return { code: null, reason: node.upnpPending() ? 'upnp-wait' : 'no-full-node' };
+});
+
+// The window has no clipboard permission (setPermissions allows only the microphone). The main process copies.
+ipcMain.handle('asscrack:copy-text', (_event, text) => {
+    if (typeof text !== 'string' || text.length > 10000) throw new Error('Text not copied');
+    clipboard.writeText(text);
 });
 
 ipcMain.handle('asscrack:full-node', () => {

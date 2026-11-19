@@ -1110,6 +1110,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         peerNames: () => Object.fromEntries([...names].filter(([peerId]) => sessions.has(peerId))),
         topology,
         fullNode: () => selfFull,
+        // True while the UPnP task can still give a mapped address (from the start until the result or the timeout).
+        upnpPending: () => useUpnp && upnpPhase !== 'done' && !stopped,
         roomKey: () => key ? key.toString('base64url') : null,
         publicAddrs,
         knownFullNodes: () => Object.fromEntries([...knownFullNodes].map(([p, a]) => [p, [...a]])),

@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld('asscrack', {
     getFullNode: () => ipcRenderer.invoke('asscrack:full-node'),
     onFullNode: listen('asscrack:full-node'),
     onFullNodeAddrs: listen('asscrack:full-node-addrs'),
+    onUpnp: listen('asscrack:upnp'),
+    copyText: text => ipcRenderer.invoke('asscrack:copy-text', text),
     send: text => ipcRenderer.invoke('asscrack:send', text),
     onPeerDiscovered: listen('asscrack:peer-discovered'),
     onPeerJoined: listen('asscrack:peer-joined'),
