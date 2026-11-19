@@ -12,7 +12,8 @@ test('normalize gives the defaults for a missing or bad value', () => {
     }
     const bad = normalize({
         mode: 'always', vadThresholdDb: 'loud', vadReleaseMs: Number.NaN, pttKey: 'Key V', pttReleaseMs: null,
-        echoCancellation: 'yes', noiseSuppression: 1, autoGainControl: undefined, inputDeviceId: 7, outputDeviceId: {}
+        pttGlobal: 'yes', echoCancellation: 'yes', noiseSuppression: 'krisp', autoGainControl: undefined,
+        inputDeviceId: 7, outputDeviceId: {}
     });
     assert.deepEqual(bad, { ...DEFAULTS });
 });
@@ -20,7 +21,7 @@ test('normalize gives the defaults for a missing or bad value', () => {
 test('normalize keeps good values and clamps numbers to the limits', () => {
     const value = normalize({
         mode: 'ptt', vadThresholdDb: -200, vadReleaseMs: 99999, pttKey: 'ControlLeft', pttReleaseMs: 150.6,
-        echoCancellation: false, noiseSuppression: false, autoGainControl: false,
+        pttGlobal: false, echoCancellation: false, noiseSuppression: 'standard', autoGainControl: false,
         inputDeviceId: 'abc', outputDeviceId: 'def', unknown: 'dropped'
     });
     assert.equal(value.mode, 'ptt');
@@ -29,11 +30,20 @@ test('normalize keeps good values and clamps numbers to the limits', () => {
     assert.equal(value.pttKey, 'ControlLeft');
     assert.equal(value.pttReleaseMs, 151);
     assert.equal(value.echoCancellation, false);
-    assert.equal(value.noiseSuppression, false);
+    assert.equal(value.pttGlobal, false);
+    assert.equal(value.noiseSuppression, 'standard');
     assert.equal(value.autoGainControl, false);
     assert.equal(value.inputDeviceId, 'abc');
     assert.equal(value.outputDeviceId, 'def');
     assert.equal('unknown' in value, false);
+});
+
+test('noise suppression is rnnoise, standard or off; an old true or false value still loads', () => {
+    assert.equal(DEFAULTS.noiseSuppression, 'rnnoise');
+    for (const v of ['rnnoise', 'standard', 'off']) assert.equal(normalize({ noiseSuppression: v }).noiseSuppression, v);
+    assert.equal(normalize({ noiseSuppression: true }).noiseSuppression, 'standard');
+    assert.equal(normalize({ noiseSuppression: false }).noiseSuppression, 'off');
+    assert.equal(merge(normalize({ noiseSuppression: 'off' }), { noiseSuppression: 'RNNoise' }).noiseSuppression, 'off');
 });
 
 test('the push-to-talk key must be a key code that the window does not use', () => {

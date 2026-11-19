@@ -22,8 +22,12 @@ export const DEFAULTS = Object.freeze({
     // null: no key.
     pttKey: null,
     pttReleaseMs: 200,
+    // true: push to talk also while the ASSCRACK window is not in front (key hook of the system, ptt-hook.mjs).
+    pttGlobal: true,
     echoCancellation: true,
-    noiseSuppression: true,
+    // 'rnnoise': RNNoise in an AudioWorklet (Chromium noise suppression off). 'standard': the noise suppression of
+    // Chromium. 'off': none. An old file has true ('standard') or false ('off').
+    noiseSuppression: 'rnnoise',
     autoGainControl: true,
     // '' is the default device of the system.
     inputDeviceId: '',
@@ -44,6 +48,14 @@ function bool(value) {
     return typeof value === 'boolean' ? value : undefined;
 }
 
+const SUPPRESSORS = Object.freeze(['rnnoise', 'standard', 'off']);
+
+function suppressor(value) {
+    if (value === true) return 'standard';
+    if (value === false) return 'off';
+    return SUPPRESSORS.includes(value) ? value : undefined;
+}
+
 function deviceId(value) {
     return typeof value === 'string' && value.length <= 256 ? value : undefined;
 }
@@ -55,8 +67,9 @@ const CHECKS = Object.freeze({
     vadReleaseMs: number(LIMITS.releaseMs),
     pttKey: value => (value === null || validPttKey(value) ? value : undefined),
     pttReleaseMs: number(LIMITS.releaseMs),
+    pttGlobal: bool,
     echoCancellation: bool,
-    noiseSuppression: bool,
+    noiseSuppression: suppressor,
     autoGainControl: bool,
     inputDeviceId: deviceId,
     outputDeviceId: deviceId

@@ -2,8 +2,10 @@
 
 // Voice over libp2p. The main process sends the Opus frames on a libp2p stream to the room host,
 // and the host forwards them to the other voice members (star topology). There is no RTCPeerConnection.
-// Capture: microphone (echo cancellation, noise suppression, gain control of Chromium) -> AudioWorklet (20 ms blocks)
+// Capture: microphone (echo cancellation, gain control and the 'standard' noise suppression of Chromium)
+//   -> RNNoise worklet (noise suppression 'rnnoise', @sapphi-red/web-noise-suppressor) -> AudioWorklet (20 ms blocks)
 //   -> send gate (voice-gate.js: voice activity or push to talk) -> AudioEncoder (Opus) -> api.sendVoiceFrame.
+// RNNoise comes before the gate, thus noise that RNNoise removes does not open voice activity.
 // Playback: api.onVoiceFrame -> one AudioDecoder for each origin -> playback worklet (60 ms jitter buffer, mix).
 // Chromium's echo canceller uses all audio that this window plays as its reference, also the playback worklet
 // (measured, DECISIONS.md). Do not use echoCancellation: 'remote-only': it removes only RTCPeerConnection audio.
@@ -38,6 +40,13 @@
     let sourceNode = null;
     let encoder = null;
     let timestamp = 0;
+    // RNNoise: the WASM bytes (one read for each start of the window), the worklet module of this context, the node.
+    const RNNOISE_PROCESSOR = '@sapphi-red/web-noise-suppressor/rnnoise';
+    let rnnoiseBinary = null;
+    let rnnoiseUrl = null;
+    let rnnoiseError = null;
+    let rnnoiseInContext = false;
+    let rnnoiseNode = null;
     // peerId -> { inVoice, streamId, muted } of the other peers.
     const members = new Map();
     // origin -> { decoder, bytesReceived, audioLevel, lastAt, timestamp }
@@ -182,11 +191,85 @@
 
     // ---- Audio objects ----
 
+    // The noise suppressor in use: 'rnnoise', 'standard' or 'off'. When RNNoise did not load, 'standard'.
+    function suppressor() {
+        const wanted = settings?.noiseSuppression ?? 'rnnoise';
+        if (wanted === 'rnnoise' && rnnoiseError) return 'standard';
+        return wanted === 'standard' || wanted === 'off' ? wanted : 'rnnoise';
+    }
+
+    // WebAssembly SIMD check (the same bytes as wasm-feature-detect in the package).
+    const SIMD_TEST = new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 10, 1, 8, 0,
+        65, 0, 253, 15, 253, 98, 11]);
+
+    // Load RNNoise one time. A failure sets rnnoiseError, and the capture uses the noise suppression of Chromium.
+    // The worklet compiles the WASM itself and gives no error to this window, thus compile it here first as a check.
+    async function loadRnnoise() {
+        if (rnnoiseBinary || rnnoiseError) return;
+        try {
+            if (typeof api.getRnnoise !== 'function') throw new Error('no RNNoise in this build');
+            const simd = WebAssembly.validate(SIMD_TEST);
+            const { workletUrl, wasm } = await api.getRnnoise(simd);
+            const bytes = wasm instanceof Uint8Array ? wasm : new Uint8Array(wasm);
+            const binary = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+            await WebAssembly.compile(binary);
+            rnnoiseBinary = binary;
+            rnnoiseUrl = workletUrl;
+            console.info(`Voice RNNoise loaded (${simd ? 'SIMD' : 'no SIMD'}, ${bytes.byteLength} bytes)`);
+        } catch (err) {
+            rnnoiseError = err?.message ?? String(err);
+            console.warn(`Voice RNNoise not available (${rnnoiseError}); the standard noise suppression is used`);
+        }
+    }
+
+    async function ensureRnnoiseNode() {
+        if (rnnoiseNode) return true;
+        await loadRnnoise();
+        if (!rnnoiseBinary) return false;
+        try {
+            if (!rnnoiseInContext) {
+                await context.audioWorklet.addModule(rnnoiseUrl);
+                rnnoiseInContext = true;
+            }
+            rnnoiseNode = new AudioWorkletNode(context, RNNOISE_PROCESSOR, {
+                numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1, channelCountMode: 'explicit',
+                outputChannelCount: [1], processorOptions: { maxChannels: 1, wasmBinary: rnnoiseBinary }
+            });
+            return true;
+        } catch (err) {
+            rnnoiseError = err?.message ?? String(err);
+            console.warn(`Voice RNNoise worklet failed (${rnnoiseError}); the standard noise suppression is used`);
+            return false;
+        }
+    }
+
+    // One RNNoise node for each audio context. It is not made again for a settings change: the 'destroy' message of
+    // the package does not arrive (its processor listens with addEventListener and no port.start()), thus each new
+    // node stays alive until the context closes. With no input the processor does no work.
+    function dropRnnoiseNode() {
+        if (!rnnoiseNode) return;
+        try { rnnoiseNode.disconnect(); } catch { /* already disconnected */ }
+        rnnoiseNode = null;
+    }
+
+    // source -> (RNNoise) -> capture worklet.
+    function wireCapture() {
+        if (!sourceNode || !captureNode) return;
+        try { sourceNode.disconnect(); } catch { /* already disconnected */ }
+        try { rnnoiseNode?.disconnect(); } catch { /* already disconnected */ }
+        if (suppressor() === 'rnnoise' && rnnoiseNode) {
+            sourceNode.connect(rnnoiseNode);
+            rnnoiseNode.connect(captureNode);
+        } else {
+            sourceNode.connect(captureNode);
+        }
+    }
+
     function audioConstraints(useDevice) {
         const s = settings ?? {};
         const audio = {
             echoCancellation: s.echoCancellation !== false,
-            noiseSuppression: s.noiseSuppression !== false,
+            noiseSuppression: suppressor() === 'standard',
             autoGainControl: s.autoGainControl !== false,
             channelCount: { ideal: 1 },
             sampleRate: { ideal: SAMPLE_RATE }
@@ -214,7 +297,7 @@
         const track = stream.getAudioTracks()[0];
         if (!track) return;
         const applied = track.getSettings();
-        console.info(`Voice capture: device "${track.label}" settings ${JSON.stringify({
+        console.info(`Voice capture: device "${track.label}" suppressor ${suppressor()} settings ${JSON.stringify({
             echoCancellation: applied.echoCancellation,
             noiseSuppression: applied.noiseSuppression,
             autoGainControl: applied.autoGainControl,
@@ -255,6 +338,8 @@
     // the device is open, Chromium gives the new track the same source, thus the old processing settings (measured).
     async function startCapture() {
         await ensureContext();
+        // RNNoise first: its result decides the noise suppression of Chromium for the new track.
+        if ((settings?.noiseSuppression ?? 'rnnoise') === 'rnnoise') await ensureRnnoiseNode();
         closeCapture();
         const stream = await openMicrophone();
         localStream = stream;
@@ -268,7 +353,7 @@
             captureNode.port.onmessage = ({ data }) => onBlock(data);
         }
         sourceNode = context.createMediaStreamSource(stream);
-        sourceNode.connect(captureNode);
+        wireCapture();
         if (context.state === 'suspended') await context.resume();
     }
 
@@ -299,6 +384,8 @@
     function stopAudio() {
         stopPlayback();
         closeCapture();
+        dropRnnoiseNode();
+        rnnoiseInContext = false;
         if (captureNode) captureNode.port.onmessage = null;
         try { captureNode?.disconnect(); } catch { /* already disconnected */ }
         captureNode = null;
@@ -330,8 +417,11 @@
         }
     }
 
+    // The fields that change the track. 'rnnoise' and 'off' both open the track with no Chromium noise suppression.
     function captureKey(s) {
-        return s ? `${s.echoCancellation}|${s.noiseSuppression}|${s.autoGainControl}|${s.inputDeviceId}` : '';
+        if (!s) return '';
+        const ns = s.noiseSuppression === 'standard' || (s.noiseSuppression === 'rnnoise' && rnnoiseError) ? 'on' : 'off';
+        return `${s.echoCancellation}|${ns}|${s.autoGainControl}|${s.inputDeviceId}`;
     }
 
     // ---- Host and members ----
@@ -440,7 +530,12 @@
             gate.configure(next);
             return serial(async () => {
                 if (!localStream) return;
-                if (captureKey(before) !== captureKey(next)) await startCapture();
+                if (captureKey(before) !== captureKey(next)) {
+                    await startCapture();
+                } else {
+                    if (suppressor() === 'rnnoise') await ensureRnnoiseNode();
+                    wireCapture();
+                }
                 await applySink();
                 changed();
             });
@@ -492,6 +587,9 @@
                 inputLevel,
                 inputFallback,
                 capturing: localStream !== null,
+                // The noise suppressor in use, and the reason when RNNoise did not load.
+                suppressor: suppressor(),
+                rnnoiseError,
                 members: Object.fromEntries(members),
                 // The origins that sent frames to this window.
                 connections: [...origins.keys()]

@@ -1,5 +1,6 @@
 import { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, session, shell } from 'electron';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
+import { createRequire } from 'module';
 import path from 'path';
 import { mkdirSync, appendFileSync, existsSync, readFileSync, writeFileSync } from 'fs';
 import { format } from 'util';
@@ -7,9 +8,11 @@ import { createAsscrackNode, keyedServiceTag } from '../network/node.mjs';
 import { newRoomKey, readInvite } from '../network/invite.mjs';
 import { installUpnpGuard } from '../network/upnp-guard.mjs';
 import * as voiceSettings from './voice-settings.mjs';
+import { createPttHook } from './ptt-hook.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const require = createRequire(import.meta.url);
 
 Menu.setApplicationMenu(null);
 
@@ -382,6 +385,7 @@ ipcMain.on('asscrack:voice-frame', (_event, bytes) => {
 ipcMain.handle('asscrack:set-voice', (_event, state) => {
     if (!node) throw new Error('Not logged in');
     node.setVoice(state ?? {});
+    updatePttHook(() => pttHook.setInVoice(state?.inVoice === true));
 });
 
 // The voice settings of this profile (voice-settings.mjs checks each value). The file is read one time.
@@ -393,10 +397,35 @@ function currentVoiceSettings() {
     if (!voiceSettingsValue) voiceSettingsValue = voiceSettings.load(voiceSettingsFile());
     return voiceSettingsValue;
 }
+// Push to talk while the window is not in front (ptt-hook.mjs). The native module loads at the first start.
+const pttHook = createPttHook({
+    loadModule: () => require('uiohook-napi'),
+    send: down => sendToWindow('asscrack:ptt', { down }),
+    log: writeLog
+});
+let pttStatus = 'off';
+function updatePttHook(change) {
+    change();
+    const next = pttHook.status();
+    if (next === pttStatus) return;
+    pttStatus = next;
+    sendToWindow('asscrack:ptt-status', { status: next });
+}
+ipcMain.handle('asscrack:ptt-status', () => pttHook.status());
+
+// RNNoise (@sapphi-red/web-noise-suppressor): the window gets the worklet URL and the WASM bytes from here.
+// The window cannot fetch file: URLs, and the main process reads only these two fixed files of the package.
+ipcMain.handle('asscrack:rnnoise', (_event, simd) => {
+    const wasm = require.resolve(`@sapphi-red/web-noise-suppressor/${simd === true ? 'rnnoise_simd.wasm' : 'rnnoise.wasm'}`);
+    const worklet = require.resolve('@sapphi-red/web-noise-suppressor/rnnoiseWorklet.js');
+    return { workletUrl: pathToFileURL(worklet).href, wasm: readFileSync(wasm) };
+});
+
 ipcMain.handle('asscrack:voice-settings', () => currentVoiceSettings());
 ipcMain.handle('asscrack:set-voice-settings', (_event, patch) => {
     const next = voiceSettings.merge(currentVoiceSettings(), patch);
     voiceSettingsValue = next;
+    updatePttHook(() => pttHook.configure(next));
     try {
         voiceSettings.save(voiceSettingsFile(), next);
     } catch (err) {
@@ -404,7 +433,7 @@ ipcMain.handle('asscrack:set-voice-settings', (_event, patch) => {
     }
     // No device IDs in the log: only the fields that a field test needs.
     writeLog('EVENT', `voice settings mode ${next.mode} threshold ${next.vadThresholdDb} vad-release ${next.vadReleaseMs} `
-        + `ptt-key ${next.pttKey ?? 'none'} ptt-release ${next.pttReleaseMs} ec ${next.echoCancellation} `
+        + `ptt-key ${next.pttKey ?? 'none'} ptt-release ${next.pttReleaseMs} ptt-global ${next.pttGlobal} ec ${next.echoCancellation} `
         + `ns ${next.noiseSuppression} agc ${next.autoGainControl} input ${next.inputDeviceId ? 'selected' : 'default'} `
         + `output ${next.outputDeviceId ? 'selected' : 'default'}`);
     return next;
@@ -467,6 +496,7 @@ ipcMain.handle('asscrack:reveal-file', (_event, key) => {
 });
 
 app.on('before-quit', event => {
+    pttHook.stop();
     if (!node || stopping) return;
     event.preventDefault();
     stopping = true;
@@ -501,5 +531,6 @@ if (singleInstance && isFirstInstance) {
 app.whenReady().then(() => {
     if (!isFirstInstance) return;
     setPermissions();
+    pttHook.configure(currentVoiceSettings());
     createMainWindow();
 });

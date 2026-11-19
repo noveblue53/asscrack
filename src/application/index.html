@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="styles.css">
@@ -128,6 +128,7 @@
             <kbd id="vs-ptt-key">Not set</kbd>
             <button id="vs-ptt-set" type="button">Set key</button>
           </div>
+          <label class="vs-check"><input type="checkbox" id="vs-ptt-global"> Also when ASSCRACK is in the back</label>
           <p id="vs-ptt-note" class="vs-hint" role="status"></p>
           <label class="vs-slider" for="vs-ptt-release">Release delay <output id="vs-ptt-release-value" for="vs-ptt-release"></output></label>
           <input type="range" id="vs-ptt-release" min="0" max="2000" step="50">
@@ -137,7 +138,13 @@
       <fieldset class="vs-section">
         <legend>Processing</legend>
         <label class="vs-check"><input type="checkbox" id="vs-ec"> Echo cancellation</label>
-        <label class="vs-check"><input type="checkbox" id="vs-ns"> Noise suppression</label>
+        <label class="vs-device" for="vs-ns">Noise suppression</label>
+        <select id="vs-ns">
+          <option value="rnnoise">RNNoise (strong)</option>
+          <option value="standard">Standard (light, steady noise only)</option>
+          <option value="off">Off</option>
+        </select>
+        <p id="vs-ns-note" class="vs-hint" role="status"></p>
         <label class="vs-check"><input type="checkbox" id="vs-agc"> Automatic gain control</label>
       </fieldset>
 

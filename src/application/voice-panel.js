@@ -5,8 +5,9 @@
 //   Each change goes to the main process first. The checked settings then go to voice.js (applySettings).
 // - The microphone runs while the panel is open, for the input meter (voice.startPreview). Nothing goes out
 //   while this user is not in voice.
-// - Push to talk works while this window has the focus. A key up when the window is not in front does not come to
-//   the window, thus a blur or a hidden window releases the key. (A key hook for all windows needs a native module.)
+// - Push to talk: while the key hook of the main process runs (ptt-hook.mjs, status 'on'), the key events come only
+//   from the hook, also while the window is not in front. Else the window listens to its own key events. Then a key
+//   up when the window is not in front does not come to the window, thus a blur or a hidden window releases the key.
 (function () {
     const api = window.asscrack;
     const voice = window.voice;
@@ -33,8 +34,10 @@
     const pttNote = $('vs-ptt-note');
     const pttRelease = $('vs-ptt-release');
     const pttReleaseValue = $('vs-ptt-release-value');
+    const pttGlobal = $('vs-ptt-global');
     const echo = $('vs-ec');
     const noise = $('vs-ns');
+    const noiseNote = $('vs-ns-note');
     const gain = $('vs-agc');
     const inputSelect = $('vs-input');
     const outputSelect = $('vs-output');
@@ -47,6 +50,8 @@
 
     let settings = null;
     let capturingKey = false;
+    // The state of the key hook of the main process: 'on', 'off', 'no-key' or 'unavailable'.
+    let hookStatus = 'off';
     let meterLevel = METER_MIN;
     let meterOpen = false;
     let meterFrame = 0;
@@ -107,28 +112,46 @@
             pttKey.textContent = keyName(settings.pttKey);
             pttKey.classList.toggle('unset', !settings.pttKey);
         }
+        pttGlobal.checked = settings.pttGlobal;
         echo.checked = settings.echoCancellation;
-        noise.checked = settings.noiseSuppression;
+        noise.value = settings.noiseSuppression;
         gain.checked = settings.autoGainControl;
         renderPttNote();
         renderDeviceNote();
+        renderNoiseNote();
     }
 
     function renderPttNote(text) {
         let note = text ?? '';
         let warn = false;
         if (!text) {
+            const notes = [];
             if (!settings?.pttKey) {
-                note = 'Set a key. Until then, your voice does not go out.';
+                notes.push('Set a key. Until then, your voice does not go out.');
                 warn = true;
-            } else if (typesText(settings.pttKey)) {
-                note = 'This key also types in the message field. A side mouse button, F13 or Right Ctrl does not.';
             } else {
-                note = 'Push to talk works while the ASSCRACK window is in front.';
+                if (!settings.pttGlobal) notes.push('Push to talk works while the ASSCRACK window is in front.');
+                else if (hookStatus === 'on') notes.push('Push to talk works in all windows.');
+                else if (hookStatus === 'unavailable') {
+                    notes.push('The key hook did not start. Push to talk works while the ASSCRACK window is in front.');
+                    warn = true;
+                } else if (hookStatus === 'no-key') {
+                    notes.push('This key works only while the ASSCRACK window is in front. Choose another key for all windows.');
+                    warn = true;
+                } else notes.push('Push to talk works in all windows while you are in voice.');
+                if (typesText(settings.pttKey)) notes.push('This key also types text. A side mouse button, F13 or Right Ctrl does not.');
             }
+            note = notes.join(' ');
         }
         pttNote.textContent = note;
         pttNote.classList.toggle('vs-warn', warn);
+    }
+
+    function renderNoiseNote() {
+        const state = voice.state();
+        const failed = settings?.noiseSuppression === 'rnnoise' && Boolean(state.rnnoiseError);
+        noiseNote.textContent = failed ? 'RNNoise did not start. The standard noise suppression is in use.' : '';
+        noiseNote.classList.toggle('vs-warn', failed);
     }
 
     function renderDeviceNote() {
@@ -253,8 +276,9 @@
     vadRelease.addEventListener('change', () => save({ vadReleaseMs: Number(vadRelease.value) }));
     pttRelease.addEventListener('input', () => preview({ pttReleaseMs: Number(pttRelease.value) }));
     pttRelease.addEventListener('change', () => save({ pttReleaseMs: Number(pttRelease.value) }));
+    pttGlobal.addEventListener('change', () => save({ pttGlobal: pttGlobal.checked }));
     echo.addEventListener('change', () => save({ echoCancellation: echo.checked }));
-    noise.addEventListener('change', () => save({ noiseSuppression: noise.checked }));
+    noise.addEventListener('change', () => save({ noiseSuppression: noise.value }));
     gain.addEventListener('change', () => save({ autoGainControl: gain.checked }));
     inputSelect.addEventListener('change', () => save({ inputDeviceId: inputSelect.value }).then(renderDeviceNote));
     outputSelect.addEventListener('change', () => save({ outputDeviceId: outputSelect.value }));
@@ -293,8 +317,25 @@
         else startKeyCapture();
     });
 
+    // The window listens to its own key events only while the key hook does not run.
     function pttActive() {
-        return settings?.mode === 'ptt' && Boolean(settings.pttKey) && !capturingKey;
+        return settings?.mode === 'ptt' && Boolean(settings.pttKey) && !capturingKey && hookStatus !== 'on';
+    }
+
+    // The key hook of the main process.
+    if (typeof api.onPushToTalk === 'function') {
+        api.onPushToTalk(({ down } = {}) => {
+            if (!capturingKey) voice.setPushToTalk(down === true);
+        });
+        const useStatus = status => {
+            const before = hookStatus;
+            hookStatus = typeof status === 'string' ? status : 'off';
+            // The source of the key events changes: start with the key up.
+            if (before !== hookStatus) voice.setPushToTalk(false);
+            if (!panel.hidden && !capturingKey) renderPttNote();
+        };
+        api.onPushToTalkStatus(({ status } = {}) => useStatus(status));
+        api.getPushToTalkStatus().then(useStatus).catch(err => console.warn('Push-to-talk status failed:', err?.message ?? err));
     }
 
     // Capture phase: the key capture of the panel comes before the Escape dispatcher of renderer.js.
@@ -340,13 +381,18 @@
     }, true);
 
     // The key up of a key that is down when the window loses the focus does not come to this window.
-    window.addEventListener('blur', () => voice.setPushToTalk(false));
+    // While the key hook runs, the hook gives the key up.
+    window.addEventListener('blur', () => {
+        if (hookStatus !== 'on') voice.setPushToTalk(false);
+    });
     document.addEventListener('visibilitychange', () => {
-        if (document.hidden) voice.setPushToTalk(false);
+        if (document.hidden && hookStatus !== 'on') voice.setPushToTalk(false);
     });
 
     voice.onChange(() => {
-        if (!panel.hidden) renderDeviceNote();
+        if (panel.hidden) return;
+        renderDeviceNote();
+        renderNoiseNote();
     });
 
     api.getVoiceSettings()
