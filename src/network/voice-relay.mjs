@@ -16,6 +16,13 @@ export const MAX_QUEUE = 50
 const VERSION = 1
 const RETRY_MS = 1000
 const MAX_RETRIES = 5
+// A closed direct stream opens again after this delay, at most MAX_DIRECT_REOPENS times in a row for each peer.
+const DIRECT_REOPEN_MS = 1000
+const MAX_DIRECT_REOPENS = 5
+// A direct stream that was open this long resets the count of reopens.
+const DIRECT_STABLE_MS = 10000
+// The host counts forwarded frames for at most this number of origins, and of targets for each origin.
+export const MAX_FORWARD_PEERS = 64
 
 export function encodeFrame({ origin, seq, data }) {
     const o = Buffer.from(origin, 'utf8')
@@ -115,6 +122,9 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
     const members = new Map()
     let upstream = null
     let upstreamHost = null
+    // Member side: the stream open in progress to the host, { host, queue }. Frames go into its queue until the
+    // stream is ready, so that the frames of the first milliseconds are not lost.
+    let upstreamPending = null
     let retries = 0
     let retryTimer = null
     let stopped = false
@@ -129,6 +139,9 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
     const directPending = new Set()
     // Peers that refused the direct protocol (for example a 0.5.2 peer). Cleared when the peer leaves.
     const directRefused = new Set()
+    // peerId -> number of reopens in a row, and peerId -> timer of the next reopen.
+    const directReopens = new Map()
+    const directReopenTimers = new Map()
     // Receiver side: the inbound direct streams.
     const directIn = new Set()
     // origin -> { set, order } of the last sequence numbers.
@@ -216,8 +229,7 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
                 if (other === peerId || (Array.isArray(direct) && direct.includes(other))) continue
                 e.queue.push(wire)
                 forwarded++
-                const row = forwardedTo[peerId] ?? (forwardedTo[peerId] = {})
-                row[other] = (row[other] ?? 0) + 1
+                countForward(peerId, other)
             }
             deliver(frame)
         }, () => {
@@ -228,6 +240,22 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
         })
     }
 
+    // Counts one forwarded frame in forwardedTo. Keys above MAX_FORWARD_PEERS are not added.
+    function countForward(origin, target) {
+        let row = forwardedTo[origin]
+        if (!row) {
+            if (Object.keys(forwardedTo).length >= MAX_FORWARD_PEERS) return
+            row = forwardedTo[origin] = {}
+        }
+        if (row[target] === undefined && Object.keys(row).length >= MAX_FORWARD_PEERS) return
+        row[target] = (row[target] ?? 0) + 1
+    }
+
+    function forgetForward(peerId) {
+        delete forwardedTo[peerId]
+        for (const row of Object.values(forwardedTo)) delete row[peerId]
+    }
+
     function closeEntry(entry) {
         entry.queue.end()
         entry.stream.close?.().catch?.(() => entry.stream.abort?.(new Error('closed')))
@@ -235,6 +263,11 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
 
     function closeUpstream() {
         if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
+        if (upstreamPending) {
+            closedDrops += upstreamPending.queue.drops
+            upstreamPending.queue.end()
+            upstreamPending = null
+        }
         if (upstream) {
             const e = upstream
             upstream = null
@@ -247,21 +280,37 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
         const host = hostId()
         if (stopped || host === null || isHost() || !selfInVoice()) return
         if (upstream && upstreamHost === host) return
+        // Only one open at a time. Before this check, each frame started one more open while the first open was in
+        // progress. The host replaced its stream for each new open, and the member lost the frames (fault F2).
+        if (upstreamPending && upstreamPending.host === host) return
         const conn = connectionFor(host)
         if (!conn) { scheduleRetry(host); return }
+        if (upstreamPending) closeUpstream()
+        const pending = { host, queue: createQueue() }
+        upstreamPending = pending
         let stream
         try {
             stream = await conn.newStream(VOICE_PROTOCOL, { runOnTransientConnection: true })
         } catch (err) {
+            if (upstreamPending === pending) {
+                upstreamPending = null
+                closedDrops += pending.queue.drops
+                pending.queue.end()
+            }
             console.warn('Voice stream open failed:', err?.message ?? err)
             scheduleRetry(host)
             return
         }
-        if (stopped || hostId() !== host || upstream) {
+        if (upstreamPending !== pending || stopped || hostId() !== host || upstream || !selfInVoice()) {
+            if (upstreamPending === pending) {
+                upstreamPending = null
+                pending.queue.end()
+            }
             stream.abort?.(new Error('not needed'))
             return
         }
-        const entry = { stream, queue: createQueue() }
+        upstreamPending = null
+        const entry = { stream, queue: pending.queue }
         upstream = entry
         upstreamHost = host
         attach(stream, entry.queue, body => {
@@ -357,15 +406,41 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
             stream.abort?.(new Error('not needed'))
             return
         }
-        const entry = { stream, queue: createQueue() }
+        const entry = { stream, queue: createQueue(), openedAt: Date.now() }
         directOut.set(peerId, entry)
         attach(stream, entry.queue, () => {}, () => {
+            // closeDirect() removes the entry first. Thus only a close that this node did not ask for comes here.
             if (directOut.get(peerId) !== entry) return
             directOut.delete(peerId)
             closedDrops += entry.queue.drops
             onDirectChanged()
+            scheduleDirectReopen(peerId, Date.now() - entry.openedAt >= DIRECT_STABLE_MS)
         })
         onDirectChanged()
+    }
+
+    // Opens a closed direct stream again, with no host change (fault F4). A delay and a cap stop a fast loop.
+    function scheduleDirectReopen(peerId, stable) {
+        if (stopped || directReopenTimers.has(peerId)) return
+        const count = stable ? 0 : (directReopens.get(peerId) ?? 0)
+        if (count >= MAX_DIRECT_REOPENS) {
+            console.info(`Voice direct stream to ${peerId} closed ${count} times: the peer gets the frames through the host`)
+            return
+        }
+        directReopens.set(peerId, count + 1)
+        const timer = setTimeout(() => {
+            directReopenTimers.delete(peerId)
+            if (!stopped) refreshDirect()
+        }, DIRECT_REOPEN_MS)
+        timer.unref?.()
+        directReopenTimers.set(peerId, timer)
+    }
+
+    function clearDirectReopen(peerId) {
+        const timer = directReopenTimers.get(peerId)
+        if (timer) clearTimeout(timer)
+        directReopenTimers.delete(peerId)
+        directReopens.delete(peerId)
     }
 
     // Opens and closes the direct streams after a change of the voice peers, the host or the own voice state.
@@ -384,7 +459,8 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
     function hostChanged() {
         refreshDirect()
         const host = hostId()
-        if (upstream && (upstreamHost !== host || isHost() || !selfInVoice())) closeUpstream()
+        if ((upstream || upstreamPending) &&
+            ((upstreamPending?.host ?? upstreamHost) !== host || isHost() || !selfInVoice())) closeUpstream()
         if (upstreamHost !== host) retries = 0
         if (host !== upstreamHost) upstreamHost = null
         if (isHost()) return
@@ -403,17 +479,19 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
             return false
         }
         seq = (seq + 1) >>> 0
+        // Returns true only when the frame went into at least one queue.
         if (isHost()) {
             for (const e of members.values()) e.queue.push(wire)
-            return true
+            return members.size > 0
         }
         for (const e of directOut.values()) {
             e.queue.push(wire)
             directSent++
         }
-        if (!upstream) { openUpstream(); return directOut.size > 0 }
-        upstream.queue.push(wire)
-        return true
+        if (!upstream) openUpstream()
+        const q = upstream?.queue ?? upstreamPending?.queue
+        if (q) q.push(wire)
+        return directOut.size > 0 || q !== undefined
     }
 
     function peerLeft(peerId) {
@@ -425,6 +503,8 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
         }
         if (peerId === hostId()) closeUpstream()
         directRefused.delete(peerId)
+        clearDirectReopen(peerId)
+        forgetForward(peerId)
         seen.delete(peerId)
         closeDirectIn(peerId)
         if (closeDirect(peerId)) onDirectChanged()
@@ -432,6 +512,7 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
 
     function stop() {
         stopped = true
+        for (const peerId of [...directReopenTimers.keys()]) clearDirectReopen(peerId)
         closeUpstream()
         for (const [peerId] of [...members]) peerLeft(peerId)
         for (const peerId of [...directOut.keys()]) closeDirect(peerId)
@@ -442,6 +523,7 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
         let drops = closedDrops
         for (const e of members.values()) drops += e.queue.drops
         if (upstream) drops += upstream.queue.drops
+        if (upstreamPending) drops += upstreamPending.queue.drops
         for (const e of directOut.values()) drops += e.queue.drops
         return {
             drops, droppedOversize, droppedOrigin, streams: members.size + (upstream ? 1 : 0),
