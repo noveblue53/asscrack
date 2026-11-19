@@ -1,0 +1,125 @@
+conn session peer=12D3KooWDe2dr9frWns3V4puukXrSUaqJgtwWXRiuYUcFjc8eKTD type=direct dir=in addr=/ip4/127.0.0.1/tcp/45316/p2p/12D3KooWDe2dr9frWns3V4puukXrSUaqJgtwWXRiuYUcFjc8eKTD
+conn session peer=12D3KooWM34QyWGb8ywS4duwKsTsUc8DAJLagFnfoZxf9JsgRYvM type=direct dir=out addr=/ip4/127.0.0.1/tcp/43529/p2p/12D3KooWM34QyWGb8ywS4duwKsTsUc8DAJLagFnfoZxf9JsgRYvM
+Dial-back from 12D3KooWDe2dr9frWns3V4puukXrSUaqJgtwWXRiuYUcFjc8eKTD: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWM34QyWGb8ywS4duwKsTsUc8DAJLagFnfoZxf9JsgRYvM: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWRAmQUfuhSa9cCK1guQnFwBWdVVhQXaHrXqk3j6rcGkDo type=direct dir=in addr=/ip4/127.0.0.1/tcp/45342/p2p/12D3KooWRAmQUfuhSa9cCK1guQnFwBWdVVhQXaHrXqk3j6rcGkDo
+conn session peer=12D3KooWM34QyWGb8ywS4duwKsTsUc8DAJLagFnfoZxf9JsgRYvM type=direct dir=out addr=/ip4/127.0.0.1/tcp/43529/p2p/12D3KooWM34QyWGb8ywS4duwKsTsUc8DAJLagFnfoZxf9JsgRYvM
+Dial-back from 12D3KooWRAmQUfuhSa9cCK1guQnFwBWdVVhQXaHrXqk3j6rcGkDo: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWM34QyWGb8ywS4duwKsTsUc8DAJLagFnfoZxf9JsgRYvM: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWDe2dr9frWns3V4puukXrSUaqJgtwWXRiuYUcFjc8eKTD type=direct secs=0.2
+conn closed peer=12D3KooWRAmQUfuhSa9cCK1guQnFwBWdVVhQXaHrXqk3j6rcGkDo type=direct secs=0.1
+conn closed peer=12D3KooWM34QyWGb8ywS4duwKsTsUc8DAJLagFnfoZxf9JsgRYvM type=direct secs=0.2
+conn closed peer=12D3KooWM34QyWGb8ywS4duwKsTsUc8DAJLagFnfoZxf9JsgRYvM type=direct secs=0.1
+conn session peer=12D3KooWL93GqKt7VALUTZndYThSrcYTv5avrwU11o5BJN9Vomcx type=direct dir=in addr=/ip4/127.0.0.1/tcp/39492/p2p/12D3KooWL93GqKt7VALUTZndYThSrcYTv5avrwU11o5BJN9Vomcx
+conn session peer=12D3KooWKaoWkKhyAAzvGqA61pfjHm1jiy1B3UunVWD2fticwZ8M type=direct dir=out addr=/ip4/127.0.0.1/tcp/45309/p2p/12D3KooWKaoWkKhyAAzvGqA61pfjHm1jiy1B3UunVWD2fticwZ8M
+Dial-back from 12D3KooWL93GqKt7VALUTZndYThSrcYTv5avrwU11o5BJN9Vomcx: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWKaoWkKhyAAzvGqA61pfjHm1jiy1B3UunVWD2fticwZ8M: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWKaoWkKhyAAzvGqA61pfjHm1jiy1B3UunVWD2fticwZ8M type=direct secs=0.1
+conn closed peer=12D3KooWL93GqKt7VALUTZndYThSrcYTv5avrwU11o5BJN9Vomcx type=direct secs=0.1
+conn session peer=12D3KooWL93GqKt7VALUTZndYThSrcYTv5avrwU11o5BJN9Vomcx type=direct dir=in addr=/ip4/127.0.0.1/tcp/39518/p2p/12D3KooWL93GqKt7VALUTZndYThSrcYTv5avrwU11o5BJN9Vomcx
+conn session peer=12D3KooWKaoWkKhyAAzvGqA61pfjHm1jiy1B3UunVWD2fticwZ8M type=direct dir=out addr=/ip4/127.0.0.1/tcp/45309/p2p/12D3KooWKaoWkKhyAAzvGqA61pfjHm1jiy1B3UunVWD2fticwZ8M
+Dial-back from 12D3KooWL93GqKt7VALUTZndYThSrcYTv5avrwU11o5BJN9Vomcx: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWKaoWkKhyAAzvGqA61pfjHm1jiy1B3UunVWD2fticwZ8M: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWL93GqKt7VALUTZndYThSrcYTv5avrwU11o5BJN9Vomcx type=direct secs=0.1
+conn closed peer=12D3KooWKaoWkKhyAAzvGqA61pfjHm1jiy1B3UunVWD2fticwZ8M type=direct secs=0.1
+conn session peer=12D3KooWL93GqKt7VALUTZndYThSrcYTv5avrwU11o5BJN9Vomcx type=direct dir=in addr=/ip4/127.0.0.1/tcp/34892/p2p/12D3KooWL93GqKt7VALUTZndYThSrcYTv5avrwU11o5BJN9Vomcx
+conn session peer=12D3KooWGWKPqaWsoRa2ZRPsfufneEayLHh6YV3xYpkitcpPD1ih type=direct dir=out addr=/ip4/127.0.0.1/tcp/42251/p2p/12D3KooWGWKPqaWsoRa2ZRPsfufneEayLHh6YV3xYpkitcpPD1ih
+Dial-back from 12D3KooWL93GqKt7VALUTZndYThSrcYTv5avrwU11o5BJN9Vomcx: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWGWKPqaWsoRa2ZRPsfufneEayLHh6YV3xYpkitcpPD1ih: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWGWKPqaWsoRa2ZRPsfufneEayLHh6YV3xYpkitcpPD1ih type=direct secs=0.1
+conn closed peer=12D3KooWL93GqKt7VALUTZndYThSrcYTv5avrwU11o5BJN9Vomcx type=direct secs=0.1
+conn session peer=12D3KooWNkxPKzC9hFjLPAYjZ9SWzHQmSnERwuavbmfkAgGPkGYi type=direct dir=in addr=/ip4/127.0.0.1/tcp/55640/p2p/12D3KooWNkxPKzC9hFjLPAYjZ9SWzHQmSnERwuavbmfkAgGPkGYi
+conn session peer=12D3KooWLEayYMAQUn9JsxJbqHcVoQNQaJyy5osufKZ4KwtnbHxm type=direct dir=out addr=/ip4/127.0.0.1/tcp/35261/p2p/12D3KooWLEayYMAQUn9JsxJbqHcVoQNQaJyy5osufKZ4KwtnbHxm
+Dial-back from 12D3KooWNkxPKzC9hFjLPAYjZ9SWzHQmSnERwuavbmfkAgGPkGYi: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWLEayYMAQUn9JsxJbqHcVoQNQaJyy5osufKZ4KwtnbHxm: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWNkxPKzC9hFjLPAYjZ9SWzHQmSnERwuavbmfkAgGPkGYi type=direct secs=0.4
+conn closed peer=12D3KooWLEayYMAQUn9JsxJbqHcVoQNQaJyy5osufKZ4KwtnbHxm type=direct secs=0.4
+conn session peer=12D3KooWKD44NYYjcXuL7D5U9DUxJEctoYT1J7nmWov3BGA8Aeuy type=direct dir=in addr=/ip4/127.0.0.1/tcp/51314/p2p/12D3KooWKD44NYYjcXuL7D5U9DUxJEctoYT1J7nmWov3BGA8Aeuy
+conn session peer=12D3KooWE3wKwve7xNPxfKKpK6fzABmbdTPUSiKWKf5UABXMMeo8 type=direct dir=out addr=/ip4/127.0.0.1/tcp/42669/p2p/12D3KooWE3wKwve7xNPxfKKpK6fzABmbdTPUSiKWKf5UABXMMeo8
+Dial-back from 12D3KooWKD44NYYjcXuL7D5U9DUxJEctoYT1J7nmWov3BGA8Aeuy: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWE3wKwve7xNPxfKKpK6fzABmbdTPUSiKWKf5UABXMMeo8: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWE3wKwve7xNPxfKKpK6fzABmbdTPUSiKWKf5UABXMMeo8 type=direct secs=0.4
+conn closed peer=12D3KooWKD44NYYjcXuL7D5U9DUxJEctoYT1J7nmWov3BGA8Aeuy type=direct secs=0.4
+conn session peer=12D3KooW9to4s1Adxk9cvrybYMVTH8eUektXwxRHvMtQ9ShWnL61 type=direct dir=in addr=/ip4/127.0.0.1/tcp/57184/p2p/12D3KooW9to4s1Adxk9cvrybYMVTH8eUektXwxRHvMtQ9ShWnL61
+conn session peer=12D3KooWMKKdTu6QzXN6TdcCG2t1iCXYULD55giUXBruTL1HWqoH type=direct dir=out addr=/ip4/127.0.0.1/tcp/34385/p2p/12D3KooWMKKdTu6QzXN6TdcCG2t1iCXYULD55giUXBruTL1HWqoH
+Dial-back from 12D3KooW9to4s1Adxk9cvrybYMVTH8eUektXwxRHvMtQ9ShWnL61: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWMKKdTu6QzXN6TdcCG2t1iCXYULD55giUXBruTL1HWqoH: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooW9to4s1Adxk9cvrybYMVTH8eUektXwxRHvMtQ9ShWnL61 type=direct secs=0.4
+conn closed peer=12D3KooWMKKdTu6QzXN6TdcCG2t1iCXYULD55giUXBruTL1HWqoH type=direct secs=0.4
+conn session peer=12D3KooWKarCh7bdzBa79joTVpAr7eJByh4MuuTJKKMZUtHCa3pk type=direct dir=in addr=/ip4/127.0.0.1/tcp/57460/p2p/12D3KooWKarCh7bdzBa79joTVpAr7eJByh4MuuTJKKMZUtHCa3pk
+conn session peer=12D3KooWHhpLRaDXWEkYmejDQVfXpUWe7RMYvHr47YTPUfRBuR5t type=direct dir=out addr=/ip4/127.0.0.1/tcp/37151/p2p/12D3KooWHhpLRaDXWEkYmejDQVfXpUWe7RMYvHr47YTPUfRBuR5t
+Dial-back from 12D3KooWKarCh7bdzBa79joTVpAr7eJByh4MuuTJKKMZUtHCa3pk: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWHhpLRaDXWEkYmejDQVfXpUWe7RMYvHr47YTPUfRBuR5t: ok, IP 127.0.0.1, full node false
+conn session peer=12D3KooWCi3UrMWb8fVy8Xy8DW9mhqLVTu4TfCjoduGfZAkHFixC type=direct dir=in addr=/ip4/127.0.0.1/tcp/57470/p2p/12D3KooWCi3UrMWb8fVy8Xy8DW9mhqLVTu4TfCjoduGfZAkHFixC
+conn session peer=12D3KooWHhpLRaDXWEkYmejDQVfXpUWe7RMYvHr47YTPUfRBuR5t type=direct dir=out addr=/ip4/127.0.0.1/tcp/37151/p2p/12D3KooWHhpLRaDXWEkYmejDQVfXpUWe7RMYvHr47YTPUfRBuR5t
+Dial-back from 12D3KooWCi3UrMWb8fVy8Xy8DW9mhqLVTu4TfCjoduGfZAkHFixC: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWHhpLRaDXWEkYmejDQVfXpUWe7RMYvHr47YTPUfRBuR5t: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWKarCh7bdzBa79joTVpAr7eJByh4MuuTJKKMZUtHCa3pk type=direct secs=0.1
+conn closed peer=12D3KooWCi3UrMWb8fVy8Xy8DW9mhqLVTu4TfCjoduGfZAkHFixC type=direct secs=0.1
+conn closed peer=12D3KooWHhpLRaDXWEkYmejDQVfXpUWe7RMYvHr47YTPUfRBuR5t type=direct secs=0.1
+conn closed peer=12D3KooWHhpLRaDXWEkYmejDQVfXpUWe7RMYvHr47YTPUfRBuR5t type=direct secs=0.1
+RESULT {
+  "1 away note, late joiner": {
+    "pass": true,
+    "bSees": {
+      "state": "away",
+      "note": "back at 9"
+    },
+    "cSees": {
+      "state": "away",
+      "note": "back at 9"
+    },
+    "cWaitMs": 105
+  },
+  "2 drop and reopen, restart with new peer ID": {
+    "pass": true,
+    "reopened": {
+      "state": "dnd",
+      "note": "racing"
+    },
+    "afterRestart": {
+      "12D3KooWGWKPqaWsoRa2ZRPsfufneEayLHh6YV3xYpkitcpPD1ih": {
+        "state": "available",
+        "note": ""
+      }
+    },
+    "oldRowGone": true
+  },
+  "3 dnd leaves voice state alone": {
+    "pass": true,
+    "voiceEventsAfterDnd": 0
+  },
+  "4 mixed version, current dials old": {
+    "pass": true,
+    "oldPeerPresenceAtNew": "none (status unknown)",
+    "oMsg": [
+      "hello old"
+    ],
+    "nMsg": [
+      "hello new"
+    ]
+  },
+  "4 mixed version, old dials current": {
+    "pass": true,
+    "oldPeerPresenceAtNew": "none (status unknown)",
+    "oMsg": [
+      "hello old"
+    ],
+    "nMsg": [
+      "hello new"
+    ]
+  },
+  "5 two buddies with the same name": {
+    "pass": true,
+    "b": {
+      "12D3KooWKarCh7bdzBa79joTVpAr7eJByh4MuuTJKKMZUtHCa3pk": {
+        "state": "away",
+        "note": "one"
+      },
+      "12D3KooWCi3UrMWb8fVy8Xy8DW9mhqLVTu4TfCjoduGfZAkHFixC": {
+        "state": "dnd",
+        "note": "two"
+      }
+    }
+  }
+}

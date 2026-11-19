@@ -1,0 +1,65 @@
+conn session peer=12D3KooW9qa481ujaMsd5BPc6g3YjoSyzzdn3fTndzRJyd2x6zCX type=direct dir=in addr=/ip4/127.0.0.1/tcp/46712/p2p/12D3KooW9qa481ujaMsd5BPc6g3YjoSyzzdn3fTndzRJyd2x6zCX
+conn session peer=12D3KooWQk5e8FEK18W2NgKH5FHrvqaRAKzzr35t9mcJJYpVZ3tg type=direct dir=out addr=/ip4/127.0.0.1/tcp/44749/p2p/12D3KooWQk5e8FEK18W2NgKH5FHrvqaRAKzzr35t9mcJJYpVZ3tg
+Relay reservation on 12D3KooWQk5e8FEK18W2NgKH5FHrvqaRAKzzr35t9mcJJYpVZ3tg: ok
+conn session peer=12D3KooWRnotDb46K4hg39zKcyQGji8Ybwd1qHLK3sqrgxp6fjwB type=direct dir=in addr=/ip4/127.0.0.1/tcp/46726/p2p/12D3KooWRnotDb46K4hg39zKcyQGji8Ybwd1qHLK3sqrgxp6fjwB
+conn session peer=12D3KooWQk5e8FEK18W2NgKH5FHrvqaRAKzzr35t9mcJJYpVZ3tg type=direct dir=out addr=/ip4/127.0.0.1/tcp/44749/p2p/12D3KooWQk5e8FEK18W2NgKH5FHrvqaRAKzzr35t9mcJJYpVZ3tg
+Relay reservation on 12D3KooWQk5e8FEK18W2NgKH5FHrvqaRAKzzr35t9mcJJYpVZ3tg: ok
+conn closed peer=12D3KooW9qa481ujaMsd5BPc6g3YjoSyzzdn3fTndzRJyd2x6zCX type=direct secs=0.1
+conn closed peer=12D3KooWRnotDb46K4hg39zKcyQGji8Ybwd1qHLK3sqrgxp6fjwB type=direct secs=0.1
+conn closed peer=12D3KooWQk5e8FEK18W2NgKH5FHrvqaRAKzzr35t9mcJJYpVZ3tg type=direct secs=0.1
+conn closed peer=12D3KooWQk5e8FEK18W2NgKH5FHrvqaRAKzzr35t9mcJJYpVZ3tg type=direct secs=0
+✖ voice: A sends directly to B, H forwards no frame of A to B, relay-only C gets A through H (283.555822ms)
+conn session peer=12D3KooWFrFp9gXYX3pTAHweUqDwu5RVsjZs5naidGnd8c9xPkNe type=direct dir=in addr=/ip4/127.0.0.1/tcp/56036/p2p/12D3KooWFrFp9gXYX3pTAHweUqDwu5RVsjZs5naidGnd8c9xPkNe
+conn session peer=12D3KooWDWJf8VTPzAgAw7U52qTQwf2RBpZFtpZno11ym5ZMzKoR type=direct dir=out addr=/ip4/127.0.0.1/tcp/38587/p2p/12D3KooWDWJf8VTPzAgAw7U52qTQwf2RBpZFtpZno11ym5ZMzKoR
+Relay reservation on 12D3KooWDWJf8VTPzAgAw7U52qTQwf2RBpZFtpZno11ym5ZMzKoR: ok
+conn session peer=12D3KooWDDoNqW9Rf5WtkDG8od3bsGyEGS2HeA19edeyd2qk2bE3 type=direct dir=in addr=/ip4/127.0.0.1/tcp/56046/p2p/12D3KooWDDoNqW9Rf5WtkDG8od3bsGyEGS2HeA19edeyd2qk2bE3
+conn session peer=12D3KooWDWJf8VTPzAgAw7U52qTQwf2RBpZFtpZno11ym5ZMzKoR type=direct dir=out addr=/ip4/127.0.0.1/tcp/38587/p2p/12D3KooWDWJf8VTPzAgAw7U52qTQwf2RBpZFtpZno11ym5ZMzKoR
+Relay reservation on 12D3KooWDWJf8VTPzAgAw7U52qTQwf2RBpZFtpZno11ym5ZMzKoR: ok
+conn session peer=12D3KooWFrFp9gXYX3pTAHweUqDwu5RVsjZs5naidGnd8c9xPkNe type=direct dir=in addr=/ip4/127.0.0.1/tcp/55362/p2p/12D3KooWFrFp9gXYX3pTAHweUqDwu5RVsjZs5naidGnd8c9xPkNe
+conn session peer=12D3KooWDDoNqW9Rf5WtkDG8od3bsGyEGS2HeA19edeyd2qk2bE3 type=direct dir=out addr=/ip4/127.0.0.1/tcp/40001/p2p/12D3KooWDDoNqW9Rf5WtkDG8od3bsGyEGS2HeA19edeyd2qk2bE3
+conn session peer=12D3KooWRe8YPjP5u8CGsPNUT1LqoTJymD8zNpaNMdAAyKv2Bds3 type=direct dir=in addr=/ip4/127.0.0.1/tcp/56052/p2p/12D3KooWRe8YPjP5u8CGsPNUT1LqoTJymD8zNpaNMdAAyKv2Bds3
+conn session peer=12D3KooWDWJf8VTPzAgAw7U52qTQwf2RBpZFtpZno11ym5ZMzKoR type=direct dir=out addr=/ip4/127.0.0.1/tcp/38587/p2p/12D3KooWDWJf8VTPzAgAw7U52qTQwf2RBpZFtpZno11ym5ZMzKoR
+conn dial-failed peer=12D3KooWRe8YPjP5u8CGsPNUT1LqoTJymD8zNpaNMdAAyKv2Bds3 via=relay reason=no-reservation addr=/ip4/127.0.0.1/tcp/38587/p2p/12D3KooWDWJf8VTPzAgAw7U52qTQwf2RBpZFtpZno11ym5ZMzKoR/p2p-circuit/p2p/12D3KooWRe8YPjP5u8CGsPNUT1LqoTJymD8zNpaNMdAAyKv2Bds3 error="failed to connect via relay with status NO_RESERVATION"
+Relay reservation on 12D3KooWDWJf8VTPzAgAw7U52qTQwf2RBpZFtpZno11ym5ZMzKoR: ok
+conn dial-failed peer=12D3KooWRe8YPjP5u8CGsPNUT1LqoTJymD8zNpaNMdAAyKv2Bds3 via=relay reason=no-reservation addr=/ip4/127.0.0.1/tcp/38587/p2p/12D3KooWDWJf8VTPzAgAw7U52qTQwf2RBpZFtpZno11ym5ZMzKoR/p2p-circuit/p2p/12D3KooWRe8YPjP5u8CGsPNUT1LqoTJymD8zNpaNMdAAyKv2Bds3 error="failed to connect via relay with status NO_RESERVATION"
+History sent to 12D3KooWFrFp9gXYX3pTAHweUqDwu5RVsjZs5naidGnd8c9xPkNe: 0 messages
+History sent to 12D3KooWDDoNqW9Rf5WtkDG8od3bsGyEGS2HeA19edeyd2qk2bE3: 0 messages
+History sent to 12D3KooWRe8YPjP5u8CGsPNUT1LqoTJymD8zNpaNMdAAyKv2Bds3: 0 messages
+History applied: 0 of 0 messages are new
+History applied: 0 of 0 messages are new
+History applied: 0 of 0 messages are new
+Voice frame dropped: origin 12D3KooWRe8YPjP5u8CGsPNUT1LqoTJymD8zNpaNMdAAyKv2Bds3 is not the sender 12D3KooWFrFp9gXYX3pTAHweUqDwu5RVsjZs5naidGnd8c9xPkNe (direct)
+conn closed peer=12D3KooWFrFp9gXYX3pTAHweUqDwu5RVsjZs5naidGnd8c9xPkNe type=direct secs=0.6
+conn closed peer=12D3KooWDDoNqW9Rf5WtkDG8od3bsGyEGS2HeA19edeyd2qk2bE3 type=direct secs=0.5
+conn closed peer=12D3KooWRe8YPjP5u8CGsPNUT1LqoTJymD8zNpaNMdAAyKv2Bds3 type=direct secs=0.4
+conn closed peer=12D3KooWDWJf8VTPzAgAw7U52qTQwf2RBpZFtpZno11ym5ZMzKoR type=direct secs=0.6
+conn closed peer=12D3KooWDDoNqW9Rf5WtkDG8od3bsGyEGS2HeA19edeyd2qk2bE3 type=direct secs=0.4
+conn closed peer=12D3KooWDWJf8VTPzAgAw7U52qTQwf2RBpZFtpZno11ym5ZMzKoR type=direct secs=0.5
+conn closed peer=12D3KooWFrFp9gXYX3pTAHweUqDwu5RVsjZs5naidGnd8c9xPkNe type=direct secs=0.4
+conn closed peer=12D3KooWDWJf8VTPzAgAw7U52qTQwf2RBpZFtpZno11ym5ZMzKoR type=direct secs=0.4
+✔ voice: the receiver drops a frame with a false origin on a direct voice stream (665.78607ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 1
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2272.320979
+
+✖ failing tests:
+
+test at test/voice-direct.test.mjs:64:1
+✖ voice: A sends directly to B, H forwards no frame of A to B, relay-only C gets A through H (283.555822ms)
+  Error [CodeError]: Too many outbound protocol streams for protocol "/asscrack/chat/receive" - 1/1
+      at ConnectionImpl.newStream [as _newStream] (file:///home/user/asscrack/node_modules/libp2p/dist/src/upgrader.js:343:37)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async ConnectionImpl.newStream (file:///home/user/asscrack/node_modules/libp2p/dist/src/connection/index.js:94:24)
+      at async Object.connect (file:///tmp/claude-0/-home-user-asscrack/23416945-c578-595d-be0c-fee850a95973/scratchpad/main-wt/src/network/node.mjs:1123:32)
+      at async room (file:///tmp/claude-0/-home-user-asscrack/23416945-c578-595d-be0c-fee850a95973/scratchpad/main-wt/test/voice-direct.test.mjs:56:5)
+      at async TestContext.<anonymous> (file:///tmp/claude-0/-home-user-asscrack/23416945-c578-595d-be0c-fee850a95973/scratchpad/main-wt/test/voice-direct.test.mjs:67:32)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    code: 'ERR_TOO_MANY_OUTBOUND_PROTOCOL_STREAMS',
+    props: {}
+  }

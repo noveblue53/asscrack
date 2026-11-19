@@ -1,0 +1,15 @@
+Transceiver started with peer id: 12D3KooWG7NypyfFh7ojUP8dY6y9UwkS9y3X8UxQ1ptEmT5DmUBV room: demo-chk
+Listening on:
+/ip4/127.0.0.1/tcp/41733/p2p/12D3KooWG7NypyfFh7ojUP8dY6y9UwkS9y3X8UxQ1ptEmT5DmUBV
+/ip4/192.0.2.2/tcp/41733/p2p/12D3KooWG7NypyfFh7ojUP8dY6y9UwkS9y3X8UxQ1ptEmT5DmUBV
+Waiting for incoming connection...
+Discovered peer: 12D3KooWQSkEYnMntyuNLhKVRaBvikqkfHxeSW4UBpSqYZPKdbuV
+Chat ready with peer: 12D3KooWQSkEYnMntyuNLhKVRaBvikqkfHxeSW4UBpSqYZPKdbuV
+conn session peer=12D3KooWQSkEYnMntyuNLhKVRaBvikqkfHxeSW4UBpSqYZPKdbuV type=direct dir=in addr=/ip4/127.0.0.1/tcp/44720/p2p/12D3KooWQSkEYnMntyuNLhKVRaBvikqkfHxeSW4UBpSqYZPKdbuV
+Peer name: peer (12D3KooWQSkEYnMntyuNLhKVRaBvikqkfHxeSW4UBpSqYZPKdbuV)
+Dial-back from 12D3KooWQSkEYnMntyuNLhKVRaBvikqkfHxeSW4UBpSqYZPKdbuV: ok, IP 127.0.0.1, full node false
+
+> peer: chat after presence
+conn closed peer=12D3KooWQSkEYnMntyuNLhKVRaBvikqkfHxeSW4UBpSqYZPKdbuV type=direct secs=1.5
+Chat closed with peer: 12D3KooWQSkEYnMntyuNLhKVRaBvikqkfHxeSW4UBpSqYZPKdbuV
+Host: 12D3KooWG7NypyfFh7ojUP8dY6y9UwkS9y3X8UxQ1ptEmT5DmUBV (term 1)

@@ -1,0 +1,36 @@
+conn session peer=12D3KooWAHoTSoqjYbSUqKavfDCM6p8oP5i8zCUKzhgi1NLpxrox type=direct dir=in addr=/ip4/127.0.0.1/tcp/57280/p2p/12D3KooWAHoTSoqjYbSUqKavfDCM6p8oP5i8zCUKzhgi1NLpxrox
+conn session peer=12D3KooWKmmenBDb2LjH9gbRzX5ipkBCAP3PDXn5JgADu7mDzKPu type=direct dir=out addr=/ip4/127.0.0.1/tcp/33327/p2p/12D3KooWKmmenBDb2LjH9gbRzX5ipkBCAP3PDXn5JgADu7mDzKPu
+Dial-back from 12D3KooWAHoTSoqjYbSUqKavfDCM6p8oP5i8zCUKzhgi1NLpxrox: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWKmmenBDb2LjH9gbRzX5ipkBCAP3PDXn5JgADu7mDzKPu: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWKmmenBDb2LjH9gbRzX5ipkBCAP3PDXn5JgADu7mDzKPu type=direct secs=0.8
+conn closed peer=12D3KooWAHoTSoqjYbSUqKavfDCM6p8oP5i8zCUKzhgi1NLpxrox type=direct secs=0.8
+conn session peer=12D3KooWACruxfE7ACLmPA8gC8qVZMrDUBKhhnPvxDjZEYrXGUWL type=direct dir=in addr=/ip4/127.0.0.1/tcp/44576/p2p/12D3KooWACruxfE7ACLmPA8gC8qVZMrDUBKhhnPvxDjZEYrXGUWL
+conn session peer=12D3KooWNCEnaNzT3gmxJn6LrdCgiQ7bxHU1mBJhBGT6oLJM1BkN type=direct dir=out addr=/ip4/127.0.0.1/tcp/37881/p2p/12D3KooWNCEnaNzT3gmxJn6LrdCgiQ7bxHU1mBJhBGT6oLJM1BkN
+Dial-back from 12D3KooWACruxfE7ACLmPA8gC8qVZMrDUBKhhnPvxDjZEYrXGUWL: ok, IP 127.0.0.1, full node false
+Dial-back from 12D3KooWNCEnaNzT3gmxJn6LrdCgiQ7bxHU1mBJhBGT6oLJM1BkN: ok, IP 127.0.0.1, full node false
+conn closed peer=12D3KooWACruxfE7ACLmPA8gC8qVZMrDUBKhhnPvxDjZEYrXGUWL type=direct secs=0.8
+conn closed peer=12D3KooWNCEnaNzT3gmxJn6LrdCgiQ7bxHU1mBJhBGT6oLJM1BkN type=direct secs=0.8
+RESULT {
+  "current-dials-old": {
+    "pass": true,
+    "sendToResult": true,
+    "oldMessages": [
+      "chat 1 before control",
+      "chat 2 after control"
+    ],
+    "oldHistoryCount": 3,
+    "oldOtherEvents": [],
+    "consoleLinesDuringControl": []
+  },
+  "old-dials-current": {
+    "pass": true,
+    "sendToResult": true,
+    "oldMessages": [
+      "chat 1 before control",
+      "chat 2 after control"
+    ],
+    "oldHistoryCount": 3,
+    "oldOtherEvents": [],
+    "consoleLinesDuringControl": []
+  }
+}

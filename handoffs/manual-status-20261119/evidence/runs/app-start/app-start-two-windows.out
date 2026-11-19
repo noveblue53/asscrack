@@ -1,0 +1,59 @@
+RESULT {
+  "result": {
+    "bBadgesBefore": [
+      "Available",
+      "Available"
+    ],
+    "bBadgesAfter": [
+      [
+        "Available",
+        "Available"
+      ],
+      [
+        "Away: back at 9",
+        "Away: back at 9"
+      ]
+    ],
+    "pass": true
+  },
+  "terminal": {
+    "A": [
+      "conn session peer=12D3KooWCXHi3ZZ1TChoufYUUUYuTgvBc9NdzxPB5iTzisvsKNLy type=direct dir=in addr=/ip4/127.0.0.1/tcp/36778/p2p/12D3KooWCXHi3ZZ1TChoufYUUUYuTgvBc9NdzxPB5iTzisvsKNLy",
+      "Dial-back from 12D3KooWCXHi3ZZ1TChoufYUUUYuTgvBc9NdzxPB5iTzisvsKNLy: ok, IP 127.0.0.1, full node false",
+      "[3460:1119/185215.751989:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")",
+      "[3460:1119/185215.752272:ERROR:dbus/object_proxy.cc:573] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: ",
+      "[3460:1119/185215.752432:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")",
+      "[3460:1119/185215.752450:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")",
+      "[3460:1119/185215.752480:ERROR:dbus/object_proxy.cc:573] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: ",
+      "[3460:1119/185215.752490:ERROR:dbus/object_proxy.cc:573] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: ",
+      "conn closed peer=12D3KooWCXHi3ZZ1TChoufYUUUYuTgvBc9NdzxPB5iTzisvsKNLy type=direct secs=1.4",
+      "Debugger ending on ws://127.0.0.1:46019/325d638c-243e-4ff7-9535-db587c41430b",
+      "For help, see: https://nodejs.org/en/docs/inspector"
+    ],
+    "B": [
+      "conn session peer=12D3KooWHtD3QPLrLTCo6owNoqMTvGvoSTvSf8tgm3bCoqp7Jaf6 type=direct dir=out addr=/ip4/127.0.0.1/tcp/34529/p2p/12D3KooWHtD3QPLrLTCo6owNoqMTvGvoSTvSf8tgm3bCoqp7Jaf6",
+      "Dial-back from 12D3KooWHtD3QPLrLTCo6owNoqMTvGvoSTvSf8tgm3bCoqp7Jaf6: ok, IP 127.0.0.1, full node false",
+      "[3536:1119/185215.837762:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")",
+      "[3536:1119/185215.838066:ERROR:dbus/object_proxy.cc:573] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: ",
+      "[3536:1119/185215.838184:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")",
+      "[3536:1119/185215.838212:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")",
+      "[3536:1119/185215.838237:ERROR:dbus/object_proxy.cc:573] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: ",
+      "[3536:1119/185215.838254:ERROR:dbus/object_proxy.cc:573] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: ",
+      "conn closed peer=12D3KooWHtD3QPLrLTCo6owNoqMTvGvoSTvSf8tgm3bCoqp7Jaf6 type=direct secs=1.3",
+      "Debugger ending on ws://127.0.0.1:33453/07b46223-733a-4ce5-93b3-694b705c12b6",
+      "For help, see: https://nodejs.org/en/docs/inspector"
+    ]
+  },
+  "console": {
+    "A": [
+      "log: peer-discovered {peerId: 12D3KooWCXHi3ZZ1TChoufYUUUYuTgvBc9NdzxPB5iTzisvsKNLy, addresses: Array(2)}"
+    ],
+    "B": [
+      "log: peer-discovered {peerId: 12D3KooWHtD3QPLrLTCo6owNoqMTvGvoSTvSf8tgm3bCoqp7Jaf6, addresses: Array(2)}"
+    ]
+  },
+  "pageErrors": {
+    "A": [],
+    "B": []
+  }
+}

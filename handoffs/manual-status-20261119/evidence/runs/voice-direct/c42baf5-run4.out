@@ -1,0 +1,71 @@
+conn session peer=12D3KooWANtRYYds6fwYMbbtiUZ5N9GTkf7wFxuADkZZnpYKu75X type=direct dir=in addr=/ip4/127.0.0.1/tcp/40672/p2p/12D3KooWANtRYYds6fwYMbbtiUZ5N9GTkf7wFxuADkZZnpYKu75X
+conn session peer=12D3KooWDcvTkPxG3wagdfotnCwgABgEQSDuhXd1m5BQnZRjphsa type=direct dir=out addr=/ip4/127.0.0.1/tcp/33559/p2p/12D3KooWDcvTkPxG3wagdfotnCwgABgEQSDuhXd1m5BQnZRjphsa
+Relay reservation on 12D3KooWDcvTkPxG3wagdfotnCwgABgEQSDuhXd1m5BQnZRjphsa: ok
+conn session peer=12D3KooWNdbVa3DKKKBFbNQQT4a6mLqrF3jMW11ujd5RX1vye8Yn type=direct dir=in addr=/ip4/127.0.0.1/tcp/40676/p2p/12D3KooWNdbVa3DKKKBFbNQQT4a6mLqrF3jMW11ujd5RX1vye8Yn
+conn session peer=12D3KooWDcvTkPxG3wagdfotnCwgABgEQSDuhXd1m5BQnZRjphsa type=direct dir=out addr=/ip4/127.0.0.1/tcp/33559/p2p/12D3KooWDcvTkPxG3wagdfotnCwgABgEQSDuhXd1m5BQnZRjphsa
+Relay reservation on 12D3KooWDcvTkPxG3wagdfotnCwgABgEQSDuhXd1m5BQnZRjphsa: ok
+conn closed peer=12D3KooWANtRYYds6fwYMbbtiUZ5N9GTkf7wFxuADkZZnpYKu75X type=direct secs=0.1
+conn closed peer=12D3KooWNdbVa3DKKKBFbNQQT4a6mLqrF3jMW11ujd5RX1vye8Yn type=direct secs=0
+conn closed peer=12D3KooWDcvTkPxG3wagdfotnCwgABgEQSDuhXd1m5BQnZRjphsa type=direct secs=0.1
+conn closed peer=12D3KooWDcvTkPxG3wagdfotnCwgABgEQSDuhXd1m5BQnZRjphsa type=direct secs=0
+✖ voice: A sends directly to B, H forwards no frame of A to B, relay-only C gets A through H (215.930852ms)
+conn session peer=12D3KooWFoKpDPk5aXvsf2HAV18WDqwnLnv3TEUCDYwGcv35BwbQ type=direct dir=in addr=/ip4/127.0.0.1/tcp/33416/p2p/12D3KooWFoKpDPk5aXvsf2HAV18WDqwnLnv3TEUCDYwGcv35BwbQ
+conn session peer=12D3KooW9xFZnCnQ8CyZLEDVPfWfCu8cYiUiKG7bWntDKS33Xe3t type=direct dir=out addr=/ip4/127.0.0.1/tcp/33039/p2p/12D3KooW9xFZnCnQ8CyZLEDVPfWfCu8cYiUiKG7bWntDKS33Xe3t
+Relay reservation on 12D3KooW9xFZnCnQ8CyZLEDVPfWfCu8cYiUiKG7bWntDKS33Xe3t: ok
+conn session peer=12D3KooWPiAV5ddckc2V6WofvBX2KFdeq7t4gvkSaYLDjkfzXchz type=direct dir=in addr=/ip4/127.0.0.1/tcp/33432/p2p/12D3KooWPiAV5ddckc2V6WofvBX2KFdeq7t4gvkSaYLDjkfzXchz
+conn session peer=12D3KooW9xFZnCnQ8CyZLEDVPfWfCu8cYiUiKG7bWntDKS33Xe3t type=direct dir=out addr=/ip4/127.0.0.1/tcp/33039/p2p/12D3KooW9xFZnCnQ8CyZLEDVPfWfCu8cYiUiKG7bWntDKS33Xe3t
+Relay reservation on 12D3KooW9xFZnCnQ8CyZLEDVPfWfCu8cYiUiKG7bWntDKS33Xe3t: ok
+conn session peer=12D3KooWFoKpDPk5aXvsf2HAV18WDqwnLnv3TEUCDYwGcv35BwbQ type=direct dir=in addr=/ip4/127.0.0.1/tcp/34784/p2p/12D3KooWFoKpDPk5aXvsf2HAV18WDqwnLnv3TEUCDYwGcv35BwbQ
+conn session peer=12D3KooWPiAV5ddckc2V6WofvBX2KFdeq7t4gvkSaYLDjkfzXchz type=direct dir=out addr=/ip4/127.0.0.1/tcp/36525/p2p/12D3KooWPiAV5ddckc2V6WofvBX2KFdeq7t4gvkSaYLDjkfzXchz
+conn session peer=12D3KooWF2knVug6YubacZaYRU2fjRDekEufyUVDtiEftZ3SKAfQ type=direct dir=in addr=/ip4/127.0.0.1/tcp/33438/p2p/12D3KooWF2knVug6YubacZaYRU2fjRDekEufyUVDtiEftZ3SKAfQ
+conn session peer=12D3KooW9xFZnCnQ8CyZLEDVPfWfCu8cYiUiKG7bWntDKS33Xe3t type=direct dir=out addr=/ip4/127.0.0.1/tcp/33039/p2p/12D3KooW9xFZnCnQ8CyZLEDVPfWfCu8cYiUiKG7bWntDKS33Xe3t
+Relay reservation on 12D3KooW9xFZnCnQ8CyZLEDVPfWfCu8cYiUiKG7bWntDKS33Xe3t: ok
+conn session peer=12D3KooWF2knVug6YubacZaYRU2fjRDekEufyUVDtiEftZ3SKAfQ type=relay dir=in relay=12D3KooW9xFZnCnQ8CyZLEDVPfWfCu8cYiUiKG7bWntDKS33Xe3t addr=/ip4/127.0.0.1/tcp/33039/p2p/12D3KooW9xFZnCnQ8CyZLEDVPfWfCu8cYiUiKG7bWntDKS33Xe3t/p2p-circuit/p2p/12D3KooWF2knVug6YubacZaYRU2fjRDekEufyUVDtiEftZ3SKAfQ
+conn session peer=12D3KooWF2knVug6YubacZaYRU2fjRDekEufyUVDtiEftZ3SKAfQ type=relay dir=in relay=12D3KooW9xFZnCnQ8CyZLEDVPfWfCu8cYiUiKG7bWntDKS33Xe3t addr=/ip4/127.0.0.1/tcp/33039/p2p/12D3KooW9xFZnCnQ8CyZLEDVPfWfCu8cYiUiKG7bWntDKS33Xe3t/p2p-circuit/p2p/12D3KooWF2knVug6YubacZaYRU2fjRDekEufyUVDtiEftZ3SKAfQ
+conn session peer=12D3KooWFoKpDPk5aXvsf2HAV18WDqwnLnv3TEUCDYwGcv35BwbQ type=relay dir=out relay=12D3KooW9xFZnCnQ8CyZLEDVPfWfCu8cYiUiKG7bWntDKS33Xe3t addr=/ip4/127.0.0.1/tcp/33039/p2p/12D3KooW9xFZnCnQ8CyZLEDVPfWfCu8cYiUiKG7bWntDKS33Xe3t/p2p-circuit/p2p/12D3KooWFoKpDPk5aXvsf2HAV18WDqwnLnv3TEUCDYwGcv35BwbQ
+conn session peer=12D3KooWPiAV5ddckc2V6WofvBX2KFdeq7t4gvkSaYLDjkfzXchz type=relay dir=out relay=12D3KooW9xFZnCnQ8CyZLEDVPfWfCu8cYiUiKG7bWntDKS33Xe3t addr=/ip4/127.0.0.1/tcp/33039/p2p/12D3KooW9xFZnCnQ8CyZLEDVPfWfCu8cYiUiKG7bWntDKS33Xe3t/p2p-circuit/p2p/12D3KooWPiAV5ddckc2V6WofvBX2KFdeq7t4gvkSaYLDjkfzXchz
+History sent to 12D3KooWFoKpDPk5aXvsf2HAV18WDqwnLnv3TEUCDYwGcv35BwbQ: 0 messages
+History sent to 12D3KooWPiAV5ddckc2V6WofvBX2KFdeq7t4gvkSaYLDjkfzXchz: 0 messages
+History sent to 12D3KooWF2knVug6YubacZaYRU2fjRDekEufyUVDtiEftZ3SKAfQ: 0 messages
+History applied: 0 of 0 messages are new
+History applied: 0 of 0 messages are new
+History applied: 0 of 0 messages are new
+Voice frame dropped: origin 12D3KooWF2knVug6YubacZaYRU2fjRDekEufyUVDtiEftZ3SKAfQ is not the sender 12D3KooWFoKpDPk5aXvsf2HAV18WDqwnLnv3TEUCDYwGcv35BwbQ (direct)
+conn closed peer=12D3KooWFoKpDPk5aXvsf2HAV18WDqwnLnv3TEUCDYwGcv35BwbQ type=direct secs=0.6
+conn closed peer=12D3KooWPiAV5ddckc2V6WofvBX2KFdeq7t4gvkSaYLDjkfzXchz type=direct secs=0.5
+conn closed peer=12D3KooWF2knVug6YubacZaYRU2fjRDekEufyUVDtiEftZ3SKAfQ type=direct secs=0.4
+conn closed peer=12D3KooW9xFZnCnQ8CyZLEDVPfWfCu8cYiUiKG7bWntDKS33Xe3t type=direct secs=0.6
+conn closed peer=12D3KooWPiAV5ddckc2V6WofvBX2KFdeq7t4gvkSaYLDjkfzXchz type=direct secs=0.5
+conn closed peer=12D3KooWF2knVug6YubacZaYRU2fjRDekEufyUVDtiEftZ3SKAfQ type=relay secs=0.2
+conn closed peer=12D3KooW9xFZnCnQ8CyZLEDVPfWfCu8cYiUiKG7bWntDKS33Xe3t type=direct secs=0.5
+conn closed peer=12D3KooWFoKpDPk5aXvsf2HAV18WDqwnLnv3TEUCDYwGcv35BwbQ type=direct secs=0.5
+conn closed peer=12D3KooWF2knVug6YubacZaYRU2fjRDekEufyUVDtiEftZ3SKAfQ type=relay secs=0.2
+conn closed peer=12D3KooW9xFZnCnQ8CyZLEDVPfWfCu8cYiUiKG7bWntDKS33Xe3t type=direct secs=0.4
+conn closed peer=12D3KooWFoKpDPk5aXvsf2HAV18WDqwnLnv3TEUCDYwGcv35BwbQ type=relay secs=0.2
+conn closed peer=12D3KooWPiAV5ddckc2V6WofvBX2KFdeq7t4gvkSaYLDjkfzXchz type=relay secs=0.2
+✔ voice: the receiver drops a frame with a false origin on a direct voice stream (655.665454ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 1
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2147.725158
+
+✖ failing tests:
+
+test at test/voice-direct.test.mjs:64:1
+✖ voice: A sends directly to B, H forwards no frame of A to B, relay-only C gets A through H (215.930852ms)
+  Error [CodeError]: Too many outbound protocol streams for protocol "/asscrack/chat/receive" - 1/1
+      at ConnectionImpl.newStream [as _newStream] (file:///home/user/asscrack/node_modules/libp2p/dist/src/upgrader.js:343:37)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async ConnectionImpl.newStream (file:///home/user/asscrack/node_modules/libp2p/dist/src/connection/index.js:94:24)
+      at async Object.connect (file:///tmp/claude-0/-home-user-asscrack/23416945-c578-595d-be0c-fee850a95973/scratchpad/main-wt/src/network/node.mjs:1123:32)
+      at async room (file:///tmp/claude-0/-home-user-asscrack/23416945-c578-595d-be0c-fee850a95973/scratchpad/main-wt/test/voice-direct.test.mjs:56:5)
+      at async TestContext.<anonymous> (file:///tmp/claude-0/-home-user-asscrack/23416945-c578-595d-be0c-fee850a95973/scratchpad/main-wt/test/voice-direct.test.mjs:67:32)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    code: 'ERR_TOO_MANY_OUTBOUND_PROTOCOL_STREAMS',
+    props: {}
+  }
