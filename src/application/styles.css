@@ -735,6 +735,69 @@ body.layout-map-docked.layout-buddy-off #chat-body {
   color: #9a6400;
 }
 
+/* Manual status (milestone 3): the state badge of each buddy line and the own state controls. */
+#peers .presence-mark {
+  grid-column: 2 / span 2;
+  grid-row: 3;
+  justify-self: start;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: 10.5px/15px var(--font-small);
+  color: var(--ink);
+  background: #ffffff;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#peers .presence-mark[data-presence="away"] {
+  border-color: #e0b54a;
+  color: #9a6400;
+  background: #fff6dc;
+}
+
+#peers .presence-mark[data-presence="dnd"] {
+  border-color: #e3a19c;
+  color: var(--stop);
+  background: #fdecea;
+}
+
+#peers .presence-mark[data-presence="unknown"] {
+  border-style: dashed;
+  border-color: var(--line-soft);
+  font-style: italic;
+  color: var(--ink-soft);
+  background: transparent;
+}
+
+/* The buddy panel is narrow: the menu and Set on row 1, the note on row 2 with the full width. */
+#presence-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 4px 0;
+}
+
+#presence-controls select,
+#presence-controls input {
+  min-width: 0;
+  font: 11px var(--font-small);
+}
+
+#presence-controls select {
+  flex: 1;
+}
+
+#presence-controls input[type="text"] {
+  order: 3;
+  flex: 1 0 100%;
+  height: 26px;
+  padding: 0 10px;
+  font: 12px var(--font-ui);
+}
+
 /* Name colors: the same class gives the buddy icon color and the name color in the chat. */
 .nc0 { --nc: #c2185b; }
 .nc1 { --nc: #1565c0; }

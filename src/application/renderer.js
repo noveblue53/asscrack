@@ -188,7 +188,7 @@ function makePeerLine(name, title, colorName = name) {
     const voiceSpan = document.createElement('span');
     voiceSpan.className = 'voice-state';
     voiceSpan.textContent = 'not in voice';
-    item.append(avatar, nameSpan, hostSpan, voiceSpan);
+    item.append(avatar, nameSpan, hostSpan, voiceSpan, makePresenceMark());
     item.title = String(title);
     return item;
 }
@@ -326,6 +326,7 @@ async function login() {
         selfLine = makePeerLine(`${name} (you)`, name, name);
         selfLine.classList.add('self');
         peerList.prepend(selfLine);
+        startPresence();
         updatePeerCount();
         refreshHostInfo();
         refreshTopology();
@@ -1177,6 +1178,180 @@ if (hasApi('onUpnp')) {
 // The name of a full node can come later, and a full node can leave.
 window.asscrack.onPeerName(() => showFullNodeState());
 window.asscrack.onPeerLeft(() => showFullNodeState());
+
+// ---- Manual status (milestone 3) ----
+// The own state (Available, Away or Do not disturb) and a note of up to 80 code points. The badge .presence-mark of
+// each buddy line shows the state of that peer ID. A buddy with no known state (an old client) shows "status unknown".
+// The status code calls no voice function: Do not disturb does not change the mute, the voice state or the speaking mark.
+const PRESENCE_LABELS = { available: 'Available', away: 'Away', dnd: 'Do not disturb' };
+const PRESENCE_UNKNOWN = 'status unknown';
+const NOTE_MAX = 80; // Unicode code points
+const presenceByPeer = new Map(); // peerId -> { state, note }
+let ownPresence = { state: 'available', note: '' };
+// A count of the presence changes. A state read that started before a change does not overwrite that change.
+let presenceSeq = 0;
+const presenceTouched = new Map(); // peerId (or '' for this user) -> presenceSeq of the last change
+let presenceControls = null;
+
+function cutNote(text) {
+    return [...String(text ?? '')].slice(0, NOTE_MAX).join('');
+}
+
+// { state, note } for a valid value, else null.
+function readPresence(value) {
+    if (!value || typeof value !== 'object' || !Object.hasOwn(PRESENCE_LABELS, value.state)) return null;
+    return { state: value.state, note: typeof value.note === 'string' ? cutNote(value.note) : '' };
+}
+
+function makePresenceMark() {
+    const span = document.createElement('span');
+    span.className = 'presence-mark';
+    fillPresenceMark(span, null);
+    return span;
+}
+
+// presence: { state, note }, or null for "status unknown". The note goes in with textContent only.
+function fillPresenceMark(span, presence) {
+    if (!span) return;
+    if (!presence) {
+        span.textContent = PRESENCE_UNKNOWN;
+        span.dataset.presence = 'unknown';
+        span.title = PRESENCE_UNKNOWN;
+        return;
+    }
+    const label = PRESENCE_LABELS[presence.state];
+    const text = presence.note ? `${label}: ${presence.note}` : label;
+    span.textContent = text;
+    span.dataset.presence = presence.state;
+    span.title = text;
+}
+
+function showPeerPresence(peerId) {
+    const item = peerItems.get(peerId);
+    if (item) fillPresenceMark(item.querySelector('.presence-mark'), presenceByPeer.get(peerId) ?? null);
+}
+
+function showOwnPresence() {
+    if (selfLine) fillPresenceMark(selfLine.querySelector('.presence-mark'), ownPresence);
+    if (presenceControls) {
+        presenceControls.select.value = ownPresence.state;
+        presenceControls.note.value = ownPresence.note;
+    }
+}
+
+function touchPresence(key) {
+    presenceSeq++;
+    presenceTouched.set(key, presenceSeq);
+}
+
+function setPeerPresence(peerId, value) {
+    const presence = readPresence(value);
+    if (typeof peerId !== 'string' || !peerId || !presence) return;
+    touchPresence(peerId);
+    presenceByPeer.set(peerId, presence);
+    showPeerPresence(peerId);
+}
+
+function forgetPresence(peerId) {
+    if (typeof peerId !== 'string') return;
+    touchPresence(peerId);
+    presenceByPeer.delete(peerId);
+}
+
+// Send the state of the select and the note (cut to 80 code points) to the node.
+async function setOwnPresence() {
+    if (!presenceControls || !hasApi('setPresence')) return;
+    const sent = { state: presenceControls.select.value, note: cutNote(presenceControls.note.value.trim()) };
+    if (!readPresence(sent)) return;
+    touchPresence('');
+    try {
+        const result = await window.asscrack.setPresence(sent);
+        ownPresence = readPresence(result) ?? sent;
+    } catch (err) {
+        status.textContent = `Status not set: ${err?.message ?? err}`;
+        return;
+    }
+    showOwnPresence();
+}
+
+// The state menu and the note field above the self line. The window makes them at login.
+function makePresenceControls() {
+    const box = document.createElement('div');
+    box.id = 'presence-controls';
+    const select = document.createElement('select');
+    select.id = 'presence-state';
+    select.setAttribute('aria-label', 'Your status');
+    for (const [value, label] of Object.entries(PRESENCE_LABELS)) {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = label;
+        select.appendChild(option);
+    }
+    select.value = ownPresence.state;
+    const note = document.createElement('input');
+    note.id = 'presence-note';
+    note.type = 'text';
+    note.placeholder = 'Status note';
+    note.setAttribute('aria-label', 'Status note (80 characters or less)');
+    note.autocomplete = 'off';
+    const button = document.createElement('button');
+    button.id = 'presence-set';
+    button.type = 'button';
+    button.textContent = 'Set';
+    select.addEventListener('change', setOwnPresence);
+    button.addEventListener('click', setOwnPresence);
+    note.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !e.isComposing) {
+            e.preventDefault();
+            setOwnPresence();
+        }
+    });
+    box.append(select, note, button);
+    peerList.parentNode.insertBefore(box, peerList);
+    return { box, select, note, button };
+}
+
+// Read the state from the node one time after login (an event before the subscription is not lost).
+// A change after the start of the read stays: the read does not overwrite it.
+async function refreshPresence() {
+    if (!hasApi('getPresence')) return;
+    const start = presenceSeq;
+    const newer = key => (presenceTouched.get(key) ?? 0) > start;
+    let info;
+    try {
+        info = await window.asscrack.getPresence();
+    } catch (err) {
+        console.warn('Status query failed:', err?.message ?? err);
+        return;
+    }
+    if (!info || typeof info !== 'object') return;
+    const self = readPresence(info.self);
+    if (self && !newer('')) {
+        ownPresence = self;
+        showOwnPresence();
+    }
+    if (info.peers && typeof info.peers === 'object') {
+        for (const [peerId, value] of Object.entries(info.peers)) {
+            const presence = readPresence(value);
+            if (!presence || newer(peerId)) continue;
+            presenceByPeer.set(peerId, presence);
+            showPeerPresence(peerId);
+        }
+    }
+}
+
+function startPresence() {
+    if (hasApi('setPresence') && !presenceControls) presenceControls = makePresenceControls();
+    showOwnPresence();
+    refreshPresence();
+}
+
+if (hasApi('onPresence')) {
+    window.asscrack.onPresence(data => setPeerPresence(data?.peerId, data));
+}
+// addPeer (an earlier listener) makes the line first. Then the line gets the known state.
+window.asscrack.onPeerJoined(data => showPeerPresence(data?.peerId));
+window.asscrack.onPeerLeft(data => forgetPresence(data?.peerId));
 
 // ---- The one Escape dispatcher ----
 // Escape closes only the top layer, in this sequence: the context menu (menu.js), the View menu and the Buddies
