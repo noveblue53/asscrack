@@ -2,10 +2,15 @@
 
 // Voice over libp2p. The main process sends the Opus frames on a libp2p stream to the room host,
 // and the host forwards them to the other voice members (star topology). There is no RTCPeerConnection.
-// Capture: microphone -> AudioWorklet (20 ms blocks) -> AudioEncoder (Opus) -> api.sendVoiceFrame.
+// Capture: microphone (echo cancellation, noise suppression, gain control of Chromium) -> AudioWorklet (20 ms blocks)
+//   -> send gate (voice-gate.js: voice activity or push to talk) -> AudioEncoder (Opus) -> api.sendVoiceFrame.
 // Playback: api.onVoiceFrame -> one AudioDecoder for each origin -> playback worklet (60 ms jitter buffer, mix).
+// Chromium's echo canceller uses all audio that this window plays as its reference, also the playback worklet
+// (measured, DECISIONS.md). Do not use echoCancellation: 'remote-only': it removes only RTCPeerConnection audio.
+// A closed gate or a mute sends no frames. The 0.6.0 peers and the relay already accept this (a muted member).
 (function () {
     const api = window.asscrack;
+    const gateLib = window.voiceGate;
 
     const SAMPLE_RATE = 48000;
     const BLOCK = 960;
@@ -17,6 +22,15 @@
     let hostId = null;
     let inVoice = false;
     let muted = false;
+    // The settings panel is open: the capture runs for the input meter, also out of voice. Nothing goes out.
+    let previewWanted = false;
+    let settings = null;
+    const gate = gateLib.createGate(null);
+    let transmitting = false;
+    let inputLevel = gateLib.FLOOR_DB;
+    // The input device of the settings was not found: the capture uses the default device.
+    let inputFallback = false;
+
     let localStream = null;
     let context = null;
     let captureNode = null;
@@ -29,6 +43,15 @@
     // origin -> { decoder, bytesReceived, audioLevel, lastAt, timestamp }
     const origins = new Map();
     const listeners = [];
+    const levelListeners = [];
+
+    // One audio change at a time: join, leave, a settings change and the preview use the same objects.
+    let queue = Promise.resolve();
+    function serial(fn) {
+        const run = queue.then(fn);
+        queue = run.catch(() => {});
+        return run;
+    }
 
     function changed() {
         for (const callback of listeners) {
@@ -45,7 +68,7 @@
     }
 
     function encodeBlock(samples) {
-        if (!inVoice || muted || !encoder || encoder.state !== 'configured' || !canSend()) return;
+        if (!encoder || encoder.state !== 'configured' || !canSend()) return;
         const data = new AudioData({
             format: 'f32',
             sampleRate: SAMPLE_RATE,
@@ -61,6 +84,26 @@
             console.warn('Voice encode failed:', err?.message ?? err);
         } finally {
             data.close();
+        }
+    }
+
+    // Each 20 ms block of the microphone.
+    function onBlock(samples) {
+        const result = gate.push(samples, performance.now());
+        inputLevel = result.level;
+        const sending = inVoice && !muted;
+        if (sending) for (const b of result.send) encodeBlock(b);
+        const next = sending && result.open;
+        if (next !== transmitting) {
+            transmitting = next;
+            changed();
+        }
+        for (const callback of levelListeners) {
+            try {
+                callback(inputLevel, result.open);
+            } catch (err) {
+                console.warn('voice onLevel callback failed:', err);
+            }
         }
     }
 
@@ -137,6 +180,138 @@
         playbackNode?.port.postMessage({ type: 'remove', origin });
     }
 
+    // ---- Audio objects ----
+
+    function audioConstraints(useDevice) {
+        const s = settings ?? {};
+        const audio = {
+            echoCancellation: s.echoCancellation !== false,
+            noiseSuppression: s.noiseSuppression !== false,
+            autoGainControl: s.autoGainControl !== false,
+            channelCount: { ideal: 1 },
+            sampleRate: { ideal: SAMPLE_RATE }
+        };
+        if (useDevice && s.inputDeviceId) audio.deviceId = { exact: s.inputDeviceId };
+        return audio;
+    }
+
+    async function openMicrophone() {
+        const useDevice = Boolean(settings?.inputDeviceId);
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints(useDevice) });
+            inputFallback = false;
+            return stream;
+        } catch (err) {
+            if (!useDevice || !['OverconstrainedError', 'NotFoundError'].includes(err?.name)) throw err;
+            console.warn(`Voice input device not found (${err.name}); the default device is used`);
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints(false) });
+            inputFallback = true;
+            return stream;
+        }
+    }
+
+    function logCapture(stream) {
+        const track = stream.getAudioTracks()[0];
+        if (!track) return;
+        const applied = track.getSettings();
+        console.info(`Voice capture: device "${track.label}" settings ${JSON.stringify({
+            echoCancellation: applied.echoCancellation,
+            noiseSuppression: applied.noiseSuppression,
+            autoGainControl: applied.autoGainControl,
+            sampleRate: applied.sampleRate,
+            channelCount: applied.channelCount,
+            latency: applied.latency
+        })}`);
+    }
+
+    async function applySink() {
+        if (!context || typeof context.setSinkId !== 'function') return;
+        const wanted = settings?.outputDeviceId ?? '';
+        if (context.sinkId === wanted) return;
+        try {
+            await context.setSinkId(wanted);
+            console.info(`Voice output device: ${wanted === '' ? 'default' : 'selected device'}`);
+        } catch (err) {
+            console.warn(`Voice output device not set (${err?.name ?? err}); the default device is used`);
+            if (context.sinkId !== '') await context.setSinkId('').catch(() => {});
+        }
+    }
+
+    async function ensureContext() {
+        if (context) return;
+        context = new AudioContext({ sampleRate: SAMPLE_RATE });
+        await context.audioWorklet.addModule('voice-worklet.js');
+        await applySink();
+    }
+
+    function closeCapture() {
+        try { sourceNode?.disconnect(); } catch { /* already disconnected */ }
+        sourceNode = null;
+        if (localStream) for (const track of localStream.getTracks()) track.stop();
+        localStream = null;
+    }
+
+    // Open the microphone (again) and connect it to the capture worklet. Close the old capture first: while a track of
+    // the device is open, Chromium gives the new track the same source, thus the old processing settings (measured).
+    async function startCapture() {
+        await ensureContext();
+        closeCapture();
+        const stream = await openMicrophone();
+        localStream = stream;
+        const track = stream.getAudioTracks()[0];
+        if (track) track.enabled = !muted;
+        logCapture(stream);
+        if (!captureNode) {
+            captureNode = new AudioWorkletNode(context, 'voice-capture', {
+                numberOfInputs: 1, numberOfOutputs: 0, channelCount: 1, channelCountMode: 'explicit'
+            });
+            captureNode.port.onmessage = ({ data }) => onBlock(data);
+        }
+        sourceNode = context.createMediaStreamSource(stream);
+        sourceNode.connect(captureNode);
+        if (context.state === 'suspended') await context.resume();
+    }
+
+    function startPlayback() {
+        if (!playbackNode) {
+            playbackNode = new AudioWorkletNode(context, 'voice-playback', {
+                numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2]
+            });
+            playbackNode.connect(context.destination);
+        }
+        if (!encoder) {
+            encoder = makeEncoder();
+            timestamp = 0;
+        }
+    }
+
+    function stopPlayback() {
+        if (encoder && encoder.state !== 'closed') encoder.close();
+        encoder = null;
+        for (const o of origins.values()) {
+            if (o.decoder && o.decoder.state !== 'closed') o.decoder.close();
+            o.decoder = null;
+        }
+        try { playbackNode?.disconnect(); } catch { /* already disconnected */ }
+        playbackNode = null;
+    }
+
+    function stopAudio() {
+        stopPlayback();
+        closeCapture();
+        if (captureNode) captureNode.port.onmessage = null;
+        try { captureNode?.disconnect(); } catch { /* already disconnected */ }
+        captureNode = null;
+        if (context) context.close().catch(() => {});
+        context = null;
+        gate.reset();
+        inputLevel = gateLib.FLOOR_DB;
+        if (transmitting) {
+            transmitting = false;
+            changed();
+        }
+    }
+
     async function startAudio() {
         if (typeof AudioEncoder !== 'function' || typeof AudioDecoder !== 'function') {
             throw new Error('this window has no AudioEncoder or AudioDecoder (WebCodecs)');
@@ -145,22 +320,9 @@
             codec: 'opus', sampleRate: SAMPLE_RATE, numberOfChannels: 1, bitrate: BITRATE
         });
         if (!support?.supported) throw new Error('the Opus encoder is not supported');
-        localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         try {
-            context = new AudioContext({ sampleRate: SAMPLE_RATE });
-            await context.audioWorklet.addModule('voice-worklet.js');
-            sourceNode = context.createMediaStreamSource(localStream);
-            captureNode = new AudioWorkletNode(context, 'voice-capture', {
-                numberOfInputs: 1, numberOfOutputs: 0, channelCount: 1, channelCountMode: 'explicit'
-            });
-            captureNode.port.onmessage = ({ data }) => encodeBlock(data);
-            sourceNode.connect(captureNode);
-            playbackNode = new AudioWorkletNode(context, 'voice-playback', {
-                numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2]
-            });
-            playbackNode.connect(context.destination);
-            encoder = makeEncoder();
-            timestamp = 0;
+            if (!localStream) await startCapture();
+            startPlayback();
             if (context.state === 'suspended') await context.resume();
         } catch (err) {
             stopAudio();
@@ -168,25 +330,11 @@
         }
     }
 
-    function stopAudio() {
-        if (encoder && encoder.state !== 'closed') encoder.close();
-        encoder = null;
-        for (const o of origins.values()) {
-            if (o.decoder && o.decoder.state !== 'closed') o.decoder.close();
-            o.decoder = null;
-        }
-        if (captureNode) captureNode.port.onmessage = null;
-        try { sourceNode?.disconnect(); } catch { /* already disconnected */ }
-        try { captureNode?.disconnect(); } catch { /* already disconnected */ }
-        try { playbackNode?.disconnect(); } catch { /* already disconnected */ }
-        sourceNode = null;
-        captureNode = null;
-        playbackNode = null;
-        if (localStream) for (const track of localStream.getTracks()) track.stop();
-        localStream = null;
-        if (context) context.close().catch(() => {});
-        context = null;
+    function captureKey(s) {
+        return s ? `${s.echoCancellation}|${s.noiseSuppression}|${s.autoGainControl}|${s.inputDeviceId}` : '';
     }
+
+    // ---- Host and members ----
 
     // All callers share one pending query.
     let hostQuery = null;
@@ -223,18 +371,34 @@
         changed();
     });
 
+    // The saved settings. The window can join voice before this read ends: then the defaults apply until it ends.
+    const settingsReady = typeof api.getVoiceSettings === 'function'
+        ? api.getVoiceSettings().then(value => {
+            if (!settings) {
+                settings = value;
+                gate.configure(value);
+            }
+        }).catch(err => console.warn('Voice settings read failed:', err?.message ?? err))
+        : Promise.resolve();
+
     window.voice = {
         async join() {
             if (inVoice) return;
             await refreshHost();
-            await startAudio();
+            await settingsReady;
+            await serial(startAudio);
             muted = false;
+            const track = localStream?.getAudioTracks()[0];
+            if (track) track.enabled = true;
             inVoice = true;
             try {
                 await api.setVoice({ inVoice: true, streamId: localStream.id });
             } catch (err) {
                 inVoice = false;
-                stopAudio();
+                await serial(async () => {
+                    stopAudio();
+                    if (previewWanted) await startCapture();
+                });
                 throw err;
             }
             changed();
@@ -242,7 +406,12 @@
         async leave() {
             inVoice = false;
             muted = false;
-            stopAudio();
+            await serial(async () => {
+                stopAudio();
+                if (previewWanted) {
+                    await startCapture().catch(err => console.warn('Voice preview failed:', err?.message ?? err));
+                }
+            });
             await api.setVoice({ inVoice: false, streamId: null });
             changed();
         },
@@ -251,8 +420,53 @@
             const track = localStream?.getAudioTracks()[0];
             if (!track) return;
             track.enabled = !muted;
+            if (muted && transmitting) {
+                transmitting = false;
+                changed();
+            }
             api.setVoice({ inVoice: true, streamId: localStream.id, muted })
                 .catch(err => console.warn('Voice state send failed:', err?.message ?? err));
+        },
+        // The push-to-talk key went down or up (voice-panel.js listens to the keys).
+        setPushToTalk(down) {
+            gate.setKey(down === true, performance.now());
+        },
+        settings: () => settings,
+        // New settings (the full object from the main process). A change of the processing or of the input device
+        // opens the microphone again: applyConstraints() does not change the processing in Chromium (measured).
+        applySettings(next) {
+            const before = settings;
+            settings = next;
+            gate.configure(next);
+            return serial(async () => {
+                if (!localStream) return;
+                if (captureKey(before) !== captureKey(next)) await startCapture();
+                await applySink();
+                changed();
+            });
+        },
+        // The meter of the settings panel: the capture runs while the panel is open.
+        startPreview() {
+            previewWanted = true;
+            return serial(async () => {
+                if (previewWanted && !localStream) await startCapture();
+            });
+        },
+        stopPreview() {
+            previewWanted = false;
+            return serial(async () => {
+                if (!inVoice && !previewWanted) stopAudio();
+            });
+        },
+        onLevel(callback) {
+            if (typeof callback === 'function') levelListeners.push(callback);
+        },
+        async devices() {
+            const list = await navigator.mediaDevices.enumerateDevices();
+            const pick = kind => list
+                .filter(d => d.kind === kind && d.deviceId !== 'default' && d.deviceId !== 'communications')
+                .map(d => ({ id: d.deviceId, label: d.label || 'Unnamed device' }));
+            return { inputs: pick('audioinput'), outputs: pick('audiooutput') };
         },
         // origin -> { bytesReceived, audioLevel }, as before.
         async stats() {
@@ -273,6 +487,11 @@
                 self: selfId,
                 host: hostId,
                 inVoice,
+                // The gate is open and this window sends frames.
+                transmitting,
+                inputLevel,
+                inputFallback,
+                capturing: localStream !== null,
                 members: Object.fromEntries(members),
                 // The origins that sent frames to this window.
                 connections: [...origins.keys()]

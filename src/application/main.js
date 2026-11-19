@@ -6,6 +6,7 @@ import { format } from 'util';
 import { createAsscrackNode, keyedServiceTag } from '../network/node.mjs';
 import { newRoomKey, readInvite } from '../network/invite.mjs';
 import { installUpnpGuard } from '../network/upnp-guard.mjs';
+import * as voiceSettings from './voice-settings.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -381,6 +382,32 @@ ipcMain.on('asscrack:voice-frame', (_event, bytes) => {
 ipcMain.handle('asscrack:set-voice', (_event, state) => {
     if (!node) throw new Error('Not logged in');
     node.setVoice(state ?? {});
+});
+
+// The voice settings of this profile (voice-settings.mjs checks each value). The file is read one time.
+let voiceSettingsValue = null;
+function voiceSettingsFile() {
+    return path.join(app.getPath('userData'), voiceSettings.VOICE_SETTINGS_FILE);
+}
+function currentVoiceSettings() {
+    if (!voiceSettingsValue) voiceSettingsValue = voiceSettings.load(voiceSettingsFile());
+    return voiceSettingsValue;
+}
+ipcMain.handle('asscrack:voice-settings', () => currentVoiceSettings());
+ipcMain.handle('asscrack:set-voice-settings', (_event, patch) => {
+    const next = voiceSettings.merge(currentVoiceSettings(), patch);
+    voiceSettingsValue = next;
+    try {
+        voiceSettings.save(voiceSettingsFile(), next);
+    } catch (err) {
+        writeLog('WARN', `Voice settings not saved: ${err?.message ?? err}`);
+    }
+    // No device IDs in the log: only the fields that a field test needs.
+    writeLog('EVENT', `voice settings mode ${next.mode} threshold ${next.vadThresholdDb} vad-release ${next.vadReleaseMs} `
+        + `ptt-key ${next.pttKey ?? 'none'} ptt-release ${next.pttReleaseMs} ec ${next.echoCancellation} `
+        + `ns ${next.noiseSuppression} agc ${next.autoGainControl} input ${next.inputDeviceId ? 'selected' : 'default'} `
+        + `output ${next.outputDeviceId ? 'selected' : 'default'}`);
+    return next;
 });
 
 ipcMain.handle('asscrack:host', () => {

@@ -27,6 +27,9 @@ contextBridge.exposeInMainWorld('asscrack', {
     sendVoiceFrame: bytes => ipcRenderer.send('asscrack:voice-frame', bytes),
     onVoiceFrame: listen('asscrack:voice-frame'),
     getHost: () => ipcRenderer.invoke('asscrack:host'),
+    getVoiceSettings: () => ipcRenderer.invoke('asscrack:voice-settings'),
+    // A partial settings object. Returns the full settings after the check of the main process.
+    setVoiceSettings: patch => ipcRenderer.invoke('asscrack:set-voice-settings', patch),
     onSignal: listen('asscrack:signal'),
     onVoiceState: listen('asscrack:voice-state'),
     onHostChanged: listen('asscrack:host-changed'),
