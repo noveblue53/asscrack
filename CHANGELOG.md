@@ -7,6 +7,36 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased: saved rooms, milestone 6 part 1 (on main)
+
+Base: `main` at `598725f`. All results in this entry are 127.0.0.1 results on a Linux cloud VM (Node 24.22.3,
+Electron 40.5.0 under Xvfb, `safeStorage` backend `gnome_libsecret`). There is no LAN result, no internet result and
+no packaged .exe result yet.
+- **Save room on this device:** for an internet room (invite or new room), with a visible **Keep local history**
+  choice. The login screen lists the saved rooms. **Reopen room** shows the saved lines at once, then connects in the
+  background. **Waiting for a peer** shows until an authenticated session opens.
+- **Encrypted local storage (new):** the saved rooms and lines are in a SQLCipher 4 database under the profile
+  (`saved-rooms/archive.db`). A random profile key opens it. Electron `safeStorage` protects that key (DPAPI on
+  Windows). A missing key or a key that does not unwrap gives a locked state with **Try again**. There is no
+  plaintext fallback. With no protected storage, the app saves no room.
+- **Encrypted peer connections (not new):** Noise encrypts each peer connection, as before. Encrypted local storage is
+  a different thing: it protects the saved lines on the disk of this computer only.
+- The app saves each own line that a peer accepted and each live received line, one time for each (room, message ID).
+  It does not save host replay. The node gives one ID and time for each send, and the window and the archive use it.
+  The wire format did not change.
+- New dependency: `better-sqlite3-multiple-ciphers` 13.2.0 (MIT, N-API prebuilds). `"npmRebuild": false`.
+- Results (127.0.0.1):
+  - `npm test`: 218 of 218 pass. `test/rejoin.test.mjs`: 3 of 3 pass.
+  - Electron check script, 2 profiles: save a room, send and receive, close all processes, reopen with no peer and
+    read the lines. A second saved room with the same room name and user name and a different key shows only its
+    own line. 11 of 11 checks pass. The hosts typed `127.0.0.1:<port>`, thus the check does not cover UPnP.
+  - One app start: no error line in the app log or the developer console. The terminal has 5 VM lines (D-Bus,
+    `NODE_OPTIONS`). The base commit has the same 5 lines.
+  - `test/voice-direct.test.mjs` fails some of the time on the base commit too (4 of 5 runs). Not caused by this work.
+- Open checks (packaged Windows, not done): the .exe reports a SQLCipher version (`sqlite3mc_version()`). A restart
+  with no network reads the saved line. The profile stays after the .exe moves. A different Windows account cannot
+  read the archive. The build on a Windows PC with `"npmRebuild": false`.
+
 ## Unreleased: voice processing and push-to-talk, milestone 5C (on main)
 
 The operator asked for the merge of branch `opus/voice-processing` on 2026-11-19, before the test on 2 computers.

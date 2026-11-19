@@ -1125,6 +1125,17 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     }, redialInterval)
     redialTimer.unref?.()
 
+    // Send one line. Returns the canonical record: { id, from, text, time, accepted }.
+    // accepted is the number of sessions that accepted the line. The wire line has no accepted field.
+    function sendRecord(text) {
+        const message = { id: randomUUID(), from: senderName, text, time: Date.now() }
+        history.add(message)
+        const line = JSON.stringify(message)
+        let count = 0
+        for (const session of sessions.values()) if (session.send(line)) count++
+        return { ...message, accepted: count }
+    }
+
     return {
         peerId: node.peerId.toString(),
         events,
@@ -1150,14 +1161,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             }
         },
         name: senderName,
-        send(text) {
-            const message = { id: randomUUID(), from: senderName, text, time: Date.now() }
-            history.add(message)
-            const line = JSON.stringify(message)
-            let count = 0
-            for (const session of sessions.values()) if (session.send(line)) count++
-            return count
-        },
+        sendRecord,
+        // Returns the number of sessions that accepted the line.
+        send: text => sendRecord(text).accepted,
         peers: () => [...sessions.keys()],
         peerNames: () => Object.fromEntries([...names].filter(([peerId]) => sessions.has(peerId))),
         topology,
