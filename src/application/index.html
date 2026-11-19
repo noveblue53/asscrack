@@ -54,9 +54,23 @@
         <input type="text" id="public-address" placeholder="Public IP:port, for the computer with the forwarded port" autocomplete="off" spellcheck="false">
       </div>
 
+      <!-- Saved rooms (milestone 6): only for a keyed room. saved-rooms-ui.js shows and fills these. -->
+      <div class="field save-fields" id="save-room-fields" hidden>
+        <label class="check"><input type="checkbox" id="save-room"> Save room on this device</label>
+        <label class="check"><input type="checkbox" id="keep-history" checked> Keep local history</label>
+      </div>
+
       <button id="login" type="button">Log In</button>
       <!-- renderer.js moves #status into #statusbar after the login. -->
       <p id="status" role="status"></p>
+
+      <!-- Saved rooms (milestone 6). -->
+      <div id="saved-rooms-section" hidden>
+        <h2 class="saved-head">Saved rooms</h2>
+        <ul id="saved-rooms"></ul>
+      </div>
+      <p id="archive-state" hidden></p>
+      <button id="archive-unlock" type="button" hidden>Try again</button>
     </div>
   </section>
 
@@ -121,6 +135,8 @@
           <button id="find-next" type="button" title="Next result (Enter)" disabled>Next</button>
           <button id="find-close" type="button" title="Close and go back (Escape)">Close</button>
         </div>
+        <!-- Saved rooms (milestone 6): saved-rooms-ui.js shows this while a reopened or saved room has no peer. -->
+        <p id="waiting-peer" role="status" hidden>Waiting for a peer</p>
         <ul id="messages" role="log"></ul>
         <!-- reading.js shows this button when the user reads older lines. -->
         <button id="jump-latest" type="button" hidden>Jump to latest <span id="unread-count" class="count"></span></button>
@@ -179,6 +195,7 @@
   <script src="find.js"></script>
   <script src="quote.js"></script>
   <script src="renderer.js"></script>
+  <script src="saved-rooms-ui.js"></script>
   <script src="menu.js"></script>
 </body>
 </html>

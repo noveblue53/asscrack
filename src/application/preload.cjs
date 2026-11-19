@@ -7,8 +7,13 @@ function listen(channel) {
 }
 
 contextBridge.exposeInMainWorld('asscrack', {
-    login: ({ name, room, invite, internet, publicAddress } = {}) =>
-        ipcRenderer.invoke('asscrack:login', { name, room, invite, internet, publicAddress }),
+    login: ({ name, room, invite, internet, publicAddress, save, keepHistory } = {}) =>
+        ipcRenderer.invoke('asscrack:login', { name, room, invite, internet, publicAddress, save, keepHistory }),
+    // Saved rooms (milestone 6). The window gets no key, no invite and no file path.
+    listSavedRooms: () => ipcRenderer.invoke('asscrack:saved-rooms'),
+    unlockArchive: () => ipcRenderer.invoke('asscrack:unlock-archive'),
+    savedRoomLines: roomId => ipcRenderer.invoke('asscrack:saved-room-lines', String(roomId)),
+    reopenRoom: roomId => ipcRenderer.invoke('asscrack:reopen-room', String(roomId)),
     getInvite: () => ipcRenderer.invoke('asscrack:invite'),
     getFullNode: () => ipcRenderer.invoke('asscrack:full-node'),
     onFullNode: listen('asscrack:full-node'),

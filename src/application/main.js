@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, session, shell } from 'electron';
+import { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, safeStorage, session, shell } from 'electron';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import { mkdirSync, appendFileSync, existsSync, readFileSync, writeFileSync } from 'fs';
@@ -6,6 +6,8 @@ import { format } from 'util';
 import { createAsscrackNode, keyedServiceTag } from '../network/node.mjs';
 import { newRoomKey, readInvite } from '../network/invite.mjs';
 import { installUpnpGuard } from '../network/upnp-guard.mjs';
+// Saved rooms (milestone 6).
+import { createSavedRooms, makeProtector } from './saved-rooms.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -256,21 +258,12 @@ function saveHostAddress(file, address) {
     saveHostFields(file, { publicAddress: address });
 }
 
-ipcMain.handle('asscrack:login', async (_event, { name, room, invite, internet, publicAddress } = {}) => {
+// Start the node of a room. options: the node options (name, room, and for a keyed room roomKey and inviteNodes).
+// The login handler and the reopen of a saved room use this function. Returns the login result.
+async function startRoom(options, publicAddress) {
     if (loginStarted) throw new Error('Already logged in');
     loginStarted = true;
-    let joinedRoom = room;
     try {
-        const options = { name, room, downloadDir: downloadDir ?? app.getPath('downloads'), ...nodeFlags };
-        if (typeof invite === 'string' && invite.trim() !== '') {
-            const code = readInvite(invite);
-            options.room = code.room;
-            joinedRoom = code.room;
-            options.roomKey = code.key;
-            options.inviteNodes = code.nodes;
-        } else if (internet === true) {
-            options.roomKey = newRoomKey();
-        }
         let hostFile = null;
         if (options.roomKey) {
             const dir = path.join(app.getPath('userData'), 'rooms');
@@ -328,6 +321,8 @@ ipcMain.handle('asscrack:login', async (_event, { name, room, invite, internet, 
         if (data?.direction !== 'receive' || typeof data.path !== 'string') return;
         receivedFiles.set(`${data.offerId}|${data.peerId}`, data.path);
     });
+    // Saved rooms (milestone 6): the archive listener comes before the window listener.
+    getSavedRooms().attachNode(node);
     for (const type of EVENTS) {
         node.events.on(type, data => {
             logEvent(type, data);
@@ -335,7 +330,87 @@ ipcMain.handle('asscrack:login', async (_event, { name, room, invite, internet, 
         });
     }
     // The node dials the invite nodes at start and again with the redial timer (option inviteNodes).
-    return { peerId: node.peerId, room: joinedRoom, internet: node.roomKey() !== null };
+    return { peerId: node.peerId, room: options.room, internet: node.roomKey() !== null };
+}
+
+// Saved rooms (milestone 6). The archive opens at the first saved-rooms call or login, after app ready.
+let savedRooms = null;
+function getSavedRooms() {
+    if (!savedRooms) {
+        savedRooms = createSavedRooms({
+            dir: path.join(app.getPath('userData'), 'saved-rooms'),
+            protector: makeProtector(safeStorage),
+            log: writeLog,
+            backend: process.platform === 'linux' ? () => safeStorage.getSelectedStorageBackend() : null
+        });
+    }
+    return savedRooms;
+}
+
+// Saved rooms (milestone 6). Save the keyed room and mark the active room. A save failure does not stop the login.
+function afterRoomStart(result, { invite = null, userName, save = false, keepHistory = true }) {
+    const roomKey = node?.roomKey() ?? null;
+    let saveInfo = { roomId: null, saved: false, saveError: null };
+    try {
+        saveInfo = getSavedRooms().afterLogin({ room: result.room, roomKey, invite, userName, save: save === true, keepHistory });
+    } catch (err) {
+        writeLog('WARN', `Saved rooms: ${err?.message ?? err}`);
+        if (save === true) saveInfo.saveError = String(err?.message ?? err);
+    }
+    return { ...result, ...saveInfo };
+}
+
+ipcMain.handle('asscrack:login', async (_event, { name, room, invite, internet, publicAddress, save, keepHistory } = {}) => {
+    if (loginStarted) throw new Error('Already logged in');
+    const options = { name, room, downloadDir: downloadDir ?? app.getPath('downloads'), ...nodeFlags };
+    let typedInvite = null;
+    if (typeof invite === 'string' && invite.trim() !== '') {
+        const code = readInvite(invite);
+        options.room = code.room;
+        options.roomKey = code.key;
+        options.inviteNodes = code.nodes;
+        typedInvite = invite.trim();
+    } else if (internet === true) {
+        options.roomKey = newRoomKey();
+    }
+    const result = await startRoom(options, publicAddress);
+    return afterRoomStart(result, { invite: typedInvite, userName: name, save, keepHistory: keepHistory !== false });
+});
+
+// Saved rooms (milestone 6). The window gets no key, no invite and no file path.
+ipcMain.handle('asscrack:saved-rooms', () => getSavedRooms().status());
+
+ipcMain.handle('asscrack:unlock-archive', () => getSavedRooms().unlock());
+
+ipcMain.handle('asscrack:saved-room-lines', (_event, roomId) => {
+    if (typeof roomId !== 'string' || roomId.length > 128) return [];
+    try {
+        return getSavedRooms().lines(roomId);
+    } catch (err) {
+        writeLog('WARN', `Saved lines not read: ${err?.message ?? err}`);
+        return [];
+    }
+});
+
+ipcMain.handle('asscrack:reopen-room', async (_event, roomId) => {
+    if (loginStarted) throw new Error('Already logged in');
+    if (typeof roomId !== 'string' || roomId.length > 128) throw new Error('Saved room not found');
+    const row = getSavedRooms().getRoom(roomId);
+    if (!row) throw new Error('Saved room not found');
+    const options = {
+        name: row.userName ?? '', room: row.name, roomKey: row.roomKey,
+        downloadDir: downloadDir ?? app.getPath('downloads'), ...nodeFlags
+    };
+    if (row.invite) {
+        try {
+            options.inviteNodes = readInvite(row.invite).nodes;
+        } catch (err) {
+            writeLog('WARN', `Saved invite not read: ${err?.message ?? err}`);
+        }
+    }
+    writeLog('INFO', 'Reopen of a saved room');
+    const result = await startRoom(options, null);
+    return afterRoomStart(result, { invite: row.invite, userName: row.userName, save: false, keepHistory: row.keepHistory });
 });
 
 ipcMain.handle('asscrack:invite', () => {
@@ -360,7 +435,14 @@ ipcMain.handle('asscrack:full-node', () => {
 
 ipcMain.handle('asscrack:send', (_event, text) => {
     if (!node) throw new Error('Not logged in');
-    return node.send(text);
+    // Saved rooms (milestone 6): the window gets the record. An archive error does not stop the send.
+    const record = node.sendRecord(text);
+    try {
+        savedRooms?.recordSend(record);
+    } catch (err) {
+        writeLog('WARN', `Saved line not written: ${err?.message ?? err}`);
+    }
+    return record;
 });
 
 ipcMain.handle('asscrack:signal', (_event, { peerId, data } = {}) => {
@@ -450,6 +532,10 @@ ipcMain.handle('asscrack:reveal-file', (_event, key) => {
 });
 
 app.on('before-quit', event => {
+    // Saved rooms (milestone 6): close the archive.
+    if (savedRooms) {
+        try { savedRooms.close(); } catch (err) { writeLog('WARN', `Saved rooms archive not closed: ${err?.message ?? err}`); }
+    }
     if (!node || stopping) return;
     event.preventDefault();
     stopping = true;

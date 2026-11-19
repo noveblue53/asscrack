@@ -308,36 +308,53 @@ async function login() {
         options.internet = true;
         if (publicAddress) options.publicAddress = publicAddress;
     }
+    // Saved rooms (milestone 6): the save choice of a keyed room.
+    if (window.savedRoomsUi) Object.assign(options, window.savedRoomsUi.loginOptions(type));
     loginButton.disabled = true;
     try {
         const result = await window.asscrack.login(options);
         internetRoom = result?.internet === true || type !== 'lan';
         if (typeof result?.room === 'string' && result.room) room = result.room;
-        ownName = name;
-        document.getElementById('chat-user').textContent = name;
-        document.getElementById('chat-room').textContent = room;
-        loginScreen.hidden = true;
-        chatScreen.hidden = false;
-        document.body.classList.add('chat');
-        status.textContent = '';
-        // View only: the status text moves to the status band of the chat screen.
-        statusBar.prepend(status);
-        if (internetRoom) statusBar.querySelector('.net-note').textContent = 'Internet room';
-        selfLine = makePeerLine(`${name} (you)`, name, name);
-        selfLine.classList.add('self');
-        peerList.prepend(selfLine);
-        startPresence();
-        updatePeerCount();
-        refreshHostInfo();
-        refreshTopology();
-        refreshFullNode();
-        refreshInvite();
-        updateVoiceView();
-        messageInput.focus();
+        showChat(name, room);
+        roomStarted(result);
     } catch (err) {
         status.textContent = `Error: ${err?.message ?? err}`;
         loginButton.disabled = false;
     }
+}
+
+// Show the chat screen for the user name and the room. The login and the reopen of a saved room use it.
+function showChat(name, room) {
+    ownName = name;
+    document.getElementById('chat-user').textContent = name;
+    document.getElementById('chat-room').textContent = room;
+    loginScreen.hidden = true;
+    chatScreen.hidden = false;
+    document.body.classList.add('chat');
+    status.textContent = '';
+    // View only: the status text moves to the status band of the chat screen.
+    statusBar.prepend(status);
+    if (internetRoom) statusBar.querySelector('.net-note').textContent = 'Internet room';
+    if (!selfLine) {
+        selfLine = makePeerLine(`${name} (you)`, name, name);
+        selfLine.classList.add('self');
+        peerList.prepend(selfLine);
+    }
+    updatePeerCount();
+}
+
+// After the node started: get the room state from the main process.
+function roomStarted(result) {
+    startPresence();
+    updatePeerCount();
+    refreshHostInfo();
+    refreshTopology();
+    refreshFullNode();
+    refreshInvite();
+    updateVoiceView();
+    messageInput.focus();
+    // Saved rooms (milestone 6).
+    if (window.savedRoomsUi) window.savedRoomsUi.roomStarted(result);
 }
 
 // ---- Quote ----
@@ -413,9 +430,10 @@ async function sendMessage() {
     }
     const text = window.quoteCore.compose(quote, reply);
     sendBusy = true;
-    let count;
+    // Saved rooms (milestone 6): send returns the record { id, from, text, time, accepted }.
+    let record;
     try {
-        count = await window.asscrack.send(text);
+        record = await window.asscrack.send(text);
     } catch (err) {
         status.textContent = `Not sent: ${err?.message ?? err}. The message stays in the message box.`;
         return;
@@ -426,8 +444,9 @@ async function sendMessage() {
     if (messageInput.value === reply) messageInput.value = '';
     if (pendingQuote === quote) setQuote(null);
     // An own send goes to the newest line on purpose.
-    addMessage(ownName, text, Date.now(), true, null, selfId ?? topologySelf);
+    addMessage(ownName, text, record?.time ?? Date.now(), true, record?.id ?? null, selfId ?? topologySelf);
     window.reading.followLatest();
+    const count = record?.accepted;
     const none = typeof count === 'number' ? count === 0 : peerItems.size === 0;
     status.textContent = none ? NO_PEERS_TEXT : '';
 }
