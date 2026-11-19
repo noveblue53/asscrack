@@ -14,10 +14,9 @@ members elect a new host with no user action.
 | Item | State (2026-11-19) |
 |---|---|
 | Latest build | **0.6.0**, a portable Windows `.exe`. There is no public download yet. |
-| `main` | 0.6.0 plus fixes for faults F1 to F6, the stale "No peers" status line, room window milestone 1, and Quote and Find (milestone 2). Not released. |
-| Branch `opus/manual-status` | Manual status (milestone 3, step 2 of the 1.0 plan). 127.0.0.1 results only. Not on `main` yet. |
+| `main` | 0.6.0 plus fixes for faults F1 to F6, the stale "No peers" status line, room window milestone 1 and Quote and Find (milestone 2). Also manual status (milestone 3). Not released. |
 | Open field checks | The packaged Windows check of Quote and Find on a LAN, with a 0.6.0 client and a host change. Manual status on a LAN and in an internet room, with a 0.6.0 client. The internet test card 7. |
-| Current phase | Phase 8 (internet rooms) and Phase 7 (desktop experience), toward release 1.0. |
+| Current phase | Phase 8 (internet rooms) and Phase 7 (desktop experience), toward release 1.0. Steps 1 and 2 of the 1.0 plan are on `main`. Next: step 4, saved rooms and encrypted history (milestone 6). The step 3 field tests wait for the operator. |
 | Plan | [`docs/WORK_PLAN_1.0.md`](docs/WORK_PLAN_1.0.md) gives the release order, the scope and the exit checks of 1.0. |
 
 ### How to read the results
@@ -140,7 +139,7 @@ The network code is in `src/network/`. The Electron app is in `src/application/`
 | 2. Host election and failover | Done. LAN tested on 2 computers. |
 | 3. Mumble server | Not planned. Voice uses Opus on libp2p streams. |
 | 4. Voice with reconnect | Done. LAN tested (WebRTC, 0.2.0 and 0.3.1). Voice on libp2p streams internet tested (0.5.0). Next: echo and noise suppression, voice activity and push-to-talk (5C, in progress). |
-| 5. Chat | Done: chat and history after a restart (LAN). Quote and Find (127.0.0.1). Manual status (127.0.0.1, branch `opus/manual-status`). Next: a room topic, unread highlights and saved rooms. |
+| 5. Chat | Done: chat and history after a restart (LAN). Quote and Find (127.0.0.1). Manual status (127.0.0.1). Next: a room topic, unread highlights and saved rooms. |
 | 6. File sharing | Done. LAN tested (0.3.1), internet tested (0.5.0). Next: a Shared shelf for the room. |
 | 7. Desktop experience | In progress. The new look and the map (0.4.0), room window milestone 1 and Quote and Find have 127.0.0.1 results only. |
 | 8. Internet rooms | In progress. Invite codes and rejoin are internet tested. UPnP join, relays and failover on the internet are open. |

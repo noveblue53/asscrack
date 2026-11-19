@@ -7,10 +7,10 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
-## Unreleased: manual status, milestone 3 (branch `opus/manual-status`)
+## Unreleased: manual status, milestone 3 (on main)
 
-Base: `main` at `c42baf5`. All results in this entry are 127.0.0.1 results on a Linux cloud VM (Node 24.22.3,
-Electron 40.5.0 under Xvfb). There is no LAN result, no internet result and no packaged .exe result yet.
+The operator accepted branch `opus/manual-status` on 2026-11-19 without the LAN checks. Base: `main` at `c42baf5`.
+All results in this entry are 127.0.0.1 results on a Linux cloud VM (Node 24.22.3, Electron 40.5.0 under Xvfb). There is no LAN result, no internet result and no packaged .exe result yet.
 - **Status:** each user sets Available, Away or Do not disturb, and a note of at most 80 Unicode code points. A menu,
   a note field and a Set button are above the buddy list. Each buddy line has a text badge: "Available", "Away",
   "Do not disturb" or "status unknown". The note follows the badge text, for example "Away: back at 9".
