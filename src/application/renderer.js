@@ -166,12 +166,16 @@ let selfLine = null;
 // The name from the hello line of each peer.
 const peerNames = new Map();
 
+// The status line after a send with no peer. A peer that joins makes this text false, so addPeer removes it.
+const NO_PEERS_TEXT = 'No peers in this room yet.';
+
 function addPeer(peerId) {
     if (peerItems.has(peerId)) return;
     const item = makePeerLine(peerNames.get(peerId) ?? String(peerId).slice(0, 12), peerId);
     item.dataset.peerId = String(peerId);
     peerItems.set(peerId, item);
     peerList.appendChild(item);
+    if (status.textContent === NO_PEERS_TEXT) status.textContent = '';
     updatePeerCount();
     updateVoiceView();
 }
@@ -289,7 +293,7 @@ async function sendMessage() {
     if (!text.trim()) return;
     messageInput.value = '';
     addMessage(ownName, text, Date.now(), true);
-    status.textContent = peerItems.size === 0 ? 'No peers in this room yet.' : '';
+    status.textContent = peerItems.size === 0 ? NO_PEERS_TEXT : '';
     try {
         await window.asscrack.send(text);
     } catch (err) {
