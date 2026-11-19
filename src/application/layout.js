@@ -322,7 +322,7 @@
         cls.toggle('layout-transfer-set', eff.transferSet);
         setSeparator(separators.buddyWidth, eff.buddyWidth, eff.buddyMin, eff.buddyMax, 'Buddies width');
         setSeparator(separators.mapWidth, eff.mapWidth, eff.mapMin, eff.mapMax, 'Map width');
-        setSeparator(separators.transferHeight, eff.transferHeight, eff.transferMin, eff.transferMax, 'Transfers height');
+        updateTransferSeparator();
         if (eff.buddyMode !== 'drawer' && isDrawerOpen()) {
             closeDrawer(buddyPanel && buddyPanel.contains(doc.activeElement));
         }
@@ -352,6 +352,13 @@
         if (field === 'buddyWidth') return [eff.buddyMin, eff.buddyMax];
         if (field === 'mapWidth') return [eff.mapMin, eff.mapMax];
         return [eff.transferMin, eff.transferMax];
+    }
+
+    // The Transfers separator shows the visible list height, the same value that a drag or a key starts from.
+    function updateTransferSeparator() {
+        if (!eff) return;
+        setSeparator(separators.transferHeight, currentSize('transferHeight'),
+            eff.transferMin, eff.transferMax, 'Transfers height');
     }
 
     // The size that the user sees now. For Transfers with no requested height, the list can be lower than its cap.
@@ -670,6 +677,8 @@
             const el = byId(id);
             if (el) observer.observe(el);
         }
+        // New transfer rows change the visible list height: update only the separator value (no layout change).
+        if (transferList) new ResizeObserver(updateTransferSeparator).observe(transferList);
     }
 
     render();
