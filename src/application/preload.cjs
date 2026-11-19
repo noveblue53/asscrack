@@ -57,5 +57,9 @@ contextBridge.exposeInMainWorld('asscrack', {
     onFileDone: listen('asscrack:file-done'),
     onFileFailed: listen('asscrack:file-failed'),
     onFileRefused: listen('asscrack:file-refused'),
-    onFileCancelled: listen('asscrack:file-cancelled')
+    onFileCancelled: listen('asscrack:file-cancelled'),
+    // Manual status (milestone 3). presence: { state, note }.
+    setPresence: ({ state, note } = {}) => ipcRenderer.invoke('asscrack:set-presence', { state, note }),
+    getPresence: () => ipcRenderer.invoke('asscrack:presence'),
+    onPresence: listen('asscrack:presence')
 });

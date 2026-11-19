@@ -18,7 +18,7 @@ Menu.setApplicationMenu(null);
 
 const EVENTS = ['peer-discovered', 'peer-joined', 'peer-left', 'message', 'history', 'signal', 'voice-state', 'host-changed', 'peer-name',
     'file-offer', 'file-progress', 'file-done', 'file-failed', 'file-refused', 'file-cancelled', 'topology', 'full-node', 'full-node-addrs',
-    'voice-frame', 'connection', 'dial-failed', 'upnp'];
+    'voice-frame', 'connection', 'dial-failed', 'upnp', 'presence'];
 
 // Test option: --profile <dir> gives each instance its own user data folder.
 const profileIndex = process.argv.indexOf('--profile');
@@ -442,6 +442,16 @@ ipcMain.handle('asscrack:set-voice-settings', (_event, patch) => {
 ipcMain.handle('asscrack:host', () => {
     if (!node) throw new Error('Not logged in');
     return { host: node.host() ?? null, self: node.peerId };
+});
+
+// Manual status (milestone 3). state: 'available', 'away' or 'dnd'. The node cuts the note to 80 code points.
+ipcMain.handle('asscrack:set-presence', (_event, { state, note } = {}) => {
+    if (!node) throw new Error('Not logged in');
+    return node.setPresence({ state, note });
+});
+
+ipcMain.handle('asscrack:presence', () => {
+    return node ? { self: node.presence(), peers: node.peerPresence() } : null;
 });
 
 ipcMain.handle('asscrack:topology', () => {

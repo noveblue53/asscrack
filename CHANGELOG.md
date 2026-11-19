@@ -7,6 +7,39 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased: manual status, milestone 3 (on main)
+
+The operator accepted branch `opus/manual-status` on 2026-11-19 without the LAN checks. Base: `main` at `c42baf5`.
+All results in this entry are 127.0.0.1 results on a Linux cloud VM (Node 24.22.3, Electron 40.5.0 under Xvfb). There is no LAN result, no internet result and no packaged .exe result yet.
+- **Status:** each user sets Available, Away or Do not disturb, and a note of at most 80 Unicode code points. A menu,
+  a note field and a Set button are above the buddy list. Each buddy line has a text badge: "Available", "Away",
+  "Do not disturb" or "status unknown". The note follows the badge text, for example "Away: back at 9".
+- **Network:** a typed control line `{"type":"presence","v":1,"state","note"}` on the open chat session. The node
+  sends its state when a session opens and on each change. The node keeps its state while the app runs, thus a
+  reconnect keeps the state. A new app start has the state Available. The state has no history entry.
+- **Old clients:** the 0.6.0 release (`d5ad3af`) ignores the new control with no line, no event and no history
+  entry. Chat continues in both dial directions (127.0.0.1). The new window shows "status unknown" for a 0.6.0 buddy.
+- **Checks (127.0.0.1):**
+  - `npm test`: 198 of 198 pass (182 old tests and 16 new tests). In one earlier run, `test/voice-direct.test.mjs`
+    failed one time with `ERR_TOO_MANY_OUTBOUND_PROTOCOL_STREAMS`. The same test on `main` (`c42baf5`) failed in 2 of
+    5 runs with the same error. Thus this intermittent failure was there before the change.
+  - Exit checks of milestone 3 with real nodes: Away with a note to B, and C joins late and sees it at once (105 ms).
+    A session drop and reopen keeps the state. A restart with a new peer ID removes the old row and shows Available.
+    DND gives no voice state event. Two buddies with the same name keep their own states. A current node and a
+    `d5ad3af` node chat in both dial directions.
+  - Two app windows in one LAN room (mDNS on 127.0.0.1): A sets Away with a note. The badge of A on window B shows
+    "Away: back at 9". No developer console message and no error line, other than the D-Bus lines of the VM.
+  - The terminal demo (`src/network/transceiver.mjs`) shows chat from a peer that sends a status, and no status line.
+- **Open checks:** two packaged Windows .exe files on one real LAN, with a 0.6.0 client in both directions, a host
+  change and a reconnect. The same check in an internet room. The operator deferred the LAN tests.
+## Unreleased: voice processing added to the 1.0 plan
+
+- **Plan:** `docs/WORK_PLAN_1.0.md` has a new section 5C: echo and noise suppression, voice activity and
+  push-to-talk. The operator asked for it on 2026-11-19. It runs beside steps 2 to 4, on branch
+  `opus/voice-processing`. The required part is in the 1.0 scope. An open noise suppressor and push-to-talk without
+  the window focus need operator approval, because they are new dependencies.
+- **Results:** none yet. The voice code does not change in this entry.
+
 ## Unreleased: Quote and Find on main, the 1.0 work plan and a new README
 
 All results in this entry are 127.0.0.1 results. There is no LAN result and no packaged .exe result yet.
