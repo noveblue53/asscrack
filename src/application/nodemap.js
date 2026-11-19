@@ -10,6 +10,9 @@
 // - A transfer edge is an active file transfer of this computer, with an arrow from the sender to the receiver.
 //
 // Interface: window.nodeMap.update(state). The renderer calls it when the data changes.
+//   window.nodeMap.highlight(peerId): marks the node of that peer ID for a short time (data-highlight="true",
+//   see menu.css). Only that node, also when two users have the same name. Returns false when the map has no node
+//   for that peer ID.
 //   state = {
 //     self: <peer ID or null>, host: <peer ID or null>,
 //     nodes: [{ id, name, color, inVoice, muted, speaking, fullNode }],   color is a name color class (nc0 to nc7)
@@ -34,7 +37,7 @@
 
     const container = document.getElementById('node-map');
     if (!container) {
-        window.nodeMap = { update() {} };
+        window.nodeMap = { update() {}, highlight() { return false; } };
         return;
     }
 
@@ -434,6 +437,30 @@
         frame = requestAnimationFrame(step);
     }
 
+    // ---- Highlight of one node ----
+    // The attribute data-highlight is not in the class list, because showNode replaces the class list at each change.
+
+    const HIGHLIGHT_MS = 2400;
+    let highlighted = null;
+    let highlightTimer = 0;
+
+    function clearHighlight() {
+        if (highlightTimer) clearTimeout(highlightTimer);
+        highlightTimer = 0;
+        if (highlighted) highlighted.group.removeAttribute('data-highlight');
+        highlighted = null;
+    }
+
+    function highlight(id) {
+        clearHighlight();
+        const node = nodes.get(String(id ?? ''));
+        if (!node) return false;
+        node.group.setAttribute('data-highlight', 'true');
+        highlighted = node;
+        highlightTimer = setTimeout(clearHighlight, HIGHLIGHT_MS);
+        return true;
+    }
+
     // ---- Interface and page events ----
 
     function update(state) {
@@ -466,5 +493,5 @@
     document.addEventListener('visibilitychange', showPageState);
     showPageState();
 
-    window.nodeMap = { update };
+    window.nodeMap = { update, highlight };
 })();

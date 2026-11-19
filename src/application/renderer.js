@@ -60,9 +60,7 @@ function setMapOpen(open) {
 
 mapToggle.addEventListener('click', () => setMapOpen(!document.body.classList.contains('map-open')));
 mapClose.addEventListener('click', () => setMapOpen(false));
-document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') setMapOpen(false);
-});
+// Escape: see the one Escape dispatcher at the end of this file.
 
 function formatTime(ms) {
     const d = new Date(ms);
@@ -498,11 +496,13 @@ function makeSpan(className, text) {
     return span;
 }
 
-function makeButton(text, onClick) {
+// action: the data-action value (an action name of menu.js). className: optional, else btn-<text>.
+function makeButton(text, onClick, action = null, className = null) {
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = `btn-${text.toLowerCase()}`;
+    button.className = className ?? `btn-${text.toLowerCase()}`;
     button.textContent = text;
+    if (action) button.dataset.action = action;
     button.addEventListener('click', onClick);
     return button;
 }
@@ -524,23 +524,16 @@ function setTransferState(entry, state, text) {
     stateSpan.title = stateSpan.textContent;
     const buttons = entry.item.querySelector('.buttons');
     buttons.replaceChildren();
-    const offerId = entry.item.dataset.offerId;
+    const key = transferKey(entry.item);
     if (entry.direction === 'send') {
         addSendCancel(entry, state);
     } else if (state === 'offered') {
         buttons.append(
-            makeButton('Accept', async () => {
-                setTransferState(entry, 'receiving', 'Receiving');
-                const ok = await callFile(window.asscrack.acceptFile, offerId);
-                if (ok !== true) setTransferResult(entry, 'failed', 'Failed: the offer is not available');
-            }),
-            makeButton('Refuse', () => {
-                setTransferState(entry, 'refused', 'Refused');
-                callFile(window.asscrack.refuseFile, offerId);
-            })
+            makeButton('Accept', () => acceptTransfer(key), 'accept'),
+            makeButton('Refuse', () => refuseTransfer(key), 'refuse')
         );
     } else if (state === 'receiving') {
-        buttons.append(makeButton('Cancel', () => callFile(window.asscrack.cancelFile, offerId)));
+        buttons.append(makeButton('Cancel', () => cancelReceive(key), 'cancel-receive'));
     }
     updateNodeMap();
 }
@@ -548,18 +541,199 @@ function setTransferState(entry, state, text) {
 // A sender row of one receiver gets a Cancel button while the row is offered or sending.
 // The button cancels the transfer to that receiver only.
 function addSendCancel(entry, state) {
-    if (entry.direction !== 'send' || (state !== 'offered' && state !== 'sending')) return;
-    const peerId = entry.item.dataset.peerId;
-    const offerId = entry.item.dataset.offerId;
-    entry.item.querySelector('.buttons').append(makeButton('Cancel', async () => {
-        entry.item.querySelector('.buttons').replaceChildren();
-        try {
-            await window.asscrack.cancelFile(offerId, peerId);
-        } catch (err) {
-            status.textContent = `Error: ${err?.message ?? err}`;
-        }
-    }));
+    if (entry.direction !== 'send' || (state !== 'offered' && state !== 'sending') || entry.cancelRequested) return;
+    const key = transferKey(entry.item);
+    entry.item.querySelector('.buttons').append(makeButton('Cancel', () => cancelToReceiver(key), 'cancel-receiver'));
 }
+
+// ---- Row actions ----
+// One function for each action. The row buttons and the context menus (menu.js) call the same function.
+// Each function finds the row data when it runs. It does nothing when the action is not possible now
+// (for example a menu that stayed open after the transfer completed).
+
+function transferKey(item) {
+    return `${item.dataset.offerId}|${item.dataset.peerId}`;
+}
+
+// The entry of a key, or null when the row is gone.
+function liveTransfer(key) {
+    const entry = transfers.get(String(key));
+    return entry && entry.item.isConnected ? entry : null;
+}
+
+async function acceptTransfer(key) {
+    const entry = liveTransfer(key);
+    if (!entry || entry.direction !== 'receive' || entry.state !== 'offered') return false;
+    setTransferState(entry, 'receiving', 'Receiving');
+    const ok = await callFile(window.asscrack.acceptFile, entry.item.dataset.offerId);
+    if (ok !== true) setTransferResult(entry, 'failed', 'Failed: the offer is not available');
+    return ok === true;
+}
+
+function refuseTransfer(key) {
+    const entry = liveTransfer(key);
+    if (!entry || entry.direction !== 'receive' || entry.state !== 'offered') return false;
+    setTransferState(entry, 'refused', 'Refused');
+    callFile(window.asscrack.refuseFile, entry.item.dataset.offerId);
+    return true;
+}
+
+// Cancel of a file that this computer receives.
+async function cancelReceive(key) {
+    const entry = liveTransfer(key);
+    if (!entry || entry.direction !== 'receive' || entry.state !== 'receiving' || entry.cancelRequested) return false;
+    entry.cancelRequested = true;
+    try {
+        await window.asscrack.cancelFile(entry.item.dataset.offerId);
+        return true;
+    } catch (err) {
+        entry.cancelRequested = false;
+        status.textContent = `Error: ${err?.message ?? err}`;
+        return false;
+    }
+}
+
+// Cancel of the transfer to one receiver (the offer ID and the peer ID of the row). The other receivers continue.
+async function cancelToReceiver(key) {
+    const entry = liveTransfer(key);
+    if (!entry || entry.direction !== 'send' || (entry.state !== 'offered' && entry.state !== 'sending')
+        || entry.cancelRequested) return false;
+    entry.cancelRequested = true;
+    entry.item.querySelector('.buttons').replaceChildren();
+    try {
+        await window.asscrack.cancelFile(entry.item.dataset.offerId, entry.item.dataset.peerId);
+        return true;
+    } catch (err) {
+        entry.cancelRequested = false;
+        status.textContent = `Error: ${err?.message ?? err}`;
+        addSendCancel(entry, entry.state);
+        return false;
+    }
+}
+
+// Cancel of the whole own offer (all receivers). This action is different from cancelToReceiver.
+async function cancelWholeOffer(offerId) {
+    const head = offerHeads.get(String(offerId));
+    if (!head || !head.active || !head.item.isConnected) return false;
+    head.active = false;
+    head.item.querySelector('.buttons').replaceChildren();
+    await callFile(window.asscrack.cancelFile, String(offerId));
+    head.item.querySelector('.state-text').textContent = `Offered ${head.name}: cancelled`;
+    return true;
+}
+
+const REVEAL_TEXT = {
+    missing: 'The file is not in its folder. It was moved or deleted.',
+    unknown: 'This computer has no record of this received file.'
+};
+
+// Show in Explorer for a file that this computer received. The main process keeps the path.
+async function revealTransfer(key) {
+    const entry = liveTransfer(key);
+    if (!entry || entry.direction !== 'receive' || entry.state !== 'done' || !entry.revealable) return false;
+    if (!hasApi('revealFile')) return false;
+    try {
+        const result = await window.asscrack.revealFile(String(key));
+        if (result?.ok === true) return true;
+        status.textContent = REVEAL_TEXT[result?.reason] ?? REVEAL_TEXT.unknown;
+    } catch (err) {
+        status.textContent = `Error: ${err?.message ?? err}`;
+    }
+    return false;
+}
+
+async function copyToClipboard(text, done) {
+    try {
+        await window.asscrack.copyText(String(text));
+        status.textContent = done;
+        return true;
+    } catch (err) {
+        status.textContent = `Copy failed: ${err?.message ?? err}`;
+        return false;
+    }
+}
+
+// The peer ID of a buddy line, or null when the line is not a current buddy line.
+// A leaving line stays in the DOM for a short time, but peerItems does not have it.
+function buddyId(row) {
+    if (row && row === selfLine) return selfId ?? topologySelf ?? null;
+    const peerId = row?.dataset?.peerId;
+    return peerId && peerItems.get(peerId) === row ? peerId : null;
+}
+
+// Copy the display name of a buddy. The own line copies the name without "(you)".
+function copyBuddyName(row) {
+    if (row && row === selfLine) return copyToClipboard(ownName, 'Name copied.');
+    if (buddyId(row) === null) return false;
+    return copyToClipboard(row.querySelector('.name').textContent, 'Name copied.');
+}
+
+// Open the map and mark the node of the peer ID (not of the name: two users can have the same name).
+function showBuddyOnMap(peerId) {
+    const self = selfId ?? topologySelf;
+    if (!peerId || (peerId !== self && !peerItems.has(peerId))) return false;
+    setMapOpen(true);
+    updateNodeMap();
+    if (window.nodeMap?.highlight?.(peerId)) return true;
+    status.textContent = 'This buddy is not on the network map yet.';
+    return false;
+}
+
+// Copy the body of a chat line (not the name and not the time).
+function copyMessageText(row) {
+    if (!row || row.parentElement !== messageList) return false;
+    return copyToClipboard(row.querySelector('.text')?.textContent ?? '', 'Message copied.');
+}
+
+// The data of a row for menu.js (menuCore.actionsFor), from the state now. null: the row has no menu now.
+function rowInfo(row) {
+    if (!row || !row.isConnected) return null;
+    if (row.parentElement === peerList) {
+        if (row === selfLine) return { kind: 'buddy', self: true, onMap: buddyId(row) !== null };
+        return buddyId(row) === null ? null : { kind: 'buddy', self: false, onMap: true };
+    }
+    if (row.parentElement === messageList) return { kind: 'message' };
+    if (row.parentElement === transferList) {
+        if (row.classList.contains('offer-head')) {
+            const head = offerHeads.get(row.dataset.offerId);
+            return head && head.item === row ? { kind: 'offer', active: head.active } : null;
+        }
+        const entry = liveTransfer(transferKey(row));
+        if (!entry || entry.item !== row) return null;
+        return {
+            kind: 'transfer',
+            direction: entry.direction,
+            state: entry.state,
+            cancelRequested: entry.cancelRequested === true,
+            revealable: entry.revealable === true && hasApi('revealFile')
+        };
+    }
+    return null;
+}
+
+// Run one action (an action name of menu.js) on a row. Each action checks the state again.
+function runRowAction(action, row) {
+    switch (action) {
+        case 'copy-name': return copyBuddyName(row);
+        case 'show-on-map': return showBuddyOnMap(buddyId(row));
+        case 'copy-message': return copyMessageText(row);
+        case 'accept': return acceptTransfer(transferKey(row));
+        case 'refuse': return refuseTransfer(transferKey(row));
+        case 'cancel-receive': return cancelReceive(transferKey(row));
+        case 'cancel-receiver': return cancelToReceiver(transferKey(row));
+        case 'cancel-offer': return cancelWholeOffer(row.dataset.offerId);
+        case 'reveal': return revealTransfer(transferKey(row));
+        default: return false;
+    }
+}
+
+window.roomActions = Object.freeze({
+    rowInfo,
+    run: runRowAction,
+    notice: text => {
+        status.textContent = String(text);
+    }
+});
 
 function getTransfer(offerId, peerId, direction, info = {}) {
     const key = `${offerId}|${peerId}`;
@@ -642,6 +816,16 @@ window.asscrack.onFileDone(data => {
     if (data.direction === 'receive') {
         const fileName = String(data.path ?? '').split(/[\\/]/).pop();
         setTransferResult(entry, 'done', `Saved as ${fileName}`);
+        // Only a completed local receive gets Show in Explorer. setTransferResult does nothing for a row that
+        // already has a result, so check the state.
+        if (entry.state === 'done' && typeof data.path === 'string' && data.path) {
+            entry.revealable = true;
+            if (hasApi('revealFile')) {
+                const key = transferKey(entry.item);
+                entry.item.querySelector('.buttons').append(
+                    makeButton('Show in Explorer', () => revealTransfer(key), 'reveal', 'btn-reveal'));
+            }
+        }
     } else {
         setTransferResult(entry, 'done', 'Sent');
     }
@@ -651,20 +835,20 @@ window.asscrack.onFileFailed(data => setTransferResult(transferForEvent(data), '
 window.asscrack.onFileRefused(data => setTransferResult(transferForEvent({ ...data, direction: 'send' }), 'refused', 'Refused'));
 window.asscrack.onFileCancelled(data => setTransferResult(transferForEvent(data), 'cancelled', 'Cancelled'));
 
+// offerId -> { item, name, active }: the head line of each own offer. active: the whole-offer Cancel is available.
+const offerHeads = new Map();
+
 function addOfferHead(offerId, name, peers) {
     const item = document.createElement('li');
     item.className = 'transfer offer-head';
     item.dataset.offerId = String(offerId);
     const buttons = makeSpan('buttons', '');
+    offerHeads.set(String(offerId), { item, name, active: peers > 0 });
     if (peers > 0) {
         const head = makeSpan('state-text', `Offered ${name} to ${peers} users`);
         head.title = head.textContent;
         item.append(head);
-        buttons.append(makeButton('Cancel', async () => {
-            buttons.replaceChildren();
-            await callFile(window.asscrack.cancelFile, offerId);
-            item.querySelector('.state-text').textContent = `Offered ${name}: cancelled`;
-        }));
+        buttons.append(makeButton('Cancel', () => cancelWholeOffer(offerId), 'cancel-offer'));
     } else {
         item.append(makeSpan('state-text', 'No other users in the room'));
     }
@@ -845,9 +1029,6 @@ inviteToggle.addEventListener('click', () => {
     setInvitePanelOpen(open);
     if (open) refreshInvite();
 });
-document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') setInvitePanelOpen(false);
-});
 copyInviteButton.addEventListener('click', async () => {
     if (!inviteCode.value) return;
     try {
@@ -880,3 +1061,38 @@ if (hasApi('onUpnp')) {
 // The name of a full node can come later, and a full node can leave.
 window.asscrack.onPeerName(() => showFullNodeState());
 window.asscrack.onPeerLeft(() => showFullNodeState());
+
+// ---- The one Escape dispatcher ----
+// Escape closes only the top layer, in this sequence: the context menu (menu.js), the View menu and the Buddies
+// drawer (layout.js), the invite panel, the map. The View menu and the drawer stop their own Escape when the focus is
+// in them. A separator drag stops its Escape in the capture phase on window. Then this listener gets no event.
+function focusIsIn(element) {
+    const active = document.activeElement;
+    return !active || active === document.body || element.contains(active);
+}
+
+document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape' || e.defaultPrevented) return;
+    if (window.contextMenu?.isOpen()) {
+        e.preventDefault();
+        window.contextMenu.close(true);
+        return;
+    }
+    if (window.layout?.closeTopLayer()) {
+        e.preventDefault();
+        return;
+    }
+    if (!invitePanel.hidden) {
+        e.preventDefault();
+        const returnFocus = focusIsIn(invitePanel);
+        setInvitePanelOpen(false);
+        if (returnFocus && !inviteToggle.hidden) inviteToggle.focus({ preventScroll: true });
+        return;
+    }
+    if (document.body.classList.contains('map-open')) {
+        e.preventDefault();
+        const returnFocus = focusIsIn(mapPanel);
+        setMapOpen(false);
+        if (returnFocus) mapToggle.focus({ preventScroll: true });
+    }
+});

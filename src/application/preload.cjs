@@ -41,6 +41,8 @@ contextBridge.exposeInMainWorld('asscrack', {
     acceptFile: offerId => ipcRenderer.invoke('asscrack:accept-file', offerId),
     refuseFile: offerId => ipcRenderer.invoke('asscrack:refuse-file', offerId),
     cancelFile: (offerId, peerId) => ipcRenderer.invoke('asscrack:cancel-file', offerId, peerId),
+    // Show a received file in Explorer. key: `${offerId}|${peerId}`. The main process keeps the path.
+    revealFile: key => ipcRenderer.invoke('asscrack:reveal-file', String(key)),
     onFileOffer: listen('asscrack:file-offer'),
     onFileProgress: listen('asscrack:file-progress'),
     onFileDone: listen('asscrack:file-done'),
