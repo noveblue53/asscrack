@@ -28,6 +28,7 @@
     "@libp2p/utils": "^5.0.0",
     "@libp2p/websockets": "^8.1.4",
     "@nodeutils/defaults-deep": "^1.1.0",
+    "better-sqlite3-multiple-ciphers": "13.2.0",
     "it-pipe": "^3.0.1",
     "it-pushable": "^3.2.4",
     "libp2p": "^1.9.4",
@@ -47,6 +48,7 @@
       "src/network/**/*",
       "package.json"
     ],
+    "npmRebuild": false,
     "directories": {
       "output": "dist"
     },
