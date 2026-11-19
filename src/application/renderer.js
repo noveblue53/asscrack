@@ -504,7 +504,8 @@ function updateVoiceView() {
     if (selfLine) {
         selfLine.querySelector('.host-mark').hidden = selfId === null || selfId !== hostId;
         let text = 'not in voice';
-        if (ownInVoice) text = ownMuted ? 'in voice (muted)' : 'in voice';
+        // transmitting: the send gate of voice.js is open (voice activity or push to talk).
+        if (ownInVoice) text = ownMuted ? 'in voice (muted)' : (state.transmitting ? 'speaking' : 'in voice');
         setVoiceState(selfLine, text);
     }
     joinVoiceButton.hidden = ownInVoice;
@@ -1046,7 +1047,7 @@ function updateNodeMap() {
     const self = selfId ?? topologySelf;
     const nodes = [];
     if (self) {
-        nodes.push({ id: self, name: ownName, color: nameColorClass(ownName), inVoice: voice.inVoice === true, muted: ownMuted, speaking: false, fullNode: fullNodeSelf });
+        nodes.push({ id: self, name: ownName, color: nameColorClass(ownName), inVoice: voice.inVoice === true, muted: ownMuted, speaking: voice.transmitting === true && !ownMuted, fullNode: fullNodeSelf });
     }
     for (const [peerId, item] of peerItems) {
         const name = item.querySelector('.name').textContent;
@@ -1375,7 +1376,7 @@ window.asscrack.onPeerLeft(data => forgetPresence(data?.peerId));
 // ---- The one Escape dispatcher ----
 // Escape closes only the top layer, in this sequence: the context menu (menu.js), the View menu and the Buddies
 // drawer (layout.js), the find bar (find.js, it puts the list back at its old position), the quote chip (only with
-// the focus in the composer), the invite panel, the map. The View menu and the drawer stop their own Escape when the focus is
+// the focus in the composer), the voice settings, the invite panel, the map. The View menu and the drawer stop their own Escape when the focus is
 // in them. A separator drag stops its Escape in the capture phase on window. Then this listener gets no event.
 function focusIsIn(element) {
     const active = document.activeElement;
@@ -1401,6 +1402,13 @@ document.addEventListener('keydown', e => {
     if (pendingQuote !== null && composer.contains(document.activeElement)) {
         e.preventDefault();
         removeQuote();
+        return;
+    }
+    if (window.voicePanel?.isOpen()) {
+        e.preventDefault();
+        const returnFocus = focusIsIn(document.getElementById('voice-settings'));
+        window.voicePanel.close();
+        if (returnFocus) document.getElementById('voice-settings-toggle')?.focus({ preventScroll: true });
         return;
     }
     if (!invitePanel.hidden) {

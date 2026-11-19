@@ -32,6 +32,15 @@ contextBridge.exposeInMainWorld('asscrack', {
     sendVoiceFrame: bytes => ipcRenderer.send('asscrack:voice-frame', bytes),
     onVoiceFrame: listen('asscrack:voice-frame'),
     getHost: () => ipcRenderer.invoke('asscrack:host'),
+    getVoiceSettings: () => ipcRenderer.invoke('asscrack:voice-settings'),
+    // A partial settings object. Returns the full settings after the check of the main process.
+    setVoiceSettings: patch => ipcRenderer.invoke('asscrack:set-voice-settings', patch),
+    // { workletUrl, wasm: Uint8Array } of RNNoise. simd: the window supports WebAssembly SIMD.
+    getRnnoise: simd => ipcRenderer.invoke('asscrack:rnnoise', simd === true),
+    // Push to talk from the key hook of the main process: { down }, and its state: { status }.
+    onPushToTalk: listen('asscrack:ptt'),
+    onPushToTalkStatus: listen('asscrack:ptt-status'),
+    getPushToTalkStatus: () => ipcRenderer.invoke('asscrack:ptt-status'),
     onSignal: listen('asscrack:signal'),
     onVoiceState: listen('asscrack:voice-state'),
     onHostChanged: listen('asscrack:host-changed'),
