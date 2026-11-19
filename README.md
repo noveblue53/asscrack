@@ -137,7 +137,7 @@ The network code is in `src/network/`. The Electron app is in `src/application/`
 | 1. Peer-to-peer mesh and LAN discovery | Done. LAN tested. |
 | 2. Host election and failover | Done. LAN tested on 2 computers. |
 | 3. Mumble server | Not planned. Voice uses Opus on libp2p streams. |
-| 4. Voice with reconnect | Done. LAN tested (WebRTC, 0.2.0 and 0.3.1). Voice on libp2p streams internet tested (0.5.0). |
+| 4. Voice with reconnect | Done. LAN tested (WebRTC, 0.2.0 and 0.3.1). Voice on libp2p streams internet tested (0.5.0). Next: echo and noise suppression, voice activity and push-to-talk (5C, in progress). |
 | 5. Chat | Done: chat and history after a restart (LAN). Quote and Find (127.0.0.1). Next: manual status, a room topic, unread highlights and saved rooms. |
 | 6. File sharing | Done. LAN tested (0.3.1), internet tested (0.5.0). Next: a Shared shelf for the room. |
 | 7. Desktop experience | In progress. The new look and the map (0.4.0), room window milestone 1 and Quote and Find have 127.0.0.1 results only. |

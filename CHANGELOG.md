@@ -7,6 +7,14 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased: voice processing added to the 1.0 plan
+
+- **Plan:** `docs/WORK_PLAN_1.0.md` has a new section 5C: echo and noise suppression, voice activity and
+  push-to-talk. The operator asked for it on 2026-11-19. It runs beside steps 2 to 4, on branch
+  `opus/voice-processing`. The required part is in the 1.0 scope. An open noise suppressor and push-to-talk without
+  the window focus need operator approval, because they are new dependencies.
+- **Results:** none yet. The voice code does not change in this entry.
+
 ## Unreleased: Quote and Find on main, the 1.0 work plan and a new README
 
 All results in this entry are 127.0.0.1 results. There is no LAN result and no packaged .exe result yet.
