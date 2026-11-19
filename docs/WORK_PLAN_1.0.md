@@ -16,7 +16,9 @@
 | 6. Freeze a Windows candidate | Integrate the required slices on main. Build the exact executable intended for distribution. Run the upgrade, mixed-version and packaging checks below. | One source SHA, executable, byte size and SHA-256 identify the candidate. Attach each check to that identity or record why an earlier result applies. |
 | 7. Make the ship decision and publish | Finish the three-night field trial and resolve blockers. Run the publication and download checks at the end of this file. | The published tag points to the tested source and a fresh download matches the field-tested executable. A friend launches that download and joins a room. |
 
-**Scope for this release.** Include the existing portable client, LAN and supported internet rooms, Quote/Find, manual status, the room header, catch-up, encrypted saved rooms and the session-scoped shelf. Keep ordinary chat, direct and relayed voice, transfers and the network map working. Treat full inline screenshot previews, later media formats, audio-mixer enhancements, the detachable voice panel, extended visual polish, conversation tabs, transfer resume and ready checks as follow-ups unless a required outcome depends on a specific piece. Required minimums from milestone 5 are truthful connection feedback, a readable mute state and transfer progress. The five-second recovery target and its release decision appear in the field procedure.
+**Parallel track (added 2026-11-19).** Milestone 5C (voice processing and push-to-talk) started early on branch `opus/voice-processing`. It runs beside steps 2 to 4 and does not block them. Its field check joins the first game night (step 3). Merge it before the Windows candidate (step 6).
+
+**Scope for this release.** Include the existing portable client, LAN and supported internet rooms, Quote/Find, manual status, the room header, catch-up, encrypted saved rooms, the session-scoped shelf, and the required part of 5C (echo and noise suppression, voice activity and focused-window push-to-talk). Keep ordinary chat, direct and relayed voice, transfers and the network map working. Treat full inline screenshot previews, later media formats, audio-mixer enhancements, the detachable voice panel, extended visual polish, conversation tabs, transfer resume and ready checks as follow-ups unless a required outcome depends on a specific piece. Required minimums from milestone 5 are truthful connection feedback, a readable mute state and transfer progress. The five-second recovery target and its release decision appear in the field procedure.
 
 ### Map to the README
 
@@ -148,6 +150,25 @@ Compare one mockup with the current room at identical size and layout. Limit the
 Offer a small, optional always-on-top window showing current speakers and the local mic state. Use the same voice events and mute action as the room window. Closing the panel returns to the room without leaving voice or opening a second capture device.
 
 **Exit.** With a windowed or borderless game focused, switch speakers and toggle mute from the panel. The panel and room agree. Test departure, failover, close and reopen. Record the Windows display mode used before claiming overlay support.
+
+### 5C · Clean up the microphone and add push-to-talk
+
+Added 2026-11-19. Operator request, 2026-11-19: "I can tell there is not much processing or suppression applied to the voice frames before they are transferred ... I think it needs to have inbuilt echo/noise suppression. i know discord uses 'Krisp' ... another thing i like about discord is the voice activity/push to talk customization". Work started on branch `opus/voice-processing`.
+
+**Baseline.** `src/application/voice.js` calls `getUserMedia({ audio: true })` with no explicit constraints. Playback is an AudioWorklet, not a WebRTC peer connection. It is not known if the Chromium echo canceller uses that playback as its reference.
+
+**Required for 1.0.**
+- Set `echoCancellation`, `noiseSuppression` and `autoGainControl` explicitly. Log the values of `track.getSettings()`.
+- Measure if the echo canceller removes the worklet playback from the microphone signal. If it does not, fix the reference path.
+- A voice settings panel: voice activity with a sensitivity slider, a live input meter and a release delay.
+- Push-to-talk while the window has the focus, with a key that the user can change. Save the settings in the profile.
+- A muted member, or a member below the voice activity level, sends no frames. Keep the voice relay and 0.6.0 peers compatible.
+
+**Needs operator approval first.** Krisp is a commercial SDK: do not use it. An open noise suppressor (for example RNNoise as WASM) is a new dependency. Push-to-talk while the window has no focus needs a native key hook (for example `uiohook-napi`), also a new dependency. Both are optional for 1.0.
+
+**Exit.** `node --test` cases for the settings store and the gate logic. A measurement on a Windows PC with speakers (no headphones): record the device and the remaining echo with and without the fix. On two computers with speakers, the far side hears no echo of its own voice. Push-to-talk works with a changed key after a restart. Milestone 3 DND does not change the mute, the push-to-talk or the voice activity state. Label each result 127.0.0.1, LAN or internet.
+
+**Overlap with milestone 3.** Both change `renderer.js`, `main.js`, `preload.cjs`, `index.html` and `styles.css`, but in different areas. Milestone 3 does not change `voice.js` or `voice-worklet.js`. The branch that merges second merges `main` first, then runs the fast check and one app start.
 
 ## 6 · Reopen saved rooms with encrypted local history
 

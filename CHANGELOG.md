@@ -32,6 +32,13 @@ Electron 40.5.0 under Xvfb). There is no LAN result, no internet result and no p
   - The terminal demo (`src/network/transceiver.mjs`) shows chat from a peer that sends a status, and no status line.
 - **Open checks:** two packaged Windows .exe files on one real LAN, with a 0.6.0 client in both directions, a host
   change and a reconnect. The same check in an internet room. The operator deferred the LAN tests.
+## Unreleased: voice processing added to the 1.0 plan
+
+- **Plan:** `docs/WORK_PLAN_1.0.md` has a new section 5C: echo and noise suppression, voice activity and
+  push-to-talk. The operator asked for it on 2026-11-19. It runs beside steps 2 to 4, on branch
+  `opus/voice-processing`. The required part is in the 1.0 scope. An open noise suppressor and push-to-talk without
+  the window focus need operator approval, because they are new dependencies.
+- **Results:** none yet. The voice code does not change in this entry.
 
 ## Unreleased: Quote and Find on main, the 1.0 work plan and a new README
 
