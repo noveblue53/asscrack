@@ -16,7 +16,7 @@ members elect a new host with no user action.
 | Latest build | **0.6.0**, a portable Windows `.exe`. There is no public download yet. |
 | `main` | 0.6.0 plus fixes for faults F1 to F6, the stale "No peers" status line, room window milestone 1 and Quote and Find (milestone 2). Also manual status (milestone 3). Not released. |
 | Open field checks | The packaged Windows check of Quote and Find on a LAN, with a 0.6.0 client and a host change. Manual status on a LAN and in an internet room, with a 0.6.0 client. The internet test card 7. |
-| Current phase | Phase 8 (internet rooms) and Phase 7 (desktop experience), toward release 1.0. Steps 1 and 2 of the 1.0 plan are on `main`. Next: step 4, saved rooms and encrypted history (milestone 6). The step 3 field tests wait for the operator. |
+| Current phase | Phase 8 (internet rooms) and Phase 7 (desktop experience), toward release 1.0. Steps 1 and 2 of the 1.0 plan are on `main`. Step 4 started: milestone 6 part 1 (saved rooms with an encrypted local history) is on branch `opus/saved-rooms` with 127.0.0.1 results only. The step 3 field tests wait for the operator. |
 | Plan | [`docs/WORK_PLAN_1.0.md`](docs/WORK_PLAN_1.0.md) gives the release order, the scope and the exit checks of 1.0. |
 
 ### How to read the results
@@ -50,8 +50,12 @@ Each result in this file and in [`CHANGELOG.md`](CHANGELOG.md) has one of these 
 ## Known limits
 
 - **Windows only.** The build target is a portable Windows `.exe`. Other operating systems have no test.
-- **No saved history.** The chat history is in memory on the members (200 lines). When all members close the app, the
-  history is gone. Encrypted local history is milestone 6 of the 1.0 plan.
+- **Saved history only for saved internet rooms.** Branch `opus/saved-rooms` (not on `main`, 127.0.0.1 results only)
+  saves the lines of a saved internet room in an encrypted local database. LAN rooms stay live sessions with no save.
+  The packaged Windows checks of saved rooms are open.
+- **Two kinds of encryption.** Noise encrypts each peer connection. Encrypted local storage (SQLCipher with a
+  `safeStorage` key) protects the saved lines on the disk of this computer. It does not protect them from other apps
+  of the same Windows user.
 - **Internet rooms need one reachable member.** At least one member must have a forwarded TCP port or a router that
   allows UPnP. A member behind a carrier-grade NAT (CGNAT) cannot be a full node.
 - **No fallback route, no connection.** Members that connect only through one relay lose the connection when that relay
@@ -139,7 +143,7 @@ The network code is in `src/network/`. The Electron app is in `src/application/`
 | 2. Host election and failover | Done. LAN tested on 2 computers. |
 | 3. Mumble server | Not planned. Voice uses Opus on libp2p streams. |
 | 4. Voice with reconnect | Done. LAN tested (WebRTC, 0.2.0 and 0.3.1). Voice on libp2p streams internet tested (0.5.0). Next: echo and noise suppression, voice activity and push-to-talk (5C, in progress). |
-| 5. Chat | Done: chat and history after a restart (LAN). Quote and Find (127.0.0.1). Manual status (127.0.0.1). Next: a room topic, unread highlights and saved rooms. |
+| 5. Chat | Done: chat and history after a restart (LAN). Quote and Find (127.0.0.1). Manual status (127.0.0.1). Saved rooms with encrypted local history (milestone 6 part 1, branch `opus/saved-rooms`, 127.0.0.1). Next: a room topic and unread highlights. |
 | 6. File sharing | Done. LAN tested (0.3.1), internet tested (0.5.0). Next: a Shared shelf for the room. |
 | 7. Desktop experience | In progress. The new look and the map (0.4.0), room window milestone 1 and Quote and Find have 127.0.0.1 results only. |
 | 8. Internet rooms | In progress. Invite codes and rejoin are internet tested. UPnP join, relays and failover on the internet are open. |
