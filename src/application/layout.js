@@ -357,15 +357,16 @@
     // The Transfers separator shows the visible list height, the same value that a drag or a key starts from.
     function updateTransferSeparator() {
         if (!eff) return;
-        setSeparator(separators.transferHeight, currentSize('transferHeight'),
-            eff.transferMin, eff.transferMax, 'Transfers height');
+        const now = currentSize('transferHeight');
+        setSeparator(separators.transferHeight, now, Math.min(eff.transferMin, now), eff.transferMax,
+            'Transfers height');
     }
 
     // The size that the user sees now. For Transfers with no requested height, the list can be lower than its cap.
     function currentSize(field) {
-        if (field === 'transferHeight' && !eff.transferSet && transferList) {
-            const h = transferList.getBoundingClientRect().height;
-            if (h > 0) return Math.round(h);
+        // An empty list is 0 px high. A hidden list has no box: then use the cap.
+        if (field === 'transferHeight' && !eff.transferSet && transferList && transferList.getClientRects().length > 0) {
+            return Math.round(transferList.getBoundingClientRect().height);
         }
         if (field === 'buddyWidth') return eff.buddyWidth;
         if (field === 'mapWidth') return eff.mapWidth;
@@ -667,7 +668,11 @@
         const open = mapIsOpen();
         if (open === lastMapOpen) return;
         lastMapOpen = open;
-        if (open && isDrawerOpen()) closeDrawer(false);
+        if (open && isDrawerOpen()) {
+            // An action in the drawer (for example "Show on map") opens the map. Focus goes back to the opener.
+            const active = doc.activeElement;
+            closeDrawer(!active || active === body || Boolean(buddyPanel && buddyPanel.contains(active)));
+        }
         render();
     }).observe(body, { attributes: true, attributeFilter: ['class'] });
     // The bands change height (the tool band wraps, the chat screen shows). Recompute in the next frame.
