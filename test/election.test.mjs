@@ -127,20 +127,17 @@ test('e: two groups merge to one host', { timeout: 30000 }, async () => {
 })
 
 test('f: a new node with a lower peer ID, alone for 4 s, does not take the role from a live host', { timeout: 60000 }, async () => {
-    const nodes = await makeNodes(3)
-    let d = null
+    // Make 4 nodes and keep the node with the lowest peer ID apart. Its ID is then lower than the ID of each host
+    // that the other 3 nodes can elect. A search for a lower random ID can fail (2026-11-19: 200 tries failed).
+    const all = (await makeNodes(4)).sort((a, b) => (a.peerId < b.peerId ? -1 : 1))
+    const d = all[0]
+    const nodes = all.slice(1)
     try {
         await mesh(nodes)
         await waitUntil(() => agree(nodes), 5000)
         const elected = nodes[0].host()
         const hostNode = nodes.find(n => n.isHost())
-        // Create new nodes until one has a lower peer ID than the host. Stop the others.
-        for (let i = 0; i < 200 && d === null; i++) {
-            const candidate = (await makeNodes(1))[0]
-            if (candidate.peerId < elected.peerId) d = candidate
-            else await candidate.stop()
-        }
-        assert.ok(d, 'No node with a lower peer ID than the host was made')
+        assert.ok(d.peerId < elected.peerId)
         const t0 = Date.now()
         await delay(4000)
         assert.equal(d.host(), null)
@@ -153,8 +150,7 @@ test('f: a new node with a lower peer ID, alone for 4 s, does not take the role 
         for (const n of [...nodes, d]) assert.deepEqual(n.host(), elected)
         assert.equal(d.isHost(), false)
     } finally {
-        if (d) nodes.push(d)
-        await stopAll(nodes)
+        await stopAll(all)
     }
 })
 
