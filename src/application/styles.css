@@ -21,6 +21,13 @@
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   --pad: 6px;
 
+  /* The layout sizes. layout.js sets the effective values in px. These are the responsive defaults without it. */
+  --buddy-w: 192px;
+  --map-w: clamp(320px, 36%, 500px);
+  --transfer-h: 90px;
+  /* The vertical space that the transfer list leaves for the bands and a minimum chat body. */
+  --transfer-reserve: 340px;
+
   /* Transfer table columns: icon, file, size, user, progress, status, buttons. */
   --tcols: 20px minmax(0, 1.5fr) 62px minmax(0, 1fr) 124px minmax(0, 1.3fr) 126px;
 }
@@ -351,14 +358,16 @@ input[type="text"]:focus {
   display: grid;
   /* minmax(0, 1fr): a long name in the title band must not make the screen wider than the window. */
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto auto;
+  /* Transfers can shrink (minmax(0, auto)): the composer and Send always stay in the window. */
+  grid-template-rows: auto auto minmax(0, 1fr) minmax(0, auto) auto auto;
   animation: screen-in 260ms var(--ease);
 }
 
 /* The XP (Luna) title band. */
 #titlebar {
   position: relative;
-  z-index: 2;
+  /* Above the map overlay and the Buddies drawer: the View menu opens from here. */
+  z-index: 6;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -547,13 +556,45 @@ body.in-voice #voice-controls::before {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 
+/* The separators are the gaps between the columns (var(--pad) wide). layout.js sets the body classes. */
 #chat-body {
   position: relative;
   display: grid;
-  grid-template-columns: 192px minmax(0, 1fr);
-  gap: var(--pad);
+  grid-template-columns: var(--buddy-w) var(--pad) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: "buddy bsep chat";
   min-height: 0;
   margin: var(--pad) var(--pad) 0;
+}
+
+#buddy-panel { grid-area: buddy; }
+#buddy-sep { grid-area: bsep; }
+#message-panel { grid-area: chat; }
+#map-sep { grid-area: msep; }
+
+body.layout-buddy-right #chat-body {
+  grid-template-columns: minmax(0, 1fr) var(--pad) var(--buddy-w);
+  grid-template-areas: "chat bsep buddy";
+}
+
+body.layout-buddy-off #chat-body {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "chat";
+}
+
+body.layout-map-docked #chat-body {
+  grid-template-columns: var(--buddy-w) var(--pad) minmax(0, 1fr) var(--pad) var(--map-w);
+  grid-template-areas: "buddy bsep chat msep map";
+}
+
+body.layout-map-docked.layout-buddy-right #chat-body {
+  grid-template-columns: minmax(0, 1fr) var(--pad) var(--buddy-w) var(--pad) var(--map-w);
+  grid-template-areas: "chat bsep buddy msep map";
+}
+
+body.layout-map-docked.layout-buddy-off #chat-body {
+  grid-template-columns: minmax(0, 1fr) var(--pad) var(--map-w);
+  grid-template-areas: "chat msep map";
 }
 
 /* ---- Buddy list ---- */
@@ -1071,6 +1112,7 @@ body.map-open #node-map:not([data-paused]) .nm-node.speaking .nm-pulse {
 /* ---- Transfer table ---- */
 
 #transfer-panel {
+  position: relative;
   margin: var(--pad) var(--pad) 0;
 }
 
@@ -1120,8 +1162,12 @@ body.map-open #node-map:not([data-paused]) .nm-node.speaking .nm-pulse {
   text-align: right;
 }
 
+/* The scrollable body of Transfers. The cap keeps room for the bands and the chat (also before layout.js
+   recomputes after a resize). With a height that the user set, the list has that height. */
 #transfers {
-  max-height: 90px;
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: min(var(--transfer-h), max(0px, calc(100vh - var(--transfer-reserve))));
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1359,8 +1405,8 @@ body.map-open #node-map:not([data-paused]) .nm-node.speaking .nm-pulse {
     --tcols: 20px minmax(0, 1.4fr) 76px minmax(0, 1fr) 112px;
   }
 
-  #chat-body {
-    grid-template-columns: 148px minmax(0, 1fr);
+  :root {
+    --buddy-w: 148px;
   }
 
   #transfers li.transfer:not(.offer-head) > .file-size,
@@ -1375,29 +1421,17 @@ body.map-open #node-map:not([data-paused]) .nm-node.speaking .nm-pulse {
   }
 }
 
-/* A wide window: the open node map panel has its own column. In a smaller window it is above the chat. */
+/* A wide window: layout.js docks the open node map in its own column (body.layout-map-docked, see the layout
+   section). In a smaller window the map is an overlay above the chat. */
 @media (min-width: 1000px) {
   #map-panel {
     width: clamp(320px, 36%, 500px);
   }
-
-  body.map-open #chat-body {
-    grid-template-columns: 192px minmax(0, 1fr) clamp(320px, 36%, 500px);
-  }
-
-  body.map-open #map-panel {
-    position: relative;
-    width: auto;
-  }
 }
 
 @media (min-width: 1100px) {
-  #chat-body {
-    grid-template-columns: 236px minmax(0, 1fr);
-  }
-
-  body.map-open #chat-body {
-    grid-template-columns: 236px minmax(0, 1fr) clamp(320px, 36%, 500px);
+  :root {
+    --buddy-w: 236px;
   }
 
   #file-input {
@@ -1406,14 +1440,14 @@ body.map-open #node-map:not([data-paused]) .nm-node.speaking .nm-pulse {
 }
 
 @media (min-height: 700px) {
-  #transfers {
-    max-height: 150px;
+  :root {
+    --transfer-h: 150px;
   }
 }
 
 @media (min-height: 900px) {
-  #transfers {
-    max-height: 210px;
+  :root {
+    --transfer-h: 210px;
   }
 }
 
@@ -1668,4 +1702,328 @@ body.map-open #node-map:not([data-paused]) .nm-node.speaking .nm-pulse {
   letter-spacing: 0.4px;
   color: #ffffff;
   background: var(--go-dark);
+}
+
+/* ---- Room layout (layout.js): View menu, separators, Buddies drawer ---- */
+
+/* The title band buttons of layout.js have the look of the map button. */
+#buddy-toggle,
+#view-toggle {
+  flex: none;
+  height: 26px;
+  padding: 0 12px;
+  border-color: rgba(255, 255, 255, 0.65);
+  border-radius: 13px;
+  font-size: 12px;
+  color: #ffffff;
+  text-shadow: 0 1px 1px rgba(0, 20, 70, 0.75);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.42) 0%, rgba(255, 255, 255, 0.16) 48%, rgba(255, 255, 255, 0.04) 52%, rgba(255, 255, 255, 0.2) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 1px 2px rgba(0, 20, 70, 0.4);
+}
+
+#buddy-toggle[aria-expanded="true"] {
+  border-color: #d6ffb8;
+  background: linear-gradient(180deg, #9be577 0%, #52bd30 48%, #2f9c13 52%, #55bf33 100%);
+}
+
+#view-toggle[aria-expanded="true"] {
+  border-color: #ffffff;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.62) 0%, rgba(255, 255, 255, 0.34) 48%, rgba(255, 255, 255, 0.2) 52%, rgba(255, 255, 255, 0.4) 100%);
+}
+
+/* The Buddies button is only for the drawer (a window too narrow for a Buddies column). */
+#buddy-toggle {
+  display: none;
+}
+
+body.layout-buddy-drawer #buddy-toggle {
+  display: inline-flex;
+}
+
+/* The View menu: a small glass card below the View button. */
+#view-menu {
+  position: absolute;
+  top: 34px;
+  right: 8px;
+  z-index: 1;
+  min-width: 214px;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: 12.5px var(--font-ui);
+  color: var(--ink);
+  text-shadow: none;
+  background: linear-gradient(180deg, #ffffff 0%, #eaf4fc 100%);
+  box-shadow: 0 4px 14px rgba(0, 30, 90, 0.3), inset 0 1px 0 #ffffff;
+  animation: view-menu-in 150ms var(--ease);
+}
+
+#view-menu [role^="menuitem"] {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 14px 0 30px;
+  border-radius: 5px;
+  white-space: nowrap;
+  cursor: pointer;
+  outline: none;
+}
+
+#view-menu [role^="menuitem"]:hover,
+#view-menu [role^="menuitem"]:focus {
+  color: #ffffff;
+  text-shadow: 0 1px 1px rgba(0, 20, 70, 0.5);
+  background: linear-gradient(180deg, #6dbcf7, #1b74d6);
+}
+
+#view-menu [role^="menuitem"]:focus-visible {
+  outline: 2px solid #ffcf40;
+  outline-offset: -2px;
+}
+
+/* The check box of a check item. */
+#view-menu [role="menuitemcheckbox"]::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 9px;
+  width: 13px;
+  height: 13px;
+  margin-top: -7px;
+  border: 1px solid #6fa3d4;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #ffffff, #e1f2ff);
+  box-shadow: inset 0 1px 0 #ffffff;
+}
+
+#view-menu [role="menuitemcheckbox"][aria-checked="true"]::before {
+  border-color: #1f7d14;
+  background: linear-gradient(180deg, #9be577 0%, #52bd30 48%, #2f9c13 52%, #55bf33 100%);
+}
+
+#view-menu [role="menuitemcheckbox"][aria-checked="true"]::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 13px;
+  width: 4px;
+  height: 7px;
+  margin-top: -6px;
+  border: solid #ffffff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+#view-menu .view-rule {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--line-soft);
+}
+
+@keyframes view-menu-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* A separator: the gap between two panels. The grip shows on hover, during a drag and with keyboard focus. */
+.layout-sep {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  min-height: 0;
+  outline: none;
+  touch-action: none;
+}
+
+#buddy-sep,
+#map-sep {
+  cursor: col-resize;
+}
+
+/* A hit area wider than the 6 px gap. */
+#buddy-sep::before,
+#map-sep::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  right: -3px;
+}
+
+.layout-sep::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 40px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.75);
+  box-shadow: 0 0 0 1px rgba(15, 98, 196, 0.25);
+  opacity: 0.6;
+  transform: translate(-50%, -50%);
+  transition: opacity 150ms ease, box-shadow 150ms ease;
+}
+
+.layout-sep:hover::after,
+.layout-sep-active::after {
+  opacity: 1;
+  background: #ffffff;
+  box-shadow: 0 0 0 1px rgba(15, 98, 196, 0.6), 0 0 6px rgba(127, 211, 247, 0.95);
+}
+
+.layout-sep:focus-visible {
+  border-radius: 3px;
+  outline: 2px solid #ffcf40;
+  outline-offset: 0;
+}
+
+.layout-sep:focus-visible::after {
+  opacity: 1;
+  background: #ffcf40;
+  box-shadow: 0 0 0 1px #b88a00;
+}
+
+body.layout-buddy-off #buddy-sep,
+#map-sep {
+  display: none;
+}
+
+body.layout-map-docked #map-sep {
+  display: block;
+}
+
+/* The Transfers separator is the top edge of the panel. It is there only when the list shows. */
+#transfer-sep {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  height: 7px;
+  cursor: row-resize;
+}
+
+#transfer-sep::after {
+  top: 3px;
+  width: 40px;
+  height: 3px;
+  background: rgba(15, 98, 196, 0.35);
+  box-shadow: none;
+}
+
+#transfer-sep:hover::after,
+#transfer-sep.layout-sep-active::after {
+  background: var(--blue);
+}
+
+#transfer-sep:focus-visible {
+  outline-offset: -2px;
+}
+
+#transfer-sep:focus-visible::after {
+  background: #ffcf40;
+}
+
+#transfer-panel:not(:has(#transfers li)) #transfer-sep,
+body.layout-transfers-hidden #transfer-sep {
+  display: none;
+}
+
+/* A height that the user set: the list keeps it. The cap in #transfers keeps the composer in the window. */
+body.layout-transfer-set #transfers {
+  height: var(--transfer-h);
+}
+
+/* Transfers hidden: only the head with the count stays, so a new offer is still visible. */
+body.layout-transfers-hidden #transfer-panel .transfer-cols,
+body.layout-transfers-hidden #transfers {
+  display: none;
+}
+
+body.layout-transfers-hidden #transfer-panel .panel-head {
+  border-bottom: 0;
+}
+
+body.layout-transfers-hidden #transfer-panel .panel-head::after {
+  content: 'Hidden. Use View to show the list.';
+  min-width: 0;
+  overflow: hidden;
+  font: 400 11.5px var(--font-small);
+  letter-spacing: 0;
+  color: var(--ink-soft);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The docked map: its own column in the grid of #chat-body. */
+body.layout-map-docked #map-panel {
+  position: relative;
+  width: auto;
+  grid-area: map;
+}
+
+/* Buddies hidden, or Buddies as a drawer above the chat (narrow window). */
+body.layout-buddy-hidden #buddy-panel {
+  display: none;
+}
+
+body.layout-buddy-drawer #buddy-panel {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 4;
+  grid-area: auto;
+  width: var(--buddy-w);
+  background: linear-gradient(180deg, rgba(248, 253, 255, 0.94), rgba(226, 243, 254, 0.9));
+  -webkit-backdrop-filter: blur(10px) saturate(1.2);
+  backdrop-filter: blur(10px) saturate(1.2);
+  box-shadow: 6px 4px 22px rgba(8, 50, 120, 0.4), inset 0 1px 0 #ffffff;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateX(calc(-100% - 16px));
+  transition: transform 240ms var(--ease), opacity 200ms ease, visibility 0s linear 240ms;
+}
+
+body.layout-buddy-drawer.layout-buddy-right #buddy-panel {
+  left: auto;
+  right: 0;
+  box-shadow: -6px 4px 22px rgba(8, 50, 120, 0.4), inset 0 1px 0 #ffffff;
+  transform: translateX(calc(100% + 16px));
+}
+
+body.layout-buddy-drawer.layout-drawer-open #buddy-panel {
+  visibility: visible;
+  opacity: 1;
+  transform: none;
+  transition-delay: 0s;
+}
+
+#buddy-panel:focus {
+  outline: none;
+}
+
+#buddy-panel:focus-visible {
+  outline: 2px solid #ffcf40;
+  outline-offset: -2px;
+}
+
+/* During a drag: no text selection, and the panels follow the pointer with no transition. */
+body.layout-dragging {
+  user-select: none;
+}
+
+body.layout-dragging #map-panel,
+body.layout-dragging #buddy-panel {
+  transition: none;
+}
+
+/* The drawer window is narrow: the app name gives its place to the Buddies button. */
+body.layout-buddy-drawer .app-name {
+  display: none;
 }

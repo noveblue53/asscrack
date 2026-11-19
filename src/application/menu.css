@@ -1,0 +1,98 @@
+/* The context menu of the rows (menu.js) and the focus of the rows. The look is the same as #view-menu
+   (styles.css). CSP style-src 'self': menu.js sets only the variables --row-menu-x and --row-menu-y on the root. */
+
+#row-menu {
+  position: fixed;
+  top: var(--row-menu-y, 0px);
+  left: var(--row-menu-x, 0px);
+  z-index: 50;
+  min-width: 168px;
+  max-width: calc(100vw - 8px);
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: 12.5px var(--font-ui);
+  color: var(--ink);
+  text-shadow: none;
+  background: linear-gradient(180deg, #ffffff 0%, #eaf4fc 100%);
+  box-shadow: 0 4px 14px rgba(0, 30, 90, 0.3), inset 0 1px 0 #ffffff;
+  animation: row-menu-in 120ms var(--ease);
+}
+
+#row-menu[hidden] {
+  display: none;
+}
+
+#row-menu [role="menuitem"] {
+  display: flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 14px;
+  border-radius: 5px;
+  white-space: nowrap;
+  cursor: pointer;
+  outline: none;
+}
+
+#row-menu [role="menuitem"]:hover,
+#row-menu [role="menuitem"]:focus {
+  color: #ffffff;
+  text-shadow: 0 1px 1px rgba(0, 20, 70, 0.5);
+  background: linear-gradient(180deg, #6dbcf7, #1b74d6);
+}
+
+#row-menu [role="menuitem"]:focus-visible {
+  outline: 2px solid #ffcf40;
+  outline-offset: -2px;
+}
+
+@keyframes row-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+
+/* The rows are focusable (one tab stop for each list). Show the focus for the keyboard only. */
+#peers > li:focus,
+#messages > li:focus,
+#transfers > li:focus {
+  outline: none;
+}
+
+#peers > li:focus-visible,
+#messages > li:focus-visible,
+#transfers > li:focus-visible {
+  outline: 2px solid #ffcf40;
+  outline-offset: -2px;
+}
+
+/* Show in Explorer on a received file. */
+#transfers button.btn-reveal {
+  padding: 0 8px;
+  white-space: nowrap;
+}
+
+/* Show on map: the node of the buddy gets a gold ring for a short time (nodemap.js highlight). */
+#node-map .nm-node[data-highlight="true"] .nm-halo {
+  stroke: #ffcf40;
+  stroke-width: 4;
+  opacity: 1;
+  animation: nm-highlight 800ms ease-in-out 3;
+}
+
+@keyframes nm-highlight {
+  50% {
+    stroke-width: 7;
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #row-menu,
+  #node-map .nm-node[data-highlight="true"] .nm-halo {
+    animation: none;
+  }
+}

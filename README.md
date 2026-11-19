@@ -61,7 +61,7 @@ only).
 - [x] Phase 4: Voice client with auto-reconnect (WebRTC, LAN tested on 2 computers)
 - [x] Phase 5: P2P chat system (LAN tested on 2 computers, with the history after a restart in 0.3.1)
 - [x] Phase 6: File sharing (LAN tested on 2 computers with 0.3.1)
-- [ ] Phase 7: UI/UX polish (0.4.0: new look and network map, 127.0.0.1 only, LAN test open)
+- [ ] Phase 7: UI/UX polish (0.4.0: new look and network map, 127.0.0.1 only, LAN test open; room window milestone 1 (not released): saved panel sizes, context menus, reading position, same-PC only)
 - [ ] Phase 8: Internet rooms (0.5.0: invite codes, full nodes, relay links, voice over libp2p, internet tested 2026-11-18; 0.5.2 rejoin internet tested; 0.6.0: UPnP host, relay spread, direct voice, UPnP port map internet tested 2026-11-19, join through UPnP open. Goal 7 (not released) fixes the faults F1 to F6 of 0.6.0 and the stale no-peers status line, 127.0.0.1 only)
 
 ## License

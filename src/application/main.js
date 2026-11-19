@@ -1,7 +1,7 @@
-import { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, session } from 'electron';
+import { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, session, shell } from 'electron';
 import { fileURLToPath } from 'url';
 import path from 'path';
-import { mkdirSync, appendFileSync, readFileSync, writeFileSync } from 'fs';
+import { mkdirSync, appendFileSync, existsSync, readFileSync, writeFileSync } from 'fs';
 import { format } from 'util';
 import { createAsscrackNode, keyedServiceTag } from '../network/node.mjs';
 import { newRoomKey, readInvite } from '../network/invite.mjs';
@@ -178,6 +178,10 @@ function setPermissions() {
 
 let mainWindow = null;
 let node = null;
+// The files that this computer received: `${offerId}|${peerId}` -> the final path (after a rename for a name
+// collision). Only a file-done event with the direction receive adds a path. The window sends only the key.
+const receivedFiles = new Map();
+const MAX_RECEIVED_KEY = 300;
 let loginStarted = false;
 let stopping = false;
 
@@ -319,6 +323,11 @@ ipcMain.handle('asscrack:login', async (_event, { name, room, invite, internet, 
         loginStarted = false;
         throw err;
     }
+    // Record the path before the window gets the event, so that a Show in Explorer at once finds it.
+    node.events.on('file-done', data => {
+        if (data?.direction !== 'receive' || typeof data.path !== 'string') return;
+        receivedFiles.set(`${data.offerId}|${data.peerId}`, data.path);
+    });
     for (const type of EVENTS) {
         node.events.on(type, data => {
             logEvent(type, data);
@@ -411,6 +420,23 @@ ipcMain.handle('asscrack:cancel-file', (_event, offerId, peerId) => {
     const peer = typeof peerId === 'string' ? peerId : undefined;
     logAction('cancel-file', peer === undefined ? String(offerId) : `${offerId} peer ${peer}`);
     return node.cancelFile(String(offerId), peer);
+});
+
+// Show in Explorer for a received file. The window sends the key `${offerId}|${peerId}` only, never a path.
+// Result: { ok: true }, or { ok: false, reason: 'unknown' } (no received file for the key) or
+// { ok: false, reason: 'missing' } (the file was moved or deleted).
+ipcMain.handle('asscrack:reveal-file', (_event, key) => {
+    if (typeof key !== 'string' || key.length > MAX_RECEIVED_KEY || !receivedFiles.has(key)) {
+        return { ok: false, reason: 'unknown' };
+    }
+    const filePath = receivedFiles.get(key);
+    if (!existsSync(filePath)) {
+        writeLog('EVENT', `action reveal-file key ${key} result missing`);
+        return { ok: false, reason: 'missing' };
+    }
+    shell.showItemInFolder(filePath);
+    writeLog('EVENT', `action reveal-file key ${key} result ok`);
+    return { ok: true };
 });
 
 app.on('before-quit', event => {

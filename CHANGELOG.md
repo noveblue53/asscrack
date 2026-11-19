@@ -7,6 +7,30 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased: room window, milestone 1 (branch `opus/room-window`)
+
+All results in this entry are same-PC results (127.0.0.1 tests, and app instances on one PC). There is no LAN
+result and no packaged .exe result yet. Environment: Windows 10, Node 24.13.1, Electron 40.5.0. Base `82fc32f`.
+- **Saved panel sizes (commit `5759649`):** separators beside Buddies, beside the docked map and above Transfers.
+  Drag them, or focus them and use the arrow keys. A View menu shows and hides Buddies and Transfers, moves Buddies
+  left or right, and resets the layout. The sizes stay after a restart. A narrow window does not change the saved
+  wide sizes. Bad preference data gives the defaults.
+- **Reading position (commit `310b74c`):** the chat list keeps the line that you read while new lines, history lines
+  and resize events come. It counts the new lines, marks the first unread line and shows "Jump to latest". A history
+  replay of shown lines adds no line. An own send goes to the newest line.
+- **Context menus (commit `fb86088`):** right-click, the Menu key or Shift+F10 on a buddy, a message or a transfer
+  row opens a menu (arrows, Enter, Escape). Actions: copy a name, show a buddy on the map, copy a message, accept,
+  refuse or cancel a transfer, show a received file in Explorer (also a renamed file). Escape closes only the top
+  layer: menu, then drawer, then invite panel, then map. Selected text and input fields keep the native Copy.
+- **Fixes (commits `e2eabd3`, `eefb254`):** the Transfers separator gives the visible height to screen readers, and
+  "Show on map" from the narrow drawer gives the focus back to the Buddies button.
+- **Checks:** `npm test` 139 of 139 pass (127.0.0.1). One `npm start` with no error line. A CDP drive script ran
+  each "Done when" check of the work order in the running app, 2 full runs, all items pass, 0 console errors.
+- **Open field checks:** on the packaged .exe, one row action by mouse and one by keyboard with the real Menu key
+  and Shift+F10. Show in Explorer of a renamed file selects that file. Cancel to one receiver while a second
+  receiver downloads, on 2 or 3 computers (LAN).
+- **Next milestone:** 2, Quote a line and find it again (not started).
+
 ## Unreleased: faults of 0.6.0 (branch `opus/faults`)
 
 All results in this entry are 127.0.0.1 results (one PC). There is no LAN or internet result yet.
