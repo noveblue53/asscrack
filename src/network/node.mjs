@@ -248,6 +248,18 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         events.emit('history', { messages: added })
     }
 
+    // The host of the last onChange of the election.
+    let lastHostId = null
+    function sendHistoryTo(peerId, session) {
+        const messages = history.list()
+        session.send(JSON.stringify({ type: 'history', messages }))
+        console.info(`History sent to ${peerId}: ${messages.length} messages`)
+    }
+    function sendHistoryToAll() {
+        if (!election.isHost()) return
+        for (const [peerId, session] of sessions) sendHistoryTo(peerId, session)
+    }
+
     function handleHistory(peerId, control) {
         if (election.host()?.peerId === peerId) {
             applyHistory(control.messages)
@@ -283,7 +295,12 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         openPeers: () => [...sessions.keys()],
         isFullNode: peerId => peerId === selfId ? selfFull : peerFull.get(peerId) === true,
         onChange: info => {
+            const wasHost = lastHostId === selfId
+            lastHostId = info.peerId
             events.emit('host-changed', info)
+            // A new host sends the history to each member with a session. A member whose session opened before
+            // this election got no history from openSession(). Send after the host announcement.
+            if (info.peerId === selfId && !wasHost) queueMicrotask(sendHistoryToAll)
             voiceRelay?.hostChanged()
             // Use a history line that arrived before this host was accepted.
             const kept = pendingHistory.get(info.peerId)
@@ -504,11 +521,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         console.info(connText('conn session', { peer: opened.peer, type: opened.type, dir: opened.dir, relay: opened.relay, addr: opened.addr }))
         events.emit('connection', opened)
         election.sessionOpened(peerId)
-        if (election.isHost()) {
-            const messages = history.list()
-            session.send(JSON.stringify({ type: 'history', messages }))
-            console.info(`History sent to ${peerId}: ${messages.length} messages`)
-        }
+        if (election.isHost()) sendHistoryTo(peerId, session)
         if (voiceState.inVoice) session.send(voiceLine())
         broadcastLinks()
         emitTopology()
