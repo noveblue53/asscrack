@@ -189,10 +189,10 @@ test('menuCore keys and position', async () => {
 
 // ---- Milestone 2: Quote and Find ----
 
-test('the Escape dispatcher removes the quote chip between layout and the invite panel', async () => {
+test('the Escape dispatcher closes the find bar and then the quote chip, between layout and the invite panel', async () => {
     const source = await read('renderer.js');
     const at = source.indexOf("e.key !== 'Escape'");
-    const order = ['window.layout?.closeTopLayer()', 'removeQuote()', 'setInvitePanelOpen(false)']
+    const order = ['window.layout?.closeTopLayer()', 'window.findBar?.isOpen()', 'removeQuote()', 'setInvitePanelOpen(false)']
         .map(text => source.indexOf(text, at));
     for (const index of order) assert.ok(index > at);
     assert.deepEqual([...order].sort((a, b) => a - b), order);
@@ -200,8 +200,8 @@ test('the Escape dispatcher removes the quote chip between layout and the invite
     assert.ok(source.includes('pendingQuote !== null && composer.contains(document.activeElement)'));
 });
 
-test('quote.js handles no Escape and sets no inline style', async () => {
-    for (const name of ['quote.js']) {
+test('find.js and quote.js handle no Escape and set no inline style', async () => {
+    for (const name of ['find.js', 'quote.js']) {
         const source = await read(name);
         assert.doesNotMatch(source, /'Escape'/, name);
         assert.doesNotMatch(source, /\.style\b|setAttribute\('style'/, name);
@@ -214,11 +214,12 @@ test('the Quote button and the menu action Quote call the same function', async 
     assert.match(source, /makeButton\('Quote', \(\) => quoteMessage\(item\), 'quote', 'btn-quote'\)/);
 });
 
-test('index.html loads quote.js before renderer.js, and has the quote chip', async () => {
+test('index.html loads find.js and quote.js before renderer.js, and has the find bar and the quote chip', async () => {
     const html = await read('index.html');
     const at = name => html.indexOf(`<script src="${name}"></script>`);
+    assert.ok(at('reading.js') < at('find.js') && at('find.js') < at('renderer.js'));
     assert.ok(at('quote.js') > 0 && at('quote.js') < at('renderer.js'));
-    for (const id of ['quote-chip', 'quote-remove']) {
+    for (const id of ['find-bar', 'find-input', 'find-count', 'find-prev', 'find-next', 'find-close', 'quote-chip', 'quote-remove']) {
         assert.ok(html.includes(`id="${id}"`), id);
     }
     assert.doesNotMatch(html, /\sstyle=/);

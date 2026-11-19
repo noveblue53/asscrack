@@ -1180,7 +1180,8 @@ window.asscrack.onPeerLeft(() => showFullNodeState());
 
 // ---- The one Escape dispatcher ----
 // Escape closes only the top layer, in this sequence: the context menu (menu.js), the View menu and the Buddies
-// drawer (layout.js), the quote chip (only with the focus in the composer), the invite panel, the map. The View menu and the drawer stop their own Escape when the focus is
+// drawer (layout.js), the find bar (find.js, it puts the list back at its old position), the quote chip (only with
+// the focus in the composer), the invite panel, the map. The View menu and the drawer stop their own Escape when the focus is
 // in them. A separator drag stops its Escape in the capture phase on window. Then this listener gets no event.
 function focusIsIn(element) {
     const active = document.activeElement;
@@ -1196,6 +1197,11 @@ document.addEventListener('keydown', e => {
     }
     if (window.layout?.closeTopLayer()) {
         e.preventDefault();
+        return;
+    }
+    if (window.findBar?.isOpen()) {
+        e.preventDefault();
+        window.findBar.close();
         return;
     }
     if (pendingQuote !== null && composer.contains(document.activeElement)) {
