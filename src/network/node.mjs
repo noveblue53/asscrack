@@ -280,6 +280,15 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         type: 'voice', inVoice: voiceState.inVoice, streamId: voiceState.streamId, muted: voiceState.muted,
         direct: voiceRelay ? voiceRelay.directList() : []
     })
+    // Manual status (presence) of this node. It lives for the life of the node.
+    const PRESENCE_STATES = new Set(['available', 'away', 'dnd'])
+    const MAX_PRESENCE_NOTE = 80
+    let ownPresence = { state: 'available', note: '' }
+    // peerId -> { state, note } from the presence lines of that peer.
+    const peerPresence = new Map()
+    // Trim the note, then cut it to 80 Unicode code points.
+    const presenceNote = note => [...note.trim()].slice(0, MAX_PRESENCE_NOTE).join('')
+    const presenceLine = () => JSON.stringify({ type: 'presence', v: 1, state: ownPresence.state, note: ownPresence.note })
     // Returns the list when it is valid: an array of at most 64 strings, each one a peer ID with a session.
     // Returns null when it is not valid.
     function validDirect(list) {
@@ -480,6 +489,17 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                             streamId: typeof control.streamId === 'string' ? control.streamId : null,
                             muted: control.muted === true
                         })
+                    } else if (control.type === 'presence') {
+                        // Ignore an unknown state or a note that is not a string, with no warning.
+                        if (sessions.get(peerId) === session && PRESENCE_STATES.has(control.state) && typeof control.note === 'string') {
+                            const state = control.state
+                            const note = presenceNote(control.note)
+                            const old = peerPresence.get(peerId)
+                            if (!old || old.state !== state || old.note !== note) {
+                                peerPresence.set(peerId, { state, note })
+                                events.emit('presence', { peerId, state, note })
+                            }
+                        }
                     }
                     return
                 }
@@ -507,6 +527,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         if (connection) sessionConns.set(peerId, connection)
         if (sendHello) session.send(JSON.stringify({ type: 'hello', name: senderName }))
         session.send(nodeLine())
+        // Always send the own presence, also when it is 'available'.
+        session.send(presenceLine())
         events.emit('peer-joined', { peerId })
         const sessionConn = sessionConns.get(peerId) ?? connection
         const sessionStart = Date.now()
@@ -541,6 +563,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 pendingHistory.delete(peerId)
                 events.emit('peer-left', { peerId })
                 peerVoice.delete(peerId)
+                peerPresence.delete(peerId)
                 peerDirect.delete(peerId)
                 voiceRelay.peerLeft(peerId)
                 election.sessionClosed(peerId)
@@ -1168,6 +1191,20 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             for (const session of sessions.values()) session.send(line)
             voiceRelay.hostChanged()
         },
+        // Set the own presence and send it to all open sessions. Returns the stored value.
+        setPresence({ state, note = '' } = {}) {
+            if (!PRESENCE_STATES.has(state)) throw new TypeError('state must be available, away or dnd')
+            if (typeof note !== 'string') throw new TypeError('note must be a string')
+            ownPresence = { state, note: presenceNote(note) }
+            const line = presenceLine()
+            for (const session of sessions.values()) session.send(line)
+            return { ...ownPresence }
+        },
+        presence: () => ({ ...ownPresence }),
+        // The presence of each peer with an open session and a known state.
+        peerPresence: () => Object.fromEntries([...peerPresence]
+            .filter(([peerId]) => sessions.has(peerId))
+            .map(([peerId, value]) => [peerId, { ...value }])),
         // Send one Opus frame of this node on the voice path (direct streams, and the star through the host).
         sendVoiceFrame: bytes => voiceRelay.sendFrame(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)),
         voiceStats: () => voiceRelay.stats(),
