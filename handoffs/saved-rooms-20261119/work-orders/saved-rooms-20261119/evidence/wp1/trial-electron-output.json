@@ -1,0 +1,76 @@
+{
+  "runtime": {
+    "electron": "40.5.0",
+    "node": "24.13.1",
+    "modules": "143",
+    "napi": "10",
+    "platform": "linux",
+    "arch": "x64"
+  },
+  "bindingPath": "/tmp/claude-0/-home-user-asscrack/38300f29-2515-5dc9-b709-7376f963968a/scratchpad/wp1/trial/node_modules/better-sqlite3-multiple-ciphers/prebuilds/linux-x64.node",
+  "create": {
+    "ok": true,
+    "value": {
+      "cipher": "sqlcipher",
+      "legacy": "4",
+      "kdf_iter": "256000",
+      "cipher_page_size": "4096",
+      "hmac_algorithm": "2",
+      "kdf_algorithm": "2",
+      "journal": "delete",
+      "sqliteVersion": "3.54.1",
+      "mcVersion": "SQLite3 Multiple Ciphers 2.7.1"
+    }
+  },
+  "fileHeader": {
+    "ok": true,
+    "value": {
+      "hex": "2ab62fff01ab0c497d105e5732844933",
+      "isPlainSqlite": false,
+      "size": 8192
+    }
+  },
+  "readWithKey": {
+    "ok": true,
+    "value": [
+      {
+        "id": 1,
+        "room": "lan-room",
+        "body": "hello archive"
+      }
+    ]
+  },
+  "readWrongKey": {
+    "ok": false,
+    "error": "SqliteError: file is not a database",
+    "code": "SQLITE_NOTADB"
+  },
+  "readNoKeyCipherSet": {
+    "ok": false,
+    "error": "SqliteError: file is not a database",
+    "code": "SQLITE_NOTADB"
+  },
+  "readNoKeyPlain": {
+    "ok": false,
+    "error": "SqliteError: file is not a database",
+    "code": "SQLITE_NOTADB"
+  },
+  "wrongKeyPragmaResult": {
+    "ok": true,
+    "value": {
+      "pragmaKeyReturn": [
+        {
+          "ok": "ok"
+        }
+      ],
+      "firstRead": "SqliteError: file is not a database (SQLITE_NOTADB)"
+    }
+  },
+  "keyMethod": {
+    "ok": true,
+    "value": {
+      "rc": 0,
+      "n": 1
+    }
+  }
+}

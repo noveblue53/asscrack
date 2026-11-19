@@ -1,0 +1,90 @@
+{
+  "DECISIONS.md": {
+    "sha256": "d1f5b433dcce9e058853d2a41b2f5a322c31eaf47f67789ae08c5f2697048a70",
+    "bytes": 8259
+  },
+  "START_HERE.md": {
+    "sha256": "01fa4311117a12edd1dd06b63a92811ee5aa12920a3c4f30d4ff3e33218fe817",
+    "bytes": 2835
+  },
+  "work-orders/saved-rooms-20261119/CONTINUE.md": {
+    "sha256": "8ea653329f8d96314259f0e0f52048be5218f67927cb95b872f797ade4a909a3",
+    "bytes": 4110
+  },
+  "work-orders/saved-rooms-20261119/GOAL.md": {
+    "sha256": "30e2d8c6db39658736cbc86b00d52939d1151b9e2d67a78e946ef695a0197265",
+    "bytes": 7366
+  },
+  "work-orders/saved-rooms-20261119/GOAL_ACTIVE": {
+    "sha256": "4009ca4f40220c43a423f1d9c80d0f829175d9807124639b2a1b61d811e59450",
+    "bytes": 1577
+  },
+  "work-orders/saved-rooms-20261119/GOAL_WAIT": {
+    "sha256": "49c6a1e882f6c01d82fe2f0ddd532038b05bf978b2fb1cc00a1bb3eec6fdad22",
+    "bytes": 160
+  },
+  "work-orders/saved-rooms-20261119/WORK_ORDER.md": {
+    "sha256": "81d44cdfd347aae9e1cf102610c4e40bb2a8351f5e5385dc6ac718230a715713",
+    "bytes": 3600
+  },
+  "work-orders/saved-rooms-20261119/evidence/DECISIONS.copy.md": {
+    "sha256": "d1f5b433dcce9e058853d2a41b2f5a322c31eaf47f67789ae08c5f2697048a70",
+    "bytes": 8259
+  },
+  "work-orders/saved-rooms-20261119/evidence/baseline-598725f.console.txt": {
+    "sha256": "0c0eb22b3dee7a8490097a2a8bfd4bfed89febe86efa4e7770a15cfe22fc8070",
+    "bytes": 144847
+  },
+  "work-orders/saved-rooms-20261119/evidence/baseline-npmci.txt": {
+    "sha256": "6d90fe842b6ba65b5c700088caa64153c63282668e6a6adcdc4322daa56a983f",
+    "bytes": 1695
+  },
+  "work-orders/saved-rooms-20261119/evidence/dep-added.console.txt": {
+    "sha256": "af5c369e70404fd4d5f12a3ca0c07ac27fd2d0a6fc0f534b5b99ca9fa484d9fb",
+    "bytes": 145193
+  },
+  "work-orders/saved-rooms-20261119/evidence/wp1/binding-report.md": {
+    "sha256": "a7cf804187ab5439b1dc66acea77e2888697fe2c707e12d6e8dd3a7b13ff6781",
+    "bytes": 16651
+  },
+  "work-orders/saved-rooms-20261119/evidence/wp1/brief-binding.md": {
+    "sha256": "a54ff1b59dcb8beb389aded3132839e257271d341878106b9336ab7bf518f62f",
+    "bytes": 4613
+  },
+  "work-orders/saved-rooms-20261119/evidence/wp1/check-orch.cjs": {
+    "sha256": "1016954ac9415587f68aeed423cbccbe87765f8b787c9d46d68f1bf2e39f14c6",
+    "bytes": 1176
+  },
+  "work-orders/saved-rooms-20261119/evidence/wp1/cv.cjs": {
+    "sha256": "5e4de6d70ebb8daabd91775c075ef4f5d91576a2a33662e501738810a8b19370",
+    "bytes": 737
+  },
+  "work-orders/saved-rooms-20261119/evidence/wp1/package-lock.json": {
+    "sha256": "6d12599588eebe8acdbe966dd027b9fd84726edcfdfcb84ec2c7afa6962a2d19",
+    "bytes": 1123
+  },
+  "work-orders/saved-rooms-20261119/evidence/wp1/package.json": {
+    "sha256": "7667b06a3070fc58fff6b01b47efc467e88d38c9af12c8badcc1dc3ddc29864c",
+    "bytes": 315
+  },
+  "work-orders/saved-rooms-20261119/evidence/wp1/safe-storage-v40.5.0.md": {
+    "sha256": "567e12f438f1b2fb3bed97b219778a23ee1e79db7e1805eec8eb06c0def3f24b",
+    "bytes": 4236
+  },
+  "work-orders/saved-rooms-20261119/evidence/wp1/safestorage-main.cjs": {
+    "sha256": "98bb68789d934463aaeff31bb532c9c28551f0e101f16bd443d00266bca671e0",
+    "bytes": 603
+  },
+  "work-orders/saved-rooms-20261119/evidence/wp1/trial-electron-output.json": {
+    "sha256": "cc04224254c2583eef10942df9963906ac322013ce20559c943518e8821a81a1",
+    "bytes": 1667
+  },
+  "work-orders/saved-rooms-20261119/evidence/wp1/trial-node-output.json": {
+    "sha256": "1ce3335aa3fd306904a5271cea8364de060ffe83451ba2cd1075b828df7259f8",
+    "bytes": 1663
+  },
+  "work-orders/saved-rooms-20261119/evidence/wp1/trial.cjs": {
+    "sha256": "3256f92a86a195b6d0dd2d1796524d2322c2af2a7f6375fa5dddba26448f227d",
+    "bytes": 4198
+  }
+}
