@@ -7,6 +7,27 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased: faults of 0.6.0 (branch `opus/faults`)
+
+All results in this entry are 127.0.0.1 results (one PC). There is no LAN or internet result yet.
+- **Second start (F1):** the portable launcher does not delete or unpack when a copy of the app runs from
+  `%TEMP%\ASSCRACK`. It starts the running exe again, and the single instance lock of the packaged app shows the
+  first window. The unpack folder stays the same, thus the firewall question stays one time for each build.
+  `tools/second-start-check.mjs`: same build twice PASS, build A then build B PASS, stock 0.6.0 launcher FAIL.
+  To change the build, close all copies first: a new build that starts while an old copy runs shows the old copy.
+- **Voice start (F2):** a member opens one voice stream to the host and keeps the frames of the open time. Join voice
+  to the first frame at the other member: median 32.2 ms with frame 0 lost before, 6.4 ms with no lost frame after.
+  With a 100 ms stream open: 0 of 96 frames before, 96 of 96 after.
+- **History for early members (F3):** a new host sends the history to each member with a session. A member whose
+  session opened before the first election now gets the history (history test e, 10 of 10 runs).
+- **Direct voice (F4):** a closed direct voice stream opens again after 1 s, with no host change (at most 5 times in
+  a row). The host counts forwarded frames for at most 64 peers. `sendFrame` returns false when it sent no frame.
+- **Dial warnings (F5):** a relay dial or a discovery dial does not open a second chat stream. 20 runs before the fix:
+  the relay warning in 6 runs, the discovery warning in 12 runs. 25 runs after the fix: 0 and 0.
+- **Election test (F6):** test f does not depend on random peer IDs (10 of 10 runs).
+- **File speed (F7):** no change. The receiver log has the size, the Accept line and the done line, thus it gives
+  the speed. Example: 200 MiB in 5.04 s.
+
 ## 0.6.0: a host with no port forward, connection log lines and load spreading
 
 - **Build:** `dist/ASSCRACK-0.6.0-portable.exe`, 97,233,105 bytes, SHA-256
