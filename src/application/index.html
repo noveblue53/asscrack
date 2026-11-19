@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="reading.css">
   <link rel="stylesheet" href="menu.css">
+  <link rel="stylesheet" href="quote.css">
   <title>ASSCRACK</title>
 </head>
 <body>
@@ -111,6 +112,14 @@
       </section>
       <div id="buddy-sep" class="layout-sep" role="separator" tabindex="0" aria-orientation="vertical" aria-controls="buddy-panel" aria-label="Resize Buddies" aria-valuenow="192" aria-valuemin="120" aria-valuemax="480"></div>
       <section id="message-panel" class="panel">
+        <!-- find.js (window.findBar) opens this bar with Ctrl+F. Escape: the dispatcher of renderer.js. -->
+        <div id="find-bar" hidden role="search">
+          <input id="find-input" type="search" placeholder="Find in loaded messages" aria-label="Find in loaded messages">
+          <span id="find-count" aria-live="polite"></span>
+          <button id="find-prev" type="button" aria-label="Previous match">↑</button>
+          <button id="find-next" type="button" aria-label="Next match">↓</button>
+          <button id="find-close" type="button" aria-label="Close find">×</button>
+        </div>
         <ul id="messages" role="log"></ul>
         <!-- reading.js shows this button when the user reads older lines. -->
         <button id="jump-latest" type="button" hidden>Jump to latest <span id="unread-count" class="count"></span></button>
@@ -145,6 +154,12 @@
     </section>
 
     <div id="composer">
+      <!-- renderer.js shows the quote chip when the user quotes a chat line. -->
+      <div id="quote-chip" hidden>
+        <span id="quote-author"></span>
+        <span id="quote-excerpt"></span>
+        <button id="quote-remove" type="button" aria-label="Remove quote">×</button>
+      </div>
       <input type="text" id="message-input" placeholder="Type a message" autocomplete="off">
       <button id="send" type="button">Send</button>
     </div>
@@ -159,6 +174,8 @@
   <script src="nodemap.js"></script>
   <script src="layout.js"></script>
   <script src="reading.js"></script>
+  <script src="quote.js"></script>
+  <script src="find.js"></script>
   <script src="renderer.js"></script>
   <script src="menu.js"></script>
 </body>

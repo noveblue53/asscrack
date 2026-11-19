@@ -145,3 +145,13 @@ test('at end uses a 24 px limit', () => {
     assert.equal(core.isAtEnd(1000, 777, 200), true);
     assert.equal(core.isAtEnd(1000, 776, 200), false);
 });
+
+test('window.reading has saveView, restoreView and setHold for Find', () => {
+    for (const name of ['saveView', 'restoreView', 'setHold']) {
+        assert.match(source, new RegExp(`function ${name}\\(`));
+        assert.match(source, new RegExp(`^\\s+${name},?$`, 'm'));
+    }
+    // While hold is on, the scroll handler returns before it clears the unread lines.
+    const handler = source.slice(source.indexOf("addEventListener('scroll'"));
+    assert.ok(handler.indexOf('if (hold)') >= 0 && handler.indexOf('if (hold)') < handler.indexOf('clearUnread()'));
+});

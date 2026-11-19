@@ -26,6 +26,7 @@
         'copy-name': 'Copy name',
         'show-on-map': 'Show on map',
         'copy-message': 'Copy message',
+        quote: 'Quote',
         accept: 'Accept',
         refuse: 'Refuse',
         'cancel-receive': 'Cancel',
@@ -41,7 +42,7 @@
             case 'buddy':
                 return info.onMap ? ['copy-name', 'show-on-map'] : ['copy-name'];
             case 'message':
-                return ['copy-message'];
+                return ['copy-message', 'quote'];
             case 'offer':
                 return info.active ? ['cancel-offer'] : [];
             case 'transfer':

@@ -145,7 +145,7 @@ test('menuCore.actionsFor gives the actions of each target', async () => {
     const list = info => [...actionsFor(info)];
     assert.deepEqual(list({ kind: 'buddy', self: true, onMap: true }), ['copy-name', 'show-on-map']);
     assert.deepEqual(list({ kind: 'buddy', self: true, onMap: false }), ['copy-name']);
-    assert.deepEqual(list({ kind: 'message' }), ['copy-message']);
+    assert.deepEqual(list({ kind: 'message' }), ['copy-message', 'quote']);
     assert.deepEqual(list({ kind: 'transfer', direction: 'receive', state: 'offered' }), ['accept', 'refuse']);
     assert.deepEqual(list({ kind: 'transfer', direction: 'receive', state: 'receiving' }), ['cancel-receive']);
     assert.deepEqual(list({ kind: 'transfer', direction: 'receive', state: 'receiving', cancelRequested: true }), []);
@@ -185,4 +185,46 @@ test('menuCore keys and position', async () => {
     assert.deepEqual({ ...clampPosition(790, 590, 160, 60, 800, 600) }, { x: 636, y: 536 });
     assert.deepEqual({ ...clampPosition(-20, 10, 160, 60, 800, 600) }, { x: 4, y: 10 });
     assert.deepEqual({ ...clampPosition(NaN, 10, 160, 60, 100, 600) }, { x: 4, y: 10 });
+});
+
+// ---- Milestone 2: Quote and Find ----
+
+test('menuCore gives Quote for a message row', async () => {
+    const { actionsFor, allowed, label } = (await loadMenuCore()).window.menuCore;
+    assert.deepEqual([...actionsFor({ kind: 'message' })], ['copy-message', 'quote']);
+    assert.equal(allowed('quote', { kind: 'message' }), true);
+    assert.equal(allowed('quote', { kind: 'buddy', self: false, onMap: true }), false);
+    assert.equal(label('quote'), 'Quote');
+});
+
+test('renderer.js has one Escape keydown listener, and it closes Find and the quote chip', async () => {
+    const source = await read('renderer.js');
+    const listeners = source.split("addEventListener('keydown'").slice(1);
+    const withEscape = listeners.filter(body => body.slice(0, 200).includes("'Escape'"));
+    assert.equal(withEscape.length, 1, 'one Escape dispatcher only');
+    const at = source.indexOf("e.key !== 'Escape'");
+    const end = source.indexOf('\n});', at);
+    const dispatcher = source.slice(at, end);
+    assert.match(dispatcher, /findBar/);
+    assert.match(dispatcher, /quoteChip/);
+    const order = ['window.layout?.closeTopLayer()', 'window.findBar', 'quoteChip.hidden', 'setInvitePanelOpen(false)']
+        .map(text => dispatcher.indexOf(text));
+    for (const index of order) assert.ok(index >= 0);
+    assert.deepEqual([...order].sort((a, b) => a - b), order);
+});
+
+test('renderer.js wires Quote, the failed send and Ctrl+F', async () => {
+    const source = await read('renderer.js');
+    assert.match(source, /case 'quote': return quoteMessage\(row\);/);
+    assert.match(source, /window\.quoteCore\.composeText\(/);
+    assert.match(source, /Your draft is back in the box\./);
+    assert.match(source, /window\.findBar\?\.open\(\)/);
+    assert.match(source, /item\.dataset\.peerId = peerId/);
+    const html = await read('index.html');
+    for (const id of ['quote-chip', 'quote-author', 'quote-excerpt', 'quote-remove', 'find-bar', 'find-input', 'find-count', 'find-prev', 'find-next', 'find-close']) {
+        assert.match(html, new RegExp(`id="${id}"`));
+    }
+    const order = ['reading.js', 'quote.js', 'find.js', 'renderer.js'].map(name => html.indexOf(`<script src="${name}">`));
+    for (const index of order) assert.ok(index >= 0);
+    assert.deepEqual([...order].sort((a, b) => a - b), order);
 });

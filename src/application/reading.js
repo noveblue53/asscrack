@@ -132,6 +132,8 @@
     // True while a smooth scroll of Jump to latest runs. The scroll events then do not stop following.
     let jumping = false;
     let jumpTimer = null;
+    // True while Find is open: the scroll handler does not clear unread and does not follow.
+    let hold = false;
     const unread = createUnread();
 
     function lines() {
@@ -237,6 +239,12 @@
         } else {
             following = atEnd;
         }
+        if (hold) {
+            following = false;
+            anchor = captureAnchor();
+            showUnread();
+            return;
+        }
         if (atEnd && unread.count > 0) {
             // At the end by hand: the new lines are read.
             const state = { following: true, anchor: null };
@@ -268,6 +276,32 @@
         }).observe(list);
     }
 
+    // The view before Find opened. restoreView puts it back.
+    function saveView() {
+        return { following, anchor: captureAnchor() };
+    }
+
+    function restoreView(view) {
+        if (!view) return;
+        if (view.following) {
+            scrollToEnd();
+            following = true;
+        } else {
+            restoreAnchor(view.anchor);
+            following = false;
+        }
+        anchor = captureAnchor();
+        showUnread();
+    }
+
+    function setHold(on) {
+        hold = on === true;
+        if (hold) {
+            endJump();
+            following = false;
+        }
+    }
+
     if (jumpButton) jumpButton.addEventListener('click', () => followLatest({ smooth: true }));
 
     window.reading = {
@@ -276,7 +310,10 @@
         noteIncoming,
         followLatest,
         isFollowing: () => following,
-        unreadCount: () => unread.count
+        unreadCount: () => unread.count,
+        saveView,
+        restoreView,
+        setHold
     };
     showUnread();
 })();

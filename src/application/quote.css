@@ -1,0 +1,148 @@
+/* Quote (chip in the composer, Quote button on each chat line) and Find (bar over the chat list).
+   renderer.js and find.js set only classes and the hidden attribute (CSP style-src 'self'). */
+
+/* ---- Quote button on a chat line: shows on hover and when the focus is in the row ---- */
+
+#messages li {
+  position: relative;
+}
+
+.quote-btn {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  z-index: 1;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 11px;
+  font: 600 11px var(--font-small);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms var(--ease);
+}
+
+#messages li:hover .quote-btn,
+#messages li:focus-within .quote-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* ---- Quote chip above the message input ---- */
+
+#composer {
+  flex-wrap: wrap;
+}
+
+#quote-chip {
+  display: flex;
+  flex: 1 0 100%;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 6px 4px 10px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--blue);
+  border-radius: 6px;
+  font: 12px var(--font-small);
+  color: var(--ink-soft);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(228, 242, 252, 0.85) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+#quote-chip[hidden] {
+  display: none;
+}
+
+#quote-author {
+  flex: none;
+  max-width: 40%;
+  overflow: hidden;
+  font-weight: 700;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#quote-excerpt {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#quote-remove {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 11px;
+  line-height: 1;
+}
+
+/* ---- Find bar over the chat list ---- */
+
+#find-bar {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94) 0%, rgba(222, 240, 252, 0.9) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95), 0 3px 10px rgba(10, 60, 120, 0.35);
+}
+
+#find-bar[hidden] {
+  display: none;
+}
+
+#find-input {
+  width: 200px;
+  min-width: 0;
+}
+
+#find-count {
+  min-width: 64px;
+  font: 11px var(--font-small);
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+#find-bar button {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 13px;
+  line-height: 1;
+}
+
+#messages li.find-hit .bubble-text {
+  outline: 1px solid #e0b020;
+  outline-offset: 1px;
+}
+
+#messages li.find-current .bubble-text {
+  outline: 2px solid #d84315;
+  outline-offset: 1px;
+}
+
+::highlight(find-match) {
+  background-color: #ffe98a;
+  color: inherit;
+}
+
+::highlight(find-current) {
+  background-color: #ff9f43;
+  color: #000000;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quote-btn {
+    transition: none;
+  }
+}
