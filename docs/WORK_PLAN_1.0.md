@@ -6,6 +6,16 @@
 
 **Review branch.** `work/0.7-field-recovery` integrates `fix/0.7.0-internet-faults` (`f1f267a`), the connect/discovery deduplication change (`710a930`) and the desktop planning branch (`95d852d`). The desktop planning commits describe proposed features. The operator reviews and merges code. At pickup run `git fetch origin`, record branch and SHA, and compare with current main before starting a slice. The Unreleased changelog records code and test evidence by revision. Tests on 127.0.0.1, original-build internet evidence, and field acceptance of a candidate have separate results.
 
+### Pickup on the field-recovery branch
+
+Review `work/0.7-field-recovery` against `de54371`. The changelog identifies the source and exact Windows executable used for the next test. Card 9 contains the three-PC incident conditions and the separate four-peer failover case.
+
+| Work | What is ready for review | What still determines acceptance |
+| --- | --- | --- |
+| Steps 3 and 4 | The three field fixes, session deduplication, returning endpoint retries, bounded cold history and recipient-specific offers have 127.0.0.1 coverage. | Run the identified portable on Windows 10. Check the real router lease, saved 0.7.0 profile, interrupted file and route change. |
+| Everyday room before the shelf | The file composer, highlights, topics, typing, listener volume, route inspection and local activity feed are available to try. | Use the Windows window at ordinary size with real devices, friends and their usual network paths. See the changelog for the local checks and remaining parts. |
+| Next release gate | Night 1 uses this build before adding the Shared shelf. Record what happened and the time to fresh two-way chat and understandable speech. | Repair any failed supported route first. Then implement 4C, durable public channels, online whispers, portable Idle Peer and notification behavior in release order. |
+
 ## Release order
 
 | Step | Work in dependency order | Evidence or decision |

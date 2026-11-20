@@ -14,9 +14,10 @@ members elect a new host with no user action.
 | Item | State (2026-11-20) |
 |---|---|
 | Latest build | **0.7.0**, a portable Windows `.exe`, built on Windows on 2026-11-20. The SHA-256 is in `CHANGELOG.md`, entry 0.7.0. Three Windows peers used this build in the November 20 internet test. See the Unreleased changelog entry for the faults they saw. There is no public download yet. |
-| `main` | 0.7.0 at the field-test baseline, `de54371`. Unreleased fixes for review on `fix/0.7.0-internet-faults` keep an isolated member from claiming host, renew the UPnP lease, and wait for a file delivery receipt. Fix verification is 127.0.0.1 only. |
-| Open field checks | Test card 8 covers saved rooms, Quote and Find, manual status and voice settings. Also repeat the isolated-member reconnect, lease renewal and interrupted file transfer with the fixes on Windows. The operator deferred further multi-computer tests. |
-| Current phase | Phase 8 (internet rooms) and Phase 7 (desktop experience), toward release 1.0. Steps 1 and 2 of the 1.0 plan are on `main`. Step 4 started: milestone 6 part 1 (saved rooms with an encrypted local history) is on `main` with 127.0.0.1 results only. Milestone 6 part 2 (local-only sends, saved marks, Clear, Forget and older lines) is on `main` with 127.0.0.1 results only. The step 3 field tests wait for the operator. |
+| `main` | The November 20 field baseline is 0.7.0 at `de54371`. The review branch `work/0.7-field-recovery` combines the isolated-host, UPnP lease and file-receipt fixes with duplicate-session prevention. |
+| Review build | The branch adds cold saved-room recovery, targeted file offers, live room topics, typing, highlights, per-buddy listening controls and local connection diagnostics. See the Unreleased changelog for the candidate source, binary hash and 127.0.0.1 results. |
+| Open field checks | Card 9 covers reconnecting the isolated Laptop, a fresh inbound connection after the first lease, interrupted file delivery and alternate-relay failover. Card 8 and the work plan track Windows archive upgrades and device checks. The operator schedules all multi-computer testing. |
+| Current phase | Phase 8 internet reliability and Phase 7 desktop work. The next release decision depends on a qualifying Windows game night. The session-scoped Shared shelf follows that observation. |
 | Plan | [`docs/WORK_PLAN_1.0.md`](docs/WORK_PLAN_1.0.md) gives the release order, the scope and the exit checks of 1.0. |
 
 ### How to read the results
@@ -51,7 +52,7 @@ Each result in this file and in [`CHANGELOG.md`](CHANGELOG.md) has one of these 
 
 ## Known limits
 
-- **Windows only.** The build target is a portable Windows `.exe`. Other operating systems have no test.
+- **Windows distribution.** The portable executable targets Windows. Automated and Electron checks on this review branch ran on Linux.
 - **Saved history only for saved internet rooms.** Since milestone 6 part 1 (127.0.0.1 results only), the app
   saves the lines of a saved internet room in an encrypted local database. LAN rooms stay live sessions with no save.
   The packaged Windows checks of saved rooms are open.

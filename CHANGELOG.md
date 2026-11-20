@@ -7,6 +7,16 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased — field recovery and everyday room controls
+
+The `work/0.7-field-recovery` review branch combines the three November 20 fixes with single-session dialing. A returning saved full node retries its verified endpoints, including when another room answers an old address. A cold host seeds its newest 200 eligible local rows. Clear and Forget remove deleted rows from pending replay while preserving later live traffic.
+
+The room has a named file draft and explicit room or buddy send actions. A verified receipt marks a recipient Delivered. Older receivers show an unconfirmed send. The same room window offers live topics, typing preferences, nick and keyword highlights, per-buddy listening, peer details and a redacted activity feed.
+
+**127.0.0.1.** All nine original fault checks failed on main and passed with the fixes. Two final Node 24.22.3 runs passed 321/321 with the corrected relay observer. The original observer returned 320/321 then 321/321. A Linux Electron upgrade from 0.7.0 reopened all 250 saved IDs and a late peer received exactly 51–250. The 0.6.0 upgrade preserved working hints and recovered only newly opted-in messages. A four-node alternate-relay experiment delivered fresh synthetic frames both ways in 39–42 ms across three runs. The terminal demos exchanged chat. Plain `npm start` exited 0 with zero app or renderer errors and four Linux environment diagnostics.
+
+**Windows x64 review binary.** `ASSCRACK-0.7.0-review-c906a81.exe`, 106,748,791 bytes, SHA-256 `e0f9f9915e42bc6245c81a2bb21a70898d9f0ae19bc428d1e9d8b3f4f65eedfc`. The package was built on Linux from [`c906a81`](https://github.com/noveblue53/asscrack/commit/c906a81714808ca5bde46e6494c7bb6f53dad5bf). It retains app version 0.7.0. Windows 10 execution, the physical router lease and multi-computer voice checks await the operator. [Full results and changed files](docs/FIELD_RECOVERY_REPORT.md) · [Operator card 9](src/network/chatreadme.md)
+
 ## Unreleased — three fixes from the 0.7.0 internet test
 
 The November 20 field test used the packaged 0.7.0 executable on three Windows computers. PC accepted
