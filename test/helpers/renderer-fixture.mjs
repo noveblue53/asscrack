@@ -5,35 +5,53 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { createDom } from './fake-dom.mjs';
 
-const SCRIPTS = ['reading.js', 'find.js', 'quote.js', 'renderer.js', 'menu.js'];
+const SCRIPTS = ['reading.js', 'find.js', 'quote.js', 'highlights.js', 'renderer.js', 'menu.js'];
 const sources = await Promise.all(SCRIPTS.map(name =>
     readFile(new URL(`../../src/application/${name}`, import.meta.url), 'utf8')));
 
-const IDS = ['chat-room', 'chat-screen', 'chat-user', 'copy-invite', 'file-input', 'full-node-state', 'invite-code',
+const IDS = ['chat-room', 'chat-screen', 'copy-invite', 'full-node-state', 'invite-code',
     'invite-field', 'invite-input', 'invite-note', 'invite-panel', 'invite-toggle', 'join-voice', 'leave-voice',
     'login', 'login-screen', 'map-close', 'map-panel', 'map-toggle', 'mute', 'peer-count', 'peers',
-    'public-address', 'public-address-field', 'room', 'room-field', 'send-file', 'status', 'transfer-count',
+    'public-address', 'public-address-field', 'room', 'room-field', 'status', 'transfer-count',
     'transfers', 'username', 'voice-error'];
 
 function layout() {
     const plain = IDS.map(id => ({ id, tag: ['peers', 'transfers'].includes(id) ? 'ul' : 'div' }));
     return [
         ...plain,
-        { id: 'room-type', tag: 'select', value: 'lan' },
-        { id: 'find-bar', hidden: true, children: [
-            { id: 'find-input', tag: 'input' }, { id: 'find-count', tag: 'span' },
-            { id: 'find-prev', tag: 'button' }, { id: 'find-next', tag: 'button' }, { id: 'find-close', tag: 'button' }
+        { id: 'topic-value' }, { id: 'topic-edit', tag: 'button' },
+        { id: 'topic-editor', hidden: true, children: [
+            { id: 'topic-input', tag: 'input' }, { id: 'topic-save', tag: 'button' }, { id: 'topic-cancel', tag: 'button' }
         ] },
-        { id: 'messages', tag: 'ul' },
-        { id: 'jump-latest', tag: 'button', hidden: true, children: [{ id: 'unread-count', tag: 'span' }] },
-        { id: 'composer', children: [
-            { id: 'quote-chip', hidden: true, children: [
-                { id: 'quote-head', tag: 'span', children: [{ id: 'quote-from', tag: 'span' }, { id: 'quote-time', tag: 'span' }] },
-                { id: 'quote-excerpt', tag: 'span' },
-                { id: 'quote-remove', tag: 'button' }
+        { id: 'room-type', tag: 'select', value: 'lan' },
+        { id: 'listening-dialog', tag: 'dialog', children: [
+            { id: 'listening-title', tag: 'h2' }, { id: 'listener-muted', tag: 'input' },
+            { id: 'listener-volume', tag: 'input' }, { id: 'listener-percent', tag: 'output' }
+        ] },
+        { id: 'message-panel', children: [
+            { id: 'find-bar', hidden: true, children: [
+                { id: 'find-input', tag: 'input' }, { id: 'find-count', tag: 'span' },
+                { id: 'find-prev', tag: 'button' }, { id: 'find-next', tag: 'button' }, { id: 'find-close', tag: 'button' }
             ] },
-            { id: 'message-input', tag: 'textarea' },
-            { id: 'send', tag: 'button' }
+        { id: 'messages', tag: 'ul' },
+        { id: 'next-highlight', tag: 'button' },
+        { id: 'highlight-words', tag: 'input' },
+            { id: 'jump-latest', tag: 'button', hidden: true, children: [{ id: 'unread-count', tag: 'span' }] },
+            { id: 'composer', children: [
+                { id: 'quote-chip', hidden: true, children: [
+                    { id: 'quote-head', tag: 'span', children: [{ id: 'quote-from', tag: 'span' }, { id: 'quote-time', tag: 'span' }] },
+                    { id: 'quote-excerpt', tag: 'span' },
+                    { id: 'quote-remove', tag: 'button' }
+                ] },
+                { id: 'file-draft', hidden: true, children: [
+                    { id: 'file-draft-name', tag: 'span' }, { id: 'file-remove', tag: 'button' },
+                    { id: 'file-recipient', tag: 'select', value: 'room', children: [{ tag: 'option', value: 'room' }] },
+                    { id: 'send-file', tag: 'button' }
+                ] },
+                { id: 'file-input', tag: 'input' }, { id: 'attach-file', tag: 'button' },
+                { id: 'message-input', tag: 'textarea' },
+                { id: 'send', tag: 'button' }
+            ] },
         ] },
         { id: 'statusbar', tag: 'footer', children: [{ class: 'net-note', tag: 'span' }] }
     ];
@@ -81,6 +99,7 @@ export async function loadRoomWindow(options = {}) {
     const { bridge, handlers, calls } = makeBridge(options);
     const errors = [];
     Object.assign(window, {
+        localStorage: options.localStorage,
         asscrack: bridge,
         matchMedia: () => ({ matches: true, addEventListener() {}, removeEventListener() {} }),
         voice: {

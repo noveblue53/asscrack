@@ -135,6 +135,7 @@
     // True while the find bar (find.js) is open. The find bar moves the list, not the user: the list does not follow,
     // and a scroll to the end does not clear the unread count and the marker. restorePosition sets the old state.
     let hold = false;
+    let highlightScrollTop = null;
     const unread = createUnread();
 
     function lines() {
@@ -177,6 +178,7 @@
         const first = unread.first;
         if (first && first.classList) first.classList.remove(UNREAD_CLASS);
         unread.clear();
+        window.chatHighlights?.clearUnread();
     }
 
     function endJump() {
@@ -234,7 +236,11 @@
 
     list.addEventListener('scroll', () => {
         const atEnd = isAtEnd(list.scrollHeight, list.scrollTop, list.clientHeight);
-        if (hold && !jumping) {
+        // Revealing a near-end highlight can land exactly at the bottom. Keep the next
+        // highlight pending until the user advances, even when Chromium posts scroll later.
+        const revealed = highlightScrollTop !== null && list.scrollTop === highlightScrollTop;
+        highlightScrollTop = null;
+        if ((hold || revealed) && !jumping) {
             // The find bar moved the list. It does not follow: a new line counts as unread and does not move the
             // list away from the result. The count and the marker stay.
             following = false;
@@ -318,7 +324,18 @@
         showUnread();
     }
 
+    function revealLine(line) {
+        endJump();
+        following = false;
+        const before = list.scrollTop;
+        list.scrollTop = Math.max(0, line.offsetTop - Math.max(0, (list.clientHeight - line.offsetHeight) / 2));
+        if (list.scrollTop !== before) highlightScrollTop = list.scrollTop;
+        anchor = captureAnchor();
+        showUnread();
+    }
+
     window.reading = {
+        revealLine,
         keepPosition,
         beforeChange,
         afterChange,

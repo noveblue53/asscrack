@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
-import { loadRoomWindow } from './helpers/renderer-fixture.mjs';
+import { loadRoomWindow, settle } from './helpers/renderer-fixture.mjs';
 
 const read = name => readFile(new URL(`../src/application/${name}`, import.meta.url), 'utf8');
 
@@ -67,6 +67,154 @@ test('the transfer window labels confirmed delivery, legacy sends, failure and t
     room.handlers.onFileDone({ ...send, offerId: 'fourth', direction: 'receive', path: 'C:\\Downloads\\note.txt' });
     const labels = room.el('transfers').children.map(row => row.querySelector('.state-text').textContent);
     assert.deepEqual(labels, ['Delivered', 'Sent (delivery unconfirmed)', 'Failed: peer left', 'Saved as note.txt']);
+});
+
+test('a live file card and its Transfers row share one offer, actions and saved path key', async () => {
+    const room = await loadRoomWindow();
+    const offer = { offerId: 'first', peerId: 'peer-00000001', from: 'Sam', name: 'note.txt', size: 5 };
+    const calls = [];
+    room.window.asscrack.acceptFile = async id => { calls.push(id); return true; };
+    room.window.asscrack.revealFile = async key => { calls.push(key); return { ok: true }; };
+    room.el('message-input').value = 'draft';
+    room.handlers.onFileOffer(offer);
+    room.handlers.onFileOffer(offer);
+    const [card] = room.rows();
+    const [row] = room.el('transfers').children;
+    assert.equal(room.rows().length, 1);
+    assert.equal(room.el('transfers').children.length, 1);
+    assert.equal(card.querySelector('.file-name').textContent, 'note.txt');
+    assert.equal(card.querySelector('.file-size').textContent, '5 B');
+    assert.match(card.querySelector('.peer-name').textContent, /Sam/);
+    assert.equal(card.dataset.id, undefined);
+    assert.deepEqual([...room.window.menuCore.actionsFor(room.window.roomActions.rowInfo(card))], ['accept', 'refuse']);
+    card.querySelector('[data-action="accept"]').click();
+    await settle();
+    assert.deepEqual(calls, ['first']);
+    assert.equal(row.dataset.state, 'receiving');
+    assert.equal(row.querySelector('[data-action="accept"]'), null);
+    assert.ok(card.querySelector('[data-action="cancel-receive"]'));
+    room.handlers.onFileProgress({ ...offer, direction: 'receive', bytes: 3 });
+    assert.equal(card.querySelector('progress').value, 3);
+    room.handlers.onFileDone({ ...offer, direction: 'receive', path: 'C:\\Downloads\\note (1).txt' });
+    room.handlers.onFileOffer(offer);
+    assert.deepEqual([row, card].map(el => el.querySelector('.state-text').textContent), ['Saved as note (1).txt', 'Saved as note (1).txt']);
+    card.querySelector('[data-action="reveal"]').click();
+    assert.deepEqual(calls, ['first', 'first|peer-00000001']);
+    room.receive({ from: 'Sam', peerId: offer.peerId, text: 'next message', id: 'msg' });
+    assert.equal(room.rows().length, 2);
+    assert.equal(room.rows()[1].classList.contains('cont'), false);
+    assert.equal(room.el('message-input').value, 'draft');
+});
+
+test('room offer groups list every recipient and distinguish delivery, legacy sends, decline and failure', async () => {
+    const room = await loadRoomWindow();
+    const recipients = ['one', 'two', 'three', 'four'];
+    const offer = { offerId: 'group', name: 'plans.txt', size: 12, peers: 4, recipients };
+    room.window.asscrack.offerFile = async () => {
+        room.handlers.onFileRefused({ offerId: offer.offerId, peerId: 'two' });
+        return offer;
+    };
+    for (const peerId of recipients) {
+        room.handlers.onPeerJoined({ peerId });
+        room.handlers.onPeerName({ peerId, name: 'Sam' });
+    }
+    const picker = room.el('file-input');
+    picker.files = [{ name: 'plans.txt' }];
+    picker.dispatchEvent(new room.Event('change'));
+    room.el('send-file').click();
+    await settle();
+    const [head, ...rows] = room.el('transfers').children;
+    assert.deepEqual(rows.map(el => el.dataset.peerId), recipients);
+    assert.equal(rows[1].querySelector('.file-name').textContent, offer.name);
+    assert.match(head.querySelector('.offer-summary').textContent, /3 awaiting reply/);
+    const event = { direction: 'send', offerId: offer.offerId };
+    room.handlers.onFileDone({ ...event, peerId: 'one', confirmed: true });
+    room.handlers.onFileDone({ ...event, peerId: 'three', confirmed: false });
+    room.handlers.onFileFailed({ ...event, peerId: 'four', reason: 'peer left' });
+    assert.equal(head.querySelector('.offer-summary').textContent, '1 delivered · 1 declined · 1 sent (unconfirmed) · 1 failed');
+    assert.deepEqual(rows.map(el => el.querySelector('.peer-name').textContent), recipients.map(id => `to Sam (${id})`));
+    assert.equal(head.querySelector('[data-action="cancel-offer"]').hidden, true);
+    assert.equal(room.rows().length, 0);
+    const toggle = head.querySelector('.offer-toggle');
+    toggle.click();
+    assert.ok(rows.every(row => row.hidden));
+    toggle.click();
+    assert.ok(rows.every(row => !row.hidden));
+});
+
+test('the file picker keeps the selected buddy distinct from the room after a disconnect', async () => {
+    const room = await loadRoomWindow();
+    const sent = [];
+    room.window.asscrack.offerFile = async (file, recipientId) => {
+        sent.push(recipientId);
+        return { name: file.name, size: 12, peers: 1, recipients: [recipientId ?? 'peer-22222222'], offerId: String(sent.length) };
+    };
+    const selected = 'peer-11111111';
+    for (const peerId of [selected, 'peer-22222222']) {
+        room.handlers.onPeerJoined({ peerId });
+        room.handlers.onPeerName({ peerId, name: 'Sam' });
+    }
+    const recipient = room.el('file-recipient');
+    const buddies = recipient.children.slice(1);
+    assert.deepEqual(buddies.map(option => option.textContent), ['Sam (11111111)', 'Sam (22222222)']);
+    const send = async () => {
+        room.el('file-input').files = [{ name: 'plans.txt' }];
+        room.el('file-input').dispatchEvent(new room.Event('change'));
+        room.el('send-file').click();
+        await settle();
+    };
+    recipient.value = selected;
+    await send();
+    assert.deepEqual(sent, [selected]);
+    assert.match(room.el('transfers').firstElementChild.querySelector('.state-text').textContent, /Sam \(11111111\)/);
+    room.handlers.onPeerLeft({ peerId: selected });
+    assert.equal(recipient.value, selected);
+    await send();
+    assert.deepEqual(sent, [selected]);
+    assert.match(room.el('status').textContent, /disconnected/);
+    assert.equal(room.el('file-draft-name').textContent, 'plans.txt');
+    recipient.value = 'room';
+    await send();
+    assert.deepEqual(sent, [selected, undefined]);
+});
+
+test('a dropped file waits for Send file, survives offer failure, and can be removed independently of text', async () => {
+    const room = await loadRoomWindow();
+    const file = { name: 'game.cfg', size: 3 };
+    const drop = (where, files, types = ['Files']) => {
+        const event = new room.Event('drop', { dataTransfer: { files, types } });
+        room.el(where).dispatchEvent(event);
+        return event;
+    };
+    room.el('message-input').value = 'unsent room message';
+    assert.equal(drop('message-input', [], ['text/plain']).defaultPrevented, false);
+    assert.equal(drop('peers', [file]).defaultPrevented, true);
+    assert.equal(room.el('file-draft').hidden, true);
+    assert.equal(drop('messages', [file]).defaultPrevented, true);
+    assert.equal(room.el('file-draft-name').textContent, file.name);
+    drop('composer', [file, { name: 'extra.txt' }]);
+    assert.equal(room.el('file-draft-name').textContent, file.name);
+    assert.equal(room.el('file-draft').hidden, false);
+    assert.equal(room.el('transfers').children.length, 0);
+    const calls = [];
+    room.window.asscrack.offerFile = async f => {
+        calls.push(f);
+        if (calls.length === 1) throw new Error('File could not be read');
+        return { offerId: 'offer', peers: 0, name: f.name, size: f.size };
+    };
+    for (const message of [/could not be read/, /still attached/]) {
+        room.el('send-file').click();
+        room.el('send-file').click();
+        await settle();
+        assert.match(room.el('status').textContent, message);
+        assert.equal(room.el('file-draft').hidden, false);
+    }
+    assert.deepEqual(calls, [file, file]);
+    room.el('file-remove').click();
+    assert.equal(room.el('file-draft').hidden, true);
+    assert.equal(room.document.activeElement, room.el('attach-file'));
+    assert.equal(room.el('message-input').value, 'unsent room message');
+    assert.equal(room.el('transfers').children.length, 0);
 });
 
 // ---- Package C (room window): row actions, context menus, Escape, Show in Explorer ----

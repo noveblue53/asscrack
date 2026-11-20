@@ -312,6 +312,8 @@
         setVar('--map-w', eff.mapWidth);
         setVar('--transfer-h', eff.transferHeight);
         setVar('--transfer-reserve', eff.transferReserve);
+        // A narrow map or Buddies drawer covers the transcript above the composer. Its height varies with drafts.
+        setVar('--composer-height', boxHeight('composer'));
         const cls = body.classList;
         cls.toggle('layout-buddy-right', eff.buddySide === 'right');
         cls.toggle('layout-buddy-hidden', eff.buddyMode === 'hidden');
@@ -584,6 +586,7 @@
         if (item === items.buddies) setPref({ buddiesShown: !pref.buddiesShown });
         else if (item === items.transfers) setPref({ transfersShown: !pref.transfersShown });
         else if (item === items.map && mapToggle) mapToggle.click();
+        else if (item.id === 'view-typing') window.typingUi?.toggleShare();
         else if (item === items.side) setPref({ buddySide: pref.buddySide === 'left' ? 'right' : 'left' });
         else if (item === items.reset) reset();
         updateMenu();
@@ -659,7 +662,7 @@
         return false;
     }
 
-    window.layout = Object.freeze({ closeTopLayer, isDrawerOpen, reset });
+    window.layout = Object.freeze({ closeTopLayer, isDrawerOpen, reset, showTransfers: () => setPref({ transfersShown: true }) });
 
     window.addEventListener('resize', schedule);
     // The map changes the room for the chat column. Only the map-open class starts a recompute (render itself

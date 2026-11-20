@@ -47,6 +47,8 @@ test('the window listens for line-saved and save-failed', async () => {
 
 test('index.html has the room storage controls', async () => {
     const source = await read('index.html');
+    assert.match(source, /<h1 id="chat-room"><\/h1>\s*<button id="invite-toggle"/);
+    assert.match(source, /<button id="history-toggle"[^>]+popovertarget="room-storage"/);
     for (const id of ['room-storage', 'room-keep-history', 'history-state', 'clear-history', 'clear-confirm',
         'clear-confirm-yes', 'clear-confirm-no']) {
         assert.ok(source.includes(`id="${id}"`), id);

@@ -26,6 +26,16 @@ test('map distinguishes locally observed routes, peer reports, conflicts, and vo
     assert.equal(edge('a', 'c', 'unknown').textContent, 'Unknown (route unavailable)')
     assert.equal(edge('b', 'a', 'voice').textContent, 'Voice membership')
 
+    const orbPosition = id => document.querySelector(`[data-node="${id}"]`).getAttribute('transform')
+    const positions = ['a', 'b', 'c'].map(orbPosition)
+    state.nodes.push({ id: 'aa' })
+    window.nodeMap.update(state)
+    assert.deepEqual(['a', 'b', 'c'].map(orbPosition), positions)
+    assert.ok(!positions.includes(orbPosition('aa')))
+    state.nodes.pop()
+    window.nodeMap.update(state)
+    assert.deepEqual(['a', 'b', 'c'].map(orbPosition), positions)
+
     state.kinds.b.a = 'relay'
     window.nodeMap.update(state)
     assert.equal(edge('a', 'b', 'unknown').textContent, 'Unknown (conflicting reports)')

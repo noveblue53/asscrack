@@ -131,6 +131,27 @@ test('a file offered to one of two identically named peers stays with that peer 
     }
 })
 
+test('a room offer reports each pending recipient on departure and whole-offer cancel (127.0.0.1)', { timeout: 30000 }, async () => {
+    const ctx = await setup(3)
+    const [a, b, c] = ctx.nodes
+    try {
+        const file = path.join(ctx.src, 'group.txt')
+        await fsp.writeFile(file, 'for the room')
+        const { offerId, recipients } = await a.offerFile(file)
+        assert.deepEqual(new Set(recipients), new Set([b.peerId, c.peerId]))
+        await waitUntil(() => b.log.offer.length === 1 && c.log.offer.length === 1, 5000)
+        await c.stop()
+        await waitUntil(() => a.log.failed.length === 1, 5000)
+        assert.deepEqual(a.log.failed, [{ offerId, peerId: c.peerId, direction: 'send', reason: 'peer left' }])
+        assert.equal(a.cancelFile(offerId), true)
+        await waitUntil(() => b.log.cancelled.length === 1, 5000)
+        assert.deepEqual(a.log.cancelled, [{ offerId, peerId: b.peerId, direction: 'send', by: 'self' }])
+        assert.equal(b.acceptFile(offerId), false)
+    } finally {
+        await cleanup(ctx)
+    }
+})
+
 test('a: a 50 MB file goes from A to B with the correct SHA-256', { timeout: 120000 }, async () => {
     const ctx = await setup(2)
     const [a, b] = ctx.nodes

@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('asscrack', {
     onFullNodeAddrs: listen('asscrack:full-node-addrs'),
     onUpnp: listen('asscrack:upnp'),
     copyText: text => ipcRenderer.invoke('asscrack:copy-text', text),
+    getRoomActivity: () => ipcRenderer.invoke('asscrack:room-activity'),
     send: text => ipcRenderer.invoke('asscrack:send', text),
     onPeerDiscovered: listen('asscrack:peer-discovered'),
     onPeerJoined: listen('asscrack:peer-joined'),
@@ -41,6 +42,10 @@ contextBridge.exposeInMainWorld('asscrack', {
     // Uint8Array of one Opus frame. A plain send: 50 frames each second.
     sendVoiceFrame: bytes => ipcRenderer.send('asscrack:voice-frame', bytes),
     onVoiceFrame: listen('asscrack:voice-frame'),
+    typingEdit: active => ipcRenderer.send('asscrack:typing-edit', active === true),
+    onTyping: listen('asscrack:typing'),
+    getShareTyping: () => ipcRenderer.invoke('asscrack:get-share-typing'),
+    setShareTyping: value => ipcRenderer.invoke('asscrack:set-share-typing', value === true),
     getHost: () => ipcRenderer.invoke('asscrack:host'),
     getVoiceSettings: () => ipcRenderer.invoke('asscrack:voice-settings'),
     // A partial settings object. Returns the full settings after the check of the main process.
@@ -54,13 +59,16 @@ contextBridge.exposeInMainWorld('asscrack', {
     onSignal: listen('asscrack:signal'),
     onVoiceState: listen('asscrack:voice-state'),
     onHostChanged: listen('asscrack:host-changed'),
+    getTopic: () => ipcRenderer.invoke('asscrack:topic'),
+    setTopic: text => ipcRenderer.invoke('asscrack:set-topic', text),
+    onTopic: listen('asscrack:topic'),
     onPeerName: listen('asscrack:peer-name'),
     onTopology: listen('asscrack:topology'),
     getTopology: () => ipcRenderer.invoke('asscrack:topology'),
-    offerFile: async file => {
+    offerFile: async (file, recipientId) => {
         const filePath = webUtils.getPathForFile(file);
         if (!filePath) throw new Error('The file has no path');
-        return ipcRenderer.invoke('asscrack:offer-file', filePath);
+        return ipcRenderer.invoke('asscrack:offer-file', filePath, recipientId);
     },
     acceptFile: offerId => ipcRenderer.invoke('asscrack:accept-file', offerId),
     refuseFile: offerId => ipcRenderer.invoke('asscrack:refuse-file', offerId),

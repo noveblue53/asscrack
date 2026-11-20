@@ -14,6 +14,7 @@
     const archiveUnlock = document.getElementById('archive-unlock');
     const waitingPeer = document.getElementById('waiting-peer');
     const roomStorage = document.getElementById('room-storage');
+    const historyToggle = document.getElementById('history-toggle');
     const roomKeepHistory = document.getElementById('room-keep-history');
     const historyState = document.getElementById('history-state');
     const clearButton = document.getElementById('clear-history');
@@ -237,12 +238,16 @@
         const saved = typeof result?.roomId === 'string' && result.roomId !== '' && result.savedRoom === true;
         openRoomId = saved ? result.roomId : null;
         roomStorage.hidden = !saved;
+        historyToggle.hidden = !saved;
         clearConfirm.hidden = true;
         if (!saved) return;
         showKeepState(result.keepHistory !== false);
         if (!messageList.dataset.older) setOlder('more');
     }
 
+    roomStorage.addEventListener('toggle', event => {
+        if (event.newState === 'closed') clearConfirm.hidden = true;
+    });
     roomKeepHistory.addEventListener('change', async () => {
         if (!openRoomId) return;
         const want = roomKeepHistory.checked;

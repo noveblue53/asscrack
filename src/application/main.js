@@ -2,11 +2,12 @@ import { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, safeStorage, sess
 import { fileURLToPath, pathToFileURL } from 'url';
 import { createRequire } from 'module';
 import path from 'path';
-import { mkdirSync, appendFileSync, existsSync, readFileSync, writeFileSync, rmSync } from 'fs';
+import { mkdirSync, appendFileSync, existsSync, readFileSync, writeFileSync, renameSync, rmSync } from 'fs';
 import { format } from 'util';
 import { createAsscrackNode, keyedServiceTag } from '../network/node.mjs';
 import { newRoomKey, readInvite } from '../network/invite.mjs';
 import { installUpnpGuard } from '../network/upnp-guard.mjs';
+import { observeRoomActivity } from './room-activity.mjs';
 // Saved rooms (milestone 6).
 import { createSavedRooms, makeProtector } from './saved-rooms.mjs';
 import * as voiceSettings from './voice-settings.mjs';
@@ -20,7 +21,7 @@ Menu.setApplicationMenu(null);
 
 const EVENTS = ['peer-discovered', 'peer-joined', 'peer-left', 'message', 'history', 'signal', 'voice-state', 'host-changed', 'peer-name',
     'file-offer', 'file-progress', 'file-done', 'file-failed', 'file-refused', 'file-cancelled', 'topology', 'full-node', 'full-node-addrs',
-    'voice-frame', 'connection', 'dial-failed', 'upnp', 'presence'];
+    'voice-frame', 'connection', 'dial-failed', 'upnp', 'presence', 'topic'];
 
 // Test option: --profile <dir> gives each instance its own user data folder.
 const profileIndex = process.argv.indexOf('--profile');
@@ -184,6 +185,7 @@ function setPermissions() {
 
 let mainWindow = null;
 let node = null;
+let readRoomActivity = () => [];
 // The files that this computer received: `${offerId}|${peerId}` -> the final path (after a rename for a name
 // collision). Only a file-done event with the direction receive adds a path. The window sends only the key.
 const receivedFiles = new Map();
@@ -329,9 +331,14 @@ async function startRoom(options, publicAddress) {
     });
     // Saved rooms (milestone 6): the archive listener comes before the window listener.
     getSavedRooms().attachNode(node);
+    readRoomActivity = observeRoomActivity(node);
+    // Typing goes straight to the window; transient controls never enter diagnostics or the archive.
+    node.events.on('typing', data => sendToWindow('asscrack:typing', data));
     for (const type of EVENTS) {
         node.events.on(type, data => {
             logEvent(type, data);
+            // The diagnostic window reads a redacted projection of these local events.
+            if (type === 'connection' || type === 'dial-failed') return;
             sendToWindow(`asscrack:${type}`, data);
         });
     }
@@ -478,6 +485,10 @@ ipcMain.handle('asscrack:invite', () => {
 });
 
 // The window has no clipboard permission (setPermissions allows only the microphone). The main process copies.
+ipcMain.handle('asscrack:room-activity', (_event, peerId, transfersOnly) => {
+    if (peerId != null && (typeof peerId !== 'string' || !peerId || peerId.length > 128)) return [];
+    return readRoomActivity({ peerId: peerId ?? null, transfersOnly: transfersOnly === true });
+});
 ipcMain.handle('asscrack:copy-text', (_event, text) => {
     if (typeof text !== 'string' || text.length > 10000) throw new Error('Text not copied');
     clipboard.writeText(text);
@@ -575,12 +586,42 @@ ipcMain.handle('asscrack:set-voice-settings', (_event, patch) => {
     return next;
 });
 
+ipcMain.handle('asscrack:topic', () => node?.topic() ?? null);
+
+ipcMain.handle('asscrack:set-topic', (_event, text) => {
+    if (!node) throw new Error('Not logged in');
+    node.setTopic(text);
+});
+
 ipcMain.handle('asscrack:host', () => {
     if (!node) throw new Error('Not logged in');
     return { host: node.host() ?? null, self: node.peerId };
 });
 
 // Manual status (milestone 3). state: 'available', 'away' or 'dnd'. The node cuts the note to 80 code points.
+// Store only the preference in the profile. A corrupt or inaccessible setting keeps sharing off.
+const typingPreference = path.join(app.getPath('userData'), 'share-typing.json');
+let shareTyping;
+try {
+    shareTyping = JSON.parse(readFileSync(typingPreference, 'utf8')) === true;
+} catch (err) {
+    shareTyping = err.code === 'ENOENT';
+}
+ipcMain.handle('asscrack:get-share-typing', () => shareTyping);
+ipcMain.handle('asscrack:set-share-typing', (_event, enabled) => {
+    if (typeof enabled !== 'boolean') throw new TypeError('Expected a sharing preference');
+    if (!enabled) node?.setTyping(false);
+    // Apply an opt-out immediately even if persistence fails.
+    if (!enabled) shareTyping = false;
+    writeFileSync(typingPreference + '.tmp', JSON.stringify(enabled));
+    renameSync(typingPreference + '.tmp', typingPreference);
+    shareTyping = enabled;
+    return shareTyping;
+});
+ipcMain.on('asscrack:typing-edit', (_event, active) => {
+    if (shareTyping && typeof active === 'boolean') node?.setTyping(active);
+});
+
 ipcMain.handle('asscrack:set-presence', (_event, { state, note } = {}) => {
     if (!node) throw new Error('Not logged in');
     return node.setPresence({ state, note });
@@ -594,10 +635,10 @@ ipcMain.handle('asscrack:topology', () => {
     return node ? node.topology() : null;
 });
 
-ipcMain.handle('asscrack:offer-file', (_event, filePath) => {
+ipcMain.handle('asscrack:offer-file', (_event, filePath, recipientId) => {
     if (!node) throw new Error('Not logged in');
     if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) throw new Error('The file path is not an absolute path');
-    const result = node.offerFile(filePath);
+    const result = node.offerFile(filePath, recipientId);
     Promise.resolve(result).then(offer => logAction('offer-file', offer?.offerId ?? ''), () => {});
     return result;
 });

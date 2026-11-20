@@ -55,7 +55,7 @@
 
     // ---- The fixed parts of the picture ----
 
-    const svg = svgEl('svg', { role: 'img', 'aria-label': 'Network map', width: '100%', height: '100%' });
+    const svg = svgEl('svg', { role: 'group', 'aria-label': 'Network map', width: '100%', height: '100%' });
     const defs = svgEl('defs');
     const gloss = svgEl('radialGradient', { id: 'nm-gloss', cx: 0.34, cy: 0.26, r: 0.62 });
     gloss.append(stop(0, '#ffffff', 0.9), stop(0.7, '#ffffff', 0));
@@ -169,7 +169,14 @@
     // ---- Nodes ----
 
     function makeNode(id) {
-        const group = svgEl('g', { class: 'nm-node', 'data-node': id });
+        const group = svgEl('g', { class: 'nm-node', 'data-node': id, role: 'button', tabindex: 0 });
+        group.addEventListener('click', () => window.peerInspector?.open(id));
+        group.addEventListener('keydown', e => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                window.peerInspector?.open(id);
+            }
+        });
         // The body has the start animation. The group has the position.
         const body = svgEl('g', { class: 'nm-body' });
         const title = svgEl('title');
@@ -226,6 +233,7 @@
         if (data.linkToYou) facts.push('Chat link to you · ' + data.linkToYou);
         if (data.inVoice) facts.push(data.speaking ? 'speaks now' : data.muted ? 'in voice (muted)' : 'in voice');
         else facts.push('not in voice');
+        node.group.setAttribute('aria-label', 'Inspect ' + data.name);
         node.title.textContent = facts.join('\n');
         if (node.host !== data.host) {
             node.host = data.host;
@@ -267,6 +275,7 @@
         const own = state.nodes.filter(node => node.self).map(node => node.id);
         const others = state.nodes.filter(node => !node.self).map(node => node.id).sort();
         order = [...own, ...others];
+        assignSlots();
     }
 
     // ---- Edges ----
@@ -325,7 +334,27 @@
         return Math.round(value * 10) / 10;
     }
 
-    // Set the target position of each node: a ring with the own node at the bottom.
+    // A joining peer takes the largest free arc. Existing peers keep their place on the ring.
+    function assignSlots() {
+        const occupied = order.map(id => nodes.get(id).slot).filter(Number.isFinite).sort((a, b) => a - b);
+        for (const id of order) {
+            const node = nodes.get(id);
+            if (Number.isFinite(node.slot)) continue;
+            let largest = 0;
+            let slot = 0;
+            for (let i = 0; i < occupied.length; i++) {
+                const next = occupied[i + 1] ?? occupied[0] + 1;
+                const gap = next - occupied[i];
+                if (gap > largest) {
+                    largest = gap;
+                    slot = (occupied[i] + gap / 2) % 1;
+                }
+            }
+            node.slot = slot;
+            occupied.push(slot);
+            occupied.sort((a, b) => a - b);
+        }
+    }
     function setTargets() {
         const w = width > 0 ? width : 320;
         const h = height > 0 ? height : 200;
@@ -334,9 +363,9 @@
         const centerY = h / 2;
         const radiusY = Math.max(0, h / 2 - (NODE_R + 36));
         const radiusX = Math.max(0, Math.min(w / 2 - 52, radiusY * 2.4));
-        order.forEach((id, index) => {
+        order.forEach(id => {
             const node = nodes.get(id);
-            const angle = Math.PI / 2 + (index * 2 * Math.PI) / count;
+            const angle = Math.PI / 2 + node.slot * 2 * Math.PI;
             node.toX = count === 1 ? centerX : centerX + radiusX * Math.cos(angle);
             node.toY = count === 1 ? centerY : centerY + radiusY * Math.sin(angle);
             placeLabel(node, count > 1 && Math.sin(angle) < -0.25);
@@ -459,6 +488,7 @@
         const signature = JSON.stringify(next);
         if (signature === lastSignature) return;
         lastSignature = signature;
+        window.peerInspector?.update(next);
         syncNodes(next);
         syncEdges(next);
         layout(true);

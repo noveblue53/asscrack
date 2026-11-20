@@ -54,6 +54,7 @@ function updatePeerCount() {
 // The node map panel opens and closes with a CSS transition (body.map-open).
 function setMapOpen(open) {
     document.body.classList.toggle('map-open', open);
+    if (!open) window.peerInspector?.close();
     mapToggle.setAttribute('aria-expanded', String(open));
     mapPanel.setAttribute('aria-hidden', String(!open));
 }
@@ -105,6 +106,10 @@ function makeMessageItem(from, text, time, own = false, id = null, peerId = null
     const fromSpan = document.createElement('span');
     fromSpan.className = 'from';
     fromSpan.textContent = fromText;
+    if (peerId) {
+        fromSpan.classList.add('inspect-sender');
+        fromSpan.addEventListener('click', () => window.peerInspector?.open(peerId));
+    }
     const bubble = document.createElement('span');
     bubble.className = 'bubble-text';
     const textSpan = document.createElement('span');
@@ -127,7 +132,7 @@ function makeMessageItem(from, text, time, own = false, id = null, peerId = null
 function groupWithPrevious(item) {
     if (!item) return;
     const prev = item.previousElementSibling;
-    const same = Boolean(prev)
+    const same = Boolean(prev) && !prev.classList.contains('file-card') && !item.classList.contains('file-card')
         && prev.classList.contains('own') === item.classList.contains('own')
         && prev.querySelector('.from').textContent === item.querySelector('.from').textContent
         && Math.abs(Number(item.dataset.time) - Number(prev.dataset.time)) < GROUP_MS;
@@ -271,6 +276,7 @@ function addPeer(peerId) {
     item.dataset.peerId = String(peerId);
     peerItems.set(peerId, item);
     peerList.appendChild(item);
+    refreshFileRecipients();
     if (status.textContent === NO_PEERS_TEXT) status.textContent = '';
     updatePeerCount();
     updateVoiceView();
@@ -280,6 +286,8 @@ function removePeer(peerId) {
     const item = peerItems.get(peerId);
     if (!item) return;
     peerItems.delete(peerId);
+    if (listeningDialog?.open && listeningDialog.dataset.peerId === peerId) listeningDialog.close();
+    refreshFileRecipients();
     updatePeerCount();
     updateNodeMap();
     if (reducedMotion.matches) {
@@ -298,14 +306,20 @@ window.asscrack.onPeerName(data => {
     if (typeof data.name !== 'string') return;
     peerNames.set(data.peerId, data.name);
     const item = peerItems.get(data.peerId);
-    if (item) setPeerName(item, data.name);
+    if (item) {
+        setPeerName(item, data.name);
+        refreshFileRecipients();
+    }
 });
 window.asscrack.onMessage(data => {
     const item = peerItems.get(data.peerId);
     if (item && data.from) setPeerName(item, data.from);
     const state = window.reading.beforeChange();
     const line = addMessage(data.from, data.text, data.time, false, data.id, data.peerId);
-    if (line) window.reading.noteIncoming(line);
+    if (line) {
+        const unread = window.reading.noteIncoming(line);
+        if (!data.peerId || data.peerId !== (selfId ?? topologySelf)) window.chatHighlights?.note(line, data.text, unread);
+    }
     window.reading.afterChange(state);
 });
 // A history event can come more than one time (each host election, each new session). Only lines with an id
@@ -382,8 +396,10 @@ async function login() {
 // Show the chat screen for the user name and the room. The login and the reopen of a saved room use it.
 function showChat(name, room) {
     ownName = name;
-    document.getElementById('chat-user').textContent = name;
-    document.getElementById('chat-room').textContent = room;
+    window.chatHighlights?.setName(name);
+    const heading = document.getElementById('chat-room');
+    heading.textContent = room;
+    heading.title = room;
     loginScreen.hidden = true;
     chatScreen.hidden = false;
     document.body.classList.add('chat');
@@ -401,6 +417,7 @@ function showChat(name, room) {
 
 // After the node started: get the room state from the main process.
 function roomStarted(result) {
+    refreshRoomTopic();
     startPresence();
     updatePeerCount();
     refreshHostInfo();
@@ -480,6 +497,21 @@ async function sendMessage() {
     if (sendBusy) return;
     const reply = messageInput.value;
     const quote = pendingQuote;
+    if (!quote && window.peerInspector?.command(reply)) {
+        if (messageInput.value === reply) messageInput.value = '';
+        return;
+    }
+    const command = !quote && /^\/(topic|away)(?:\s+([\s\S]*))?$/i.exec(reply.trim());
+    if (command) {
+        sendBusy = true;
+        try {
+            const argument = command[2] ?? '';
+            const applied = command[1].toLowerCase() === 'topic'
+                ? await submitTopic(argument) : await applyPresence({ state: 'away', note: cutNote(argument.trim()) });
+            if (applied && messageInput.value === reply) messageInput.value = '';
+        } finally { sendBusy = false; }
+        return;
+    }
     if (!reply.trim()) {
         if (quote) status.textContent = 'Type a reply to the quote.';
         return;
@@ -666,12 +698,40 @@ window.asscrack.onVoiceState(() => updateVoiceView());
 // ---- File transfers ----
 
 const fileInput = document.getElementById('file-input');
+const attachFileButton = document.getElementById('attach-file');
+const fileDraft = document.getElementById('file-draft');
+const fileDraftName = document.getElementById('file-draft-name');
+const removeFileButton = document.getElementById('file-remove');
+const fileRecipient = document.getElementById('file-recipient');
 const sendFileButton = document.getElementById('send-file');
 const transferList = document.getElementById('transfers');
+const messagePanel = document.getElementById('message-panel');
+let pendingFile = null;
+let offeringFile = false;
 
 const RESULT_STATES = new Set(['done', 'failed', 'refused', 'cancelled']);
-const transfers = new Map(); // `${offerId}|${peerId}` -> { item, state, direction }
-const ownOffers = new Map(); // offerId -> { name, size }
+const transfers = new Map(); // One entry per offer/peer, shared by the Transfers row and any incoming chat card.
+
+function recipientLabel(peerId) {
+    return `${peerNames.get(peerId) || 'Peer'} (${peerId.slice(-8)})`;
+}
+
+function refreshFileRecipients() {
+    const selected = fileRecipient.value;
+    const roomOption = fileRecipient.firstElementChild;
+    const peerIds = [...peerItems.keys()];
+    // Removing a selected <option> would silently select the whole room for a private draft.
+    if (selected !== 'room' && !peerItems.has(selected)) peerIds.push(selected);
+    const options = peerIds.map(peerId => {
+        const option = document.createElement('option');
+        option.value = peerId;
+        option.textContent = recipientLabel(peerId) + (peerItems.has(peerId) ? '' : ' — disconnected');
+        option.title = peerId;
+        return option;
+    });
+    fileRecipient.replaceChildren(roomOption, ...options);
+    fileRecipient.value = selected;
+}
 
 function formatSize(bytes) {
     const n = Number(bytes) || 0;
@@ -712,34 +772,43 @@ async function callFile(fn, offerId) {
     }
 }
 
-function setTransferState(entry, state, text) {
-    entry.state = state;
-    entry.item.dataset.state = state;
-    const stateSpan = entry.item.querySelector('.state-text');
-    stateSpan.textContent = String(text ?? state);
-    stateSpan.title = stateSpan.textContent;
-    const buttons = entry.item.querySelector('.buttons');
+function renderTransferActions(entry, row) {
+    const buttons = row.querySelector('.buttons');
+    const hadFocus = buttons.contains(document.activeElement);
     buttons.replaceChildren();
     const key = transferKey(entry.item);
-    if (entry.direction === 'send') {
-        addSendCancel(entry, state);
-    } else if (state === 'offered') {
+    if (entry.cancelRequested) {
+        if (hadFocus) row.focus({ preventScroll: true });
+        return;
+    }
+    if (entry.direction === 'send' && (entry.state === 'offered' || entry.state === 'sending')) {
+        buttons.append(makeButton('Cancel', () => cancelToReceiver(key), 'cancel-receiver'));
+    } else if (entry.state === 'offered') {
         buttons.append(
             makeButton('Accept', () => acceptTransfer(key), 'accept'),
             makeButton('Refuse', () => refuseTransfer(key), 'refuse')
         );
-    } else if (state === 'receiving') {
+    } else if (entry.state === 'receiving') {
         buttons.append(makeButton('Cancel', () => cancelReceive(key), 'cancel-receive'));
+    } else if (entry.state === 'done' && entry.revealable && hasApi('revealFile')) {
+        buttons.append(makeButton('Show in Explorer', () => revealTransfer(key), 'reveal', 'btn-reveal'));
     }
-    updateNodeMap();
+    if (hadFocus) (buttons.firstElementChild ?? row).focus({ preventScroll: true });
 }
 
-// A sender row of one receiver gets a Cancel button while the row is offered or sending.
-// The button cancels the transfer to that receiver only.
-function addSendCancel(entry, state) {
-    if (entry.direction !== 'send' || (state !== 'offered' && state !== 'sending') || entry.cancelRequested) return;
-    const key = transferKey(entry.item);
-    entry.item.querySelector('.buttons').append(makeButton('Cancel', () => cancelToReceiver(key), 'cancel-receiver'));
+function setTransferState(entry, state, text) {
+    entry.state = state;
+    const render = row => {
+        row.dataset.state = state;
+        const stateSpan = row.querySelector('.state-text');
+        stateSpan.textContent = text;
+        stateSpan.title = text;
+        renderTransferActions(entry, row);
+    };
+    render(entry.item);
+    if (entry.card) window.reading.keepPosition(() => render(entry.card));
+    if (entry.direction === 'send') updateOfferSummary(entry.item.dataset.offerId);
+    updateNodeMap();
 }
 
 // ---- Row actions ----
@@ -766,12 +835,14 @@ async function acceptTransfer(key) {
     return ok === true;
 }
 
-function refuseTransfer(key) {
+async function refuseTransfer(key) {
     const entry = liveTransfer(key);
     if (!entry || entry.direction !== 'receive' || entry.state !== 'offered') return false;
-    setTransferState(entry, 'refused', 'Refused');
-    callFile(window.asscrack.refuseFile, entry.item.dataset.offerId);
-    return true;
+    setTransferState(entry, 'refusing', 'Refusing');
+    const ok = await callFile(window.asscrack.refuseFile, entry.item.dataset.offerId);
+    if (ok === true) setTransferResult(entry, 'refused', 'Refused');
+    else setTransferResult(entry, 'failed', 'Failed: the offer is not available');
+    return ok === true;
 }
 
 // Cancel of a file that this computer receives.
@@ -779,11 +850,14 @@ async function cancelReceive(key) {
     const entry = liveTransfer(key);
     if (!entry || entry.direction !== 'receive' || entry.state !== 'receiving' || entry.cancelRequested) return false;
     entry.cancelRequested = true;
+    setTransferState(entry, 'receiving', 'Cancelling');
     try {
-        await window.asscrack.cancelFile(entry.item.dataset.offerId);
+        const ok = await window.asscrack.cancelFile(entry.item.dataset.offerId);
+        if (!ok) throw new Error('Cancel is no longer available');
         return true;
     } catch (err) {
         entry.cancelRequested = false;
+        if (entry.state === 'receiving') setTransferState(entry, 'receiving', 'Receiving');
         status.textContent = `Error: ${err?.message ?? err}`;
         return false;
     }
@@ -795,14 +869,15 @@ async function cancelToReceiver(key) {
     if (!entry || entry.direction !== 'send' || (entry.state !== 'offered' && entry.state !== 'sending')
         || entry.cancelRequested) return false;
     entry.cancelRequested = true;
-    entry.item.querySelector('.buttons').replaceChildren();
+    renderTransferActions(entry, entry.item);
     try {
-        await window.asscrack.cancelFile(entry.item.dataset.offerId, entry.item.dataset.peerId);
+        const ok = await window.asscrack.cancelFile(entry.item.dataset.offerId, entry.item.dataset.peerId);
+        if (!ok) throw new Error('Cancel is no longer available');
         return true;
     } catch (err) {
         entry.cancelRequested = false;
         status.textContent = `Error: ${err?.message ?? err}`;
-        addSendCancel(entry, entry.state);
+        renderTransferActions(entry, entry.item);
         return false;
     }
 }
@@ -811,11 +886,14 @@ async function cancelToReceiver(key) {
 async function cancelWholeOffer(offerId) {
     const head = offerHeads.get(String(offerId));
     if (!head || !head.active || !head.item.isConnected) return false;
-    head.active = false;
-    head.item.querySelector('.buttons').replaceChildren();
-    await callFile(window.asscrack.cancelFile, String(offerId));
-    head.item.querySelector('.state-text').textContent = `Offered ${head.name}: cancelled`;
-    return true;
+    head.cancelRequested = true;
+    updateOfferSummary(offerId);
+    const ok = await callFile(window.asscrack.cancelFile, String(offerId));
+    if (ok !== true) {
+        head.cancelRequested = false;
+        updateOfferSummary(offerId);
+    }
+    return ok === true;
 }
 
 const REVEAL_TEXT = {
@@ -857,6 +935,37 @@ function buddyId(row) {
     return peerId && peerItems.get(peerId) === row ? peerId : null;
 }
 
+const listeningDialog = document.getElementById('listening-dialog');
+const listenerMuted = document.getElementById('listener-muted');
+const listenerVolume = document.getElementById('listener-volume');
+const listenerPercent = document.getElementById('listener-percent');
+
+function showListening(row) {
+    const id = buddyId(row);
+    if (!id || !peerItems.has(id)) return false;
+    const settings = window.voice.listeningFor(id);
+    listeningDialog.dataset.peerId = id;
+    document.getElementById('listening-title').textContent = `Listening to ${row.querySelector('.name').textContent}`;
+    listenerMuted.checked = settings.muted;
+    listenerVolume.value = String(settings.volume);
+    listenerPercent.textContent = `${settings.volume}%`;
+    listenerVolume.setAttribute('aria-valuetext', listenerPercent.textContent);
+    listeningDialog.showModal();
+    return true;
+}
+
+function changeListening() {
+    const id = listeningDialog.dataset.peerId;
+    if (!listeningDialog.open || !peerItems.has(id)) return;
+    const volume = Number(listenerVolume.value);
+    listenerPercent.textContent = `${volume}%`;
+    listenerVolume.setAttribute('aria-valuetext', listenerPercent.textContent);
+    window.voice.setListening(id, listenerMuted.checked, volume);
+}
+
+listenerMuted?.addEventListener('change', changeListening);
+listenerVolume?.addEventListener('input', changeListening);
+
 // Copy the display name of a buddy. The own line copies the name without "(you)".
 function copyBuddyName(row) {
     if (row && row === selfLine) return copyToClipboard(ownName, 'Name copied.');
@@ -885,19 +994,19 @@ function copyMessageText(row) {
 function rowInfo(row) {
     if (!row || !row.isConnected) return null;
     if (row.parentElement === peerList) {
-        if (row === selfLine) return { kind: 'buddy', self: true, onMap: buddyId(row) !== null };
-        return buddyId(row) === null ? null : { kind: 'buddy', self: false, onMap: true };
+        if (row === selfLine) return { kind: 'buddy', inspect: Boolean(window.peerInspector), self: true, onMap: buddyId(row) !== null };
+        return buddyId(row) === null ? null : { kind: 'buddy', inspect: Boolean(window.peerInspector), self: false, onMap: true };
     }
-    if (row.parentElement === messageList) {
-        return { kind: 'message', quotable: selfLine !== null && row.querySelector('.text') !== null };
+    if (row.parentElement === messageList && !row.classList.contains('file-card')) {
+        return { kind: 'message', inspect: Boolean(window.peerInspector && peerItems.has(row.dataset.peerId)), quotable: selfLine !== null && row.querySelector('.text') !== null };
     }
-    if (row.parentElement === transferList) {
+    if (row.parentElement === transferList || row.parentElement === messageList) {
         if (row.classList.contains('offer-head')) {
             const head = offerHeads.get(row.dataset.offerId);
             return head && head.item === row ? { kind: 'offer', active: head.active } : null;
         }
         const entry = liveTransfer(transferKey(row));
-        if (!entry || entry.item !== row) return null;
+        if (!entry || (entry.item !== row && entry.card !== row)) return null;
         return {
             kind: 'transfer',
             direction: entry.direction,
@@ -912,7 +1021,9 @@ function rowInfo(row) {
 // Run one action (an action name of menu.js) on a row. Each action checks the state again.
 function runRowAction(action, row) {
     switch (action) {
+        case 'inspect-peer': return window.peerInspector?.open(row.dataset.peerId || buddyId(row));
         case 'copy-name': return copyBuddyName(row);
+        case 'listening': return showListening(row);
         case 'show-on-map': return showBuddyOnMap(buddyId(row));
         case 'copy-message': return copyMessageText(row);
         case 'quote': return quoteMessage(row);
@@ -934,16 +1045,14 @@ window.roomActions = Object.freeze({
     }
 });
 
-function getTransfer(offerId, peerId, direction, info = {}) {
-    const key = `${offerId}|${peerId}`;
-    let entry = transfers.get(key);
-    if (entry) return entry;
+function makeTransferRow(offerId, peerId, direction, info, className) {
     const item = document.createElement('li');
-    item.className = 'transfer';
+    item.className = className;
     item.dataset.offerId = String(offerId);
     item.dataset.peerId = String(peerId);
     item.dataset.direction = direction;
     const progress = document.createElement('progress');
+    progress.setAttribute('aria-label', 'File transfer progress');
     progress.max = Number(info.size) || 1;
     progress.value = 0;
     // The cell around the bar shows the percent text (data-pct, see showProgress).
@@ -951,7 +1060,7 @@ function getTransfer(offerId, peerId, direction, info = {}) {
     progressCell.append(progress);
     const fileName = makeSpan('file-name', info.name);
     fileName.title = fileName.textContent;
-    const peerName = makeSpan('peer-name', `${direction === 'send' ? 'to' : 'from'} ${transferPeerName(peerId, info.from)}`);
+    const peerName = makeSpan('peer-name', `${direction === 'send' ? 'to' : 'from'} ${transferPeerName(peerId, info.from)} (${String(peerId).slice(-8)})`);
     peerName.title = peerName.textContent;
     item.append(
         fileName,
@@ -961,6 +1070,14 @@ function getTransfer(offerId, peerId, direction, info = {}) {
         makeSpan('state-text', ''),
         makeSpan('buttons', '')
     );
+    return item;
+}
+
+function getTransfer(offerId, peerId, direction, info = {}) {
+    const key = `${offerId}|${peerId}`;
+    let entry = transfers.get(key);
+    if (entry) return entry;
+    const item = makeTransferRow(offerId, peerId, direction, info, 'transfer');
     transferList.appendChild(item);
     transferList.scrollTop = transferList.scrollHeight;
     entry = { item, state: null, direction };
@@ -975,57 +1092,57 @@ function showProgress(progress) {
     progress.parentElement.dataset.pct = `${Math.floor(ratio * 100)}%`;
 }
 
-// The entry for a file event. The sender makes the item at the first event for each receiver.
+// A file event can reach the window before the sender receives the IPC result with the recipient list.
 function transferForEvent(data) {
     const direction = data.direction === 'receive' ? 'receive' : 'send';
-    const own = ownOffers.get(data.offerId) ?? {};
-    const entry = getTransfer(data.offerId, data.peerId, direction, {
-        name: data.name ?? own.name,
-        size: data.size ?? own.size
-    });
-    if (entry.state === null) setTransferState(entry, direction === 'send' ? 'sending' : 'receiving', direction === 'send' ? 'Sending' : 'Receiving');
+    const entry = getTransfer(data.offerId, data.peerId, direction, data);
+    if (entry.state === null || entry.state === 'offered') setTransferState(entry, direction === 'send' ? 'sending' : 'receiving', direction === 'send' ? 'Sending' : 'Receiving');
     return entry;
 }
 
 function setTransferResult(entry, state, text) {
     if (RESULT_STATES.has(entry.state)) return;
+    entry.cancelRequested = false;
     setTransferState(entry, state, text);
-    entry.item.querySelector('.buttons').replaceChildren();
 }
 
 window.asscrack.onFileOffer(data => {
     const entry = getTransfer(data.offerId, data.peerId, 'receive', data);
+    if (entry.card || entry.state !== null) return;
+    const reading = window.reading.beforeChange();
+    entry.card = makeTransferRow(data.offerId, data.peerId, 'receive', data, 'file-card');
+    entry.card.dataset.time = String(Date.now());
+    messageList.appendChild(entry.card);
     setTransferState(entry, 'offered', 'Offered');
+    window.reading.noteIncoming(entry.card);
+    window.reading.afterChange(reading);
 });
 
 window.asscrack.onFileProgress(data => {
     const entry = transferForEvent(data);
     if (RESULT_STATES.has(entry.state)) return;
-    const progress = entry.item.querySelector('progress');
-    progress.max = Number(data.size) || 1;
-    progress.value = Number(data.bytes) || 0;
-    showProgress(progress);
+    for (const row of [entry.item, entry.card].filter(Boolean)) {
+        const progress = row.querySelector('progress');
+        progress.max = Number(data.size) || 1;
+        progress.value = Number(data.bytes) || 0;
+        showProgress(progress);
+    }
 });
 
 window.asscrack.onFileDone(data => {
     const entry = transferForEvent(data);
-    const progress = entry.item.querySelector('progress');
-    progress.value = progress.max;
-    showProgress(progress);
+    if (RESULT_STATES.has(entry.state)) return;
+    for (const row of [entry.item, entry.card].filter(Boolean)) {
+        const progress = row.querySelector('progress');
+        progress.value = progress.max;
+        showProgress(progress);
+    }
     if (data.direction === 'receive') {
         const fileName = String(data.path ?? '').split(/[\\/]/).pop();
+        entry.revealable = typeof data.path === 'string' && Boolean(data.path);
         setTransferResult(entry, 'done', `Saved as ${fileName}`);
-        // Only a completed local receive gets Show in Explorer. setTransferResult does nothing for a row that
-        // already has a result, so check the state.
-        if (entry.state === 'done' && typeof data.path === 'string' && data.path) {
-            entry.revealable = true;
-            if (hasApi('revealFile')) {
-                const key = transferKey(entry.item);
-                entry.item.querySelector('.buttons').append(
-                    makeButton('Show in Explorer', () => revealTransfer(key), 'reveal', 'btn-reveal'));
-            }
-        }
     } else {
+        entry.confirmed = data.confirmed === true;
         setTransferResult(entry, 'done', data.confirmed === true ? 'Delivered' : 'Sent (delivery unconfirmed)');
     }
 });
@@ -1034,46 +1151,146 @@ window.asscrack.onFileFailed(data => setTransferResult(transferForEvent(data), '
 window.asscrack.onFileRefused(data => setTransferResult(transferForEvent({ ...data, direction: 'send' }), 'refused', 'Refused'));
 window.asscrack.onFileCancelled(data => setTransferResult(transferForEvent(data), 'cancelled', 'Cancelled'));
 
-// offerId -> { item, name, active }: the head line of each own offer. active: the whole-offer Cancel is available.
 const offerHeads = new Map();
 
-function addOfferHead(offerId, name, peers) {
+function updateOfferSummary(offerId) {
+    const head = offerHeads.get(offerId);
+    if (!head) return;
+    const counts = new Map();
+    const labels = { offered: 'awaiting reply', sending: 'sending', refused: 'declined', failed: 'failed', cancelled: 'cancelled' };
+    let pending = false;
+    for (const entry of head.rows) {
+        const label = entry.state === 'done' ? (entry.confirmed ? 'delivered' : 'sent (unconfirmed)') : labels[entry.state];
+        counts.set(label, (counts.get(label) ?? 0) + 1);
+        if (!RESULT_STATES.has(entry.state)) pending = true;
+    }
+    head.summary.textContent = [...counts].map(([label, n]) => `${n} ${label}`).join(' · ');
+    head.active = pending && !head.cancelRequested;
+    head.cancel.hidden = !head.active;
+}
+
+function addOfferHead(offer, recipientId) {
+    const { offerId, name, recipients } = offer;
     const item = document.createElement('li');
     item.className = 'transfer offer-head';
-    item.dataset.offerId = String(offerId);
+    item.dataset.offerId = offerId;
+    const audience = recipientId === undefined ? `${recipients.length} ${recipients.length === 1 ? 'user' : 'users'}` : recipientLabel(recipientId);
+    const title = makeSpan('state-text', `Offered ${name} to ${audience}`);
+    title.title = title.textContent;
+    const summary = makeSpan('offer-summary', '');
     const buttons = makeSpan('buttons', '');
-    offerHeads.set(String(offerId), { item, name, active: peers > 0 });
-    if (peers > 0) {
-        const head = makeSpan('state-text', `Offered ${name} to ${peers} users`);
-        head.title = head.textContent;
-        item.append(head);
-        buttons.append(makeButton('Cancel', () => cancelWholeOffer(offerId), 'cancel-offer'));
-    } else {
-        item.append(makeSpan('state-text', 'No other users in the room'));
-    }
-    item.append(buttons);
+    const rows = [];
+    const toggle = makeButton('Hide recipients', () => {
+        const hide = toggle.getAttribute('aria-expanded') === 'true';
+        toggle.setAttribute('aria-expanded', String(!hide));
+        toggle.textContent = hide ? 'Show recipients' : 'Hide recipients';
+        for (const entry of rows) entry.item.hidden = hide;
+    }, null, 'offer-toggle');
+    toggle.setAttribute('aria-expanded', 'true');
+    const cancel = makeButton('Cancel', () => cancelWholeOffer(offerId), 'cancel-offer');
+    buttons.append(toggle, cancel);
+    item.append(title, summary, buttons);
     transferList.appendChild(item);
+    for (const peerId of recipients) {
+        // A fast response can precede the IPC offer result. Keep its state and fill in the original metadata.
+        const entry = getTransfer(offerId, peerId, 'send', offer);
+        const fileName = entry.item.querySelector('.file-name');
+        fileName.textContent = name;
+        fileName.title = name;
+        entry.item.querySelector('.file-size').textContent = formatSize(offer.size);
+        if (entry.state === null) setTransferState(entry, 'offered', 'Offered');
+        transferList.appendChild(entry.item);
+        rows.push(entry);
+    }
+    offerHeads.set(offerId, { item, rows, summary, cancel, active: true });
+    updateOfferSummary(offerId);
     transferList.scrollTop = transferList.scrollHeight;
 }
 
+function updateFileDraft() {
+    fileDraft.hidden = pendingFile === null;
+    fileDraftName.textContent = pendingFile?.name ?? '';
+    fileDraftName.title = fileDraftName.textContent;
+    attachFileButton.disabled = offeringFile;
+    removeFileButton.disabled = offeringFile;
+    fileRecipient.disabled = offeringFile;
+    sendFileButton.disabled = offeringFile;
+    sendFileButton.textContent = offeringFile ? 'Preparing…' : (fileRecipient.value === 'room' ? 'Send file to room' : 'Send file');
+}
+
+function attachFile(file) {
+    if (!file || offeringFile) return;
+    pendingFile = file;
+    updateFileDraft();
+    status.textContent = '';
+    fileRecipient.focus({ preventScroll: true });
+}
+
+function removeFileDraft() {
+    pendingFile = null;
+    updateFileDraft();
+    status.textContent = '';
+    attachFileButton.focus({ preventScroll: true });
+}
+
 async function sendFile() {
-    const file = fileInput.files?.[0];
-    if (!file) {
-        status.textContent = 'Error: select a file.';
+    if (!pendingFile || offeringFile) return;
+    const recipientId = fileRecipient.value === 'room' ? undefined : fileRecipient.value;
+    if (recipientId !== undefined && !peerItems.has(recipientId)) {
+        status.textContent = 'The selected recipient is disconnected. Choose a recipient before sending.';
         return;
     }
-    fileInput.value = '';
+    offeringFile = true;
+    updateFileDraft();
     try {
-        const result = await window.asscrack.offerFile(file);
-        ownOffers.set(result.offerId, { name: result.name, size: result.size });
-        addOfferHead(result.offerId, result.name, result.peers);
+        const result = await window.asscrack.offerFile(pendingFile, recipientId);
+        if (result.peers === 0) {
+            status.textContent = 'No peer received the offer. The file is still attached.';
+            return;
+        }
+        addOfferHead(result, recipientId);
+        pendingFile = null;
+        if (document.activeElement === document.body || composer.contains(document.activeElement)) {
+            messageInput.focus({ preventScroll: true });
+        }
         status.textContent = '';
     } catch (err) {
         status.textContent = `Error: ${err?.message ?? err}`;
+    } finally {
+        offeringFile = false;
+        updateFileDraft();
     }
 }
 
+attachFileButton.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', () => {
+    attachFile(fileInput.files?.[0]);
+    fileInput.value = ''; // Allow picking the same file again, including after Remove.
+});
+fileRecipient.addEventListener('change', updateFileDraft);
+removeFileButton.addEventListener('click', removeFileDraft);
 sendFileButton.addEventListener('click', sendFile);
+
+// File drops always stay in the app. Plain text retains the browser's normal editing behavior.
+for (const type of ['dragover', 'drop']) {
+    document.addEventListener(type, e => {
+        const data = e.dataTransfer;
+        if (!data?.types.includes('Files')) return;
+        e.preventDefault();
+        const acceptsDrop = messagePanel.contains(e.target) && !offeringFile;
+        data.dropEffect = acceptsDrop ? 'copy' : 'none';
+        composer.classList.toggle('file-drop-active', acceptsDrop && type === 'dragover');
+        if (type !== 'drop' || !acceptsDrop) return;
+        if (data.files.length !== 1 || data.items?.[0]?.webkitGetAsEntry?.()?.isDirectory) {
+            status.textContent = 'Choose one file to attach.';
+            return;
+        }
+        attachFile(data.files[0]);
+    });
+}
+messagePanel.addEventListener('dragleave', e => {
+    if (!messagePanel.contains(e.relatedTarget)) composer.classList.remove('file-drop-active');
+});
 
 // ---- Node map ----
 // nodemap.js draws the map in #node-map. This part gives it the data at each change of the data.
@@ -1261,6 +1478,74 @@ if (hasApi('onUpnp')) {
 window.asscrack.onPeerName(() => showFullNodeState());
 window.asscrack.onPeerLeft(() => showFullNodeState());
 
+// A proposed edit appears in the room header only when the host publishes it.
+const topicValue = document.getElementById('topic-value');
+const topicEdit = document.getElementById('topic-edit');
+const topicEditor = document.getElementById('topic-editor');
+const topicInput = document.getElementById('topic-input');
+let currentTopic = { available: false, text: '' };
+let topicEvents = 0;
+
+function editRoomTopic(edit) {
+    topicEditor.hidden = !edit;
+    topicValue.hidden = edit;
+    topicEdit.hidden = edit;
+    if (edit) {
+        topicInput.value = currentTopic.text;
+        topicInput.focus();
+    }
+}
+
+function showRoomTopic(value) {
+    currentTopic = value?.available === true ? value : { available: false, text: '' };
+    topicValue.textContent = currentTopic.available ? currentTopic.text || 'No topic set' : 'Topic unavailable';
+    topicValue.title = topicValue.textContent;
+    topicEdit.disabled = !currentTopic.available;
+    if (!currentTopic.available) editRoomTopic(false);
+}
+
+async function refreshRoomTopic() {
+    if (!hasApi('getTopic')) return;
+    const before = topicEvents;
+    try {
+        const value = await window.asscrack.getTopic();
+        if (before === topicEvents) showRoomTopic(value);
+    } catch { if (before === topicEvents) showRoomTopic(null); }
+}
+
+async function submitTopic(text) {
+    if (!currentTopic.available || !hasApi('setTopic')) {
+        status.textContent = 'Topic unavailable until a host with topic support is connected.';
+        return false;
+    }
+    try {
+        await window.asscrack.setTopic(text);
+        status.textContent = '';
+        return true;
+    } catch (err) {
+        status.textContent = err?.message ?? 'Topic change failed.';
+        return false;
+    }
+}
+
+topicEdit.addEventListener('click', () => editRoomTopic(true));
+document.getElementById('topic-cancel').addEventListener('click', () => {
+    editRoomTopic(false);
+    topicEdit.focus();
+});
+async function saveEditedTopic() {
+    const draft = topicInput.value;
+    if (await submitTopic(draft) && topicInput.value === draft) {
+        editRoomTopic(false);
+        topicEdit.focus();
+    }
+}
+document.getElementById('topic-save').addEventListener('click', saveEditedTopic);
+topicInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); saveEditedTopic(); }
+});
+if (hasApi('onTopic')) window.asscrack.onTopic(value => { topicEvents++; showRoomTopic(value); });
+
 // ---- Manual status (milestone 3) ----
 // The own state (Available, Away or Do not disturb) and a note of up to 80 code points. The badge .presence-mark of
 // each buddy line shows the state of that peer ID. A buddy with no known state (an old client) shows "status unknown".
@@ -1343,17 +1628,21 @@ function forgetPresence(peerId) {
 // Send the state of the select and the note (cut to 80 code points) to the node.
 async function setOwnPresence() {
     if (!presenceControls || !hasApi('setPresence')) return;
-    const sent = { state: presenceControls.select.value, note: cutNote(presenceControls.note.value.trim()) };
-    if (!readPresence(sent)) return;
+    return applyPresence({ state: presenceControls.select.value, note: cutNote(presenceControls.note.value.trim()) });
+}
+
+async function applyPresence(sent) {
+    if (!hasApi('setPresence') || !readPresence(sent)) return false;
     touchPresence('');
     try {
         const result = await window.asscrack.setPresence(sent);
         ownPresence = readPresence(result) ?? sent;
     } catch (err) {
         status.textContent = `Status not set: ${err?.message ?? err}`;
-        return;
+        return false;
     }
     showOwnPresence();
+    return true;
 }
 
 // The state menu and the note field above the self line. The window makes them at login.
@@ -1446,7 +1735,7 @@ function focusIsIn(element) {
 }
 
 document.addEventListener('keydown', e => {
-    if (e.key !== 'Escape' || e.defaultPrevented) return;
+    if (e.key !== 'Escape' || e.defaultPrevented || listeningDialog?.open) return;
     if (window.contextMenu?.isOpen()) {
         e.preventDefault();
         window.contextMenu.close(true);

@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="quote.css">
   <link rel="stylesheet" href="find.css">
   <link rel="stylesheet" href="voice-panel.css">
+  <link rel="stylesheet" href="activity.css">
   <title>ASSCRACK</title>
 </head>
 <body>
@@ -78,11 +79,9 @@
   <section id="chat-screen" hidden>
     <header id="titlebar">
       <img class="logo" src="img/logo.svg" alt="" width="24" height="24">
-      <span class="app-name">ASSCRACK</span>
-      <span id="chat-header" class="session">
-        <span id="chat-user"></span><span class="in">in</span><span id="chat-room"></span>
-      </span>
+      <h1 id="chat-room"></h1>
       <button id="invite-toggle" type="button" aria-expanded="false" aria-controls="invite-panel" hidden>Invite</button>
+      <button id="history-toggle" type="button" popovertarget="room-storage" aria-label="History settings for this room" hidden>History</button>
       <button id="map-toggle" type="button" aria-expanded="false" aria-controls="map-panel">Network map</button>
       <!-- layout.js: the Buddies drawer button (narrow window only) and the View menu. -->
       <button id="buddy-toggle" type="button" aria-expanded="false" aria-controls="buddy-panel">Buddies</button>
@@ -93,10 +92,22 @@
         <li id="view-transfers" role="menuitemcheckbox" aria-checked="true" tabindex="-1">Transfers</li>
         <li id="view-map" role="menuitemcheckbox" aria-checked="false" tabindex="-1">Network map</li>
         <li class="view-rule" role="separator"></li>
+        <li id="view-typing" role="menuitemcheckbox" aria-checked="false" tabindex="-1">Share typing status</li>
         <li id="view-side" role="menuitem" tabindex="-1">Move Buddies to the right</li>
         <li id="view-reset" role="menuitem" tabindex="-1">Reset layout</li>
       </ul>
     </header>
+
+    <div id="room-storage" popover="auto" role="group" aria-label="Saved history of this room" hidden>
+      <label class="check"><input type="checkbox" id="room-keep-history"> Keep local history</label>
+      <span id="history-state" role="status" aria-live="polite"></span>
+      <button id="clear-history" type="button">Clear saved history on this device</button>
+      <div id="clear-confirm" role="alertdialog" aria-labelledby="clear-confirm-text" hidden>
+        <p id="clear-confirm-text">Delete the saved messages of this room from this computer? The room and its saving choice stay. Peers that are online can still show recent messages.</p>
+        <button id="clear-confirm-yes" type="button">Delete saved messages</button>
+        <button id="clear-confirm-no" type="button">Cancel</button>
+      </div>
+    </div>
 
     <!-- The invite panel. renderer.js fills #invite-code with getInvite(). -->
     <div id="invite-panel" hidden>
@@ -179,10 +190,6 @@
         <button id="mute" type="button" aria-pressed="false" hidden>Mute</button>
         <button id="voice-settings-toggle" type="button" aria-expanded="false" aria-controls="voice-settings">Voice settings</button>
       </div>
-      <div id="file-controls" class="tool-group">
-        <input type="file" id="file-input">
-        <button id="send-file" type="button">Send file</button>
-      </div>
       <span id="voice-error" role="alert"></span>
     </div>
 
@@ -193,6 +200,21 @@
       </section>
       <div id="buddy-sep" class="layout-sep" role="separator" tabindex="0" aria-orientation="vertical" aria-controls="buddy-panel" aria-label="Resize Buddies" aria-valuenow="192" aria-valuemin="120" aria-valuemax="480"></div>
       <section id="message-panel" class="panel">
+        <div class="highlight-tools">
+          <button id="next-highlight" type="button" aria-keyshortcuts="Alt+J" title="Next unread highlight (Alt+J)" disabled>Next highlight</button>
+          <details><summary>Highlight words</summary><label>Keywords or phrases, separated by commas
+            <input id="highlight-words" type="text" maxlength="512" autocomplete="off" placeholder="pit stop, grid time">
+          </label></details>
+        </div>
+        <div id="room-topic" role="group" aria-label="Room topic">
+          <span id="topic-value" aria-live="polite">Topic unavailable</span>
+          <button id="topic-edit" type="button" disabled>Edit topic</button>
+          <div id="topic-editor" hidden>
+            <input type="text" id="topic-input" aria-label="Room topic, up to 160 characters" placeholder="Leave empty to clear" autocomplete="off">
+            <button id="topic-save" type="button">Save topic</button>
+            <button id="topic-cancel" type="button">Cancel</button>
+          </div>
+        </div>
         <!-- find.js: Ctrl+F shows this bar. It searches the lines in the list now. -->
         <div id="find-bar" role="search" aria-label="Find in the loaded messages" hidden>
           <input type="text" id="find-input" placeholder="Find in the loaded messages" aria-label="Find in the loaded messages" aria-describedby="find-count" autocomplete="off" spellcheck="false">
@@ -203,26 +225,47 @@
         </div>
         <!-- Saved rooms (milestone 6): saved-rooms-ui.js shows this while a reopened or saved room has no peer. -->
         <p id="waiting-peer" role="status" hidden>Waiting for a peer</p>
-        <!-- Saved rooms (milestone 6): the room storage controls. saved-rooms-ui.js shows this only in a saved room. -->
-        <div id="room-storage" role="group" aria-label="Saved history of this room" hidden>
-          <label class="check"><input type="checkbox" id="room-keep-history"> Keep local history</label>
-          <span id="history-state" role="status" aria-live="polite"></span>
-          <button id="clear-history" type="button">Clear saved history on this device</button>
-          <div id="clear-confirm" role="alertdialog" aria-labelledby="clear-confirm-text" hidden>
-            <p id="clear-confirm-text">Delete the saved messages of this room from this computer? The room and its saving choice stay. Peers that are online can still show recent messages.</p>
-            <button id="clear-confirm-yes" type="button">Delete saved messages</button>
-            <button id="clear-confirm-no" type="button">Cancel</button>
-          </div>
+        <div id="transcript-body">
+          <ul id="messages" role="log"></ul>
+          <!-- reading.js shows this button when the user reads older lines. -->
+          <button id="jump-latest" type="button" hidden>Jump to latest <span id="unread-count" class="count"></span></button>
         </div>
-        <ul id="messages" role="log"></ul>
-        <!-- reading.js shows this button when the user reads older lines. -->
-        <button id="jump-latest" type="button" hidden>Jump to latest <span id="unread-count" class="count"></span></button>
+        <div id="typing-status" role="status" aria-live="polite"></div>
+        <div id="composer">
+          <!-- renderer.js: the quote of the next message. The remove button or Escape removes it. -->
+          <div id="quote-chip" role="group" aria-labelledby="quote-head" hidden>
+            <span id="quote-head" class="quote-head">Reply to <span id="quote-from"></span> <span id="quote-time"></span></span>
+            <span id="quote-excerpt"></span>
+            <button id="quote-remove" type="button" aria-label="Remove the quote" title="Remove the quote (Escape)">Remove</button>
+          </div>
+          <div id="file-draft" role="group" aria-label="File to send" hidden>
+            <span id="file-draft-name"></span>
+            <button id="file-remove" type="button" aria-label="Remove attached file">Remove</button>
+            <select id="file-recipient" aria-label="File recipient">
+              <option value="room">Entire room</option>
+            </select>
+            <button id="send-file" type="button">Send file to room</button>
+          </div>
+          <input type="file" id="file-input" hidden>
+          <button id="attach-file" type="button" aria-label="Attach file" title="Attach file"></button>
+          <!-- Enter sends. Shift+Enter starts a new line. -->
+          <textarea id="message-input" rows="1" placeholder="Type a message" autocomplete="off" aria-label="Message"></textarea>
+          <button id="send" type="button">Send</button>
+        </div>
       </section>
       <div id="map-sep" class="layout-sep" role="separator" tabindex="0" aria-orientation="vertical" aria-controls="map-panel" aria-label="Resize the network map" aria-valuenow="320" aria-valuemin="260" aria-valuemax="900"></div>
       <!-- The node map panel. nodemap.js draws one SVG into #node-map. -->
       <aside id="map-panel" class="panel" aria-hidden="true">
         <h2 class="panel-head">Network map <button id="map-close" type="button">Close</button></h2>
         <div id="node-map"></div>
+        <section id="peer-details" hidden aria-labelledby="peer-detail-name">
+          <button type="button" id="peer-detail-close">Back to map</button>
+          <h3 id="peer-detail-name" tabindex="-1">Find a buddy</h3>
+          <label>Find a buddy <input id="peer-search" type="search" autocomplete="off"></label>
+          <div id="peer-choices" hidden></div>
+          <p id="peer-detail-facts"></p>
+          <p id="peer-audio-rate"></p>
+        </section>
         <div id="map-legend">
           <span class="key"><span class="sw sw-relay">RELAY</span>host, voice relay</span>
           <span class="key"><span class="sw sw-mesh"></span>Direct chat</span>
@@ -236,10 +279,10 @@
       </aside>
     </div>
 
-    <section id="transfer-panel" class="panel">
+    <section id="transfer-panel" class="panel" tabindex="-1">
       <div id="transfer-sep" class="layout-sep" role="separator" tabindex="0" aria-orientation="horizontal" aria-controls="transfers" aria-label="Resize Transfers" aria-valuenow="90" aria-valuemin="32" aria-valuemax="800"></div>
       <h2 class="panel-head">Transfers <span id="transfer-count" class="count">0</span>
-        <span class="hint">No transfers. Select a file, then press Send file.</span>
+        <span class="hint">No transfers.</span>
       </h2>
       <div class="transfer-cols" aria-hidden="true">
         <span></span><span>File</span><span class="col-size">Size</span><span>User</span><span>Progress</span><span>Status</span><span></span>
@@ -247,32 +290,44 @@
       <ul id="transfers"></ul>
     </section>
 
-    <div id="composer">
-      <!-- renderer.js: the quote of the next message. The remove button or Escape removes it. -->
-      <div id="quote-chip" role="group" aria-labelledby="quote-head" hidden>
-        <span id="quote-head" class="quote-head">Reply to <span id="quote-from"></span> <span id="quote-time"></span></span>
-        <span id="quote-excerpt"></span>
-        <button id="quote-remove" type="button" aria-label="Remove the quote" title="Remove the quote (Escape)">Remove</button>
-      </div>
-      <!-- Enter sends. Shift+Enter starts a new line. -->
-      <textarea id="message-input" rows="1" placeholder="Type a message" autocomplete="off" aria-label="Message"></textarea>
-      <button id="send" type="button">Send</button>
-    </div>
 
     <footer id="statusbar">
+      <button id="activity-open" type="button" aria-haspopup="dialog" aria-controls="room-activity">Room activity</button>
       <span id="full-node-state" data-state="lan" hidden></span>
       <span class="net-note">Local network</span>
     </footer>
+    <dialog id="room-activity" aria-labelledby="activity-title">
+      <h2 id="activity-title">Room activity on this device</h2>
+      <textarea id="activity-lines" readonly aria-label="Recent events, UTC" placeholder="No local connection events yet"></textarea>
+      <div class="activity-actions">
+        <button id="activity-pause" type="button" aria-pressed="false">Pause</button>
+        <button id="activity-copy" type="button" title="Copy selected text or the full activity list" disabled>Copy diagnostics</button>
+        <button id="activity-close" type="button">Close</button>
+        <span id="activity-status" role="status"></span>
+      </div>
+    </dialog>
   </section>
 
+  <dialog id="listening-dialog" aria-labelledby="listening-title">
+    <h2 id="listening-title">Listening volume</h2>
+    <label><input id="listener-muted" type="checkbox"> Mute for me</label>
+    <label for="listener-volume">Playback volume <output id="listener-percent" for="listener-volume">100%</output></label>
+    <input id="listener-volume" type="range" min="0" max="100" step="1" value="100">
+    <form method="dialog"><button>Done</button></form>
+  </dialog>
+
   <script src="voice-gate.js"></script>
+  <script src="activity-view.js"></script>
   <script src="voice.js"></script>
+  <script src="peer-inspector.js"></script>
   <script src="nodemap.js"></script>
   <script src="layout.js"></script>
   <script src="reading.js"></script>
   <script src="find.js"></script>
   <script src="quote.js"></script>
+  <script src="highlights.js"></script>
   <script src="renderer.js"></script>
+  <script src="typing.js"></script>
   <script src="saved-rooms-ui.js"></script>
   <script src="voice-panel.js"></script>
   <script src="menu.js"></script>

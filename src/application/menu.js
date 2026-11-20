@@ -24,6 +24,8 @@
 
     const LABELS = Object.freeze({
         'copy-name': 'Copy name',
+        'inspect-peer': 'Peer details',
+        'listening': 'Listening volume…',
         'show-on-map': 'Show on map',
         'copy-message': 'Copy message',
         quote: 'Quote',
@@ -39,11 +41,15 @@
     function actionsFor(info) {
         if (!info || typeof info !== 'object') return [];
         switch (info.kind) {
-            case 'buddy':
-                return info.onMap ? ['copy-name', 'show-on-map'] : ['copy-name'];
+            case 'buddy': {
+                const actions = info.onMap ? ['copy-name', 'show-on-map'] : ['copy-name'];
+                if (info.self === false) actions.push('listening');
+                if (info.inspect) actions.push('inspect-peer');
+                return actions;
+            }
             case 'message':
                 // quotable: the window can take a quote now (renderer.js rowInfo).
-                return info.quotable ? ['quote', 'copy-message'] : ['copy-message'];
+                return [...(info.quotable ? ['quote', 'copy-message'] : ['copy-message']), ...(info.inspect ? ['inspect-peer'] : [])];
             case 'offer':
                 return info.active ? ['cancel-offer'] : [];
             case 'transfer':

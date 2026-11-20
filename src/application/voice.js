@@ -53,6 +53,15 @@
     const members = new Map();
     // origin -> { decoder, bytesReceived, audioLevel, lastAt, timestamp }
     const origins = new Map();
+    // This listener's choices for the current chat sessions, keyed by the original speaker.
+    const listening = new Map();
+    function listeningFor(origin) {
+        return { muted: false, volume: 100, ...listening.get(origin) };
+    }
+    function applyGain(origin) {
+        const { muted, volume } = listeningFor(origin);
+        playbackNode?.port.postMessage({ type: 'gain', origin, gain: muted ? 0 : volume / 100 });
+    }
     const listeners = [];
     const levelListeners = [];
 
@@ -142,6 +151,7 @@
     }
 
     function makeDecoder(origin, o) {
+        applyGain(origin);
         const dec = new AudioDecoder({
             output: audio => {
                 try {
@@ -185,9 +195,8 @@
 
     function removeOrigin(origin) {
         const o = origins.get(origin);
-        if (!o) return;
         origins.delete(origin);
-        if (o.decoder && o.decoder.state !== 'closed') o.decoder.close();
+        if (o?.decoder && o.decoder.state !== 'closed') o.decoder.close();
         playbackNode?.port.postMessage({ type: 'remove', origin });
     }
 
@@ -460,6 +469,7 @@
     });
     api.onPeerLeft(({ peerId } = {}) => {
         members.delete(peerId);
+        listening.delete(peerId);
         removeOrigin(peerId);
         changed();
     });
@@ -475,6 +485,13 @@
         : Promise.resolve();
 
     window.voice = {
+        listeningFor,
+        setListening(origin, muted, volume) {
+            if (!Number.isInteger(volume) || volume < 0 || volume > 100 || typeof muted !== 'boolean') return;
+            if (!muted && volume === 100) listening.delete(origin);
+            else listening.set(origin, { muted, volume });
+            applyGain(origin);
+        },
         async join() {
             if (inVoice) return;
             await refreshHost();
