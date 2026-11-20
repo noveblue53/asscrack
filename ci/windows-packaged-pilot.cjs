@@ -206,6 +206,15 @@ async function exerciseVoice(host, guest) {
 
 async function run() {
     await mkdir(evidenceDir, { recursive: true });
+    if (process.env.PILOT_ENCRYPTION_CAPTURE === '1') {
+        begin('passive interception between two disposable profiles');
+        const { observeDirectEncryption } = require('./windows-encryption-capture.cjs');
+        report.scope = 'Exact RC1 payload on native Windows, keyed direct loopback, synthetic messages';
+        report.checks.passiveDirect = await observeDirectEncryption({ launch, quit, login, showInvite, unusedLoopbackPort, waitForMessage });
+        assert.deepEqual(rendererErrors, []);
+        report.outcome = 'passed';
+        return;
+    }
     begin('fresh invite join');
     const roomName = 'Windows friend pilot';
     const channelName = 'Paddock';

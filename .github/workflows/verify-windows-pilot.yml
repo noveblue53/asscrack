@@ -1,48 +1,45 @@
-name: Verify the existing Windows friend-pilot download
+name: Check passive wire capture of the exact Windows RC1
 
 on:
   push:
-    branches: [codex/friend-pilot-windows-verification]
+    branches: [codex/friend-pilot-encryption-verification]
     paths:
       - '.github/workflows/verify-windows-pilot.yml'
       - 'ci/windows-*.cjs'
-      - 'ci/windows-*.ps1'
 
 permissions:
   contents: read
 
 jobs:
-  packaged-room:
+  passive-capture:
     runs-on: windows-2025
-    timeout-minutes: 12
+    timeout-minutes: 8
     permissions:
       contents: write # Draft assets require repository write access to read.
     env:
       PILOT_EXE: ASSCRACK-0.7.0-friend-pilot-rc1-42cf3c6-windows-runner-x64.exe
       PILOT_SHA256: 567507aafaf63c209732b8144abd65a396d4570a339dab616b66e3d2b815048d
-      PILOT_LEGACY_SOURCE: 8dacddd96bcf1cd0ef3ceaad7d1954ab45c2925e
+      PILOT_ENCRYPTION_CAPTURE: '1'
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 24.22.1
-      - name: Verify the draft download before extracting it
+      - name: Verify the exact draft download
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $root = Join-Path $env:RUNNER_TEMP 'ASSCRACK packaged test'
+          $root = Join-Path $env:RUNNER_TEMP 'ASSCRACK wire capture'
           New-Item -ItemType Directory -Path $root
           gh release download v0.7.0-friend-pilot-rc1 --repo $env:GITHUB_REPOSITORY --pattern $env:PILOT_EXE --dir $root
           if ($LASTEXITCODE -ne 0) { throw 'Draft artifact download failed' }
-          $archive = Join-Path $root $env:PILOT_EXE
-          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant()
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $root $env:PILOT_EXE)).Hash.ToLowerInvariant()
           if ($hash -ne $env:PILOT_SHA256) { throw "Unexpected executable digest $hash" }
           "Verified release executable SHA-256: $hash"
           "PILOT_TEST_ROOT=$root" >> $env:GITHUB_ENV
-      - name: Extract the exact packaged Windows app
+      - name: Extract the exact packaged app
         run: |
           $sevenZip = Join-Path $env:ProgramFiles '7-Zip/7z.exe'
           $root = $env:PILOT_TEST_ROOT
@@ -53,35 +50,15 @@ jobs:
           $payload = Join-Path $root 'payload'
           & $sevenZip x -y $embedded[0].FullName "-o$payload"
           if ($LASTEXITCODE -ne 0) { throw 'Packaged x64 payload extraction failed' }
-      - name: Install the CDP client and reconstruct the 0.7.0 source baseline
+      - name: Passively observe disposable loopback profiles
         run: |
           $root = $env:PILOT_TEST_ROOT
           $tooling = Join-Path $root 'tooling'
-          npm install --prefix $tooling --no-audit --no-fund --no-package-lock --ignore-scripts playwright-core@1.62.1 @electron/asar@3.4.1
-          if ($LASTEXITCODE -ne 0) { throw 'Test tooling install failed' }
+          npm install --prefix $tooling --no-audit --no-fund --no-package-lock --ignore-scripts playwright-core@1.62.1
+          if ($LASTEXITCODE -ne 0) { throw 'CDP client install failed' }
           $env:NODE_PATH = Join-Path $tooling 'node_modules'
-          "NODE_PATH=$env:NODE_PATH" >> $env:GITHUB_ENV
-          git diff --quiet $env:PILOT_LEGACY_SOURCE 42cf3c64dc17e6bc86df21e8e66c16301e151ea6 -- package.json package-lock.json build
-          if ($LASTEXITCODE -ne 0) { throw 'The legacy dependency and build inputs must match the candidate' }
-          $legacy = Join-Path $root 'legacy payload'
-          Copy-Item -LiteralPath (Join-Path $root 'payload') -Destination $legacy -Recurse
-          $archive = Join-Path $legacy 'resources/app.asar'
-          $loose = Join-Path $legacy 'resources/app'
-          node -e "require('@electron/asar').extractAll(process.argv[1], process.argv[2])" $archive $loose
-          if ($LASTEXITCODE -ne 0) { throw 'Legacy runtime extraction failed' }
-          Move-Item -LiteralPath (Join-Path $loose 'src') -Destination (Join-Path $root 'candidate source copy')
-          Move-Item -LiteralPath $archive -Destination (Join-Path $root 'candidate ASAR copy')
-          $sourceTar = Join-Path $root 'legacy-source.tar'
-          git archive --format=tar --output=$sourceTar $env:PILOT_LEGACY_SOURCE src package.json
-          if ($LASTEXITCODE -ne 0) { throw 'Legacy source archive failed' }
-          tar.exe -xf $sourceTar -C $loose
-          if ($LASTEXITCODE -ne 0) { throw 'Legacy source extraction failed' }
-          "PILOT_LEGACY_EXE=$(Join-Path $legacy 'ASSCRACK.exe')" >> $env:GITHUB_ENV
-      - name: Exercise the packaged Windows app and disposable profiles
-        run: |
-          $root = $env:PILOT_TEST_ROOT
           $evidencePath = Join-Path $root 'evidence.json'
           node ci/windows-packaged-pilot.cjs (Join-Path $root 'payload/ASSCRACK.exe') (Join-Path $root 'profiles') $evidencePath
-          $scenarioExit = $LASTEXITCODE
+          $captureExit = $LASTEXITCODE
           if (Test-Path -LiteralPath $evidencePath) { Get-Content -Raw -LiteralPath $evidencePath }
-          if ($scenarioExit -ne 0) { throw 'Packaged app scenario failed' }
+          if ($captureExit -ne 0) { throw 'Passive capture check failed' }
