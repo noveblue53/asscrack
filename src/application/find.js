@@ -230,7 +230,7 @@
     }
 
     function open() {
-        if (!chatScreen || chatScreen.hidden) return false;
+        if (!chatScreen || chatScreen.hidden || window.whispers?.isOpen?.()) return false;
         if (!state) {
             const reading = window.reading;
             state = {
@@ -288,7 +288,7 @@
     // Ctrl+F (Cmd+F on a Mac) opens the bar, also when it is open: then the query is selected.
     // F3 and Shift+F3 go to the next and the previous result while the bar is open.
     document.addEventListener('keydown', event => {
-        if (event.defaultPrevented) return;
+        if (event.defaultPrevented || window.whispers?.isOpen?.()) return;
         const key = String(event.key).toLowerCase();
         if (key === 'f' && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey) {
             if (open()) event.preventDefault();

@@ -207,7 +207,7 @@
 
     <div id="chat-body">
       <section id="buddy-panel" class="panel" tabindex="-1" aria-label="Buddies">
-        <h2 class="panel-head">Buddies <span id="peer-count" class="count">1</span> <button id="whisper-open" type="button" aria-haspopup="dialog">Whispers</button></h2>
+        <h2 class="panel-head">Buddies <span id="peer-count" class="count">1</span> <button id="whisper-open" type="button" aria-controls="whisper-pane" hidden>Whispers</button></h2>
         <ul id="peers"></ul>
         <div id="voice-controls" aria-label="Voice controls" role="group">
           <button id="join-voice" type="button">Join voice</button>
@@ -283,6 +283,22 @@
           <textarea id="message-input" rows="1" placeholder="Type a message" autocomplete="off" aria-label="Message"></textarea>
           <button id="send" type="button">Send</button>
         </div>
+        <section id="whisper-pane" aria-labelledby="whisper-title whisper-scope" hidden>
+          <header class="whisper-header">
+            <button id="whisper-close" type="button">← Room</button>
+            <h2 id="whisper-title">Whispers</h2>
+            <span id="whisper-scope">Private</span>
+          </header>
+          <label id="whisper-picker" for="whisper-peer" hidden>
+            Choose a buddy <select id="whisper-peer"></select>
+          </label>
+          <ul id="whisper-lines" role="log" aria-label="Private messages"></ul>
+          <p id="whisper-status" role="status"></p>
+          <div class="whisper-compose">
+            <textarea id="whisper-draft" rows="1" maxlength="4096" autocomplete="off" spellcheck="false" aria-label="Private message" placeholder="Write a whisper" disabled></textarea>
+            <button id="whisper-send" type="button" aria-label="Send whisper" disabled>Send</button>
+          </div>
+        </section>
       </section>
       <div id="map-sep" class="layout-sep" role="separator" tabindex="0" aria-orientation="vertical" aria-controls="map-panel" aria-label="Resize the network map" aria-valuenow="320" aria-valuemin="260" aria-valuemax="900"></div>
       <!-- The node map panel. nodemap.js draws one SVG into #node-map. -->
@@ -375,18 +391,6 @@
     </template>
   </dialog>
 
-  <dialog id="whisper-dialog" aria-labelledby="whisper-title">
-    <h2 id="whisper-title">Whispers</h2>
-    <label for="whisper-peer">Private conversation with</label>
-    <select id="whisper-peer"></select>
-    <small id="whisper-identity"></small>
-    <ul id="whisper-lines" aria-label="Private messages" role="log"></ul>
-    <label for="whisper-draft">Private message</label>
-    <textarea id="whisper-draft" rows="3" maxlength="4096" autocomplete="off" spellcheck="false"></textarea>
-    <p id="whisper-status" role="status"></p>
-    <button id="whisper-send" type="button" disabled>Send whisper</button>
-    <button id="whisper-close" type="button">Close</button>
-  </dialog>
   <dialog id="attention-settings" aria-labelledby="attention-title">
     <h2 id="attention-title">Sound &amp; notifications</h2>
     <fieldset>

@@ -137,6 +137,7 @@
     let hold = false;
     let highlightScrollTop = null;
     let unread = createUnread();
+    let roomBeforeWhisper = null;
 
     function lines() {
         return list.children;
@@ -194,11 +195,13 @@
 
     // Call before a change of the list (append, history insert). Returns the state for afterChange.
     function beforeChange() {
+        if (roomBeforeWhisper) return roomBeforeWhisper;
         return { following, anchor: following ? null : captureAnchor() };
     }
 
     // Call after the change. Following: keep the end in view. Else: put the anchor line back at its offset.
     function afterChange(state) {
+        if (roomBeforeWhisper) return;
         if (state?.following ?? following) scrollToEnd();
         else restoreAnchor(state?.anchor ?? anchor);
         anchor = captureAnchor();
@@ -208,7 +211,7 @@
     // Call for a new live line between beforeChange and afterChange. While not following, the line counts
     // one time as unread. The first unread line gets the marker class.
     function noteIncoming(item) {
-        if (following || !item) return false;
+        if ((!roomBeforeWhisper && following) || !item) return false;
         if (!unread.note(item)) return false;
         if (unread.first === item) item.classList.add(UNREAD_CLASS);
         return true;
@@ -217,6 +220,7 @@
     // Go to the newest line and follow again. Clears the count and the marker.
     // smooth: a smooth scroll, only when the user does not ask for reduced motion.
     function followLatest(options = {}) {
+        if (roomBeforeWhisper) return;
         const state = { following: true, anchor: null };
         clearUnread();
         following = true;
@@ -235,6 +239,7 @@
     }
 
     list.addEventListener('scroll', () => {
+        if (roomBeforeWhisper) return;
         const atEnd = isAtEnd(list.scrollHeight, list.scrollTop, list.clientHeight);
         // Revealing a near-end highlight can land exactly at the bottom. Keep the next
         // highlight pending until the user advances, even when Chromium posts scroll later.
@@ -279,6 +284,7 @@
     // so it uses the anchor of the last scroll or change, not a new measurement.
     if (typeof ResizeObserver === 'function') {
         new ResizeObserver(() => {
+            if (roomBeforeWhisper) return;
             if (following) scrollToEnd();
             else restoreAnchor(anchor);
             if (!following) anchor = captureAnchor();
@@ -289,12 +295,13 @@
 
     // The position now, for restorePosition: following, or the first visible line and its offset.
     function savePosition() {
+        if (roomBeforeWhisper) return roomBeforeWhisper;
         return { following, anchor: following ? null : captureAnchor() };
     }
 
     // Put the list back at a saved position. The unread count and the marker do not change.
     function restorePosition(saved) {
-        if (!saved) return;
+        if (!saved || roomBeforeWhisper) return;
         endJump();
         following = saved.following === true;
         if (following) scrollToEnd();
@@ -316,6 +323,7 @@
     // Saved rooms (milestone 6): a change above the viewport (older lines at the top of the list). The first visible
     // line stays at the same place on the screen. Following: the end stays in view.
     function keepPosition(change) {
+        if (roomBeforeWhisper) return change();
         const saved = following ? null : captureAnchor();
         change();
         if (following) scrollToEnd();
@@ -335,6 +343,19 @@
     }
 
     window.reading = {
+        suspendForWhisper() {
+            if (roomBeforeWhisper) return;
+            endJump();
+            // Even a reader at the bottom needs this line if room traffic arrives in private chat.
+            roomBeforeWhisper = { following, anchor: captureAnchor() };
+        },
+        resumeFromWhisper() {
+            if (!roomBeforeWhisper) return;
+            const saved = roomBeforeWhisper;
+            roomBeforeWhisper = null;
+            restorePosition({ following: saved.following && unread.count === 0, anchor: saved.anchor });
+            if (unread.count) highlightScrollTop = list.scrollTop;
+        },
         leaveChannel() {
             const state = { position: savePosition(), unread };
             unread = createUnread();
@@ -354,7 +375,7 @@
         savePosition,
         restorePosition,
         setHold,
-        isFollowing: () => following,
+        isFollowing: () => following && !roomBeforeWhisper,
         unreadCount: () => unread.count
     };
     showUnread();

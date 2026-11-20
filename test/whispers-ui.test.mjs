@@ -7,8 +7,8 @@ import { createDom } from './helpers/fake-dom.mjs'
 import { loadRoomWindow, settle } from './helpers/renderer-fixture.mjs'
 
 test('private composer binds drafts, acknowledgements and notification clicks to the selected peer ID', async () => {
-    const { document, window, Event } = createDom(['dialog', 'open', 'close', 'peer', 'draft', 'lines', 'identity', 'status', 'send']
-        .map(name => ({ id: 'whisper-' + name })))
+    const { document, window, Event } = createDom(['pane', 'title', 'picker', 'open', 'close', 'peer', 'draft', 'lines', 'status', 'send']
+        .map(name => ({ id: 'whisper-' + name, hidden: name === 'pane' })))
     const el = name => document.getElementById('whisper-' + name)
     const events = {}, privateSends = [], attention = []
     let complete
@@ -23,9 +23,6 @@ test('private composer binds drafts, acknowledgements and notification clicks to
         window.asscrack['on' + name] = fn => { events[name] = fn }
     }
     window.roomAttention = { incoming: event => attention.push(JSON.stringify(event)), viewChanged() {} }
-    const dialog = el('dialog')
-    dialog.showModal = () => { dialog.open = true }
-    dialog.close = () => { dialog.open = false; dialog.dispatchEvent(new Event('close')) }
     // The fake DOM has no layout to scroll. A successful click must still point at a retained message.
     const create = document.createElement.bind(document)
     document.createElement = tag => Object.assign(create(tag), { scrollIntoView() {} })
@@ -65,7 +62,8 @@ test('private composer binds drafts, acknowledgements and notification clicks to
     assert.equal(el('lines').children.length, 0)
     window.whispers.open('identity-b')
     assert.equal(el('draft').value, '')
-    assert.match(el('lines').textContent, /received by peer.*only for B/)
+    assert.equal(el('lines').textContent, 'You — only for B')
+    assert.match(el('lines').children[0].getAttribute('aria-label'), /received by peer/)
     window.whispers.close()
     const id = randomUUID()
     events.Whisper({ peerId: 'identity-c', text: 'private incoming marker', id })
@@ -90,7 +88,65 @@ test('public composer keeps private-looking slash commands as a local draft', as
         room.el('send').click()
         await settle()
         assert.equal(room.el('message-input').value, text)
-        assert.match(room.el('status').textContent, /open Whispers/)
+        assert.match(room.el('status').textContent, /Whispers are unavailable/)
     }
+    assert.deepEqual(posts, [])
+})
+
+test('whisper commands resolve live and retained names without overwriting drafts or sending the command to a peer', () => {
+    const ids = ['pane', 'title', 'picker', 'open', 'close', 'peer', 'draft', 'lines', 'status', 'send']
+        .map(key => ({ id: 'whisper-' + key, hidden: key === 'pane' }))
+    const { document, window, Event } = createDom([...ids, { id: 'message-input' }])
+    const events = {}
+    const posts = []
+    window.asscrack = { sendWhisper: (...args) => { posts.push(args); return 'received' } }
+    for (const name of ['PeerName', 'PeerJoined', 'PeerLeft', 'WhisperCapability', 'Whisper']) {
+        window.asscrack['on' + name] = fn => { events[name] = fn }
+    }
+    vm.runInNewContext(readFileSync(new URL('../src/application/whispers.js', import.meta.url), 'utf8'),
+        { window, document, crypto: { randomUUID } })
+    function join(peerId, name) {
+        events.PeerJoined({ peerId })
+        events.PeerName({ peerId, name })
+        events.WhisperCapability({ peerId, available: true })
+    }
+    const el = name => document.getElementById('whisper-' + name)
+    const room = document.getElementById('message-input')
+    const edit = text => { el('draft').value = text; el('draft').dispatchEvent(new Event('input')) }
+    join('john-original', 'John Kramer')
+    join('sam-original', 'Sam')
+    const w = window.whispers
+    assert.equal(w.command('/w'), true)
+    assert.equal(el('peer').value, '')
+    assert.equal(el('send').disabled, true)
+    assert.equal(w.command('/w John Kramer first line'), true)
+    assert.ok(w.isViewing('john-original'))
+    assert.equal(el('draft').value, 'first line')
+    assert.equal(w.command('/msg "John Kramer" second line'), false)
+    assert.equal(el('draft').value, 'first line')
+    events.PeerLeft({ peerId: 'john-original' })
+    join('john-new', 'John Kramer')
+    room.value = '/W John saved for John'
+    assert.equal(w.command(room.value), false)
+    assert.deepEqual(el('peer').children.map(opt => opt.value), ['', 'john-original', 'john-new'])
+    assert.equal(w.isViewing('john-new'), false)
+    el('peer').value = 'john-new'
+    el('peer').dispatchEvent(new Event('change'))
+    assert.ok(w.isViewing('john-new'))
+    assert.equal(el('draft').value, 'saved for John')
+    assert.equal(room.value, '')
+    w.open('john-original')
+    assert.equal(el('draft').value, 'first line')
+    edit('/w Sam from an offline thread')
+    assert.equal(el('send').disabled, false)
+    el('send').click()
+    assert.ok(w.isViewing('sam-original'))
+    assert.equal(el('draft').value, 'from an offline thread')
+    events.Whisper({ peerId: 'john-new', text: 'here?', id: randomUUID() })
+    assert.equal(w.isViewing('sam-original'), true)
+    assert.equal(el('draft').value, 'from an offline thread')
+    assert.match(el('open').textContent, /1/)
+    assert.equal(w.command('/w nobody unmatched'), false)
+    assert.equal(el('send').disabled, true)
     assert.deepEqual(posts, [])
 })
