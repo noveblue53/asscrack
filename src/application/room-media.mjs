@@ -44,9 +44,17 @@ export function byteRange(header, size) {
     return start <= end && start < size ? { start, end } : null;
 }
 
+// Node stream high-water marks are measured in bytes. WHATWG streams count chunks
+// by default, which would let a slow media consumer queue thousands of 64 KiB blocks.
+export function mediaBody(stream) {
+    return Readable.toWeb(stream, { strategy: { highWaterMark: 64 * 1024, size: chunk => chunk.byteLength } });
+}
+
 export function createRoomMedia({ nativeImage, changed = () => {} }) {
     const entries = new Map(), routes = new Map(), cache = new Map(), streams = new Set();
-    let bytesUsed = 0, decoding = 0, epoch = 0;
+    let bytesUsed = 0, decoding = 0, epoch = 0, thumbnailEpoch = 0;
+    const hashWaiters = [];
+    let hashing = 0, hashController = new AbortController();
 
     function dropPreview(entry) {
         if (!cache.delete(entry)) return;
@@ -117,10 +125,10 @@ export function createRoomMedia({ nativeImage, changed = () => {} }) {
         finally { decoding--; }
     }
 
-    async function verified(d, file) {
+    async function verified(d, file, allowed = () => true) {
         const entry = entryFor(d);
         if (!entry) return;
-        const version = epoch;
+        const version = epoch, thumbnailVersion = thumbnailEpoch;
         let fh;
         try {
             fh = await openRegular(file);
@@ -134,9 +142,9 @@ export function createRoomMedia({ nativeImage, changed = () => {} }) {
                 fmt = inspectGif(await readPart(fh, d.size));
             } else if (d.kind === 'image') {
                 const thumb = await makePreview(file, d);
-                if (epoch === version && entries.get(d.id) === entry && thumb) saveThumbnail(d, thumb);
+                if (epoch === version && thumbnailVersion === thumbnailEpoch && entries.get(d.id) === entry && allowed() && thumb) saveThumbnail(d, thumb);
             }
-            if (!fmt || version !== epoch || entries.get(d.id) !== entry) return;
+            if (!fmt || version !== epoch || entries.get(d.id) !== entry || !allowed()) return;
             entry.original = { file, stamp: stamp(st), ...fmt, hashCheck: null };
             changed(d.id);
         } catch { /* Deleted or unreadable originals keep the card and original retrieval action. */ }
@@ -157,13 +165,32 @@ export function createRoomMedia({ nativeImage, changed = () => {} }) {
     // Pin each response to an opened file, compare its identity, and stream the hash
     // once per registered original before releasing any original bytes to Chromium.
     async function verifyHash(entry, original) {
-        const fh = await openRegular(original.file);
+        const signal = hashController.signal;
+        if (hashing >= 2) {
+            if (hashWaiters.length >= 512) return false;
+            await new Promise(resolve => hashWaiters.push(resolve));
+            if (signal.aborted) return false;
+        }
+        hashing++;
+        let fh;
         try {
+            fh = await openRegular(original.file);
             if (stamp(await fh.stat({ bigint: true })) !== original.stamp) return false;
             const hash = createHash('sha256');
-            for await (const chunk of fh.createReadStream({ autoClose: false })) hash.update(chunk);
+            const block = Buffer.allocUnsafe(128 * 1024);
+            let position = 0;
+            while (position < entry.size) {
+                signal.throwIfAborted();
+                const remaining = Math.min(block.length, entry.size - position);
+                const { bytesRead } = await fh.read(block, 0, remaining, position);
+                if (!bytesRead) return false;
+                hash.update(block.subarray(0, bytesRead));
+                position += bytesRead;
+            }
             return hash.digest('hex') === entry.sha256 && stamp(await fh.stat({ bigint: true })) === original.stamp;
-        } finally { await fh.close(); }
+        } finally {
+            await fh?.close(); hashing--; hashWaiters.shift()?.();
+        }
     }
 
     async function serve(request) {
@@ -203,7 +230,7 @@ export function createRoomMedia({ nativeImage, changed = () => {} }) {
             const stream = fh.createReadStream({ start, end, autoClose: true, signal: request.signal });
             fh = null; streams.add(stream);
             stream.once('close', () => streams.delete(stream));
-            return new Response(Readable.toWeb(stream), { status, headers });
+            return new Response(mediaBody(stream), { status, headers });
         } catch { return failed(410); }
         finally { await fh?.close(); }
     }
@@ -216,19 +243,22 @@ export function createRoomMedia({ nativeImage, changed = () => {} }) {
         } catch { return false; }
     }
 
-    async function restore(d, file) {
+    async function restore(d, file, allowed = () => true) {
         const version = epoch;
-        if (!await canReveal(d, file) || version !== epoch) return false;
-        await verified(d, file);
-        return version === epoch;
+        if (!await canReveal(d, file) || version !== epoch || !allowed()) return false;
+        await verified(d, file, allowed);
+        return version === epoch && allowed();
     }
 
     function clearPreviews() {
+        thumbnailEpoch++;
         for (const entry of [...cache.keys()]) dropPreview(entry);
     }
 
     function clear() {
         epoch++;
+        hashController.abort(); hashController = new AbortController();
+        for (const wake of hashWaiters.splice(0)) wake();
         const ids = [...entries.keys()];
         for (const stream of streams) stream.destroy();
         streams.clear(); entries.clear(); routes.clear(); cache.clear(); bytesUsed = 0;

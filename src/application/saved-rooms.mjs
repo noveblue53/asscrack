@@ -269,6 +269,20 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
         return { forgotten: true };
     }
 
+    // Local, user-accepted downloads only. The canonical card's presence in the
+    // encrypted archive determines whether a durable file association exists.
+    function rememberDownload(descriptor, file) {
+        if (!active?.keepHistory || !archive) return;
+        try { archive.rememberDownload(active.roomId, descriptor, file); }
+        catch { log('WARN', 'Local download association could not be saved'); }
+    }
+
+    function getDownload(messageId, descriptorId) {
+        if (!active || !archive) return null;
+        try { return archive.getDownload(active.roomId, messageId, descriptorId); }
+        catch { return null; }
+    }
+
     function activeInfo() {
         return active ? { roomId: active.roomId, keepHistory: active.keepHistory } : null;
     }
@@ -281,7 +295,7 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
     }
 
     return {
-        status, unlock, lines, getRoom, loadChannels, persistChannels, prepareReplay, releaseReplay, afterLogin, recordSend, attachNode, setKeepHistory, clear, forget, activeInfo,
+        rememberDownload, getDownload, status, unlock, lines, getRoom, loadChannels, persistChannels, prepareReplay, releaseReplay, afterLogin, recordSend, attachNode, setKeepHistory, clear, forget, activeInfo,
         close, active: () => active
     };
 }

@@ -203,9 +203,36 @@ let readRoomActivity = () => [];
 // collision). Only a file-done event with the direction receive adds a path. The window sends only the key.
 const clipboardImages = createClipboardStaging(app.getPath('temp'));
 const receivedFiles = new Map();
+const restoringDownloads = new Map();
 const roomMedia = createRoomMedia({ nativeImage, changed: id => sendToWindow('asscrack:media-changed', id) });
 let mediaGeneration = 0;
 function clearRoomMedia() { mediaGeneration++; roomMedia.clear(); }
+function savedDownload(messageId, descriptorId) {
+    if (typeof messageId !== 'string' || !messageId || messageId.length > 128 ||
+        typeof descriptorId !== 'string' || descriptorId.length !== 36) return null;
+    return savedRooms?.getDownload(messageId, descriptorId);
+}
+
+ipcMain.handle('asscrack:saved-original-available', async (_event, messageId, descriptorId) => {
+    const download = savedDownload(messageId, descriptorId);
+    if (!download) return false;
+    const key = JSON.stringify([messageId, descriptorId]);
+    let pending = restoringDownloads.get(key);
+    if (!pending) {
+        const allowed = () => savedDownload(messageId, descriptorId)?.path === download.path;
+        pending = roomMedia.restore(download.descriptor, download.path, allowed)
+            .finally(() => restoringDownloads.delete(key));
+        restoringDownloads.set(key, pending);
+    }
+    return pending;
+});
+ipcMain.handle('asscrack:reveal-saved-original', async (_event, messageId, descriptorId) => {
+    const download = savedDownload(messageId, descriptorId);
+    if (!download || !await roomMedia.canReveal(download.descriptor, download.path) ||
+        savedDownload(messageId, descriptorId)?.path !== download.path) return { ok: false };
+    shell.showItemInFolder(download.path);
+    return { ok: true };
+});
 ipcMain.handle('asscrack:media-clear-previews', () => { mediaGeneration++; roomMedia.clearPreviews(); });
 ipcMain.handle('asscrack:media-info', (_event, ref) => node ? roomMedia.info(ref) : {});
 ipcMain.handle('asscrack:media-preview', async (_event, id) => {
@@ -480,6 +507,7 @@ async function startRoom(options, publicAddress) {
         receivedFiles.set(`${data.offerId}|${data.peerId}`, data.path);
         const descriptor = node.attachmentDescriptor(data.attachmentId);
         if (descriptor && descriptor.source === data.peerId && descriptor.sha256 === data.sha256 && descriptor.size === data.size) {
+            getSavedRooms().rememberDownload(descriptor, data.path);
             Promise.resolve(roomMedia.verified(descriptor, data.path)).catch(err => writeLog('WARN', `Verified file preview unavailable: ${err.message}`));
         }
     });

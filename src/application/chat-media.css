@@ -4,3 +4,4 @@
 .chat-media canvas { width: auto; height: auto; }
 .chat-media button { margin-block: .2rem; }
 .chat-media-status { display: block; font-size: .9em; }
+.compact-transcript #messages .attachment-actions, .compact-transcript #messages .chat-media { grid-column: 3 / -1; }

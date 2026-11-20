@@ -34,6 +34,11 @@ export function sameAttachment(a, b) {
         a.name === b.name && a.size === b.size && a.kind === b.kind && a.expires === b.expires)
 }
 
+// Bind every new stream to the exact descriptor in the displayed chat post, including after a host replay.
+function descriptorHash(d) {
+    return createHash('sha256').update(JSON.stringify([d.id, d.source, d.sha256, d.size, d.kind, d.name, d.expires])).digest()
+}
+
 async function readBounded(stream, max) {
     let length = 0
     const chunks = []
@@ -64,7 +69,7 @@ export function createAttachments({ self, sessions, connections, files, events, 
             availability.delete(first)
         }
         known.set(id, entry)
-        if (entry.source !== self && capable.has(entry.source) && entry.expires > Date.now()) send(entry.source, 'query', { id })
+        if (entry.source !== self && capable.has(entry.source) && entry.expires > Date.now()) send(entry.source, 'query', { id, stamp: descriptorHash(entry).toString('hex') })
     }
     function resolve(ref) {
         if (typeof ref === 'string') return known.get(ref)
@@ -103,31 +108,40 @@ export function createAttachments({ self, sessions, connections, files, events, 
         if (control.op === 'hello') {
             if (capable.has(peer)) return
             capable.add(peer)
-            for (const d of known.values()) if (d.source === peer && d.expires > Date.now()) send(peer, 'query', { id: d.id })
+            for (const d of known.values()) if (d.source === peer && d.expires > Date.now()) send(peer, 'query', { id: d.id, stamp: descriptorHash(d).toString('hex') })
             return
         }
         const { op, id } = control
         if (!capable.has(peer) || typeof id !== 'string' || !UUID.test(id)) return
         if (op === 'status') {
-            if (known.get(id)?.source === peer) status(id, control.available === true && known.get(id).expires > Date.now())
-        } else if (op === 'query' || op === 'request') {
-            const source = sources.get(id)
-            const valid = Boolean(source && !stopped && source.descriptor.expires > Date.now() && await files.unchanged(source.prepared))
-            if (!sessions.has(peer)) return
-            if (op === 'request' && valid) {
-                // Repeated requests reuse the live offer until its recipient accepts or cancels.
-                files.offerAttachmentTo(source.prepared, source.descriptor, peer)
+            const descriptor = known.get(id)
+            if (descriptor?.source === peer) {
+                status(id, control.available === true && descriptor.expires > Date.now() &&
+                    control.stamp === descriptorHash(descriptor).toString('hex'))
             }
-            send(peer, 'status', { id, available: valid })
+        } else if (op === 'query' || op === 'request') {
+            const session = sessions.get(peer)
+            const source = sources.get(id)
+            const stamp = source && descriptorHash(source.descriptor).toString('hex')
+            let available = false
+            if (source && stamp === control.stamp && source.descriptor.expires > Date.now()) {
+                // Concurrent status/offer requests for this same original share a single file identity check.
+                source.checking ??= files.unchanged(source.prepared).finally(() => { source.checking = null })
+                available = await source.checking && !stopped && sources.get(id) === source && source.descriptor.expires > Date.now()
+            }
+            if (!session || sessions.get(peer) !== session) return
+            if (op === 'request' && available) files.offerAttachmentTo(source.prepared, source.descriptor, peer)
+            send(peer, 'status', { id, available, stamp })
         }
     }
     async function post(filePath, caption, channelId = 'general', displayName) {
         const kind = mediaKind(displayName ?? filePath)
-        if (!kind || typeof caption !== 'string' || Buffer.byteLength(caption) > 16000) throw new Error('Unsupported media or caption exceeds 16000 bytes')
+        if (!kind || typeof caption !== 'string') throw new Error('Unsupported media or invalid caption')
         if (sources.size >= MAX_SOURCES) throw new Error('Too many current attachment offers')
         canPost(channelId)
         const prepared = await files.prepareFile(filePath, displayName)
         if (stopped) throw new Error('Room closed')
+        if (sources.size >= MAX_SOURCES) throw new Error('Too many current attachment offers')
         const descriptor = normalizeAttachment({ ...prepared, id: randomUUID(), source: self, expires: Date.now() + ATTACHMENT_LIFETIME, kind })
         if (!descriptor) throw new Error('Invalid attachment')
         const fallback = [caption.trim(), descriptor.name + ' (' + descriptor.size + ' bytes)'].filter(Boolean).join('\n')
@@ -165,7 +179,8 @@ export function createAttachments({ self, sessions, connections, files, events, 
             if (!source || source.descriptor.expires <= Date.now() || !await files.unchanged(source.prepared)) throw new Error('Original unavailable')
             const bytes = await previewProvider(source.descriptor, source.prepared.filePath)
             if (!bytes?.length || bytes.length > MAX_PREVIEW_BYTES || !sessions.has(peer) || stopped) throw new Error('Preview unavailable')
-            await stream.sink([createHash('sha256').update(bytes).digest(), bytes])
+            if (sources.get(id) !== source || !await files.unchanged(source.prepared)) throw new Error('Original changed')
+            await stream.sink([descriptorHash(source.descriptor), createHash('sha256').update(bytes).digest(), bytes])
             await stream.close()
         } catch (err) { stream.abort(err) }
         finally { done(); serving-- }
@@ -184,9 +199,10 @@ export function createAttachments({ self, sessions, connections, files, events, 
             done = begin(stream)
             if (stopped) throw new Error('Room closed')
             await stream.sink([Buffer.from(id)])
-            const response = await readBounded(stream, MAX_PREVIEW_BYTES + 32)
-            const bytes = response.subarray(32)
-            if (!bytes.length || !createHash('sha256').update(bytes).digest().equals(response.subarray(0, 32))) throw new Error('Bad preview integrity')
+            const response = await readBounded(stream, MAX_PREVIEW_BYTES + 64)
+            if (!descriptorHash(descriptor).equals(response.subarray(0, 32))) throw new Error('Preview does not match this post')
+            const bytes = response.subarray(64)
+            if (!bytes.length || !createHash('sha256').update(bytes).digest().equals(response.subarray(32, 64))) throw new Error('Bad preview integrity')
             await stream.close()
             return { descriptor, bytes }
         } catch (err) { stream?.abort(err); return null }
@@ -195,7 +211,7 @@ export function createAttachments({ self, sessions, connections, files, events, 
     function requestOriginal(ref) {
         const d = resolve(ref)
         const id = d?.id
-        return Boolean(d && d.expires > Date.now() && availability.get(id) && capable.has(d.source) && send(d.source, 'request', { id }))
+        return Boolean(d && d.expires > Date.now() && availability.get(id) && capable.has(d.source) && send(d.source, 'request', { id, stamp: descriptorHash(d).toString('hex') }))
     }
     return { post, opened, handle, remember, closed, handlePreview, requestPreviewById, requestOriginal,
         descriptor: ref => resolve(ref) ?? null,

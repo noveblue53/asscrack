@@ -92,6 +92,10 @@ CREATE VIEW IF NOT EXISTS public_messages AS
 -- still read/delete General through its original messages table and queries.
 CREATE TABLE IF NOT EXISTS message_attachments(room_id TEXT NOT NULL REFERENCES rooms(room_id) ON DELETE CASCADE,
   msg_id TEXT NOT NULL, descriptor TEXT NOT NULL, PRIMARY KEY(room_id, msg_id));
+-- A local file association exists only while its opted-in archived card exists.
+-- This table is never joined into public history, network replay or renderer rows.
+CREATE TABLE IF NOT EXISTS verified_downloads(room_id TEXT NOT NULL,msg_id TEXT NOT NULL,path TEXT NOT NULL,
+  PRIMARY KEY(room_id,msg_id), FOREIGN KEY(room_id,msg_id) REFERENCES message_attachments(room_id,msg_id) ON DELETE CASCADE);
 CREATE TRIGGER IF NOT EXISTS remove_general_attachment AFTER DELETE ON messages BEGIN
   DELETE FROM message_attachments WHERE room_id=OLD.room_id AND msg_id=OLD.msg_id;
 END;
@@ -246,6 +250,20 @@ export function openRoomArchive({ dir, protector, limits = null }) {
         d.prepare('DELETE FROM messages WHERE room_id = ?').run(roomId);
         d.prepare('DELETE FROM rooms WHERE room_id = ?').run(roomId);
       })();
+    },
+    rememberDownload(roomId, descriptor, file) {
+      const valid = normalizeAttachment(descriptor);
+      if (!valid || !path.isAbsolute(file)) return;
+      need().prepare(`INSERT INTO verified_downloads(room_id,msg_id,path)
+        SELECT room_id,msg_id,? FROM message_attachments WHERE room_id=? AND descriptor=?
+        ON CONFLICT(room_id,msg_id) DO UPDATE SET path=excluded.path`).run(file, roomId, JSON.stringify(valid));
+    },
+    getDownload(roomId, messageId, descriptorId) {
+      const row = need().prepare(`SELECT d.path,a.descriptor FROM verified_downloads d
+        JOIN message_attachments a USING(room_id,msg_id) WHERE d.room_id=? AND d.msg_id=?`).get(roomId,messageId);
+      if (!row) return null;
+      const descriptor = normalizeAttachment(JSON.parse(row.descriptor));
+      return descriptor?.id === descriptorId ? { descriptor, path: row.path } : null;
     },
     channels(roomId) {
       return need().prepare('SELECT channel_id AS id, name FROM channels WHERE room_id=? ORDER BY channel_id').all(roomId);

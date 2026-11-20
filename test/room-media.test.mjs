@@ -6,7 +6,8 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { crc32 } from 'node:zlib';
 import { inspectImage, inspectGif, PREVIEW_LIMIT } from '../src/application/media-formats.mjs';
-import { createRoomMedia, byteRange } from '../src/application/room-media.mjs';
+import { Readable } from 'node:stream';
+import { createRoomMedia, byteRange, mediaBody } from '../src/application/room-media.mjs';
 
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMQCdjyHwADrAIYvvruLQAAAABJRU5ErkJggg==', 'base64');
 const gif = Buffer.from('R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==','base64');
@@ -88,4 +89,16 @@ test('publisher derivative and restored local identity check the exact original 
     const copy=Buffer.from(png);copy[45]^=1;await writeFile(file,copy);
     assert.equal(await media.makePreview(file,d),null);assert.equal(await media.canReveal(d,file),false);
     assert.equal(decodes,2);
+});
+
+test('a paused original-file consumer does not prefetch the whole video', async () => {
+    let chunks = 0;
+    const block = Buffer.alloc(64 * 1024);
+    const stream = new Readable({ highWaterMark: block.length, read() {
+        chunks++; this.push(chunks <= 100 ? block : null);
+    } });
+    const response = new Response(mediaBody(stream));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.ok(chunks > 0 && chunks <= 3, 'paused after ' + chunks + ' blocks ahead of the reader');
+    await response.body.cancel();
 });

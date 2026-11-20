@@ -100,7 +100,7 @@ function makeBridge(options) {
 
 // options.send: async (text) => peer count, or throw. Returns the fixture.
 export async function loadRoomWindow(options = {}) {
-    const { document, window, Event } = createDom(layout());
+    const { document, window, Event } = createDom([...layout(), ...(options.elements ?? [])]);
     const { bridge, handlers, calls } = makeBridge(options);
     const errors = [];
     Object.assign(window, {
@@ -137,7 +137,9 @@ export async function loadRoomWindow(options = {}) {
     window.document = document;
     vm.createContext(context);
     // Classic scripts: a top-level const of one script is visible to the next one (one global scope).
-    vm.runInContext(sources.join('\n;\n'), context, { filename: 'room-window.js' });
+    const extra = await Promise.all((options.scripts ?? []).map(name =>
+        readFile(new URL(`../../src/application/${name}`, import.meta.url), 'utf8')));
+    vm.runInContext([...sources, ...extra].join('\n;\n'), context, { filename: 'room-window.js' });
 
     const fixture = {
         window, document, handlers, calls, errors, Event,

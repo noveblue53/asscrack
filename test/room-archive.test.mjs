@@ -430,3 +430,30 @@ test('attachment bytes share row and room retention, and pruning removes the des
   assert.equal(a.listMessages(roomId)[1].attachment, undefined);
   assert.equal(a.replayMessages(roomId).some(r => r.attachment), false);
 });
+
+test('verified download reference is local to the exact retained card, disappears on Clear, and never enters replay', t => {
+  const dir = tmpDir(), protector = fakeProtector('download');
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const opened = openRoomArchive({ dir, protector });
+  const { roomId } = opened.saveRoom({ name: 'Same', roomKey: KEY, keepHistory: true });
+  const { roomId: other } = opened.saveRoom({ name: 'Same', roomKey: Buffer.alloc(32, 8), keepHistory: true });
+  const d = { id: '12345678-1234-4234-a234-123456789abc', source: '12D3KooWQywidz6ZPBn4JkDYuVmkyMrteYfnWbxtDt6HoK1pRQ1N',
+    sha256: 'a'.repeat(64), size: 3, kind: 'image', name: 'shot.png', expires: 123456 };
+  const record = { id: 'post', text: 'a shot', time: 15, source: 'live', peerId: d.source, attachment: d };
+  opened.addMessage(roomId, record); opened.addMessage(other, record);
+  const file = path.join(dir, 'download.png');
+  fs.writeFileSync(file, 'xyz');
+  opened.rememberDownload(roomId, { ...d, size: 4 }, file);
+  assert.equal(opened.getDownload(roomId, 'post', d.id), null);
+  opened.rememberDownload(roomId, d, file);
+  opened.close();
+  const reopened = openRoomArchive({ dir, protector }); t.after(() => reopened.close());
+  assert.deepEqual(reopened.getDownload(roomId, 'post', d.id), { descriptor:d, path:file });
+  assert.equal(reopened.getDownload(other, 'post', d.id), null);
+  assert.equal(reopened.getDownload(roomId, 'post', 'another'), null);
+  assert.equal(JSON.stringify(reopened.replayMessages(roomId)).includes(file), false);
+  assert.equal(JSON.stringify(reopened.listMessages(roomId)).includes(file), false);
+  reopened.clearMessages(roomId);
+  assert.equal(reopened.getDownload(roomId, 'post', d.id), null);
+  assert.equal(fs.readFileSync(file, 'utf8'), 'xyz');
+});

@@ -8,7 +8,7 @@ import * as path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { multiaddr } from '@multiformats/multiaddr'
 import { createAsscrackNode } from '../src/network/node.mjs'
-import { FILE_PROTOCOL, safeFileName, createFileTransfer } from '../src/network/file-transfer.mjs'
+import { FILE_PROTOCOL, safeFileName, createFileTransfer, moveToFreeName } from '../src/network/file-transfer.mjs'
 import { EventEmitter } from 'node:events'
 
 const base = { room: 'files', listen: ['/ip4/127.0.0.1/tcp/0'], discovery: false,
@@ -621,4 +621,75 @@ test('127.0.0.1: excessive or unsupported preview leaves the streamed original a
         await waitUntil(() => receiver.log.done.length === 1, 3000)
         assert.equal(await sha(receiver.log.done[0].path), message.attachment.sha256)
     } finally { await cleanup(ctx) }
+})
+
+test('127.0.0.1: an altered replay descriptor cannot fetch previews or enable a fresh offer for a different original', { timeout: 15000 }, async () => {
+    const ctx = await setup(2, { previewProvider: async () => Buffer.from('original preview') })
+    const [source] = ctx.nodes
+    try {
+        const file = path.join(ctx.src, 'race.png')
+        await fsp.writeFile(file, 'original')
+        const { message } = await source.postAttachment(file, 'real content')
+        const swapped = { ...message, attachment: { ...message.attachment, sha256: '0'.repeat(64) } }
+        const reader = await createAsscrackNode({ ...base, seedHistory: [swapped] })
+        ctx.nodes.push(reader)
+        const states = []
+        reader.events.on('attachment-status', state => states.push(state))
+        await reader.connect(source.getMultiaddrs()[0])
+        await waitUntil(() => states.some(s => s.id === message.attachment.id), 4000)
+        assert.ok(states.every(s => !s.available))
+        assert.equal(reader.requestOriginal(swapped.attachment), false)
+        assert.equal(await reader.requestPreviewById(swapped.attachment), null)
+        assert.equal(reader.history().find(row => row.id === message.id).text, message.text)
+    } finally { await cleanup(ctx) }
+})
+
+test('127.0.0.1 fixture: remote cancel before the receiver opens its empty file stream leaves no saved file', async t => {
+    const dir = await tempDir('pending')
+    t.after(() => fsp.rm(dir, { recursive: true, force: true }))
+    const offerId = '09723240-6513-4691-89f9-c40edc7ff755'
+    const peerId = 'sender'
+    const stream = { sink: async () => {}, source: [], close: async () => {}, abort() {} }
+    const connection = { remotePeer: peerId, status: 'open', newStream: async () => stream }
+    const events = new EventEmitter()
+    const ft = createFileTransfer({ events, libp2p: { getConnections: () => [connection] },
+        sendTo: () => true, openPeers: () => [peerId], peerNames: () => ({}), downloadDir: dir })
+    const ended = record({ events })
+    ft.handleControl(peerId, { type: 'file-offer', offerId, size: 0, name: 'empty.txt', sha256: createHash('sha256').digest('hex') })
+    assert.ok(ft.acceptFile(offerId))
+    ft.handleControl(peerId, { type: 'file-cancel', offerId })
+    await waitUntil(() => ended.done.length + ended.failed.length + ended.cancelled.length, 1000)
+    assert.deepEqual(ended.cancelled, [{ offerId, peerId, direction: 'receive', by: 'peer' }])
+    assert.deepEqual(await entries(dir), [])
+})
+
+test('127.0.0.1 filesystem fixture: simultaneous verified saves retain both originals without hard links', async t => {
+    const dir = await tempDir('nolinks')
+    t.after(() => fsp.rm(dir, { recursive: true, force: true }))
+    const target = path.join(dir, 'same.txt')
+    const ready = Promise.withResolvers()
+    let waiting = 0
+    const fs = { ...fsp, link: async () => { throw Object.assign(new Error('unsupported'), { code: 'ENOTSUP' }) },
+        async access(file) {
+            try { await fsp.access(file) } catch (err) {
+                // A check-then-rename implementation lets both publishers observe the same free name.
+                if (file === target) {
+                    if (++waiting === 2) ready.resolve()
+                    await ready.promise
+                }
+                throw err
+            }
+        }
+    }
+    const temps = ['.incoming-a', '.incoming-b'].map(name => path.join(dir, name))
+    await Promise.all(temps.map((file, i) => fsp.writeFile(file, String(i))))
+    const published = await Promise.all(temps.map(file => moveToFreeName(file, dir, 'same.txt', fs)))
+    assert.equal(new Set(published).size, 2)
+    assert.deepEqual(await Promise.all(published.map(file => fsp.readFile(file, 'utf8'))), ['0', '1'])
+    const neverPublished = path.join(dir, '.incoming-c')
+    await fsp.writeFile(neverPublished, 'kept until cleanup')
+    await assert.rejects(moveToFreeName(neverPublished, dir, 'failed.txt', { ...fs,
+        rename: async () => { throw new Error('publish failed') }
+    }), /publish failed/)
+    assert.deepEqual((await entries(dir)).sort(), ['.incoming-c','same (1).txt','same.txt'])
 })

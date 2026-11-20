@@ -132,6 +132,7 @@
             entry.attempted = true;
             info = await api.requestMediaPreview(entry.descriptor);
         }
+        if (info.thumbnailUrl) entry.attempted = true;
         if (records.get(entry.descriptor.id) === entry) paint(entry, info);
     }
     function drain() {

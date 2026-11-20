@@ -76,6 +76,8 @@ contextBridge.exposeInMainWorld('asscrack', {
     getShareTyping: () => ipcRenderer.invoke('asscrack:get-share-typing'),
     setShareTyping: value => ipcRenderer.invoke('asscrack:set-share-typing', value === true),
     getHost: () => ipcRenderer.invoke('asscrack:host'),
+    savedOriginalAvailable: (messageId, descriptorId) => ipcRenderer.invoke('asscrack:saved-original-available', messageId, descriptorId),
+    revealSavedOriginal: (messageId, descriptorId) => ipcRenderer.invoke('asscrack:reveal-saved-original', messageId, descriptorId),
     clearMediaPreviews: () => ipcRenderer.invoke('asscrack:media-clear-previews'),
     getMediaInfo: ref => ipcRenderer.invoke('asscrack:media-info', ref),
     requestMediaPreview: ref => ipcRenderer.invoke('asscrack:media-preview', ref),
