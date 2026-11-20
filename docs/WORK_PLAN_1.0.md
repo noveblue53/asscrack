@@ -16,6 +16,12 @@ Review `work/0.7-field-recovery` against `de54371`. The changelog identifies the
 | Everyday room before the shelf | The file composer, highlights, topics, typing, listener volume, route inspection and local activity feed are available to try. | Use the Windows window at ordinary size with real devices, friends and their usual network paths. See the changelog for the local checks and remaining parts. |
 | Next release gate | Night 1 uses this build before adding the Shared shelf. Record what happened and the time to fresh two-way chat and understandable speech. | Repair any failed supported route first. Then implement 4C, durable public channels, online whispers, portable Idle Peer and notification behavior in release order. |
 
+### Desktop follow-on for review
+
+The Night 1 binary and field procedure remain pinned on `work/0.7-field-recovery`. The operator requested continued development while the meeting with friends is deferred. Review the independent desktop changes on `work/room-desktop`. The [desktop implementation and verification report](DESKTOP_REVIEW.md) identifies its portable file, source, tests and remaining Windows checks. Use the build identifier when recording a result. A passing loopback test does not complete a multi-computer exit.
+
+The Shared shelf follows Night 1. The [screenshare experiment](SCREENSHARE_FEASIBILITY.md) uses a generated source and a single viewer. A Windows source-picker trial and field uplink measurements precede a product decision. Installer sign-in startup, resumable originals and the optional ready check retain their individual prerequisites.
+
 ## Release order
 
 | Step | Work in dependency order | Evidence or decision |

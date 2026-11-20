@@ -7,6 +7,14 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased — desktop review branch
+
+The **work/room-desktop** follow-on adds six persistent room themes, themed window controls, compact chat, a detachable voice panel and manual Idle Peer in the portable app. Public channels keep separate transcripts, drafts, unread counts and encrypted history. Captioned screenshots, GIFs and videos preserve a separate original download. Current senders bound file data ahead of receiver disk writes. Private whispers require a capable online recipient. Voice cues and native mention or whisper notifications have separate preferences.
+
+**127.0.0.1** Electron checks used isolated Linux profiles. Three peers and two active transfers remained in place through all six theme switches at 1280×720 and 800×600. The full-host, restricted-peer and mixed-version checks covered current code with real 0.7.0 and 0.6.0 peers. The [desktop review report](docs/DESKTOP_REVIEW.md) lists the binary, commits, test totals, attachments, benchmarks and outstanding Windows checks.
+
+**127.0.0.1** Two frozen-source Node runs each passed **371/371**. Direct and relayed 1 GiB retries were byte-identical. The frozen Windows x64 review executable `ASSCRACK-0.7.0-desktop-29d6dda.exe` is 106,789,665 bytes, SHA-256 `221e6682531f4fe6049d9dca12a5105a49f76402352ebf4319bbb53fac106005`, built from [`29d6dda`](https://github.com/noveblue53/asscrack/commit/29d6dda4e978521a38b6c8f807056537c826815d). Windows execution and qualifying game nights await the operator.
+
 ## Unreleased — field recovery and everyday room controls
 
 The `work/0.7-field-recovery` review branch combines the three November 20 fixes with single-session dialing. A returning saved full node retries its verified endpoints, including when another room answers an old address. A cold host seeds its newest 200 eligible local rows. Clear and Forget remove deleted rows from pending replay while preserving later live traffic.
