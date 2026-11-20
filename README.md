@@ -13,7 +13,7 @@ members elect a new host with no user action.
 
 | Item | State (2026-11-19) |
 |---|---|
-| Latest build | **0.7.0**, a portable Windows `.exe`. There is no public download yet. |
+| Latest build | **0.7.0**, a portable Windows `.exe`, built on Windows on 2026-11-20. The SHA-256 is in `CHANGELOG.md`, entry 0.7.0. Checks: 127.0.0.1 only. There is no public download yet. |
 | `main` | 0.6.0 plus fixes for faults F1 to F6, the stale "No peers" status line, room window milestone 1 and Quote and Find (milestone 2). Also manual status (milestone 3) voice processing with push-to-talk (5C) and saved rooms (milestone 6 parts 1 and 2). Not released. |
 | Open field checks | The internet test card 8 (0.7.0) on 2 Windows computers: saved rooms, Quote and Find, manual status and voice settings. |
 | Current phase | Phase 8 (internet rooms) and Phase 7 (desktop experience), toward release 1.0. Steps 1 and 2 of the 1.0 plan are on `main`. Step 4 started: milestone 6 part 1 (saved rooms with an encrypted local history) is on `main` with 127.0.0.1 results only. Milestone 6 part 2 (local-only sends, saved marks, Clear, Forget and older lines) is on `main` with 127.0.0.1 results only. The step 3 field tests wait for the operator. |

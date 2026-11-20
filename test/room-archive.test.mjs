@@ -239,9 +239,10 @@ test('key: key unwraps but does not open the database (database-unreadable)', ()
 
 function openRoom(t, limits) {
   const dir = tmpDir();
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const a = openRoomArchive({ dir, protector: fakeProtector('k'), limits });
+  // Close before the delete: Windows cannot delete an open database file.
   t.after(() => a.close());
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const { roomId } = a.saveRoom({ name: 'room', roomKey: KEY, userName: 'u' });
   return { dir, a, roomId };
 }
@@ -324,7 +325,6 @@ test('a closed archive throws on addMessage', (t) => {
 
 test('250 rows: after a reopen, 200 newest rows, then one page of 50 older rows, each ID one time', (t) => {
   const dir = tmpDir();
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const p = fakeProtector('k');
   let a = openRoomArchive({ dir, protector: p });
   const { roomId } = a.saveRoom({ name: 'room', roomKey: KEY, userName: 'u' });
@@ -332,6 +332,7 @@ test('250 rows: after a reopen, 200 newest rows, then one page of 50 older rows,
   a.close();
   a = openRoomArchive({ dir, protector: p });
   t.after(() => a.close());
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   assert.equal(a.state().state, 'open');
   const first = a.listMessages(roomId);
   assert.equal(first.length, 200);
@@ -347,7 +348,6 @@ test('250 rows: after a reopen, 200 newest rows, then one page of 50 older rows,
 
 test('a version 1 database opens and goes to version 2 with its rows', (t) => {
   const dir = tmpDir();
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const p = fakeProtector('k');
   const roomId = seed(dir, p);
   // Make the file a version 1 file: no index, user_version 1.
@@ -361,6 +361,7 @@ test('a version 1 database opens and goes to version 2 with its rows', (t) => {
   db.close();
   const a = openRoomArchive({ dir, protector: p });
   t.after(() => a.close());
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   assert.equal(a.state().state, 'open');
   assert.equal(a.listMessages(roomId)[0].text, 'secret-plaintext-xyz');
 });
