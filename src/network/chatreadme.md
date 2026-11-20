@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | Archived 0.7.0 reference | Windows build from `8dacddd`. Later main `de54371` records its release. | 107,264,323 bytes, SHA-256 `ffae5423607ef2271c89719059742147ae064007ca22fa71d00632efaeb02034` |
 | Legacy 0.6.0 | Use the archived release identified in the changelog. | 97,233,105 bytes, SHA-256 `2d6185dff99c6bc8a4a204d8524d4b97a412a88744976c4d276c47dcd5070216` |
-| Candidate | Use an operator-reviewed Windows build. Record full source SHA, build flags, architecture, Windows, Node and Electron versions. | Record filename, byte size and SHA-256 on the builder and each participating PC. Builds can share a display version. |
+| Candidate | Use the review executable identified in the top Unreleased entry of CHANGELOG.md after operator review. Record its source, flags, architecture and the Windows version used for the retest. | Record filename, byte size and SHA-256 on the builder and each participating PC. Builds can share a display version. |
 
 In PowerShell assign `$exe` the path, then run `(Get-Item -LiteralPath $exe).Length` and `Get-FileHash -Algorithm SHA256 -LiteralPath $exe`. Match the file to the intended row. Keep the original executable and a closed-profile backup. Quit all old instances before the next launch. Use the same Windows account for the archive upgrade. Use a common timebase or measure elapsed time on one observer’s clock.
 
