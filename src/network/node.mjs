@@ -1,5 +1,6 @@
 import { createLibp2p } from 'libp2p'
 import { tcp } from '@libp2p/tcp'
+import { createTyping } from './typing.mjs'
 import { mdns } from '@libp2p/mdns'
 import { yamux } from '@chainsafe/libp2p-yamux'
 import { noise } from '@chainsafe/libp2p-noise'
@@ -174,6 +175,15 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     const senderName = name ?? node.peerId.toString().slice(-8)
     const events = new EventEmitter()
     const sessions = new Map()
+    const typing = createTyping({
+        broadcast(active) {
+            const line = JSON.stringify({ type: 'typing', v: 1, active })
+            let sent = false
+            for (const session of sessions.values()) if (session.send(line)) sent = true
+            return sent
+        },
+        changed: (peerId, active) => events.emit('typing', { peerId, active })
+    })
     // The name that each open session sent in its hello line.
     const names = new Map()
     const history = createHistory()
@@ -556,6 +566,10 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                             streamId: typeof control.streamId === 'string' ? control.streamId : null,
                             muted: control.muted === true
                         })
+                    } else if (control.type === 'typing') {
+                        if (sessions.get(peerId) === session && control.v === 1 && typeof control.active === 'boolean') {
+                            typing.received(peerId, control.active)
+                        }
                     } else if (control.type === 'presence') {
                         // Ignore an unknown state or a note that is not a string, with no warning.
                         if (sessions.get(peerId) === session && PRESENCE_STATES.has(control.state) && typeof control.note === 'string') {
@@ -572,6 +586,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 }
                 const message = parseMessage(line, peerId)
                 if (message) {
+                    if (sessions.get(peerId) === session) typing.remove(peerId)
                     if (history.add(message)) events.emit('message', { peerId, ...message })
                     // Saved rooms (milestone 6): each valid live line, also a line that a host replay gave first.
                     // The archive keeps one row for each ID. The window and the terminal demo use 'message'.
@@ -603,6 +618,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         if (connection) sessionConns.set(peerId, connection)
         else if (replaced) sessionConns.delete(peerId)
         if (replaced) {
+            typing.remove(peerId)
             replacedSessions.add(replaced)
             replaced.close()
         }
@@ -644,6 +660,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             events.emit('connection', { state: 'closed', peer: peerId, type: connType, secs })
             if (sessions.get(peerId) === session) {
                 sessions.delete(peerId)
+                typing.remove(peerId)
+                if (sessions.size === 0) typing.disconnected()
                 sessionConns.delete(peerId)
                 linkKinds.delete(peerId)
                 reserved.delete(peerId)
@@ -1306,6 +1324,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         let count = 0
         for (const session of sessions.values()) if (session.send(line)) count++
         if (count > 0) history.add(message)
+        typing.edited(false)
         return { ...message, accepted: count }
     }
 
@@ -1341,6 +1360,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         },
         name: senderName,
         sendRecord,
+        setTyping: active => { if (!stopped && typeof active === 'boolean') typing.edited(active) },
         // Returns the number of sessions that accepted the line.
         send: text => sendRecord(text).accepted,
         peers: () => [...sessions.keys()],
@@ -1411,6 +1431,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         cancelFile: (offerId, peerId) => files.cancelFile(offerId, peerId),
         async stop() {
             stopped = true
+            typing.stop()
             clearTimeout(upnpRenewTimer)
             clearInterval(redialTimer)
             for (const timer of waitingDial.values()) clearTimeout(timer)
