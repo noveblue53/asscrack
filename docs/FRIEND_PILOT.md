@@ -1,6 +1,6 @@
 # ASSCRACK Windows friend-pilot field card
 
-Use `ASSCRACK-0.7.0-friend-pilot-rc1-42cf3c6-win-x64.exe` on every computer. Its SHA-256 is `d3241c136d43353b8c2c185a72e906f77718ae8fc47d3bcae2177722d49a4da3`. Verify it with `Get-FileHash -Algorithm SHA256 -LiteralPath .\ASSCRACK-0.7.0-friend-pilot-rc1-42cf3c6-win-x64.exe` in PowerShell. Quit older copies from the tray. Use fresh profiles and keep closed-profile backups for upgrades.
+Use `ASSCRACK-0.7.0-friend-pilot-rc1-42cf3c6-windows-runner-x64.exe` on every computer. Its SHA-256 is `567507aafaf63c209732b8144abd65a396d4570a339dab616b66e3d2b815048d`. Verify it with `Get-FileHash -Algorithm SHA256 -LiteralPath .\ASSCRACK-0.7.0-friend-pilot-rc1-42cf3c6-windows-runner-x64.exe` in PowerShell. Quit older copies from the tray. Use fresh profiles and keep closed-profile backups for upgrades.
 
 ## Three Windows PCs, separate networks
 

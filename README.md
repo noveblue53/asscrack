@@ -13,7 +13,7 @@ members elect a new host with no user action.
 
 | Item | State (2026-11-20) |
 |---|---|
-| Friend pilot | Windows x64 portable RC1 uses the 0.7.0 app version. The changelog records the exact executable SHA-256 and frozen source. [Build and verification](CHANGELOG.md#unreleased--windows-friend-pilot-release-candidate) · [Field card](docs/FRIEND_PILOT.md) |
+| Friend pilot | Windows x64 portable RC1 uses the 0.7.0 app version. The changelog records the exact executable SHA-256 and frozen source. [Draft download](https://github.com/noveblue53/asscrack/releases/tag/untagged-234c4c1d9cb1421b9f0f) · [Build and verification](CHANGELOG.md#unreleased--windows-friend-pilot-release-candidate) · [Field card](docs/FRIEND_PILOT.md) |
 | Prior 0.7.0 field build | Three Windows peers used the build from `8dacddd` in the November 20 internet test. Its SHA-256 and observed faults are in the [changelog](CHANGELOG.md). |
 | Earlier review builds | The [field recovery report](docs/FIELD_RECOVERY_REPORT.md) and [desktop review](docs/DESKTOP_REVIEW.md) list the earlier x64 executable identities and single-computer results. |
 | Field acceptance | The friend pilot covers the open router-lease, reconnect, interrupted-file, alternate-relay and Windows profile checks. The 1.0 decision also depends on the qualifying game nights. [Release plan](docs/WORK_PLAN_1.0.md) |
