@@ -20,7 +20,7 @@ function soap(action, inner) {
 
 // mode.externalIp: the answer to GetExternalIPAddress. mode.addStatus: the HTTP status of AddPortMapping.
 // mode.addDelay: ms before the answer to AddPortMapping.
-// Returns { log, port, close() }. log has one entry for each request: { action, extPort, intPort, proto, client }.
+// Returns { log, port, close() }. log has one entry for each request: { action, extPort, intPort, proto, client, ttl }.
 export function startIgd(mode = {}) {
     const log = []
     const server = http.createServer((req, res) => {
@@ -29,7 +29,7 @@ export function startIgd(mode = {}) {
         req.on('end', () => {
             const action = /#(\w+)"?$/.exec(String(req.headers.soapaction ?? ''))?.[1] ?? 'unknown'
             const tag = n => new RegExp(`<${n}>([^<]*)</${n}>`).exec(body)?.[1]
-            log.push({ action, extPort: tag('NewExternalPort'), intPort: tag('NewInternalPort'), proto: tag('NewProtocol'), client: tag('NewInternalClient') })
+            log.push({ action, extPort: tag('NewExternalPort'), intPort: tag('NewInternalPort'), proto: tag('NewProtocol'), client: tag('NewInternalClient'), ttl: tag('NewLeaseDuration') })
             const status = action === 'AddPortMapping' ? (mode.addStatus ?? 200) : 200
             const answer = () => {
                 res.writeHead(status, { 'Content-Type': 'text/xml' })
@@ -88,5 +88,6 @@ export function fakeDiscover(igdPort, { fail, delay = 0 } = {}) {
 
 // A NatAPI client on the fake IGD, for the createAsscrackNode test option upnpClient.
 export function fakeClient(igdPort, options = {}) {
-    return new NatAPI({ description: 'asscrack', ttl: 7200, keepAlive: true }, UPNPClient.createClient(fakeDiscover(igdPort, options)))
+    // Match the actual service: the node owns the renewal timer.
+    return new NatAPI({ description: 'asscrack', ttl: 7200, keepAlive: false }, UPNPClient.createClient(fakeDiscover(igdPort, options)))
 }

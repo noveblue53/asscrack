@@ -120,7 +120,8 @@ function validHistoryItem(m) {
 export async function createAsscrackNode({ room, listen, port = 0, discovery = true, discoveryInterval, name,
     heartbeatInterval = 1000, hostTimeout = 5000, electionDelay = 3000, downloadDir,
     fullNode = 'auto', allowPrivateFullNode = false, relayOnly = false, roomKey = null, announce = [], storePath = null,
-    redialInterval = 5000, inviteNodes = [], upnp = false, upnpTimeout = 70000, upnpClient = null, seedHistory = [] } = {}) {
+    redialInterval = 5000, inviteNodes = [], upnp = false, upnpTimeout = 70000, upnpLeaseSeconds = 1800,
+    upnpClient = null, seedHistory = [] } = {}) {
     if (typeof room !== 'string') throw new TypeError('room must be a string')
     const key = parseRoomKey(roomKey)
     if (!Array.isArray(announce) || !announce.every(validAddr)) throw new TypeError('announce must be an array of multiaddr strings')
@@ -140,8 +141,12 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     // not loaded: no UPnP service, no SSDP and no timer.
     const useUpnp = upnp === true && fullNode === 'auto' && !relayOnly
     if (useUpnp) {
+        if (!Number.isInteger(upnpLeaseSeconds) || upnpLeaseSeconds < 1 || upnpLeaseSeconds > 0xffffffff) {
+            throw new TypeError('upnpLeaseSeconds must be a positive unsigned 32-bit integer')
+        }
         const { uPnPNAT } = await import('@libp2p/upnp-nat')
-        services.upnp = uPnPNAT({ description: 'asscrack' })
+        // runUpnp owns renewal. NatAPI would start another interval on every successful map().
+        services.upnp = uPnPNAT({ description: 'asscrack', keepAlive: false })
     }
     // Set after the sessions map exists.
     let allowReservation = () => false
@@ -1014,6 +1019,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     // UPnP by hand, TCP only: externalIp(), then map(publicPort = localPort). One guarded task after start.
     let upnpState = null // { ip, port, local, opts } after a successful map
     let upnpTask = null
+    let upnpRenewTimer = null
+    let upnpRenewTask = null
     let upnpPhase = 'idle' // 'idle', 'discovery', 'map', 'done'
     function upnpLog(fields) {
         const { state, ...rest } = fields
@@ -1045,31 +1052,57 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             console.warn(connText('upnp unmap-failed', { port: state.port, error: err?.message ?? String(err) }))
         }
     }
+    // The router HTTP guard catches errors thrown outside the mapper's promise. A renewal needs
+    // its own subscription so one rejected attempt cannot poison the next.
+    async function guardedUpnp(step) {
+        let unsubscribe
+        const routerError = new Promise((_resolve, reject) => {
+            unsubscribe = onUpnpRouterError(err => reject(Object.assign(new Error(err?.message ?? String(err)), { upnpReason: 'router-error' })))
+        })
+        try {
+            return await Promise.race([step(), routerError])
+        } finally {
+            unsubscribe()
+        }
+    }
+    function scheduleUpnpRenewal(state) {
+        if (stopped) return
+        const client = node.services.upnp.client
+        // Node timers take a signed 32-bit millisecond delay.
+        const interval = Math.min(upnpLeaseSeconds * 500, 0x7fffffff)
+        upnpRenewTimer = setTimeout(() => {
+            if (stopped) return
+            const renew = async () => {
+                await client.map(state.opts)
+                // NatAPI appends to openPorts even when refreshing an existing mapping.
+                const ports = client.openPorts
+                if (Array.isArray(ports)) {
+                    const matches = p => p.publicPort === state.port && p.localPort === state.port &&
+                        p.protocol === state.opts.protocol && p.localAddress === state.opts.localAddress
+                    const old = ports.findIndex(matches)
+                    if (old >= 0 && old !== ports.findLastIndex(matches)) ports.splice(old, 1)
+                }
+                // stop() bounds its wait for a router reply. Undo a renewal that completed after unmap.
+                if (stopped && upnpState === null) await upnpUnmap(state)
+            }
+            upnpRenewTask = guardedUpnp(() => withTimeout(renew(), upnpTimeout))
+                .catch(err => {
+                    if (!stopped) console.warn(connText('upnp renew-failed', { port: state.port, error: err?.message ?? String(err) }))
+                })
+                .finally(() => { upnpRenewTask = null; scheduleUpnpRenewal(state) })
+        }, interval)
+        upnpRenewTimer.unref()
+    }
     function runUpnp() {
         const client = node.services.upnp.client
         let timedOut = false
-        // A router error that the guard swallows (installed by the entry point) rejects the step in flight at once.
-        // Without this signal the step promise never settles (the library throws outside of its promise).
-        let rejectStep
-        const routerError = new Promise((_resolve, reject) => { rejectStep = reject })
-        routerError.catch(() => {})
-        let unsubscribe = null
-        const guarded = async step => {
-            unsubscribe = onUpnpRouterError(err => rejectStep(Object.assign(new Error(err?.message ?? String(err)), { upnpReason: 'router-error' })))
-            try {
-                return await Promise.race([step(), routerError])
-            } finally {
-                unsubscribe()
-                unsubscribe = null
-            }
-        }
         const work = (async () => {
             const port = listenPort()
             if (port === null) throw Object.assign(new Error('no TCP listen port'), { upnpReason: 'router-error' })
             upnpPhase = 'discovery'
             let ip
             try {
-                ip = await guarded(() => client.externalIp())
+                ip = await guardedUpnp(() => client.externalIp())
             } catch (err) {
                 if (err?.upnpReason) throw err
                 const noGateway = /discover gateway/i.test(err?.message ?? '') || err?.name === 'TimeoutError'
@@ -1082,9 +1115,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 return
             }
             const local = localIpv4()
-            const opts = { publicPort: port, localPort: port, protocol: 'TCP', localAddress: local }
+            const opts = { publicPort: port, localPort: port, protocol: 'TCP', localAddress: local, ttl: upnpLeaseSeconds }
             upnpPhase = 'map'
-            await guarded(() => client.map(opts))
+            await guardedUpnp(() => client.map(opts))
             const state = { ip, port, local: local ?? 'auto', opts }
             // A map that completes after stop or after the timeout must not stay on the router.
             if (stopped || timedOut) {
@@ -1092,6 +1125,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 return
             }
             upnpState = state
+            scheduleUpnpRenewal(state)
             upnpLog({ state: 'mapped', ip, port, local: state.local })
             // Sessions that exist already: ask again for a dial-back on the mapped port.
             for (const peerId of [...sessions.keys()]) checkFullNode(peerId)
@@ -1234,6 +1268,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         cancelFile: (offerId, peerId) => files.cancelFile(offerId, peerId),
         async stop() {
             stopped = true
+            clearTimeout(upnpRenewTimer)
             clearInterval(redialTimer)
             for (const timer of waitingDial.values()) clearTimeout(timer)
             waitingDial.clear()
@@ -1247,6 +1282,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             // UPnP: remove the mapping before node.stop() closes the client (the library close() does not unmap).
             // A map request in flight can still complete: wait for the task (max. 1.5 s). The task then unmaps it.
             if (upnpTask && upnpPhase === 'map') await withTimeout(upnpTask, 1500).catch(() => {})
+            if (upnpRenewTask) await withTimeout(upnpRenewTask, 1500).catch(() => {})
             if (upnpState) {
                 const state = upnpState
                 upnpState = null

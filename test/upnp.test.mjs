@@ -61,6 +61,50 @@ test('a public IP maps the listen port, and stop() unmaps it', { timeout: 15000 
     }
 })
 
+test('renew the same UPnP lease, retry a failure and stop renewing after unmap', { timeout: 15000 }, async t => {
+    const igd = await startIgd({ externalIp: PUBLIC_IP, addDelay: 100 })
+    const client = fakeClient(igd.port)
+    const otherPort = { publicPort: 1234, localPort: 1234, localAddress: '192.0.2.1', protocol: 'TCP' }
+    client.openPorts.push(otherPort)
+    const map = client.map.bind(client)
+    const unmap = client.unmap.bind(client)
+    const actions = []
+    let attempts = 0
+    let portsBeforeUnmap
+    client.map = async opts => {
+        if (++attempts === 2) throw new Error('renewal rejected')
+        await map(opts)
+        actions.push('mapped')
+    }
+    client.unmap = async opts => {
+        portsBeforeUnmap = [...client.openPorts]
+        actions.push('unmap')
+        await unmap(opts)
+    }
+    const warnings = t.mock.method(console, 'warn')
+    const a = await createAsscrackNode({ room: 'renew', listen: LISTEN, discovery: false, upnp: true, upnpLeaseSeconds: 1, upnpClient: client })
+    try {
+        const maps = () => igd.log.filter(r => r.action === 'AddPortMapping')
+        // The third attempt has reached the router. Stop while its response is still in flight.
+        await waitFor(() => maps().length === 2)
+        await a.stop()
+        assert.deepEqual(actions, ['mapped', 'mapped', 'unmap'])
+        assert.equal(portsBeforeUnmap.length, 2, 'one record per mapping after renewal')
+        assert.ok(portsBeforeUnmap.includes(otherPort))
+        assert.equal(igd.log.at(-1).action, 'DeletePortMapping')
+        assert.deepEqual(maps()[1], maps()[0])
+        assert.equal(maps()[0].ttl, '1')
+        const failures = warnings.mock.calls.map(call => call.arguments[0]).filter(line => line.includes('upnp renew-failed'))
+        assert.equal(failures.length, 1)
+        assert.match(failures[0], /renewal rejected/)
+        await delay(650) // past the next half-lease
+        assert.equal(attempts, 3)
+    } finally {
+        await a.stop()
+        await igd.close()
+    }
+})
+
 test('a CGNAT external IP does not map', { timeout: 15000 }, async () => {
     const igd = await startIgd({ externalIp: '100.64.1.5' })
     const a = await createAsscrackNode({ room: 'u2', listen: LISTEN, discovery: false, upnp: true, upnpClient: fakeClient(igd.port) })
