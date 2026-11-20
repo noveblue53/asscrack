@@ -1,5 +1,8 @@
 // Host election with heartbeats. The rules are in
 // work-orders/voice-failover-20261117/briefs/step1.md ("The election rules").
+// Rule 6: A member that loses its last session clears its host and waits.
+// After a session reopens, rule 4 gives the group time to announce its live
+// host before a new election. An incumbent host keeps its role.
 // This module has no network code. node.mjs gives it these functions:
 //   sendTo(peerId, line)  send one control line on one session
 //   broadcast(line)       send one control line on all sessions
@@ -149,6 +152,13 @@ export function createElection({
         },
         sessionClosed(peerId) {
             if (stopped) return
+            if (!isHost() && openPeers().length === 0) {
+                clearTimeout(delayTimer)
+                delayTimer = null
+                firstSessionTime = null
+                setHost(null, term)
+                return
+            }
             if (peerId === host) hostLost() // rule 5
         },
         pauseHeartbeats(value) {
