@@ -134,6 +134,60 @@ function groupWithPrevious(item) {
     item.classList.toggle('cont', same);
 }
 
+// Saved rooms (milestone 6): the IDs that the archive of this computer has. An ID can come in line-saved before the
+// line is shown: addMessage and insertMessage mark the line when they add it.
+const savedMessageIds = new Set();
+
+function makeSavedMark() {
+    const mark = document.createElement('span');
+    mark.className = 'saved-mark';
+    mark.title = 'Saved on this device';
+    mark.setAttribute('aria-label', 'Saved on this device');
+    return mark;
+}
+
+// Saved rooms (milestone 6): put the saved class and mark on a line when its ID is saved.
+function markSaved(item) {
+    if (!item || !item.dataset.id || !savedMessageIds.has(item.dataset.id)) return;
+    if (item.classList.contains('saved')) return;
+    item.classList.add('saved');
+    const bubble = item.querySelector('.bubble-text');
+    if (bubble) bubble.appendChild(makeSavedMark());
+}
+
+// Saved rooms (milestone 6): the line with this ID, or null.
+function messageItemById(id) {
+    for (const li of messageList.children) if (li.dataset.id === id) return li;
+    return null;
+}
+
+// Saved rooms (milestone 6): note a saved ID and mark its line, when it is shown.
+function noteSaved(id) {
+    if (id === null || id === undefined || id === '') return;
+    savedMessageIds.add(String(id));
+    markSaved(messageItemById(String(id)));
+}
+
+// Saved rooms (milestone 6): after Clear, no line is saved.
+function clearSavedMarks() {
+    savedMessageIds.clear();
+    for (const li of messageList.querySelectorAll('li.saved')) {
+        li.classList.remove('saved');
+        for (const mark of li.querySelectorAll('.saved-mark')) mark.remove();
+    }
+}
+
+// Saved rooms (milestone 6): an own send with no accepting peer. The line is only in this window.
+function markLocalOnly(item) {
+    if (!item || item.classList.contains('local-only')) return;
+    item.classList.add('local-only');
+    const mark = document.createElement('span');
+    mark.className = 'local-only-mark';
+    mark.textContent = 'Only on this computer';
+    const bubble = item.querySelector('.bubble-text');
+    (bubble ?? item).appendChild(mark);
+}
+
 // The reading position, the resize behavior and the unread count are in reading.js (window.reading).
 // The ids of the lines in the list. A live line and a history line with the same id are the same line.
 const shownMessageIds = new Set();
@@ -148,24 +202,27 @@ function addMessage(from, text, time, own = false, id = null, peerId = null) {
     const item = makeMessageItem(from, text, time, own, id, peerId);
     messageList.appendChild(item);
     groupWithPrevious(item);
+    markSaved(item);
     return item;
 }
 
 // Put a history line before the first line that is newer. Equal times keep the arrival sequence.
 // Returns the new <li>, or null when the id is already shown.
-function insertMessage(from, text, time, id = null) {
+// own: true or false for a saved line (milestone 6). null: a line with the name of this user is an own line.
+function insertMessage(from, text, time, id = null, own = null) {
     if (id !== null && id !== undefined && id !== '') {
         if (shownMessageIds.has(String(id))) return null;
         shownMessageIds.add(String(id));
     }
     // A history line has no peer ID: a line with the name of this user shows as an own line.
-    const item = makeMessageItem(from, text, time, String(from ?? '') === ownName, id);
+    const item = makeMessageItem(from, text, time, typeof own === 'boolean' ? own : String(from ?? '') === ownName, id);
     const t = Number(item.dataset.time);
     const items = Array.from(messageList.children);
     const next = items[window.readingCore.insertIndex(items.map(li => li.dataset.time), t)] ?? null;
     messageList.insertBefore(item, next);
     groupWithPrevious(item);
     groupWithPrevious(next);
+    markSaved(item);
     return item;
 }
 
@@ -205,9 +262,8 @@ let selfLine = null;
 const peerNames = new Map();
 
 // The status line after a send with no peer. A peer that joins makes this text false, so addPeer removes it.
-// The message is in the history of this computer. A host sends its history to each member, thus a peer can get the
-// message later in a history replay.
-const NO_PEERS_TEXT = 'No peers in this room yet. The message is in the local history. A peer that joins later can get it in a history replay.';
+// Saved rooms (milestone 6, decision P3): a send with no accepting peer is not in the history and not saved.
+const NO_PEERS_TEXT = 'No peer got this message. It is only in this window. It is not saved, and a peer that joins later does not get it.';
 
 function addPeer(peerId) {
     if (peerItems.has(peerId)) return;
@@ -444,11 +500,17 @@ async function sendMessage() {
     if (messageInput.value === reply) messageInput.value = '';
     if (pendingQuote === quote) setQuote(null);
     // An own send goes to the newest line on purpose.
-    addMessage(ownName, text, record?.time ?? Date.now(), true, record?.id ?? null, selfId ?? topologySelf);
-    window.reading.followLatest();
+    // Saved rooms (milestone 6): a saved send has the saved mark when it is added.
+    if (record?.saved === true && record?.id) savedMessageIds.add(String(record.id));
+    const line = addMessage(ownName, text, record?.time ?? Date.now(), true, record?.id ?? null, selfId ?? topologySelf);
     const count = record?.accepted;
+    if (count === 0) markLocalOnly(line);
+    window.reading.followLatest();
     const none = typeof count === 'number' ? count === 0 : peerItems.size === 0;
     status.textContent = none ? NO_PEERS_TEXT : '';
+    if (typeof record?.saveError === 'string' && record.saveError && window.savedRoomsUi) {
+        window.savedRoomsUi.saveFailed({ id: record.id, reason: record.saveError });
+    }
 }
 
 loginButton.addEventListener('click', login);

@@ -120,7 +120,7 @@ function validHistoryItem(m) {
 export async function createAsscrackNode({ room, listen, port = 0, discovery = true, discoveryInterval, name,
     heartbeatInterval = 1000, hostTimeout = 5000, electionDelay = 3000, downloadDir,
     fullNode = 'auto', allowPrivateFullNode = false, relayOnly = false, roomKey = null, announce = [], storePath = null,
-    redialInterval = 5000, inviteNodes = [], upnp = false, upnpTimeout = 70000, upnpClient = null } = {}) {
+    redialInterval = 5000, inviteNodes = [], upnp = false, upnpTimeout = 70000, upnpClient = null, seedHistory = [] } = {}) {
     if (typeof room !== 'string') throw new TypeError('room must be a string')
     const key = parseRoomKey(roomKey)
     if (!Array.isArray(announce) || !announce.every(validAddr)) throw new TypeError('announce must be an array of multiaddr strings')
@@ -175,6 +175,11 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     // The name that each open session sent in its hello line.
     const names = new Map()
     const history = createHistory(200)
+    // seedHistory: records that this device keeps (for example saved lines). They go in the history before the
+    // first session, thus a host replay can send them. Records that are not valid are ignored.
+    if (Array.isArray(seedHistory)) {
+        for (const m of seedHistory) if (validHistoryItem(m)) history.add(m)
+    }
     const HISTORY_KEEP_MS = 10000
     // The last history line from each peer that was not the host when it arrived.
     const pendingHistory = new Map()
@@ -506,6 +511,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 const message = parseMessage(line, peerId)
                 if (message) {
                     if (history.add(message)) events.emit('message', { peerId, ...message })
+                    // Saved rooms (milestone 6): each valid live line, also a line that a host replay gave first.
+                    // The archive keeps one row for each ID. The window and the terminal demo use 'message'.
+                    events.emit('live', { peerId, ...message })
                 } else console.warn(`Ignored a message that is not valid from peer ${peerId}`)
             }
         })
@@ -1127,12 +1135,14 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
 
     // Send one line. Returns the canonical record: { id, from, text, time, accepted }.
     // accepted is the number of sessions that accepted the line. The wire line has no accepted field.
+    // A line that no session accepted stays local: it does not go in the history, thus no host replay sends it
+    // (milestone 6, plan section 6 part 2).
     function sendRecord(text) {
         const message = { id: randomUUID(), from: senderName, text, time: Date.now() }
-        history.add(message)
         const line = JSON.stringify(message)
         let count = 0
         for (const session of sessions.values()) if (session.send(line)) count++
+        if (count > 0) history.add(message)
         return { ...message, accepted: count }
     }
 

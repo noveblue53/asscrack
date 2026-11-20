@@ -307,7 +307,19 @@
         }
     }
 
+    // Saved rooms (milestone 6): a change above the viewport (older lines at the top of the list). The first visible
+    // line stays at the same place on the screen. Following: the end stays in view.
+    function keepPosition(change) {
+        const saved = following ? null : captureAnchor();
+        change();
+        if (following) scrollToEnd();
+        else restoreAnchor(saved);
+        anchor = following ? null : captureAnchor();
+        showUnread();
+    }
+
     window.reading = {
+        keepPosition,
         beforeChange,
         afterChange,
         noteIncoming,

@@ -203,6 +203,17 @@
         </div>
         <!-- Saved rooms (milestone 6): saved-rooms-ui.js shows this while a reopened or saved room has no peer. -->
         <p id="waiting-peer" role="status" hidden>Waiting for a peer</p>
+        <!-- Saved rooms (milestone 6): the room storage controls. saved-rooms-ui.js shows this only in a saved room. -->
+        <div id="room-storage" role="group" aria-label="Saved history of this room" hidden>
+          <label class="check"><input type="checkbox" id="room-keep-history"> Keep local history</label>
+          <span id="history-state" role="status" aria-live="polite"></span>
+          <button id="clear-history" type="button">Clear saved history on this device</button>
+          <div id="clear-confirm" role="alertdialog" aria-labelledby="clear-confirm-text" hidden>
+            <p id="clear-confirm-text">Delete the saved messages of this room from this computer? The room and its saving choice stay. Peers that are online can still show recent messages.</p>
+            <button id="clear-confirm-yes" type="button">Delete saved messages</button>
+            <button id="clear-confirm-no" type="button">Cancel</button>
+          </div>
+        </div>
         <ul id="messages" role="log"></ul>
         <!-- reading.js shows this button when the user reads older lines. -->
         <button id="jump-latest" type="button" hidden>Jump to latest <span id="unread-count" class="count"></span></button>

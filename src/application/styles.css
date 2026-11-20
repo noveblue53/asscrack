@@ -2102,3 +2102,14 @@ body.layout-buddy-drawer .app-name {
 #archive-state { margin: 8px 0 4px; font-size: 0.9rem; }
 #waiting-peer { margin: 6px 10px; font-style: italic; opacity: 0.85; }
 #waiting-peer[hidden], #saved-rooms-section[hidden], #archive-state[hidden], #archive-unlock[hidden], #save-room-fields[hidden] { display: none; }
+
+/* Saved rooms (milestone 6): the line marks, the room storage controls and Forget. */
+#messages li .local-only-mark { display: block; margin-top: 2px; font-size: 0.8em; font-style: italic; color: #b45309; }
+#messages li .saved-mark { display: inline-block; width: 6px; height: 10px; margin-left: 6px; border: solid currentColor; border-width: 0 2px 2px 0; transform: rotate(45deg); opacity: 0.55; vertical-align: middle; }
+#room-storage { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 10px; font-size: 0.9em; }
+#room-storage .check { display: flex; align-items: center; gap: 6px; }
+#history-state { flex: 1; opacity: 0.85; }
+#clear-confirm, #saved-rooms .forget-confirm { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px; border: 1px solid #b45309; border-radius: 4px; }
+#clear-confirm p, #saved-rooms .forget-confirm p { flex-basis: 100%; margin: 0; }
+#saved-rooms .saved-room { flex-wrap: wrap; }
+#room-storage[hidden], #clear-confirm[hidden], #saved-rooms .forget-confirm[hidden] { display: none; }

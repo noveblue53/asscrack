@@ -12,7 +12,17 @@ contextBridge.exposeInMainWorld('asscrack', {
     // Saved rooms (milestone 6). The window gets no key, no invite and no file path.
     listSavedRooms: () => ipcRenderer.invoke('asscrack:saved-rooms'),
     unlockArchive: () => ipcRenderer.invoke('asscrack:unlock-archive'),
-    savedRoomLines: roomId => ipcRenderer.invoke('asscrack:saved-room-lines', String(roomId)),
+    // opts: { before: { time, id } } for a page of older lines, or nothing for the newest lines.
+    savedRoomLines: (roomId, opts) => {
+        const b = opts?.before;
+        const before = b ? { time: Number(b.time), id: String(b.id) } : null;
+        return ipcRenderer.invoke('asscrack:saved-room-lines', String(roomId), { before });
+    },
+    setKeepHistory: (roomId, on) => ipcRenderer.invoke('asscrack:set-keep-history', String(roomId), on === true),
+    clearHistory: roomId => ipcRenderer.invoke('asscrack:clear-history', String(roomId)),
+    forgetRoom: roomId => ipcRenderer.invoke('asscrack:forget-room', String(roomId)),
+    onLineSaved: listen('asscrack:line-saved'),
+    onSaveFailed: listen('asscrack:save-failed'),
     reopenRoom: roomId => ipcRenderer.invoke('asscrack:reopen-room', String(roomId)),
     getInvite: () => ipcRenderer.invoke('asscrack:invite'),
     getFullNode: () => ipcRenderer.invoke('asscrack:full-node'),

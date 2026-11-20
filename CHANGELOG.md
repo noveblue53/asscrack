@@ -7,6 +7,45 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased: live chat and the archive agree, milestone 6 part 2 (on main)
+
+The operator accepted branch `opus/saved-rooms-2` on 2026-11-20 without the LAN checks. Base: `main` at `5982914`. All results in this entry are 127.0.0.1 results on a Linux cloud VM (Node 24.22.3,
+Electron 40.5.0 under Xvfb, `safeStorage` backend `gnome_libsecret`). There is no LAN result, no internet result and
+no packaged .exe result yet.
+- **Local-only send:** when no peer accepts a send, the line has the text "Only on this computer". The node does not
+  put it in its history, thus a host replay does not send it to a peer that joins later. The app does not save it.
+  Before this change, a host replay sent such a line later.
+- **Saved mark:** each line that the archive of this computer has gets a small check mark with the title "Saved on
+  this device". A write that fails (for example a full disk) gives no mark and the text "Not saved: <reason>".
+- **Live lines after a replay:** a live line that a host replay showed first is now saved one time. A new node event
+  `live` comes for each valid live line. The `message` event did not change.
+- **Room storage controls:** a saved room has the box **Keep local history** and the button **Clear saved history
+  on this device**. Saving off keeps the saved lines and stops new saves, also after a restart. Clear deletes the
+  saved lines of the room and keeps the room and its saving choice. On the login screen, **Forget room** deletes the
+  saved invite, the lines, the saving choice and the saved addresses of the room. Clear and Forget explain the local
+  effects and ask before they delete.
+- **Older lines:** a reopen shows the newest 200 saved lines. A scroll to the top loads 100 older lines each time.
+  The line that you read stays at its place.
+- **Limits for each room:** at most 10,000 saved lines and 8 MiB of text. Each line can have at most 64 KiB. The app
+  deletes the oldest lines first.
+- **Node option `seedHistory`:** records that the node puts in its history at start. Two tests use it now, because a
+  send with no peer stays local. The app does not use it yet (part 3, the replay seed).
+- Results (127.0.0.1):
+  - `npm test`: 267 of 268 pass. The failure is the known intermittent `test/voice-direct.test.mjs` failure
+    (`ERR_TOO_MANY_OUTBOUND_PROTOCOL_STREAMS`). The same file failed 1 of 5 runs on the base and 1 of 5 on the
+    branch.
+  - Electron check script, 2 profiles, 18 of 18 checks pass:
+    - 250 numbered lines, each one time on each copy, and 250 saved marks
+    - a reopen with 200 lines, then 50 older lines
+    - a local-only line, saving off and on, and Clear
+    - Forget on one computer, while the other computer keeps its room
+  - One app start: no error line in the app log, the terminal or the developer console. `test/rejoin.test.mjs`: 3 of
+    3 pass.
+  - Terminal demo: one line in each direction through mDNS. With a typed address, mDNS can find the peer at the
+    same time. Then the explicit dial can fail. Base: 2 of 6 pass. Branch: 2 of 6 pass. This is not new.
+- Open checks: the packaged Windows checks of part 1, and the release checks of part 4 (two Windows PCs on different
+  networks). Part 3 (replay seed, refreshed invites, frame bounds) is the next goal.
+
 ## Unreleased: saved rooms, milestone 6 part 1 (on main)
 
 Base: `main` at `598725f`. All results in this entry are 127.0.0.1 results on a Linux cloud VM (Node 24.22.3,

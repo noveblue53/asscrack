@@ -14,9 +14,9 @@ members elect a new host with no user action.
 | Item | State (2026-11-19) |
 |---|---|
 | Latest build | **0.6.0**, a portable Windows `.exe`. There is no public download yet. |
-| `main` | 0.6.0 plus fixes for faults F1 to F6, the stale "No peers" status line, room window milestone 1 and Quote and Find (milestone 2). Also manual status (milestone 3) voice processing with push-to-talk (5C) and saved rooms (milestone 6 part 1). Not released. |
+| `main` | 0.6.0 plus fixes for faults F1 to F6, the stale "No peers" status line, room window milestone 1 and Quote and Find (milestone 2). Also manual status (milestone 3) voice processing with push-to-talk (5C) and saved rooms (milestone 6 parts 1 and 2). Not released. |
 | Open field checks | The packaged Windows check of Quote and Find on a LAN, with a 0.6.0 client and a host change. Manual status on a LAN and in an internet room, with a 0.6.0 client. Voice processing (5C) on 2 computers with speakers. The internet test card 7. |
-| Current phase | Phase 8 (internet rooms) and Phase 7 (desktop experience), toward release 1.0. Steps 1 and 2 of the 1.0 plan are on `main`. Step 4 started: milestone 6 part 1 (saved rooms with an encrypted local history) is on `main` with 127.0.0.1 results only. The step 3 field tests wait for the operator. |
+| Current phase | Phase 8 (internet rooms) and Phase 7 (desktop experience), toward release 1.0. Steps 1 and 2 of the 1.0 plan are on `main`. Step 4 started: milestone 6 part 1 (saved rooms with an encrypted local history) is on `main` with 127.0.0.1 results only. Milestone 6 part 2 (local-only sends, saved marks, Clear, Forget and older lines) is on `main` with 127.0.0.1 results only. The step 3 field tests wait for the operator. |
 | Plan | [`docs/WORK_PLAN_1.0.md`](docs/WORK_PLAN_1.0.md) gives the release order, the scope and the exit checks of 1.0. |
 
 ### How to read the results
@@ -46,6 +46,7 @@ Each result in this file and in [`CHANGELOG.md`](CHANGELOG.md) has one of these 
 | Room window (not released) | Panels with saved sizes, a View menu, context menus, the reading position and an unread count. | 127.0.0.1 (same PC) |
 | Quote and Find (not released) | Quote a line in a reply. Ctrl+F finds text in the loaded lines. | 127.0.0.1 (same PC) |
 | Manual status (not released) | Set Available, Away or Do not disturb, with a note of at most 80 characters. Each buddy line shows the state. An old client shows "status unknown". | 127.0.0.1 |
+| Saved rooms (not released) | Save an internet room on this computer, with an encrypted local history. Reopen it the next day. Keep local history on or off, Clear the saved lines, or Forget the room. A send that no peer got shows "Only on this computer". At most 10,000 saved lines and 8 MiB for each room. | 127.0.0.1 |
 | Voice settings (not released) | Echo cancellation, noise suppression (RNNoise, Standard or Off) and gain control. Voice activity with a sensitivity slider, a live meter and a release delay. Push to talk with a key that the user sets, also while the window is in the back. Microphone and speaker selection. | 127.0.0.1 (same PC, virtual audio cables) |
 
 ## Known limits
@@ -54,6 +55,11 @@ Each result in this file and in [`CHANGELOG.md`](CHANGELOG.md) has one of these 
 - **Saved history only for saved internet rooms.** Since milestone 6 part 1 (127.0.0.1 results only), the app
   saves the lines of a saved internet room in an encrypted local database. LAN rooms stay live sessions with no save.
   The packaged Windows checks of saved rooms are open.
+- **A send with no peer stays local.** When no peer gets a message, it shows "Only on this computer". It is not saved,
+  and a peer that joins later does not get it (milestone 6 part 2, 127.0.0.1).
+- **Limits of the saved history.** At most 10,000 lines and 8 MiB of text for each saved room, and 64 KiB for each
+  line. The app deletes the oldest lines first. The app saves only lines that it sent or received live. A host replay
+  shows recent lines but does not make a saved copy.
 - **Two kinds of encryption.** Noise encrypts each peer connection. Encrypted local storage (SQLCipher with a
   `safeStorage` key) protects the saved lines on the disk of this computer. It does not protect them from other apps
   of the same Windows user.
@@ -147,7 +153,7 @@ The network code is in `src/network/`. The Electron app is in `src/application/`
 | 2. Host election and failover | Done. LAN tested on 2 computers. |
 | 3. Mumble server | Not planned. Voice uses Opus on libp2p streams. |
 | 4. Voice with reconnect | Done. LAN tested (WebRTC, 0.2.0 and 0.3.1). Voice on libp2p streams internet tested (0.5.0). Echo and noise suppression, voice activity and push-to-talk (5C) are on `main` with 127.0.0.1 results. Next: the 5C test on 2 computers. |
-| 5. Chat | Done: chat and history after a restart (LAN). Quote and Find (127.0.0.1). Manual status (127.0.0.1). Saved rooms with encrypted local history (milestone 6 part 1, 127.0.0.1). Next: a room topic and unread highlights. |
+| 5. Chat | Done: chat and history after a restart (LAN). Quote and Find (127.0.0.1). Manual status (127.0.0.1). Saved rooms with encrypted local history (milestone 6 part 1 and part 2, 127.0.0.1). Next: a room topic and unread highlights. |
 | 6. File sharing | Done. LAN tested (0.3.1), internet tested (0.5.0). Next: a Shared shelf for the room. |
 | 7. Desktop experience | In progress. The new look and the map (0.4.0), room window milestone 1 and Quote and Find have 127.0.0.1 results only. |
 | 8. Internet rooms | In progress. Invite codes and rejoin are internet tested. UPnP join, relays and failover on the internet are open. |

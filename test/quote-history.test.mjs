@@ -111,16 +111,25 @@ test('a quote of a repeated name is read live, and after a host change and a rep
     }
 })
 
-test('a quote sent with zero peers goes in the local history and a later member gets it in a replay', { timeout: 30000 }, async () => {
-    const nodes = await makeNodes(['Ann', 'Bob'])
+// Milestone 6 part 2 changed this test: a send that no session accepted stays local and is not in a replay
+// (plan section 6 part 2). Before, the test expected such a quote in the replay. A quote in the host history (here
+// from seedHistory, the input of saved lines) still goes to a later member in a replay.
+test('a quote sent with zero peers stays local, and a quote in the host history goes to a later member in a replay', { timeout: 30000 }, async () => {
+    const names = ['Ann', 'Bob']
+    const texts = names.map((name, i) =>
+        q.compose(q.makeQuote({ from: name, clock: '08:00', text: `own line ${i}` }), `reply ${i}`))
+    const now = Date.now()
+    const nodes = []
+    for (const [i, name] of names.entries()) {
+        nodes.push(await createAsscrackNode({ ...base, name,
+            seedHistory: [{ id: `seed-${i}`, from: name, text: texts[i], time: now + i }] }))
+    }
     try {
-        const texts = nodes.map((n, i) => {
-            n.send(`own line ${i}`)
-            const text = q.compose(q.makeQuote({ from: n.name, clock: '08:00', text: `own line ${i}` }), `reply ${i}`)
-            assert.equal(n.send(text), 0, 'no peer: the send reaches 0 sessions')
-            assert.ok(n.history().some(m => m.text === text), 'the quote is in the local history')
-            return text
-        })
+        for (const [i, n] of nodes.entries()) {
+            const local = q.compose(q.makeQuote({ from: n.name, clock: '08:00', text: 'x' }), `alone ${i}`)
+            assert.equal(n.send(local), 0, 'no peer: the send reaches 0 sessions')
+            assert.ok(!n.history().some(m => m.text === local), 'the local-only quote is not in the history')
+        }
         await connectPair(nodes[0], nodes[1])
         await waitUntil(() => agree(nodes), 5000)
         const hostIndex = nodes.findIndex(n => n.isHost())
@@ -129,6 +138,8 @@ test('a quote sent with zero peers goes in the local history and a later member 
         const got = member.history().find(m => m.text === texts[hostIndex])
         assert.equal(got.from, nodes[hostIndex].name)
         assert.equal(q.split(got.text).rest, `reply ${hostIndex}`)
+        await delay(500)
+        for (const n of nodes) assert.ok(!n.history().some(m => q.split(m.text).rest.startsWith('alone')), 'no replay of a local-only quote')
     } finally {
         await stopAll(nodes)
     }
