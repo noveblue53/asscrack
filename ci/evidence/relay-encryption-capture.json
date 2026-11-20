@@ -1,0 +1,83 @@
+{
+  "releaseSource": "42cf3c64dc17e6bc86df21e8e66c16301e151ea6",
+  "runtime": "Node v24.22.1, Linux, three disposable 127.0.0.1 peers in one Node process",
+  "path": "Authenticated libp2p circuit relay with two transparent external TCP taps",
+  "control": {
+    "bytesEachDirection": 7018,
+    "detections": [
+      60,
+      60
+    ],
+    "checkedFormsEachDirection": 60
+  },
+  "inspectedEncodingFamilies": [
+    "utf8",
+    "jsonEscaped",
+    "utf16LittleEndian",
+    "utf16BigEndian",
+    "lowerHex",
+    "upperHex",
+    "base64",
+    "unpaddedBase64",
+    "base64Url",
+    "escapedUri"
+  ],
+  "legs": [
+    {
+      "toRelay": {
+        "totalBytes": 12552,
+        "exchangeBytes": 1379,
+        "detections": 0
+      },
+      "fromRelay": {
+        "totalBytes": 13511,
+        "exchangeBytes": 1210,
+        "detections": 0
+      }
+    },
+    {
+      "toRelay": {
+        "totalBytes": 12476,
+        "exchangeBytes": 1617,
+        "detections": 0
+      },
+      "fromRelay": {
+        "totalBytes": 13474,
+        "exchangeBytes": 1253,
+        "detections": 0
+      }
+    }
+  ],
+  "postHopNoiseCircuitBridge": {
+    "scope": "Scratch @libp2p/circuit-relay-v2 1.1.5 observation at createLimitedRelay after hop decoding; unchanged bytes forwarded",
+    "bridges": 1,
+    "directions": {
+      "sourceToDestination": {
+        "totalBytes": 3680,
+        "exchangeBytes": 549,
+        "detections": 0
+      },
+      "destinationToSource": {
+        "totalBytes": 3604,
+        "exchangeBytes": 506,
+        "detections": 0
+      }
+    }
+  },
+  "routeChecks": {
+    "circuitPathsByRestrictedPeer": [
+      1,
+      1
+    ],
+    "exactlyOneTappedTransportConnectionPerRestrictedPeer": true,
+    "negotiatedEncryptionForTransportAndCircuitLinks": "/noise"
+  },
+  "applicationChecks": {
+    "deliveredPublicMessagesAtAllPeers": 2,
+    "intendedWhisperRecipients": 1,
+    "unintendedWhisperRecipients": 0,
+    "privateBodyInRelayEvents": 0,
+    "privateBodyInPublicHistory": 0,
+    "relayApplicationReceivedPublicMessages": 2
+  }
+}
