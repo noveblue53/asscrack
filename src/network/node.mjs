@@ -843,12 +843,25 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         events.emit('dial-failed', data)
     }
 
-    // Dial a known full node directly when this node has no direct connection to it.
+    // An open TCP connection can now serve a different room. A saved hint succeeds only
+    // when the live session for the actual remote identity has passed the room proof.
+    async function openHintChat(conn) {
+        const id = conn.remotePeer.toString()
+        await openChat(conn, id)
+        const pending = pendingSettled.get(pendingChats.get(id))
+        if (pending) await pending
+        if (!sessions.has(id)) {
+            if (!pendingChats.has(id)) await conn.close().catch(() => {})
+            throw new Error('The endpoint did not open this room')
+        }
+    }
+
+    // Dial a known full node directly when this node has no direct room session to it.
     function dialFullNode(peerId) {
         const addrs = hintAddrs(peerId)
         if (stopped || !addrs.length || dialing.has(peerId)) return
         const direct = node.getConnections().some(c => c.remotePeer.toString() === peerId && !c.remoteAddr.toString().includes('/p2p-circuit'))
-        if (direct) return
+        if (direct && sessions.has(peerId)) return
         // An isolated full node may be the only side with the saved endpoint. Once in the
         // group, keep the usual peer-ID ordering for additional full-node links.
         if (sessions.size && !sessions.has(peerId) && selfFull && !(selfId < peerId)) return
@@ -859,7 +872,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 const target = a.includes('/p2p/') ? a : `${a}/p2p/${peerId}`
                 try {
                     const conn = await node.dial(multiaddr(target))
-                    await openChat(conn, peerId)
+                    await openHintChat(conn)
                     return
                 } catch (err) {
                     dialFailed({ peer: peerId, addr: target, via: 'full-node', err })
@@ -871,13 +884,17 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 const bare = a.split('/p2p/')[0]
                 if (!bare) continue
                 try {
-                    const conn = await node.dial(multiaddr(bare))
+                    // This fallback specifically probes an address with an unknown current identity.
+                    // Reuse an exact outbound endpoint or dial it without libp2p's peer-ID cache lookup.
+                    const existing = node.getConnections().find(c => c.direction === 'outbound' &&
+                        c.remoteAddr.toString().replace(/\/p2p\/[^/]+$/, '') === bare)
+                    const conn = existing ?? await node.dial(multiaddr(bare), { force: true })
                     const remoteId = conn.remotePeer.toString()
                     if (remoteId === selfId) {
                         await conn.close().catch(() => {})
                         continue
                     }
-                    await openChat(conn, remoteId)
+                    await openHintChat(conn)
                     return
                 } catch (err) {
                     dialFailed({ peer: '?', addr: bare, via: 'address', err })

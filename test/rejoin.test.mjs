@@ -225,3 +225,23 @@ test('rejoin: a changed identity retains the working old endpoint when it advert
     assert.deepEqual(joiner.knownFullNodes()[first.peerId], [addr, advertised])
     assert.equal(joiner.knownFullNodes()[oldId], undefined)
 })
+
+test('rejoin: try the next changed-ID endpoint if the first address now serves a different room', { timeout: 15000 }, async t => {
+    const key = newRoomKey()
+    const room = 'restored room'
+    const nodes = []
+    t.after(() => stopAll(nodes))
+    const { oldId } = await freeAddr(room, key)
+    const wrong = await createAsscrackNode({ room: 'another room', roomKey: newRoomKey(), listen: LOCAL,
+        discovery: false, fullNode: true, ...fast })
+    nodes.push(wrong)
+    const right = await createAsscrackNode({ room, roomKey: key, listen: LOCAL, discovery: false, fullNode: true, ...fast })
+    nodes.push(right)
+    const addrs = [wrong, right].map(n => localAddr(n).split('/p2p/')[0])
+    const joiner = await createAsscrackNode({ room, roomKey: key, listen: LOCAL, discovery: false,
+        fullNode: false, inviteNodes: [{ id: oldId, addrs }], ...fast })
+    nodes.push(joiner)
+    await waitFor(() => joiner.peers().includes(right.peerId), 5000, 'second endpoint opened the intended room')
+    assert.deepEqual(joiner.peers(), [right.peerId])
+    assert.deepEqual(wrong.peers(), [])
+})
