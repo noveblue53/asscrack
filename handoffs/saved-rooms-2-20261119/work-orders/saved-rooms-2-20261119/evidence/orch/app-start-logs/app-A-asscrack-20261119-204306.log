@@ -1,0 +1,16 @@
+2026-11-19T20:43:06.672Z INFO ASSCRACK 0.6.0 Electron 40.5.0 args ["/home/user/asscrack/node_modules/electron/dist/electron","--inspect=0","--remote-debugging-port=0","/home/user/asscrack","--no-sandbox","--password-store=gnome-libsecret","--profile","/home/user/asscrack/work-orders/saved-rooms-2-20261119/evidence/orch/app-A-zUGvA5","--log-dir","/home/user/asscrack/work-orders/saved-rooms-2-20261119/evidence/orch/app-A-zUGvA5"] log /home/user/asscrack/work-orders/saved-rooms-2-20261119/evidence/orch/app-A-zUGvA5/asscrack-20261119-204306.log
+2026-11-19T20:43:07.159Z INFO Saved rooms archive opened: state open, reason none, safeStorage backend gnome_libsecret
+2026-11-19T20:43:08.666Z EVENT event peer-discovered peer 12D3KooWKmJiPnzPRAVc8ifFVgBDx2U6qboFaKMDdFR9V8nKsLW3
+2026-11-19T20:43:08.668Z WINDOW info peer-discovered [object Object] (file:///home/user/asscrack/src/application/renderer.js:294)
+2026-11-19T20:43:08.754Z EVENT event peer-joined peer 12D3KooWKmJiPnzPRAVc8ifFVgBDx2U6qboFaKMDdFR9V8nKsLW3
+2026-11-19T20:43:08.756Z INFO conn session peer=12D3KooWKmJiPnzPRAVc8ifFVgBDx2U6qboFaKMDdFR9V8nKsLW3 type=direct dir=in addr=/ip4/127.0.0.1/tcp/48810/p2p/12D3KooWKmJiPnzPRAVc8ifFVgBDx2U6qboFaKMDdFR9V8nKsLW3
+2026-11-19T20:43:08.757Z EVENT event connection state "session" peer "12D3KooWKmJiPnzPRAVc8ifFVgBDx2U6qboFaKMDdFR9V8nKsLW3" type "direct" dir "in" addr "/ip4/127.0.0.1/tcp/48810/p2p/12D3KooWKmJiPnzPRAVc8ifFVgBDx2U6qboFaKMDdFR9V8nKsLW3"
+2026-11-19T20:43:08.761Z EVENT event topology
+2026-11-19T20:43:08.774Z EVENT event peer-name peer 12D3KooWKmJiPnzPRAVc8ifFVgBDx2U6qboFaKMDdFR9V8nKsLW3
+2026-11-19T20:43:08.776Z EVENT event presence peer 12D3KooWKmJiPnzPRAVc8ifFVgBDx2U6qboFaKMDdFR9V8nKsLW3
+2026-11-19T20:43:08.777Z EVENT event topology
+2026-11-19T20:43:08.787Z INFO Dial-back from 12D3KooWKmJiPnzPRAVc8ifFVgBDx2U6qboFaKMDdFR9V8nKsLW3: ok, IP 127.0.0.1, full node false
+2026-11-19T20:43:10.132Z INFO conn closed peer=12D3KooWKmJiPnzPRAVc8ifFVgBDx2U6qboFaKMDdFR9V8nKsLW3 type=direct secs=1.4
+2026-11-19T20:43:10.132Z EVENT event connection state "closed" peer "12D3KooWKmJiPnzPRAVc8ifFVgBDx2U6qboFaKMDdFR9V8nKsLW3" type "direct" secs 1.4
+2026-11-19T20:43:10.133Z EVENT event peer-left peer 12D3KooWKmJiPnzPRAVc8ifFVgBDx2U6qboFaKMDdFR9V8nKsLW3
+2026-11-19T20:43:10.133Z EVENT event topology
