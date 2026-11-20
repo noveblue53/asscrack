@@ -23,7 +23,7 @@
     'use strict';
 
     const LABELS = Object.freeze({
-        whisper: 'Whisper…',
+        whisper: 'Whisper',
         'copy-name': 'Copy name',
         'inspect-peer': 'Peer details',
         'listening': 'Listening volume…',

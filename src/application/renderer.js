@@ -496,18 +496,26 @@ function quoteMessage(row) {
 
 quoteRemove.addEventListener('click', removeQuote);
 
+// A reserved whisper command must never become a public line or the caption of a room file.
+function handleWhisperCommand(text) {
+    if (!/^\/(?:w|msg|whisper)(?:\s|$)/i.test(text.trimStart())) return false;
+    if (!window.whispers?.command) {
+        status.textContent = 'Whispers are unavailable.';
+    } else if (window.whispers.command(text) && messageInput.value === text) {
+        messageInput.value = '';
+    }
+    return true;
+}
+
 // Send the text of the message box, with the quote when there is one. The draft (the text and the quote) stays
 // until the send is done: a failed send keeps it.
 let sendBusy = false;
 async function sendMessage() {
-    if (sendBusy) return;
+    if (sendBusy || window.whispers?.isOpen?.()) return;
     const channelId = window.roomChannels?.active() ?? 'general';
     const reply = messageInput.value;
     const quote = pendingQuote;
-    if (/^\/(?:whisper|w|msg)(?:\s|$)/i.test(reply.trimStart())) {
-        status.textContent = 'To send privately, open Whispers and select a buddy. Your draft is still here.';
-        return;
-    }
+    if (handleWhisperCommand(reply)) return;
     if (!quote && window.peerInspector?.command(reply)) {
         if (messageInput.value === reply) messageInput.value = '';
         return;
@@ -1071,7 +1079,10 @@ function runRowAction(action, row) {
         case 'inspect-peer': return window.peerInspector?.open(row.dataset.peerId || buddyId(row));
         case 'availability': return row === selfLine && editAvailability();
         case 'message-details': return showMessageDetails(row);
-        case 'whisper': return window.whispers?.open(buddyId(row));
+        case 'whisper': {
+            const peerId = buddyId(row);
+            return Boolean(peerId && row !== selfLine && window.whispers?.open(peerId));
+        }
         case 'copy-name': return copyBuddyName(row);
         case 'listening': return showListening(row);
         case 'show-on-map': return showBuddyOnMap(buddyId(row));
@@ -1281,7 +1292,7 @@ function updateFileDraft() {
 }
 
 function attachFile(file) {
-    if (!file || offeringFile) return;
+    if (!file || offeringFile || window.whispers?.isOpen?.()) return;
     pendingFile = file;
     updateFileDraft();
     status.textContent = '';
@@ -1296,7 +1307,8 @@ function removeFileDraft() {
 }
 
 async function sendFile() {
-    if (!pendingFile || offeringFile) return;
+    if (!pendingFile || offeringFile || window.whispers?.isOpen?.()) return;
+    if (handleWhisperCommand(messageInput.value)) return;
     const recipientId = fileRecipient.value === 'room' ? undefined : fileRecipient.value;
     if (recipientId !== undefined && !peerItems.has(recipientId)) {
         status.textContent = 'The selected recipient is disconnected. Choose a recipient before sending.';
@@ -1332,7 +1344,7 @@ async function sendFile() {
         if (!window.roomChannels || window.roomChannels.isViewing(channelId)) {
             if (pendingFile === file) pendingFile = null;
         } else window.roomChannels.fileSent(channelId, file);
-        if (document.activeElement === document.body || composer.contains(document.activeElement)) {
+        if (!window.whispers?.isOpen?.() && (document.activeElement === document.body || composer.contains(document.activeElement))) {
             messageInput.focus({ preventScroll: true });
         }
         status.textContent = '';
@@ -1369,7 +1381,7 @@ for (const type of ['dragover', 'drop']) {
         const data = e.dataTransfer;
         if (!data?.types.includes('Files')) return;
         e.preventDefault();
-        const acceptsDrop = messagePanel.contains(e.target) && !offeringFile;
+        const acceptsDrop = messagePanel.contains(e.target) && !offeringFile && !window.whispers?.isOpen?.();
         data.dropEffect = acceptsDrop ? 'copy' : 'none';
         composer.classList.toggle('file-drop-active', acceptsDrop && type === 'dragover');
         if (type !== 'drop' || !acceptsDrop) return;
@@ -1831,7 +1843,7 @@ window.asscrack.onPeerLeft(data => forgetPresence(data?.peerId));
 
 // ---- The one Escape dispatcher ----
 // Escape closes only the top layer, in this sequence: the context menu (menu.js), the View menu and the Buddies
-// drawer (layout.js), the find bar (find.js, it puts the list back at its old position), the quote chip (only with
+// drawer (layout.js), a focused whisper pane, the find bar (find.js, it puts the list back at its old position), the quote chip (only with
 // the focus in the composer), the voice settings, the invite panel, the map. The View menu and the drawer stop their own Escape when the focus is
 // in them. A separator drag stops its Escape in the capture phase on window. Then this listener gets no event.
 function focusIsIn(element) {
@@ -1848,6 +1860,11 @@ document.addEventListener('keydown', e => {
     }
     if (window.layout?.closeTopLayer()) {
         e.preventDefault();
+        return;
+    }
+    if (window.whispers?.isOpen?.() && document.getElementById('whisper-pane')?.contains(document.activeElement)) {
+        e.preventDefault();
+        window.whispers.close();
         return;
     }
     if (window.findBar?.isOpen()) {

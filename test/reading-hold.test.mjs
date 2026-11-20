@@ -118,3 +118,19 @@ test('restorePosition of a following list goes to the end and follows again', ()
     assert.equal(reading.isFollowing(), true);
     assert.equal(list.scrollTop, list.scrollHeight - list.clientHeight);
 });
+
+test('returning from a whisper restores the room line and retains new room messages as unread', () => {
+    for (const initialTop of [140, 900]) {
+        const { list, reading, scrollTo, live } = load(50);
+        scrollTo(initialTop);
+        reading.suspendForWhisper();
+        // A hidden list can report a different scrollTop, even with the same children.
+        scrollTo(0);
+        const first = live();
+        live();
+        reading.resumeFromWhisper();
+        assert.equal(list.scrollTop, initialTop);
+        assert.equal(reading.unreadCount(), 2);
+        assert.ok(first.classList.contains('unread-first'));
+    }
+});

@@ -68,7 +68,7 @@
     }
 
     function nextHighlight() {
-        if (next.disabled || screen.hidden) return false;
+        if (next.disabled || screen.hidden || window.whispers?.isOpen?.()) return false;
         window.findBar?.close();
         for (const row of pending) {
             if (row.parentElement !== list) continue;

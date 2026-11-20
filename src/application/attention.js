@@ -59,8 +59,9 @@
         if (!lists && target.channelId !== 'general') return;
         const list = lists?.listFor(target.channelId) ?? byId('messages');
         const row = list.querySelector('li[data-id="' + CSS.escape(target.id) + '"]');
-        if (!row || (lists && !lists.open(target.channelId))) return;
+        if (!row) return;
         window.whispers?.close();
+        if (lists && !lists.open(target.channelId)) return;
         window.reading.revealLine(row);
     }
 
