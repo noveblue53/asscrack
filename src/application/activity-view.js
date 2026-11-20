@@ -5,13 +5,18 @@
     const pause = document.getElementById('activity-pause');
     const copy = document.getElementById('activity-copy');
     const status = document.getElementById('activity-status');
+    const title = document.getElementById('activity-title');
+    const transfers = document.getElementById('activity-transfers');
+    const all = document.getElementById('activity-all');
     let timer;
     let generation = 0;
+    let peerId = null;
+    let opener = button;
 
     // Pull the bounded main-process snapshot only while visible and following live.
     async function refresh(version) {
         try {
-            const lines = await window.asscrack.getRoomActivity();
+            const lines = await window.asscrack.getRoomActivity(peerId, transfers.checked);
             if (version !== generation || !dialog.open) return;
             const next = lines.join('\n');
             if (next !== text.value) {
@@ -33,10 +38,28 @@
         if (live) void refresh(generation);
     }
 
-    button.addEventListener('click', () => {
-        dialog.showModal();
+    function resetFilter() {
+        text.value = '';
+        copy.disabled = true;
         status.textContent = '';
+        all.hidden = peerId === null;
         follow(true);
+    }
+    function open(id, name, control) {
+        peerId = id;
+        opener = control;
+        title.textContent = id ? 'Recent activity · ' + name : 'Room activity on this device';
+        transfers.checked = false;
+        dialog.showModal();
+        resetFilter();
+    }
+    window.roomActivity = { openPeer: open };
+    button.addEventListener('click', () => open(null, '', button));
+    transfers.addEventListener('change', resetFilter);
+    all.addEventListener('click', () => {
+        peerId = null;
+        title.textContent = 'Room activity on this device';
+        resetFilter();
     });
     pause.addEventListener('click', () => follow(pause.getAttribute('aria-pressed') === 'true'));
     text.addEventListener('select', () => {
@@ -58,6 +81,6 @@
     dialog.addEventListener('close', () => {
         clearTimeout(timer);
         generation++;
-        button.focus();
+        (opener.isConnected && !opener.hidden ? opener : button).focus();
     });
 })();

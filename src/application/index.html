@@ -264,6 +264,7 @@
           <label>Find a buddy <input id="peer-search" type="search" autocomplete="off"></label>
           <div id="peer-choices" hidden></div>
           <p id="peer-detail-facts"></p>
+          <button id="peer-detail-activity" type="button" aria-haspopup="dialog" aria-controls="room-activity" hidden>Recent activity</button>
           <p id="peer-audio-rate"></p>
         </section>
         <div id="map-legend">
@@ -298,6 +299,8 @@
     </footer>
     <dialog id="room-activity" aria-labelledby="activity-title">
       <h2 id="activity-title">Room activity on this device</h2>
+      <label><input id="activity-transfers" type="checkbox"> Local transfer outcomes only</label>
+      <button id="activity-all" type="button" hidden>Show all peers</button>
       <textarea id="activity-lines" readonly aria-label="Recent events, UTC" placeholder="No local connection events yet"></textarea>
       <div class="activity-actions">
         <button id="activity-pause" type="button" aria-pressed="false">Pause</button>

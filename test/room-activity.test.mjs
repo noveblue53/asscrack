@@ -62,3 +62,36 @@ test('room diagnostics retain 100 events and coalesce equivalent dial failures a
     result.length = 0
     assert.equal(feed().length, 100)
 })
+
+test('the peer and transfer filters select redacted local outcomes, including past outcomes', () => {
+    const node = member()
+    const read = observeRoomActivity(node, () => 0)
+    const sensitive = { offerId: 'private-offer-id', name: 'private-name', path: '/secret/path', reason: 'sensitive-file' }
+    node.events.emit('connection', { state: 'session', peer: 'buddy-A', type: 'relay', relay: 'buddy-B' })
+    node.events.emit('file-done', { ...sensitive, peerId: 'buddy-A', direction: 'send', confirmed: true })
+    node.events.emit('file-done', { ...sensitive, peerId: 'buddy-B', direction: 'send', confirmed: false })
+    node.events.emit('file-failed', { ...sensitive, peerId: 'buddy-A', direction: 'receive' })
+    node.events.emit('file-refused', { ...sensitive, peerId: 'buddy-A' })
+    node.events.emit('file-cancelled', { ...sensitive, peerId: 'buddy-B', direction: 'send' })
+    node.events.emit('topology', { transfers: [{ ...sensitive, from: 'buddy-A', to: 'buddy-B' }] })
+    const all = read()
+    assert.equal(all.length, 6)
+    for (const value of [...Object.values(sensitive), 'buddy-A', 'buddy-B']) {
+        assert.ok(!all.join('\n').includes(value))
+    }
+    const a = read({ peerId: 'buddy-A', transfersOnly: true })
+    assert.equal(a.length, 3)
+    assert.match(a[0], /Send to peer [0-9a-f]{8} · offer [0-9a-f]{8} · delivered$/)
+    assert.match(a[1], /Receive from peer .* · failed$/)
+    assert.match(a[2], /Send to peer .* · refused$/)
+    const b = read({ peerId: 'buddy-B' })
+    assert.equal(b.length, 3)
+    assert.match(b[0], /relayed/)
+    assert.match(b[1], /sent \(unconfirmed\)$/)
+    assert.match(b[2], /cancelled$/)
+    assert.equal(new Set(read({ transfersOnly: true }).map(line => line.match(/offer [0-9a-f]+/)[0])).size, 1)
+    assert.deepEqual(read({ peerId: 'another-buddy' }), [])
+    for (let i = 0; i < 100; i++) node.events.emit('upnp', { state: 'mapped' })
+    assert.equal(read().length, 100)
+    assert.deepEqual(read({ transfersOnly: true }), [])
+})

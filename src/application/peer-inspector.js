@@ -8,6 +8,7 @@
     const choices = byId('peer-choices');
     const title = byId('peer-detail-name');
     const facts = byId('peer-detail-facts');
+    const activity = byId('peer-detail-activity');
     const rate = byId('peer-audio-rate');
     let members = [];
     let transfers = [];
@@ -40,6 +41,7 @@
     }
     function details() {
         const member = members.find(item => item.id === selected);
+        activity.hidden = !selected;
         title.textContent = member ? member.name + (member.self ? ' (you)' : '') : selected ? 'Peer left' : 'Find a buddy';
         if (!member) {
             facts.textContent = '';
@@ -111,6 +113,11 @@
         stopSampling();
         selected = null;
     }
+    activity.addEventListener('click', () => {
+        if (!selected) return;
+        const member = members.find(item => item.id === selected);
+        window.roomActivity.openPeer(selected, member?.name || 'disconnected buddy', activity);
+    });
     byId('peer-detail-close').addEventListener('click', () => { close(); byId('map-close').focus(); });
     query.addEventListener('input', () => { choices.hidden = false; renderChoices(); });
     byId('map-close').addEventListener('click', close);

@@ -6,7 +6,7 @@ import { createDom } from './helpers/fake-dom.mjs'
 
 test('peer details disambiguate names and sample received voice only while inspecting that origin', async () => {
     const ids = ['peer-details', 'peer-search', 'peer-choices', 'peer-detail-name', 'peer-detail-facts',
-        'peer-audio-rate', 'map-panel', 'peer-detail-close', 'map-close', 'map-toggle', 'transfer-panel']
+        'peer-audio-rate', 'map-panel', 'peer-detail-close', 'peer-detail-activity', 'map-close', 'map-toggle', 'transfer-panel']
     const { window, document } = createDom(ids.map(id => ({ id, hidden: id === 'peer-details' })))
     const el = id => document.getElementById(id)
     el('map-toggle').addEventListener('click', () => document.body.classList.toggle('map-open'))
@@ -15,6 +15,8 @@ test('peer details disambiguate names and sample received voice only while inspe
     let tick = null
     let marked = null
     let transfersShown = false
+    let activityRequest
+    window.roomActivity = { openPeer: (...args) => { activityRequest = args } }
     window.voice = { stats: async () => ({ two: { bytesReceived: bytes } }) }
     window.nodeMap = { highlight: id => { marked = id } }
     window.layout = { showTransfers: () => { transfersShown = true } }
@@ -29,6 +31,8 @@ test('peer details disambiguate names and sample received voice only while inspe
     el('peer-choices').children[1].click()
     await new Promise(resolve => setImmediate(resolve))
     assert.equal(marked, 'two')
+    el('peer-detail-activity').click()
+    assert.deepEqual(activityRequest, ['two', 'Sam', el('peer-detail-activity')])
     assert.match(el('peer-detail-facts').textContent, /Relayed \(observed here\)/)
     assert.match(el('peer-detail-facts').textContent, /0 sending, 1 receiving/)
     assert.match(el('peer-audio-rate').textContent, /unavailable/)

@@ -30,7 +30,7 @@ contextBridge.exposeInMainWorld('asscrack', {
     onFullNodeAddrs: listen('asscrack:full-node-addrs'),
     onUpnp: listen('asscrack:upnp'),
     copyText: text => ipcRenderer.invoke('asscrack:copy-text', text),
-    getRoomActivity: () => ipcRenderer.invoke('asscrack:room-activity'),
+    getRoomActivity: (peerId, transfersOnly) => ipcRenderer.invoke('asscrack:room-activity', peerId, transfersOnly === true),
     send: text => ipcRenderer.invoke('asscrack:send', text),
     onPeerDiscovered: listen('asscrack:peer-discovered'),
     onPeerJoined: listen('asscrack:peer-joined'),
