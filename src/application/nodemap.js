@@ -2,8 +2,8 @@
 
 // The node map: one plain SVG in #node-map that shows the room as a web.
 // - Each room member is a node. The own node has the text "(you)".
-// - A mesh edge is a chat session between two members (from the topology data). When either end reports the
-//   session as a relay link (kinds), the edge has the kind relay and a dashed line.
+// - A mesh edge is a chat session between two members (from the topology data). When the endpoints agree on a
+//   session route, use the reported kind. Missing or conflicting information produces an unknown edge.
 // - A full node has a FULL badge.
 // - A voice edge goes from each voice member to the host. The host is the voice relay and has a RELAY badge.
 // - A node that speaks now has a pulse (a CSS animation, see styles.css).
@@ -23,8 +23,8 @@
 // This file does not read the globals of the renderer. All peer text goes in with textContent.
 //
 // Test contract: each node element has data-node. The host node has data-host="true". A full node has
-// data-full-node="true". Each edge element has data-edge, data-kind (mesh, relay, voice or transfer), data-from and
-// data-to. A chat session is one edge: data-kind="relay" when either end reports it as relay, else "mesh".
+// data-full-node="true". Each edge element has data-edge, data-kind (mesh, relay, unknown, voice or transfer), data-from and
+// data-to. A chat session is one edge; its title identifies locally observed and peer-reported routes.
 //
 // Motion: the nodes are on a ring. When the ring changes, the nodes move to the new positions in MOVE_MS and then
 // stop. There is no continuous requestAnimationFrame loop. There is no motion while document.hidden is true or with
@@ -72,17 +72,7 @@
     const voiceLayer = svgEl('g', { class: 'nm-layer-voice' });
     const transferLayer = svgEl('g', { class: 'nm-layer-transfer' });
     const nodeLayer = svgEl('g', { class: 'nm-layer-nodes' });
-    // The legend: a solid line is a direct chat link, a dashed line is a chat link through a relay.
-    const legend = svgEl('g', { class: 'nm-legend', transform: 'translate(10 14)', 'aria-hidden': 'true' });
-    legend.append(
-        svgEl('line', { class: 'nm-legend-direct', x1: 0, y1: 0, x2: 22, y2: 0 }),
-        svgEl('text', { class: 'nm-legend-text', x: 28, y: 4 }),
-        svgEl('line', { class: 'nm-legend-relay', x1: 0, y1: 16, x2: 22, y2: 16 }),
-        svgEl('text', { class: 'nm-legend-text', x: 28, y: 20 })
-    );
-    legend.children[1].textContent = 'direct';
-    legend.children[3].textContent = 'relay';
-    svg.append(defs, meshLayer, voiceLayer, transferLayer, nodeLayer, legend);
+    svg.append(defs, meshLayer, voiceLayer, transferLayer, nodeLayer);
     container.replaceChildren(svg);
 
     const layers = { mesh: meshLayer, voice: voiceLayer, transfer: transferLayer };
@@ -136,10 +126,6 @@
         const mesh = new Set();
         const links = state?.links !== null && typeof state?.links === 'object' ? state.links : {};
         const kinds = state?.kinds !== null && typeof state?.kinds === 'object' ? state.kinds : {};
-        const reportsRelay = (a, b) => {
-            const row = kinds[a];
-            return row !== null && typeof row === 'object' && row[b] === 'relay';
-        };
         for (const [from, peers] of Object.entries(links)) {
             if (!seen.has(from) || !Array.isArray(peers)) continue;
             for (const to of peers) {
@@ -159,20 +145,25 @@
             transferIds.add(id);
             transfers.push({ id, from, to });
         }
-        const relay = [...mesh].filter(key => {
-            const [a, b] = key.split('|');
-            return reportsRelay(a, b) || reportsRelay(b, a);
-        }).sort();
-        // The kind of the chat link of each peer to the own node.
-        if (seen.has(self)) {
-            const relaySet = new Set(relay);
-            for (const node of list) {
-                if (node.self) continue;
-                const key = self < node.id ? `${self}|${node.id}` : `${node.id}|${self}`;
-                if (mesh.has(key)) node.linkToYou = relaySet.has(key) ? 'relay' : 'direct';
-            }
+        const chatEdges = [...mesh].sort().map(key => {
+            const [from, to] = key.split('|');
+            const a = kinds[from]?.[to];
+            const b = kinds[to]?.[from];
+            const local = (from === self && a) || (to === self && b);
+            const reported = a || b;
+            const conflict = a && b && a !== b;
+            const kind = !conflict && (reported === 'mesh' || reported === 'relay') ? reported : 'unknown';
+            const route = kind === 'mesh' ? 'Direct' : kind === 'relay' ? 'Relayed' : 'Unknown';
+            const evidence = conflict ? 'conflicting reports' : local ? 'observed here' : reported ? 'peer-reported' : 'route unavailable';
+            const title = route + ' (' + evidence + ')';
+            return { from, to, kind, title };
+        });
+        const byId = new Map(list.map(node => [node.id, node]));
+        for (const edge of chatEdges) {
+            if (edge.from === self) byId.get(edge.to).linkToYou = edge.title;
+            if (edge.to === self) byId.get(edge.from).linkToYou = edge.title;
         }
-        return { host: seen.has(host) ? host : null, nodes: list, mesh: [...mesh].sort(), relay, voice, transfers };
+        return { host: seen.has(host) ? host : null, nodes: list, chatEdges, voice, transfers };
     }
 
     // ---- Nodes ----
@@ -231,8 +222,8 @@
         node.label.textContent = shortName(data.name, labelMax) + (data.self ? ' (you)' : '');
         const facts = [data.name + (data.self ? ' (you)' : '')];
         if (data.host) facts.push('host: the voice relay of the room');
-        if (data.fullNode) facts.push('full node: it relays the chat links of the room');
-        if (data.linkToYou) facts.push(data.linkToYou === 'relay' ? 'link to you: through a relay' : 'link to you: direct');
+        if (data.fullNode) facts.push('Full node · available to relay');
+        if (data.linkToYou) facts.push('Chat link to you · ' + data.linkToYou);
         if (data.inVoice) facts.push(data.speaking ? 'speaks now' : data.muted ? 'in voice (muted)' : 'in voice');
         else facts.push('not in voice');
         node.title.textContent = facts.join('\n');
@@ -283,13 +274,12 @@
     function syncEdges(state) {
         const wanted = new Map();
         // The edge key has the kind, so a change of the kind makes a new element.
-        const relay = new Set(state.relay);
-        for (const key of state.mesh) {
-            const [from, to] = key.split('|');
-            const kind = relay.has(key) ? 'relay' : 'mesh';
-            wanted.set(`${kind}|${key}`, { kind, from, to, lane: 0 });
+        for (const edge of state.chatEdges) {
+            wanted.set(`${edge.kind}|${edge.from}|${edge.to}`, { ...edge, lane: 0, layer: 'mesh' });
         }
-        for (const id of state.voice) wanted.set(`voice|${id}`, { kind: 'voice', from: id, to: state.host, lane: 0 });
+        for (const id of state.voice) wanted.set(`voice|${id}`, {
+            kind: 'voice', from: id, to: state.host, lane: 0, title: 'Voice membership'
+        });
         // Transfers between the same two nodes get different curves.
         const lanes = new Map();
         for (const transfer of state.transfers) {
@@ -308,6 +298,7 @@
             const edge = edges.get(key);
             if (edge) {
                 edge.lane = data.lane;
+                if (edge.title) edge.title.textContent = data.title;
                 continue;
             }
             const element = svgEl(data.kind === 'transfer' ? 'path' : 'line', {
@@ -318,13 +309,13 @@
                 'data-to': data.to
             });
             if (data.kind === 'transfer') element.setAttribute('marker-end', 'url(#nm-arrow)');
-            if (data.kind === 'mesh' || data.kind === 'relay') {
-                const title = svgEl('title');
-                title.textContent = data.kind === 'relay' ? 'relay link' : 'direct link';
+            const title = data.title ? svgEl('title') : null;
+            if (title) {
+                title.textContent = data.title;
                 element.append(title);
             }
-            (data.kind === 'relay' ? layers.mesh : layers[data.kind]).append(element);
-            edges.set(key, { element, ...data });
+            layers[data.layer ?? data.kind].append(element);
+            edges.set(key, { ...data, title, element });
         }
     }
 

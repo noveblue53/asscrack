@@ -202,13 +202,13 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     // Rule 3. P2 adds the room key proof to this check.
     allowReservation = peerId => selfFull && sessions.has(peerId)
 
-    function kindOf(peerId) {
-        const conn = sessionConns.get(peerId)
-        return conn && conn.remoteAddr.toString().includes('/p2p-circuit') ? 'relay' : 'mesh'
-    }
-
     function selfKinds() {
-        return Object.fromEntries([...sessions.keys()].map(p => [p, kindOf(p)]))
+        const kinds = {}
+        for (const [peerId, conn] of sessionConns) {
+            const addr = conn.remoteAddr?.toString()
+            if (addr) kinds[peerId] = addr.includes('/p2p-circuit') ? 'relay' : 'mesh'
+        }
+        return kinds
     }
 
     function topology() {
@@ -603,7 +603,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         const sessionConn = sessionConns.get(peerId) ?? connection
         const sessionStart = Date.now()
         const connAddr = sessionConn?.remoteAddr?.toString() ?? '?'
-        const connType = connAddr.includes('/p2p-circuit') ? 'relay' : 'direct'
+        const connType = connAddr === '?' ? 'unknown' : connAddr.includes('/p2p-circuit') ? 'relay' : 'direct'
         const opened = {
             state: 'session', peer: peerId, type: connType,
             dir: sessionConn?.direction === 'inbound' ? 'in' : sessionConn?.direction === 'outbound' ? 'out' : '?',
