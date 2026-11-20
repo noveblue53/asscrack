@@ -103,3 +103,49 @@ test('Clear and Forget invalidate a prepared replay during login and delayed old
     assert.deepEqual(saved.lines(other.roomId), [])
     assert.deepEqual(saved.prepareReplay(room, roomKey, () => {}), [])
 })
+
+test('a locally queued multi-frame replay rechecks deleted rows before the next transport write', async () => {
+    const { createChatSession } = await import('../src/network/chat-session.mjs')
+    const { createHistory, MAX_MESSAGE_BYTES } = await import('../src/network/history.mjs')
+    const history = createHistory()
+    const sourceEnded = Promise.withResolvers()
+    let outbound
+    const session = createChatSession({
+        source: (async function* () { await sourceEnded.promise })(),
+        async sink(frames) {
+            outbound = frames[Symbol.asyncIterator]()
+            await sourceEnded.promise
+        },
+        abort() { sourceEnded.resolve() }
+    }, { onMessage() {} })
+    try {
+        // JSON escaping makes the three valid records exceed one frame in aggregate.
+        for (let i = 0; i < 3; i++) history.add({ id: String(i), from: '', text: '\u0000'.repeat(MAX_MESSAGE_BYTES), time: i })
+        session.sendReplay(history.replayLines(() => true))
+        session.send('ordinary live traffic')
+        const read = async () => (await outbound.next()).value.toString().trimEnd()
+        assert.deepEqual(JSON.parse(await read()).messages.map(m => m.id), ['0'])
+        history.removeIds(new Set(['0', '1', '2']))
+        history.add({ id: 'new', from: 'A', text: 'available after clearing', time: 5 })
+        assert.deepEqual(JSON.parse(await read()).messages.map(m => m.id), ['new'])
+        assert.equal(await read(), 'ordinary live traffic')
+    } finally {
+        sourceEnded.resolve()
+        await session.done
+    }
+})
+
+test('a delayed duplicate of a seed pruned from disk before Clear cannot return to the archive', async t => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'replay-'))
+    const saved = createSavedRooms({ dir, protector, limits: { maxRows: 1 } })
+    t.after(async () => { saved.close(); await rm(dir, { recursive: true, force: true }) })
+    const { roomId } = saved.afterLogin({ room, roomKey, save: true })
+    const old = { id: 'pruned', from: 'a', text: 'old', time: 1, accepted: 1 }
+    saved.recordSend(old)
+    saved.prepareReplay(room, roomKey, () => {})
+    saved.recordSend({ ...old, id: 'latest', time: 2 })
+    assert.deepEqual(saved.lines(roomId).map(m => m.id), ['latest'])
+    saved.clear(roomId)
+    assert.equal(saved.recordSend(old).saved, false)
+    assert.deepEqual(saved.lines(roomId), [])
+})

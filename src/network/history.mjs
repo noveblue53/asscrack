@@ -38,6 +38,7 @@ export function* historyLines(messages) {
 export function createHistory(limit = HISTORY_LIMIT) {
     let items = []
     const ids = new Set()
+    let clearVersion = 0
 
     function compare(a, b) {
         if (a.time !== b.time) return a.time - b.time
@@ -57,8 +58,24 @@ export function createHistory(limit = HISTORY_LIMIT) {
             return true
         },
         removeIds(removed) {
+            if (removed.size) clearVersion++
             items = items.filter(item => !removed.has(item.id))
             for (const id of removed) ids.delete(id)
+        },
+        // A slow session may still be waiting to write some of these frames when the user clears the
+        // archive. Rebuild from the current window at its next pull; already-written frames are remote.
+        *replayLines(isHost) {
+            let version
+            do {
+                version = clearVersion
+                const snapshot = items.slice()
+                for (const line of historyLines(snapshot)) {
+                    if (!isHost()) return
+                    if (version !== clearVersion) break
+                    yield line
+                }
+                if (version === clearVersion) return snapshot.length
+            } while (true)
         },
         has: id => ids.has(id),
         list: () => items.map(m => ({ ...m }))

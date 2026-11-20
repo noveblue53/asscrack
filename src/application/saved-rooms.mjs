@@ -123,10 +123,11 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
         replay = null;
     }
 
-    function invalidateReplay(roomId, deletedIds) {
+    function invalidateReplay(roomId, removed) {
         if (replay?.roomId !== roomId) return;
         // A seed row may have been pruned from the archive while retained by the live node.
-        replay.removeHistory(new Set([...replay.seedIds, ...deletedIds]));
+        for (const id of replay.seedIds) removed.add(id);
+        replay.removeHistory(removed);
         replay.seedIds = [];
     }
 
@@ -226,10 +227,11 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
         if (!a || a.state().state !== 'open') throw new Error('room archive is not open');
         if (typeof roomId !== 'string') throw new Error('bad room ID');
         const ids = a.clearMessages(roomId);
-        invalidateReplay(roomId, ids);
+        const removed = new Set(ids);
+        invalidateReplay(roomId, removed);
         let set = tombstones.get(roomId);
         if (!set) { set = new Set(); tombstones.set(roomId, set); }
-        for (const id of ids) set.add(String(id));
+        for (const id of removed) set.add(String(id));
         log('INFO', `Saved room history cleared: ${ids.length} rows`);
         return { cleared: ids.length };
     }
@@ -244,7 +246,7 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
             try { forgetHints(row); } catch (err) { log('WARN', `Room hints not deleted: ${errText(err)}`); }
         }
         a.removeRoom(roomId);
-        invalidateReplay(roomId, []);
+        invalidateReplay(roomId, new Set());
         tombstones.delete(roomId);
         log('INFO', 'Saved room forgotten');
         return { forgotten: true };

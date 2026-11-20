@@ -14,7 +14,7 @@ import { networkInterfaces } from 'node:os'
 import { createChatSession } from './chat-session.mjs'
 import { createElection } from './election.mjs'
 import { createRoomTopic } from './room-topic.mjs'
-import { createHistory, HISTORY_LIMIT, MAX_MESSAGE_BYTES, historyLines, validHistoryItem } from './history.mjs'
+import { createHistory, HISTORY_LIMIT, MAX_MESSAGE_BYTES, validHistoryItem } from './history.mjs'
 import { createFileTransfer, FILE_PROTOCOL } from './file-transfer.mjs'
 import { createVoiceRelay, VOICE_PROTOCOL, VOICE_DIRECT_PROTOCOL } from './voice-relay.mjs'
 import { makeInvite, validAddr, validPeerId } from './invite.mjs'
@@ -261,9 +261,10 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     // The host of the last onChange of the election.
     let lastHostId = null
     function sendHistoryTo(peerId, session) {
-        const messages = history.list()
-        for (const line of historyLines(messages)) session.send(line)
-        console.info(`History sent to ${peerId}: ${messages.length} messages`)
+        session.sendReplay((function* () {
+            const count = yield* history.replayLines(election.isHost)
+            if (count !== undefined) console.info(`History sent to ${peerId}: ${count} messages`)
+        })())
     }
     function sendHistoryToAll() {
         if (!election.isHost()) return

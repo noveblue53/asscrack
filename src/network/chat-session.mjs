@@ -6,7 +6,7 @@ export const MAX_CHAT_FRAME_BYTES = 512 * 1024
 // when transport chunks split a message or combine several messages.
 export function createChatSession(stream, { onMessage }) {
     let closed = false
-    const outgoing = pushable()
+    const outgoing = pushable({ objectMode: true })
     function end() {
         closed = true
         outgoing.end()
@@ -59,11 +59,20 @@ export function createChatSession(stream, { onMessage }) {
         end()
     }
 
+    // Keep a replay iterable in the same ordered queue as chat/control lines. Pull one frame
+    // only when the transport is ready so local archive invalidation can take effect.
+    async function* frames() {
+        for await (const item of outgoing) {
+            if (typeof item === 'string') yield Buffer.from(item + '\n')
+            else for (const line of item) yield Buffer.from(line + '\n')
+        }
+    }
+
     const done = (async () => {
         try {
             // A closed half ends this chat session. Do not wait for the remote
             // peer's other half after a disconnect.
-            await Promise.race([stream.sink(outgoing), receive()])
+            await Promise.race([stream.sink(frames()), receive()])
         } catch (error) {
             stream.abort(error)
             throw error
@@ -80,8 +89,11 @@ export function createChatSession(stream, { onMessage }) {
         },
         send(message) {
             if (closed || Buffer.byteLength(message) > MAX_CHAT_FRAME_BYTES) return false
-            outgoing.push(Buffer.from(message + '\n'))
+            outgoing.push(message)
             return true
+        },
+        sendReplay(lines) {
+            if (!closed) outgoing.push(lines)
         }
     }
 }
