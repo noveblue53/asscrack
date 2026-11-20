@@ -1,3 +1,86 @@
+## Internet test card 8 (0.7.0): saved rooms, Quote and Find, manual status and voice settings on 2 computers
+
+This test checks the 0.7.0 changes on two Windows computers. Each change in 0.7.0 has 127.0.0.1 results only. An internet room can now be saved on the computer, with an encrypted local history. A saved room opens again with no invite code and shows its old lines at once. Also new: the room window, Quote and Find, a manual status, and voice settings with noise suppression and push to talk.
+
+- Computer 1 (**A**) is the host. Computer 2 (**B**) is the computer of the second person. A and B can be on different networks.
+- **dist/ASSCRACK-0.7.0-portable.exe** (SHA-256 in `CHANGELOG.md`, entry 0.7.0, last test: 0.6.0): saved rooms, Quote and Find, manual status and voice settings. New controls: **Save room on this device**, **Keep local history**, **Reopen room**, **Voice settings** and **Push to talk**.
+- **Not changed:** the known intermittent `test/voice-direct.test.mjs` failure (127.0.0.1). A typed address in the terminal demo can fail when mDNS finds the peer at the same time.
+- **Mixed versions:** use 0.7.0 on both computers.
+
+### Install
+
+1. Copy the same `dist/ASSCRACK-0.7.0-portable.exe` to each computer. Do not use an older .exe.
+2. On each computer, run this command in PowerShell, in the folder of the .exe:
+   ```powershell
+   Get-FileHash .\ASSCRACK-0.7.0-portable.exe -Algorithm SHA256
+   ```
+   Expect: the same value as the SHA-256 in `CHANGELOG.md`, entry 0.7.0. If the value is different, stop. Do not use that file.
+
+### Setup
+
+1. **Close all copies of an older ASSCRACK on each computer before you start 0.7.0.** A new build that starts while an old copy runs shows the old copy.
+2. Disconnect a VPN on both computers.
+3. Use headphones or speakers on both computers. Write down which.
+4. The profile folder of the app is `$env:APPDATA\asscrack`. The saved rooms are in its sub folder `saved-rooms` (`archive.db`, `archive.key`). Do not edit or delete these files during the test.
+
+### Start commands
+
+Run each command in PowerShell, in the folder of the .exe. `--dev` opens the developer console.
+
+- A and B: `.\ASSCRACK-0.7.0-portable.exe --dev`
+
+### Procedure
+
+1. **Firewall question.** Start the app on A and on B. Write down if Windows shows the firewall question. Allow the app on private networks.
+2. **Saved room on A.** On A, type a name. Set **Room type** to "New internet room". Type the room name `room8`. Keep **Public address** empty. Put a check in "Save room on this device" and in "Keep local history". Select **Log In**. Expect: the chat window, and "Waiting for a peer" until B joins. Select **Invite**, then **Copy**. Send the code to B.
+   - If the check box "Save room on this device" is not available, write down the text below **Log In**. Expect one of: "Saved rooms: locked (<reason>)" with a **Try again** button, or "Protected storage is not available on this computer. Rooms cannot be saved."
+3. **Saved room on B.** On B, type a name. Set **Room type** to "Join with invite code". Paste the code. Put a check in "Save room on this device" and in "Keep local history". Select **Log In**. Expect within 60 seconds: A and B show each other in the Buddies list. "Waiting for a peer" goes away.
+4. **Chat.** On A and B, send 3 chat lines each. Expect: each line shows on the other computer one time. Each line gets a small check mark. Move the mouse on the mark. Expect the title "Saved on this device".
+5. **Quote.** On B, move the mouse on a line of A and select **Quote**. Type a reply and press Enter. Expect on A: the reply with the quoted line of A above it.
+6. **Find.** On A, press Ctrl+F. Type a word from a chat line. Expect: the app marks the word and the bar shows "1 of <n>". Press Escape.
+7. **Manual status.** On A, set the status to "Away" with the note `back at 9`, then select **Set**. Expect on B: the badge of A shows "Away: back at 9". On B, set "Do not disturb" and select **Set**. Expect on A: the badge of B shows "Do not disturb".
+8. **Voice.** On A and B, select **Join voice**. Speak in turn. Expect: each user hears the other.
+   - Select **Voice settings**. Under **Noise suppression**, try "RNNoise (strong)", "Standard (light, steady noise only)" and "Off". Make a steady noise (for example a fan) and write down which setting stops it best.
+   - Set **Input mode** to "Push to talk". Select **Set key** and press a key. Keep "Also when ASSCRACK is in the back" on. Put a different window in front. Hold the key and speak. Expect: the other user hears you only while you hold the key.
+9. **Reopen with no network.** Close the app on A and on B. On A, turn off the network (Wi-Fi off or cable out). Start the app on A. Expect: the login screen lists `room8` with a **Reopen room** button. Select **Reopen room**. Expect at once: the chat lines of steps 4 and 5, and "Waiting for a peer".
+10. **Reopen on both computers.** Close the app on A. Turn on the network of A. Start the app on A and on B. On each computer, select **Reopen room** for `room8`. Expect within 60 seconds: A and B show each other again, and "Waiting for a peer" goes away. Expect: each old line shows one time only (not two times). Send one new line in each direction.
+11. **Optional: a different folder.** Close the app on A. Move the .exe on A to a different folder and start it there with the same command. Expect: `room8` is still in the list of saved rooms.
+12. **Optional: a different Windows user.** On A, log in to Windows as a different user. Start the .exe. Expect: no saved room in the list.
+13. Keep the logs (see **Report**).
+
+### Expected (127.0.0.1 simulation, not field)
+
+| Item | Expected |
+|---|---|
+| Save a room, send and receive, close, reopen with no peer | the saved lines show at once, and "Waiting for a peer" |
+| 250 lines through 2 copies | each line one time on each copy, with a saved mark |
+| Away with a note | the other window shows "Away: back at 9" |
+| Push to talk | frames go out only while the key is down |
+
+### If it goes wrong
+
+- `Get-FileHash .\ASSCRACK-0.7.0-portable.exe -Algorithm SHA256` gives a different value: copy the .exe again. Do not test with that file.
+- `Select-String -Path "$env:APPDATA\asscrack\logs\asscrack-*.log" -Pattern 'error|saved|archive' | Select-Object -Last 20`: run this when "Saved rooms: locked (<reason>)" shows, or when a reopen shows no lines. Copy the output into a text file. Select **Try again** one time and write down the result.
+- `explorer "$env:APPDATA\asscrack\saved-rooms"`: when a saved room is not in the list, write down if `archive.db` and `archive.key` are in the folder. Do not edit or delete them.
+- `Select-String -Path "$env:APPDATA\asscrack\logs\asscrack-*.log" -Pattern 'event (upnp|connection|dial-failed)'`: run this when A and B do not find each other within 60 seconds. Copy the output into a text file with the name of the computer.
+- A line shows two times after step 10: make a screenshot of each window. Write down the text and the time of the line.
+
+### Report
+
+Tell Claude the result of each step (PASS or FAIL), with the text that you saw when it was different. Keep these items from each computer (A and B), in a folder with the name of the computer:
+- the log files: run `explorer "$env:APPDATA\asscrack\logs"` and copy each `asscrack-*.log` file. Do not edit the files.
+- the developer console output of each app (`--dev`), with each red line
+- the terminal output of PowerShell, if it has lines
+- the text files of "If it goes wrong"
+- the SHA-256 of the tested .exe: `Get-FileHash .\ASSCRACK-0.7.0-portable.exe -Algorithm SHA256`
+- the firewall result of step 1, headphones or speakers, and the best noise setting of step 8
+
+### Not known
+
+- This build is from a Linux VM. It is the first build of this kind. The packaged Windows .exe has no result yet.
+- No feature of 0.7.0 has a LAN result, an internet result or a packaged .exe result. All results are 127.0.0.1 results.
+- UPnP on a real router.
+
 ## Internet test card 7 (0.6.0): a host with no port forward (UPnP), connection log lines and the firewall question on 2 computers
 
 This test checks the 0.6.0 changes across the internet. The host does not need a port forward now. When the Public address field is empty, the app asks the router for a port (UPnP). If the router agrees, the host becomes a full node, and the invite code has the public address. Each app also writes one log line for each connection and for each failed dial. All builds now unpack to one folder, so Windows asks the firewall question one time only.
