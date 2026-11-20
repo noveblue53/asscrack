@@ -28,6 +28,11 @@
     let muted = false;
     // The settings panel is open: the capture runs for the input meter, also out of voice. Nothing goes out.
     let previewWanted = false;
+    // A pending microphone request can finish after the window has entered and reopened from Idle Peer.
+    let captureGeneration = 0;
+    function checkCapture(generation) {
+        if (generation !== captureGeneration || window.idlePeer?.isIdle()) throw new Error('Voice capture ended');
+    }
     let settings = null;
     const gate = gateLib.createGate(null);
     let transmitting = false;
@@ -347,12 +352,18 @@
 
     // Open the microphone (again) and connect it to the capture worklet. Close the old capture first: while a track of
     // the device is open, Chromium gives the new track the same source, thus the old processing settings (measured).
-    async function startCapture() {
+    async function startCapture(generation = captureGeneration) {
+        checkCapture(generation);
         await ensureContext();
         // RNNoise first: its result decides the noise suppression of Chromium for the new track.
         if ((settings?.noiseSuppression ?? 'rnnoise') === 'rnnoise') await ensureRnnoiseNode();
         closeCapture();
+        checkCapture(generation);
         const stream = await openMicrophone();
+        try { checkCapture(generation); } catch (err) {
+            for (const track of stream.getTracks()) track.stop();
+            throw err;
+        }
         localStream = stream;
         const track = stream.getAudioTracks()[0];
         if (track) track.enabled = !muted;
@@ -410,7 +421,8 @@
         }
     }
 
-    async function startAudio() {
+    async function startAudio(generation) {
+        checkCapture(generation);
         if (typeof AudioEncoder !== 'function' || typeof AudioDecoder !== 'function') {
             throw new Error('this window has no AudioEncoder or AudioDecoder (WebCodecs)');
         }
@@ -419,7 +431,8 @@
         });
         if (!support?.supported) throw new Error('the Opus encoder is not supported');
         try {
-            if (!localStream) await startCapture();
+            if (!localStream) await startCapture(generation);
+            checkCapture(generation);
             startPlayback();
             if (context.state === 'suspended') await context.resume();
         } catch (err) {
@@ -494,15 +507,19 @@
         },
         async join() {
             if (inVoice) return;
+            const generation = captureGeneration;
+            checkCapture(generation);
             await refreshHost();
             await settingsReady;
-            await serial(startAudio);
+            await serial(() => startAudio(generation));
+            checkCapture(generation);
             muted = false;
             const track = localStream?.getAudioTracks()[0];
             if (track) track.enabled = true;
             inVoice = true;
             try {
                 await api.setVoice({ inVoice: true, streamId: localStream.id });
+                checkCapture(generation);
             } catch (err) {
                 inVoice = false;
                 await serial(async () => {
@@ -512,6 +529,19 @@
                 throw err;
             }
             changed();
+        },
+        enterIdle() {
+            captureGeneration++;
+            inVoice = false;
+            muted = false;
+            previewWanted = false;
+            transmitting = false;
+            gate.reset();
+            stopPlayback();
+            closeCapture();
+            changed();
+            // Drain any pending device request, then dispose its context and worklets before a later join.
+            return serial(stopAudio);
         },
         async leave() {
             inVoice = false;
@@ -539,7 +569,9 @@
         },
         // The push-to-talk key went down or up (voice-panel.js listens to the keys).
         setPushToTalk(down) {
+            const before = gate.keyDown();
             gate.setKey(down === true, performance.now());
+            if (before !== gate.keyDown()) changed();
         },
         settings: () => settings,
         // New settings (the full object from the main process). A change of the processing or of the input device
@@ -562,6 +594,7 @@
         },
         // The meter of the settings panel: the capture runs while the panel is open.
         startPreview() {
+            if (window.idlePeer?.isIdle()) return Promise.resolve();
             previewWanted = true;
             return serial(async () => {
                 if (previewWanted && !localStream) await startCapture();
@@ -604,6 +637,8 @@
                 inVoice,
                 // The gate is open and this window sends frames.
                 transmitting,
+                inputMode: settings?.mode ?? 'voice',
+                pttHeld: gate.keyDown(),
                 inputLevel,
                 inputFallback,
                 capturing: localStream !== null,

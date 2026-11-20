@@ -27,14 +27,19 @@
     });
 
     function updateCount() {
-        next.disabled = pending.size === 0;
-        next.textContent = pending.size ? `Next highlight (${pending.size})` : 'Next highlight';
+        const count = [...pending].filter(row => row.parentElement === list).length;
+        next.disabled = count === 0;
+        next.textContent = count ? `Next highlight (${count})` : 'Next highlight';
+    }
+
+    function replyText(text) {
+        const quote = window.quoteCore.split(text);
+        return quote ? quote.rest : String(text);
     }
 
     function note(row, text, unread) {
         if (!pattern) return false;
-        const quote = window.quoteCore.split(text);
-        const reply = quote ? quote.rest : String(text);
+        const reply = replyText(text);
         const matches = reply.matchAll(pattern);
         const first = matches.next();
         if (first.done) return false;
@@ -63,11 +68,11 @@
     }
 
     function nextHighlight() {
-        if (!pending.size || screen.hidden) return false;
+        if (next.disabled || screen.hidden) return false;
         window.findBar?.close();
         for (const row of pending) {
-            pending.delete(row);
             if (row.parentElement !== list) continue;
+            pending.delete(row);
             selected?.classList.remove('selected-highlight');
             selected = row;
             row.classList.add('selected-highlight');
@@ -89,6 +94,11 @@
     window.chatHighlights = {
         setName(value) { name = String(value ?? ''); compile(); },
         note,
-        clearUnread() { pending.clear(); updateCount(); }
+        matches(text) { return pattern !== null && !replyText(text).matchAll(pattern).next().done; },
+        updateCount,
+        clearUnread() {
+            for (const row of pending) if (row.parentElement === list) pending.delete(row);
+            updateCount();
+        }
     };
 })();

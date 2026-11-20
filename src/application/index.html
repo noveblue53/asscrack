@@ -11,7 +11,12 @@
   <link rel="stylesheet" href="find.css">
   <link rel="stylesheet" href="voice-panel.css">
   <link rel="stylesheet" href="activity.css">
+  <link rel="stylesheet" href="attention.css">
+  <link rel="stylesheet" href="whispers.css">
+  <link rel="stylesheet" href="themes.css">
+  <link rel="stylesheet" href="window-frame.css">
   <title>ASSCRACK</title>
+  <link rel="stylesheet" href="desktop-controls.css">
 </head>
 <body>
   <!-- Decoration only: the sky bubbles behind the two screens. -->
@@ -76,8 +81,8 @@
     </div>
   </section>
 
-  <section id="chat-screen" hidden>
-    <header id="titlebar">
+  <header id="titlebar">
+      <span id="login-window-title">ASSCRACK</span>
       <img class="logo" src="img/logo.svg" alt="" width="24" height="24">
       <h1 id="chat-room"></h1>
       <button id="invite-toggle" type="button" aria-expanded="false" aria-controls="invite-panel" hidden>Invite</button>
@@ -92,12 +97,26 @@
         <li id="view-transfers" role="menuitemcheckbox" aria-checked="true" tabindex="-1">Transfers</li>
         <li id="view-map" role="menuitemcheckbox" aria-checked="false" tabindex="-1">Network map</li>
         <li class="view-rule" role="separator"></li>
+        <li id="view-voice" role="menuitem" tabindex="-1">Voice controls</li>
+        <li id="view-compact" role="menuitemcheckbox" aria-checked="false" tabindex="-1">Compact transcript</li>
         <li id="view-typing" role="menuitemcheckbox" aria-checked="false" tabindex="-1">Share typing status</li>
+        <li id="view-theme" role="menuitem" aria-haspopup="dialog" aria-controls="theme-gallery" tabindex="-1">Theme…</li>
         <li id="view-side" role="menuitem" tabindex="-1">Move Buddies to the right</li>
+        <li id="view-system-buttons" role="menuitemcheckbox" aria-checked="false" tabindex="-1" hidden>Windows system buttons (next launch)</li>
+        <li id="view-idle" role="menuitem" tabindex="-1">Enter Idle Peer</li>
+        <li id="view-close-idle" role="menuitemcheckbox" aria-checked="true" tabindex="-1">Close to Idle Peer</li>
+        <li id="view-quit" role="menuitem" tabindex="-1">Quit Asscrack</li>
+        <li id="view-attention" role="menuitem" aria-haspopup="dialog" aria-controls="attention-settings" tabindex="-1">Sound &amp; notifications…</li>
         <li id="view-reset" role="menuitem" tabindex="-1">Reset layout</li>
       </ul>
-    </header>
+      <div id="window-controls" role="group" aria-label="Window controls" hidden>
+        <button type="button" id="window-minimize" aria-label="Minimize window" title="Minimize window"><span aria-hidden="true"></span></button>
+        <button type="button" id="window-maximize" aria-label="Maximize window" title="Maximize window"><span aria-hidden="true"></span></button>
+        <button type="button" id="window-close" aria-label="Close window" title="Close window"><span aria-hidden="true"></span></button>
+      </div>
+  </header>
 
+  <section id="chat-screen" hidden>
     <div id="room-storage" popover="auto" role="group" aria-label="Saved history of this room" hidden>
       <label class="check"><input type="checkbox" id="room-keep-history"> Keep local history</label>
       <span id="history-state" role="status" aria-live="polite"></span>
@@ -183,20 +202,18 @@
       </fieldset>
     </div>
 
-    <div id="toolbar">
-      <div id="voice-controls" class="tool-group">
-        <button id="join-voice" type="button">Join voice</button>
-        <button id="leave-voice" type="button" hidden>Leave voice</button>
-        <button id="mute" type="button" aria-pressed="false" hidden>Mute</button>
-        <button id="voice-settings-toggle" type="button" aria-expanded="false" aria-controls="voice-settings">Voice settings</button>
-      </div>
-      <span id="voice-error" role="alert"></span>
-    </div>
-
     <div id="chat-body">
       <section id="buddy-panel" class="panel" tabindex="-1" aria-label="Buddies">
-        <h2 class="panel-head">Buddies <span id="peer-count" class="count">1</span></h2>
+        <h2 class="panel-head">Buddies <span id="peer-count" class="count">1</span> <button id="whisper-open" type="button" aria-haspopup="dialog">Whispers</button></h2>
         <ul id="peers"></ul>
+        <div id="voice-controls" aria-label="Voice controls" role="group">
+          <button id="join-voice" type="button">Join voice</button>
+          <button id="mute" type="button" aria-pressed="false" hidden>Mute</button>
+          <span id="ptt-state" hidden>PTT released</span>
+          <button id="voice-settings-toggle" type="button" aria-expanded="false" aria-controls="voice-settings">Voice settings</button>
+          <button id="leave-voice" type="button" hidden>Leave voice</button>
+          <span id="voice-error" role="alert"></span>
+        </div>
       </section>
       <div id="buddy-sep" class="layout-sep" role="separator" tabindex="0" aria-orientation="vertical" aria-controls="buddy-panel" aria-label="Resize Buddies" aria-valuenow="192" aria-valuemin="120" aria-valuemax="480"></div>
       <section id="message-panel" class="panel">
@@ -206,6 +223,16 @@
             <input id="highlight-words" type="text" maxlength="512" autocomplete="off" placeholder="pit stop, grid time">
           </label></details>
         </div>
+        <div class="channel-bar">
+          <label for="channel-select">Channel</label>
+          <select id="channel-select" aria-label="Public channel"><option value="general">General</option></select>
+          <button type="button" id="channel-add" disabled aria-label="Create public channel">＋</button>
+          <span id="channel-note" hidden>Read-only with this host. Select General to send.</span>
+        </div>
+        <dialog id="channel-dialog" aria-labelledby="channel-title"><form id="channel-create-form">
+          <h2 id="channel-title">Create public channel</h2><label>Channel name <input id="channel-name" required maxlength="80"></label>
+          <p id="channel-error" role="status"></p><button id="channel-cancel" type="button">Cancel</button><button>Create channel</button>
+        </form></dialog>
         <div id="room-topic" role="group" aria-label="Room topic">
           <span id="topic-value" aria-live="polite">Topic unavailable</span>
           <button id="topic-edit" type="button" disabled>Edit topic</button>
@@ -311,6 +338,73 @@
     </dialog>
   </section>
 
+  <dialog id="availability-dialog" aria-labelledby="availability-title">
+    <h2 id="availability-title">Your availability</h2>
+    <div id="presence-fields"></div>
+    <form method="dialog"><button>Done</button></form>
+  </dialog>
+  <dialog id="message-details" aria-labelledby="message-details-title">
+    <h2 id="message-details-title">Message details</h2>
+    <p id="message-detail-author"></p>
+    <time id="message-detail-time"></time>
+    <p id="message-detail-archive"></p>
+    <form method="dialog"><button>Done</button></form>
+  </dialog>
+
+  <dialog id="theme-gallery" aria-labelledby="theme-title">
+    <header>
+      <h2 id="theme-title">Theme</h2>
+      <form method="dialog"><button type="submit" aria-label="Close theme gallery">Close</button></form>
+    </header>
+    <div class="theme-grid"></div>
+    <template id="theme-choice">
+      <button class="theme-choice" type="button">
+        <span class="theme-preview" aria-hidden="true">
+          <span class="mini-frame"></span>
+          <span class="mini-buddies"></span>
+          <span class="mini-chat"></span>
+          <span class="mini-map"></span>
+          <span class="mini-composer"></span>
+        </span>
+        <span class="theme-caption"><span class="theme-name"></span><span class="theme-check" aria-hidden="true">✓</span></span>
+      </button>
+    </template>
+  </dialog>
+
+  <dialog id="whisper-dialog" aria-labelledby="whisper-title">
+    <h2 id="whisper-title">Whispers</h2>
+    <label for="whisper-peer">Private conversation with</label>
+    <select id="whisper-peer"></select>
+    <small id="whisper-identity"></small>
+    <ul id="whisper-lines" aria-label="Private messages" role="log"></ul>
+    <label for="whisper-draft">Private message</label>
+    <textarea id="whisper-draft" rows="3" maxlength="4096" spellcheck="false"></textarea>
+    <p id="whisper-status" role="status"></p>
+    <button id="whisper-send" type="button" disabled>Send whisper</button>
+    <button id="whisper-close" type="button">Close</button>
+  </dialog>
+  <dialog id="attention-settings" aria-labelledby="attention-title">
+    <h2 id="attention-title">Sound &amp; notifications</h2>
+    <fieldset>
+      <legend>Voice cues</legend>
+      <label><input id="attention-cues" type="checkbox"> Play local cues when I join, leave, mute or unmute</label>
+      <label for="attention-volume">Cue volume <output id="attention-percent" for="attention-volume"></output></label>
+      <input id="attention-volume" type="range" min="0" max="100" step="1">
+      <label for="attention-tone">Preview cue</label>
+      <select id="attention-tone"><option value="join">Join voice</option><option value="leave">Leave voice</option><option value="mute">Mute</option><option value="unmute">Unmute</option></select>
+      <button id="attention-preview" type="button">Play preview</button>
+    </fieldset>
+    <fieldset>
+      <legend>Desktop notifications</legend>
+      <label><input id="attention-alerts" type="checkbox"> Notify me about mentions and private messages outside my active conversation</label>
+      <p id="attention-windows" hidden>On Windows, enabling notifications adds an ASSCRACK Start Menu shortcut.</p>
+      <label><input id="attention-content" type="checkbox"> Include public message text in notifications</label>
+      <label><input id="attention-sound" type="checkbox"> Allow the system notification sound</label>
+    </fieldset>
+    <p id="attention-status" role="status"></p>
+    <form method="dialog"><button>Done</button></form>
+  </dialog>
+
   <dialog id="listening-dialog" aria-labelledby="listening-title">
     <h2 id="listening-title">Listening volume</h2>
     <label><input id="listener-muted" type="checkbox"> Mute for me</label>
@@ -324,13 +418,19 @@
   <script src="voice.js"></script>
   <script src="peer-inspector.js"></script>
   <script src="nodemap.js"></script>
+  <script src="themes.js"></script>
+  <script src="window-frame.js"></script>
   <script src="layout.js"></script>
   <script src="reading.js"></script>
   <script src="find.js"></script>
   <script src="quote.js"></script>
   <script src="highlights.js"></script>
+  <script src="voice-cues.js"></script>
+  <script src="attention.js"></script>
   <script src="renderer.js"></script>
+  <script src="channels-ui.js"></script>
   <script src="typing.js"></script>
+  <script src="whispers.js"></script>
   <script src="saved-rooms-ui.js"></script>
   <script src="voice-panel.js"></script>
   <script src="menu.js"></script>

@@ -136,7 +136,7 @@
     // and a scroll to the end does not clear the unread count and the marker. restorePosition sets the old state.
     let hold = false;
     let highlightScrollTop = null;
-    const unread = createUnread();
+    let unread = createUnread();
 
     function lines() {
         return list.children;
@@ -335,6 +335,16 @@
     }
 
     window.reading = {
+        leaveChannel() {
+            const state = { position: savePosition(), unread };
+            unread = createUnread();
+            endJump();
+            return state;
+        },
+        enterChannel(state) {
+            unread = state?.unread ?? createUnread();
+            restorePosition(state?.position ?? { following: true });
+        },
         revealLine,
         keepPosition,
         beforeChange,

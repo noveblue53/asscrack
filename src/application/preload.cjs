@@ -6,7 +6,22 @@ function listen(channel) {
     };
 }
 
+contextBridge.exposeInMainWorld('desktopFrame', {
+    state: () => ipcRenderer.invoke('asscrack:frame-state'),
+    minimize: () => ipcRenderer.invoke('asscrack:frame-action', 'minimize'),
+    toggleMaximize: () => ipcRenderer.invoke('asscrack:frame-action', 'maximize'),
+    close: () => ipcRenderer.invoke('asscrack:frame-action', 'close'),
+    useSystemButtons: enabled => ipcRenderer.invoke('asscrack:frame-system', enabled),
+    setColors: (color, ink) => ipcRenderer.invoke('asscrack:frame-colors', color, ink),
+    onChanged: listen('asscrack:frame-changed')
+});
+
 contextBridge.exposeInMainWorld('asscrack', {
+    getIdlePeer: () => ipcRenderer.invoke('asscrack:idle-peer'),
+    onIdlePeer: listen('asscrack:idle-peer'),
+    enterIdlePeer: () => ipcRenderer.invoke('asscrack:enter-idle-peer'),
+    setCloseToTray: enabled => ipcRenderer.invoke('asscrack:close-to-tray', enabled),
+    quit: () => ipcRenderer.send('asscrack:quit'),
     login: ({ name, room, invite, internet, publicAddress, save, keepHistory } = {}) =>
         ipcRenderer.invoke('asscrack:login', { name, room, invite, internet, publicAddress, save, keepHistory }),
     // Saved rooms (milestone 6). The window gets no key, no invite and no file path.
@@ -16,7 +31,7 @@ contextBridge.exposeInMainWorld('asscrack', {
     savedRoomLines: (roomId, opts) => {
         const b = opts?.before;
         const before = b ? { time: Number(b.time), id: String(b.id) } : null;
-        return ipcRenderer.invoke('asscrack:saved-room-lines', String(roomId), { before });
+        return ipcRenderer.invoke('asscrack:saved-room-lines', String(roomId), { before, channelId: opts?.channelId });
     },
     setKeepHistory: (roomId, on) => ipcRenderer.invoke('asscrack:set-keep-history', String(roomId), on === true),
     clearHistory: roomId => ipcRenderer.invoke('asscrack:clear-history', String(roomId)),
@@ -31,7 +46,14 @@ contextBridge.exposeInMainWorld('asscrack', {
     onUpnp: listen('asscrack:upnp'),
     copyText: text => ipcRenderer.invoke('asscrack:copy-text', text),
     getRoomActivity: (peerId, transfersOnly) => ipcRenderer.invoke('asscrack:room-activity', peerId, transfersOnly === true),
-    send: text => ipcRenderer.invoke('asscrack:send', text),
+    getWhisperPeers: () => ipcRenderer.invoke('asscrack:whisper-peers'),
+    sendWhisper: (peerId, text, id) => ipcRenderer.invoke('asscrack:whisper-send', peerId, text, id),
+    onWhisper: listen('asscrack:whisper'),
+    onWhisperCapability: listen('asscrack:whisper-capability'),
+    getChannels: () => ipcRenderer.invoke('asscrack:channels'),
+    onChannels: listen('asscrack:channels'),
+    createChannel: name => ipcRenderer.invoke('asscrack:create-channel', name),
+    send: (text, channelId) => ipcRenderer.invoke('asscrack:send', text, channelId),
     onPeerDiscovered: listen('asscrack:peer-discovered'),
     onPeerJoined: listen('asscrack:peer-joined'),
     onPeerLeft: listen('asscrack:peer-left'),
@@ -47,6 +69,11 @@ contextBridge.exposeInMainWorld('asscrack', {
     getShareTyping: () => ipcRenderer.invoke('asscrack:get-share-typing'),
     setShareTyping: value => ipcRenderer.invoke('asscrack:set-share-typing', value === true),
     getHost: () => ipcRenderer.invoke('asscrack:host'),
+    getAttentionSettings: () => ipcRenderer.invoke('asscrack:attention-settings'),
+    setAttentionSettings: patch => ipcRenderer.invoke('asscrack:attention-set', patch),
+    addAttention: data => ipcRenderer.send('asscrack:attention-add', data),
+    readAttention: data => ipcRenderer.send('asscrack:attention-read', data),
+    onAttentionOpen: listen('asscrack:attention-open'),
     getVoiceSettings: () => ipcRenderer.invoke('asscrack:voice-settings'),
     // A partial settings object. Returns the full settings after the check of the main process.
     setVoiceSettings: patch => ipcRenderer.invoke('asscrack:set-voice-settings', patch),

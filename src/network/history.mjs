@@ -1,12 +1,14 @@
 import { MAX_CHAT_FRAME_BYTES } from './chat-session.mjs'
 
+import { validChannelId } from './channels.mjs'
+
 export const HISTORY_LIMIT = 200
 export const MAX_MESSAGE_BYTES = 64 * 1024  // sender + body, matching the local archive's default row budget
 const MAX_ID_BYTES = 128
 
 export function validHistoryItem(m) {
     return m !== null && typeof m === 'object' && typeof m.id === 'string' && m.id.length > 0 &&
-        Buffer.byteLength(m.id) <= MAX_ID_BYTES && typeof m.from === 'string' && typeof m.text === 'string' &&
+        (m.channelId === undefined || validChannelId(m.channelId)) && Buffer.byteLength(m.id) <= MAX_ID_BYTES && typeof m.from === 'string' && typeof m.text === 'string' &&
         Buffer.byteLength(m.from) + Buffer.byteLength(m.text) <= MAX_MESSAGE_BYTES &&
         Number.isSafeInteger(m.time) && Math.abs(m.time) <= 8_640_000_000_000_000
 }
@@ -61,6 +63,7 @@ export function createHistory(limit = HISTORY_LIMIT) {
         add(message) {
             if (ids.has(message.id)) return false
             const item = { id: message.id, from: message.from, text: message.text, time: message.time }
+            if (message.channelId) item.channelId = message.channelId
             let i = items.length
             while (i > 0 && compare(items[i - 1], item) > 0) i--
             items.splice(i, 0, item)
@@ -75,9 +78,9 @@ export function createHistory(limit = HISTORY_LIMIT) {
         },
         // Snapshot membership at enqueue so subsequent live traffic keeps its place on the wire.
         // Clear can revoke a record up to the moment the transport pulls its frame.
-        replayLines(isHost) {
+        replayLines(isHost, select = () => true) {
             const version = clearVersion
-            return historyLines(items.slice(), item => version === clearVersion || items.includes(item), isHost)
+            return historyLines(items.filter(select), item => version === clearVersion || items.includes(item), isHost)
         },
         has: id => ids.has(id),
         list: () => items.map(m => ({ ...m }))

@@ -24,6 +24,11 @@ function layout() {
             { id: 'topic-input', tag: 'input' }, { id: 'topic-save', tag: 'button' }, { id: 'topic-cancel', tag: 'button' }
         ] },
         { id: 'room-type', tag: 'select', value: 'lan' },
+        { id: 'availability-dialog', tag: 'dialog', children: [{ id: 'presence-fields' }] },
+        { id: 'message-details', tag: 'dialog', children: [
+            { id: 'message-detail-author' }, { id: 'message-detail-time' }, { id: 'message-detail-archive' }
+        ] },
+        { id: 'ptt-state' },
         { id: 'listening-dialog', tag: 'dialog', children: [
             { id: 'listening-title', tag: 'h2' }, { id: 'listener-muted', tag: 'input' },
             { id: 'listener-volume', tag: 'input' }, { id: 'listener-percent', tag: 'output' }

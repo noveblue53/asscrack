@@ -49,6 +49,7 @@
             return;
         }
         const lines = [];
+        if (member.idle) lines.push('Idle peer');
         if (member.host) lines.push('Host');
         if (member.fullNode) lines.push('Full node');
         if (!member.self) lines.push('Chat link · ' + (member.linkToYou || 'Unknown'));

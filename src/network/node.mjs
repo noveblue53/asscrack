@@ -1,5 +1,6 @@
 import { createLibp2p } from 'libp2p'
 import { tcp } from '@libp2p/tcp'
+import { createWhispers } from './whispers.mjs'
 import { createTyping } from './typing.mjs'
 import { mdns } from '@libp2p/mdns'
 import { yamux } from '@chainsafe/libp2p-yamux'
@@ -13,6 +14,7 @@ import { EventEmitter } from 'node:events'
 import { networkInterfaces } from 'node:os'
 import { createChatSession } from './chat-session.mjs'
 import { createElection } from './election.mjs'
+import { createChannels } from './channels.mjs'
 import { createRoomTopic } from './room-topic.mjs'
 import { createHistory, HISTORY_LIMIT, MAX_MESSAGE_BYTES, validHistoryItem } from './history.mjs'
 import { createFileTransfer, FILE_PROTOCOL } from './file-transfer.mjs'
@@ -117,9 +119,9 @@ ${text}`).digest('hex')
 
 export async function createAsscrackNode({ room, listen, port = 0, discovery = true, discoveryInterval, name,
     heartbeatInterval = 1000, hostTimeout = 5000, electionDelay = 3000, downloadDir, fileAckTimeout,
-    fullNode = 'auto', allowPrivateFullNode = false, relayOnly = false, roomKey = null, announce = [], storePath = null,
+    receiveWhisper = null, fullNode = 'auto', allowPrivateFullNode = false, relayOnly = false, roomKey = null, announce = [], storePath = null,
     redialInterval = 5000, inviteNodes = [], upnp = false, upnpTimeout = 70000, upnpLeaseSeconds = 1800,
-    upnpClient = null, seedHistory = [] } = {}) {
+    upnpClient = null, seedHistory = [], seedChannels = [] } = {}) {
     if (typeof room !== 'string') throw new TypeError('room must be a string')
     const key = parseRoomKey(roomKey)
     if (!Array.isArray(announce) || !announce.every(validAddr)) throw new TypeError('announce must be an array of multiaddr strings')
@@ -194,6 +196,11 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     // Up to one replay window per peer, in case history arrives just before host acceptance.
     const pendingHistory = new Map()
     const selfId = node.peerId.toString()
+    const whispers = createWhispers({
+        self: selfId, sessionFor: peer => sessions.get(peer),
+        receive: key && typeof receiveWhisper === 'function' ? receiveWhisper : null,
+        changed: (peerId, available) => events.emit('whisper-capability', { peerId, available })
+    })
     // The last valid links list from each peer with an open session.
     const links = new Map()
     const MAX_LINKS = 256
@@ -224,7 +231,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             all[peerId] = [...list]
             kinds[peerId] = { ...(linkKinds.get(peerId) ?? {}) }
         }
-        return { self: selfId, links: all, kinds }
+        return { self: selfId, links: all, kinds, selfIdle, idlePeers: [...idlePeers] }
     }
 
     function emitTopology() {
@@ -260,8 +267,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
 
     // The host of the last onChange of the election.
     let lastHostId = null
-    function sendHistoryTo(peerId, session) {
-        const replay = history.replayLines(election.isHost)
+    function sendHistoryTo(peerId, session, namedOnly = false) {
+        const capable = channels.capable(peerId)
+        const replay = history.replayLines(election.isHost, m => m.channelId ? capable : !namedOnly)
         session.sendReplay((function* () {
             const count = yield* replay
             if (count !== undefined) console.info(`History sent to ${peerId}: ${count} messages`)
@@ -274,7 +282,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
 
     function handleHistory(peerId, control) {
         if (!Array.isArray(control.messages) || control.messages.length > HISTORY_LIMIT) return
-        const messages = control.messages.filter(validHistoryItem).map(({ id, from, text, time }) => ({ id, from, text, time }))
+        const messages = control.messages.filter(m => validHistoryItem(m) && (!m.channelId || (channels.capable(peerId) && channels.known(m.channelId))))
+            .map(({ id, from, text, time, channelId }) => channelId ? { id, from, text, time, channelId } : { id, from, text, time })
         if (election.host()?.peerId === peerId) {
             applyHistory(messages)
             return
@@ -312,6 +321,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     let ownPresence = { state: 'available', note: '' }
     // peerId -> { state, note } from the presence lines of that peer.
     const peerPresence = new Map()
+    let selfIdle = false
+    const idlePeers = new Set()
     // Trim the note, then cut it to 80 Unicode code points.
     const presenceNote = note => [...note.trim()].slice(0, MAX_PRESENCE_NOTE).join('')
     const presenceLine = () => JSON.stringify({ type: 'presence', v: 1, state: ownPresence.state, note: ownPresence.note })
@@ -323,6 +334,15 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         return list
     }
 
+    const channels = createChannels({
+        self: selfId, host: () => election.host()?.peerId,
+        seed: seedChannels,
+        send: (id, msg) => sessions.get(id)?.send(JSON.stringify(msg)),
+        changed: (state, added) => events.emit('channels', { ...state, added }),
+        ready: id => {
+            if (election.isHost() && history.list().some(m => m.channelId)) sendHistoryTo(id, sessions.get(id), true)
+        }
+    })
     const topic = createRoomTopic({
         selfId,
         send: (peerId, msg) => sessions.get(peerId)?.send(JSON.stringify(msg)) ?? false,
@@ -343,6 +363,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             lastHostId = info.peerId
             events.emit('host-changed', info)
             topic.elected(info)
+            channels.changedHost()
             // A new host sends the history to each member with a session. A member whose session opened before
             // this election got no history from openSession(). Send after the host announcement.
             if (info.peerId === selfId && !wasHost) queueMicrotask(sendHistoryToAll)
@@ -527,6 +548,15 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 if (control) {
                     // Ignore an unknown type with no warning.
                     if (control.type === 'host') election.handleAnnouncement(peerId, control)
+                    else if (control.type === 'channels' && sessions.get(peerId) === session) channels.handle(peerId, control)
+                    else if (control.type === 'channel-post' && sessions.get(peerId) === session && channels.capable(peerId) &&
+                        control.v === 1 && channels.known(control.message?.channelId) && validHistoryItem(control.message)) {
+                        const { id, from, text, time, channelId } = control.message
+                        const record = { peerId, id, from, text, time, channelId }
+                        if (history.add(record)) events.emit('message', record)
+                        events.emit('live', record)
+                    }
+                    else if (control.type === 'whisper') whispers.handle(peerId, session, control)
                     else if (control.type === 'topic' && sessions.get(peerId) === session) topic.handle(peerId, control)
                     else if (control.type === 'history' && sessions.get(peerId) === session) handleHistory(peerId, control)
                     else if (control.type === 'hello') {
@@ -552,7 +582,16 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                         }
                     }
                     else if (control.type === 'node') {
-                        if (sessions.get(peerId) === session && typeof control.fullNode === 'boolean') setPeerFull(peerId, control.fullNode, control.fullNode ? validAddrList(control.addrs) : null)
+                        if (sessions.get(peerId) === session && typeof control.fullNode === 'boolean') {
+                            // Older node reports omit idle. Replace stale participation on a new session.
+                            const idle = control.idle === true
+                            if (idlePeers.has(peerId) !== idle) {
+                                if (idle) idlePeers.add(peerId)
+                                else idlePeers.delete(peerId)
+                                emitTopology()
+                            }
+                            setPeerFull(peerId, control.fullNode, control.fullNode ? validAddrList(control.addrs) : null)
+                        }
                     }
                     else if (control.type === 'signal') {
                         if (control.data !== null && typeof control.data === 'object') events.emit('signal', { peerId, data: control.data })
@@ -624,10 +663,13 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         else if (replaced) sessionConns.delete(peerId)
         if (replaced) {
             typing.remove(peerId)
+            whispers.closed(peerId, replaced)
             replacedSessions.add(replaced)
             replaced.close()
         }
         if (sendHello) session.send(JSON.stringify({ type: 'hello', name: senderName }))
+        channels.opened(peerId)
+        whispers.opened(peerId, session)
         session.send(nodeLine())
         // Always send the own presence, also when it is 'available'.
         session.send(presenceLine())
@@ -654,6 +696,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         checkFullNode(peerId)
         session.done.catch(() => {}).finally(async () => {
             const secs = Math.round((Date.now() - sessionStart) / 100) / 10
+            whispers.closed(peerId, session)
             endedSessions.add(session)
             await replacementSettled(peerId, session)
             // A replaced session: the peer did not leave. No 'closed' event and no cleanup.
@@ -677,10 +720,12 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 events.emit('peer-left', { peerId })
                 peerVoice.delete(peerId)
                 peerPresence.delete(peerId)
+                idlePeers.delete(peerId)
                 peerDirect.delete(peerId)
                 voiceRelay.peerLeft(peerId)
                 election.sessionClosed(peerId)
                 topic.sessionClosed(peerId)
+                channels.closed(peerId)
                 files.peerLeft(peerId)
                 links.delete(peerId)
                 broadcastLinks()
@@ -739,9 +784,16 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         if (conn === undefined || conn === connection || conn.id === connection.id) sessions.get(peerId)?.close()
     })
 
-    // Rule 6: the full-node state on the wire.
+    function setVoice({ inVoice, streamId = null, muted = false } = {}) {
+        voiceState = { inVoice: !selfIdle && inVoice === true, streamId: typeof streamId === 'string' ? streamId : null, muted: muted === true }
+        const line = voiceLine()
+        for (const session of sessions.values()) session.send(line)
+        voiceRelay.hostChanged()
+    }
+
+    // Legacy peers consume fullNode and addrs and ignore the optional participation flag.
     function nodeLine() {
-        return JSON.stringify(selfFull ? { type: 'node', fullNode: true, addrs: publicAddrs() } : { type: 'node', fullNode: false })
+        return JSON.stringify({ type: 'node', fullNode: selfFull, addrs: selfFull ? publicAddrs() : undefined, idle: selfIdle })
     }
 
     // The public addresses of this node: the announce addresses, else the dial-back address of a full node.
@@ -1323,7 +1375,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     }
     for (const peerId of hintIds()) dialFullNode(peerId)
     // Redial: a member with no session to a full node dials the known full nodes again.
-    const redialTimer = setInterval(() => {
+    function refreshRoutes() {
         if (stopped) return
         // A reservation can become usable without any link change. After the fast retries,
         // let a still-wanted, exhausted target try once per ordinary redial interval.
@@ -1331,20 +1383,25 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         if (selfFull && sessions.size) return
         if ([...sessions.keys()].some(id => peerFull.get(id) === true)) return
         for (const peerId of hintIds()) dialFullNode(peerId)
-    }, redialInterval)
+    }
+    const redialTimer = setInterval(refreshRoutes, redialInterval)
     redialTimer.unref?.()
 
     // Send one line. Returns the canonical record: { id, from, text, time, accepted }.
     // accepted is the number of sessions that accepted the line. The wire line has no accepted field.
     // A line that no session accepted stays local: it does not go in the history, thus no host replay sends it
     // (milestone 6, plan section 6 part 2).
-    function sendRecord(text) {
+    function sendRecord(text, channelId = 'general') {
         const message = { id: randomUUID(), from: senderName, text, time: Date.now() }
         if (typeof text !== 'string') throw new TypeError('Message text must be a string')
         if (!validHistoryItem(message)) throw new RangeError(`Message and sender name exceed ${MAX_MESSAGE_BYTES} UTF-8 bytes`)
-        const line = JSON.stringify(message)
+        const named = channelId !== 'general'
+        if (named && (!channels.known(channelId) || !channels.view().available))
+            throw new Error('This channel is read-only until a compatible host is connected.')
+        if (named) message.channelId = channelId
+        const line = JSON.stringify(named ? { type: 'channel-post', v: 1, message } : message)
         let count = 0
-        for (const session of sessions.values()) if (session.send(line)) count++
+        for (const [peerId, session] of sessions) if ((!named || channels.capable(peerId)) && session.send(line)) count++
         if (count > 0) history.add(message)
         typing.edited(false)
         return { ...message, accepted: count }
@@ -1381,8 +1438,11 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             }
         },
         name: senderName,
+        whisperPeers: whispers.peers,
+        sendWhisper: whispers.send,
+        channels: channels.view, createChannel: channels.create,
         sendRecord,
-        setTyping: active => { if (!stopped && typeof active === 'boolean') typing.edited(active) },
+        setTyping: active => { if (!stopped && !selfIdle && typeof active === 'boolean') typing.edited(active) },
         // Returns the number of sessions that accepted the line.
         send: text => sendRecord(text).accepted,
         peers: () => [...sessions.keys()],
@@ -1417,12 +1477,20 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             if (!session) return false
             return session.send(JSON.stringify(message))
         },
-        setVoice({ inVoice, streamId = null, muted = false } = {}) {
-            voiceState = { inVoice: inVoice === true, streamId: typeof streamId === 'string' ? streamId : null, muted: muted === true }
-            const line = voiceLine()
+        setVoice,
+        idle: () => selfIdle,
+        setIdle(idle) {
+            if (stopped || typeof idle !== 'boolean' || selfIdle === idle) return
+            selfIdle = idle
+            if (idle) {
+                typing.edited(false)
+                if (voiceState.inVoice) setVoice({})
+            }
+            const line = nodeLine()
             for (const session of sessions.values()) session.send(line)
-            voiceRelay.hostChanged()
+            emitTopology()
         },
+        refreshRoutes,
         // Set the own presence and send it to all open sessions. Returns the stored value.
         setPresence({ state, note = '' } = {}) {
             if (!PRESENCE_STATES.has(state)) throw new TypeError('state must be available, away or dnd')
@@ -1438,7 +1506,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             .filter(([peerId]) => sessions.has(peerId))
             .map(([peerId, value]) => [peerId, { ...value }])),
         // Send one Opus frame of this node on the voice path (direct streams, and the star through the host).
-        sendVoiceFrame: bytes => voiceRelay.sendFrame(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)),
+        sendVoiceFrame: bytes => !selfIdle && voiceRelay.sendFrame(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)),
         voiceStats: () => voiceRelay.stats(),
         topic: topic.view,
         setTopic: topic.set,
@@ -1453,6 +1521,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         cancelFile: (offerId, peerId) => files.cancelFile(offerId, peerId),
         async stop() {
             stopped = true
+            whispers.stop()
             typing.stop()
             clearTimeout(upnpRenewTimer)
             clearInterval(redialTimer)

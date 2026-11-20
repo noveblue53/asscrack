@@ -38,6 +38,7 @@
             mapWidth: null,
             transferHeight: null,
             transfersShown: true,
+            compactTranscript: false,
         };
     }
 
@@ -62,6 +63,7 @@
         pref.transferHeight = validSize('transferHeight', raw.transferHeight);
         if (SIDES.includes(raw.buddySide)) pref.buddySide = raw.buddySide;
         if (typeof raw.buddiesShown === 'boolean') pref.buddiesShown = raw.buddiesShown;
+        if (typeof raw.compactTranscript === 'boolean') pref.compactTranscript = raw.compactTranscript;
         if (typeof raw.transfersShown === 'boolean') pref.transfersShown = raw.transfersShown;
         return pref;
     }
@@ -296,6 +298,7 @@
 
     function updateMenu() {
         if (!viewMenu) return;
+        byId('view-compact')?.setAttribute('aria-checked', String(pref.compactTranscript));
         if (items.buddies) items.buddies.setAttribute('aria-checked', String(pref.buddiesShown));
         if (items.transfers) items.transfers.setAttribute('aria-checked', String(pref.transfersShown));
         if (items.map) items.map.setAttribute('aria-checked', String(mapIsOpen()));
@@ -316,6 +319,7 @@
         setVar('--composer-height', boxHeight('composer'));
         const cls = body.classList;
         cls.toggle('layout-buddy-right', eff.buddySide === 'right');
+        cls.toggle('compact-transcript', pref.compactTranscript);
         cls.toggle('layout-buddy-hidden', eff.buddyMode === 'hidden');
         cls.toggle('layout-buddy-drawer', eff.buddyMode === 'drawer');
         cls.toggle('layout-buddy-off', eff.buddyMode !== 'docked');
@@ -573,6 +577,19 @@
     }
 
     // keepOpen: Space on a check item changes it and keeps the menu open.
+    let compactSelection = null;
+    let viewOrigin = null;
+    // Native menu interaction can collapse a transcript selection before the click is delivered.
+    function rememberTranscript() {
+        const s = doc.getSelection();
+        const list = byId('messages');
+        compactSelection = s && !s.isCollapsed && list?.contains(s.anchorNode) && list.contains(s.focusNode)
+            ? [s.anchorNode, s.anchorOffset, s.focusNode, s.focusOffset] : null;
+        viewOrigin = doc.activeElement;
+    }
+    viewToggle?.addEventListener('pointerdown', rememberTranscript);
+    viewToggle?.addEventListener('keydown', rememberTranscript);
+
     function activate(item, keepOpen) {
         if (!item) return;
         const isCheck = item.getAttribute('role') === 'menuitemcheckbox';
@@ -583,9 +600,30 @@
             return;
         }
         if (!stay) closeMenu(true);
-        if (item === items.buddies) setPref({ buddiesShown: !pref.buddiesShown });
+        if (item.id === 'view-voice') {
+            if (!pref.buddiesShown) setPref({ buddiesShown: true });
+            if (eff.buddyMode === 'drawer') openDrawer(viewToggle);
+            const join = byId('join-voice');
+            (join.hidden ? byId('mute') : join).focus({ preventScroll: true });
+        } else if (item.id === 'view-compact') {
+            window.reading.keepPosition(() => {
+                setPref({ compactTranscript: !pref.compactTranscript });
+                if (!stay && viewOrigin?.isConnected && !viewMenu.contains(viewOrigin)) {
+                    viewOrigin.focus({ preventScroll: true });
+                }
+                if (compactSelection?.[0].isConnected && compactSelection[2].isConnected) {
+                    doc.getSelection().setBaseAndExtent(...compactSelection);
+                }
+            });
+        } else if (item === items.buddies) setPref({ buddiesShown: !pref.buddiesShown });
         else if (item === items.transfers) setPref({ transfersShown: !pref.transfersShown });
         else if (item === items.map && mapToggle) mapToggle.click();
+        else if (item.id === 'view-theme') window.roomThemes.open(viewOrigin);
+        else if (item.id === 'view-system-buttons') window.frameControls?.toggleSystemButtons();
+        else if (item.id === 'view-idle') window.idlePeer?.enter();
+        else if (item.id === 'view-close-idle') window.idlePeer?.toggleClose();
+        else if (item.id === 'view-quit') window.asscrack.quit();
+        else if (item.id === 'view-attention') window.roomAttention?.openSettings();
         else if (item.id === 'view-typing') window.typingUi?.toggleShare();
         else if (item === items.side) setPref({ buddySide: pref.buddySide === 'left' ? 'right' : 'left' });
         else if (item === items.reset) reset();

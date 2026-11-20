@@ -44,6 +44,7 @@ const DEFAULTS = {
     mapWidth: null,
     transferHeight: null,
     transfersShown: true,
+    compactTranscript: false,
 };
 
 // The composer and Send stay inside the viewport: the bands (with the composer), the minimum chat body and the
@@ -107,6 +108,7 @@ test('wrong types recover field by field', () => {
         mapWidth: 400,
         transferHeight: null,
         transfersShown: false,
+        compactTranscript: false,
     });
 });
 
@@ -323,4 +325,12 @@ test('the default preference is the reset state', () => {
     const { core } = load();
     assert.deepEqual(plain(core.defaultPref()), DEFAULTS);
     assert.notEqual(core.defaultPref(), core.defaultPref());
+});
+
+test('compact transcript is an opt-in, profile-scoped layout preference', () => {
+    const { core } = load();
+    assert.equal(core.validatePref({ version: 1 }).compactTranscript, false);
+    assert.equal(core.validatePref({ version: 1, compactTranscript: 'true' }).compactTranscript, false);
+    const value = core.validatePref({ version: 1, compactTranscript: true });
+    assert.equal(core.parsePref(core.serializePref(value)).compactTranscript, true);
 });

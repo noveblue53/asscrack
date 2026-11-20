@@ -119,6 +119,7 @@
                 inVoice,
                 muted,
                 speaking: inVoice && !muted && item.speaking === true,
+                idle: item.idle === true,
                 fullNode: item.fullNode === true
             });
         }
@@ -170,11 +171,15 @@
 
     function makeNode(id) {
         const group = svgEl('g', { class: 'nm-node', 'data-node': id, role: 'button', tabindex: 0 });
-        group.addEventListener('click', () => window.peerInspector?.open(id));
+        function activate() {
+            if (group.classList.contains('self')) window.roomActions?.editAvailability();
+            else window.peerInspector?.open(id);
+        }
+        group.addEventListener('click', activate);
         group.addEventListener('keydown', e => {
             if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
-                window.peerInspector?.open(id);
+                activate();
             }
         });
         // The body has the start animation. The group has the position.
@@ -226,14 +231,15 @@
         else node.group.removeAttribute('data-full-node');
         const first = Array.from(data.name.trim())[0];
         node.letter.textContent = first ? first.toUpperCase() : '?';
-        node.label.textContent = shortName(data.name, labelMax) + (data.self ? ' (you)' : '');
+        node.label.textContent = shortName(data.name, labelMax) + (data.self ? ' (you)' : '') + (data.idle ? ' · Idle peer' : '');
         const facts = [data.name + (data.self ? ' (you)' : '')];
+        if (data.idle) facts.push('Idle peer');
         if (data.host) facts.push('host: the voice relay of the room');
         if (data.fullNode) facts.push('Full node · available to relay');
         if (data.linkToYou) facts.push('Chat link to you · ' + data.linkToYou);
         if (data.inVoice) facts.push(data.speaking ? 'speaks now' : data.muted ? 'in voice (muted)' : 'in voice');
         else facts.push('not in voice');
-        node.group.setAttribute('aria-label', 'Inspect ' + data.name);
+        node.group.setAttribute('aria-label', data.self ? 'Edit your availability and status note' : 'Inspect ' + data.name);
         node.title.textContent = facts.join('\n');
         if (node.host !== data.host) {
             node.host = data.host;

@@ -21,6 +21,8 @@ const mapPanel = document.getElementById('map-panel');
 const mapClose = document.getElementById('map-close');
 
 let ownName = '';
+let idlePeerIds = new Set();
+let selfIdle = false;
 const peerItems = new Map(); // peerId -> <li>
 
 // ---- View helpers ----
@@ -48,7 +50,7 @@ function firstLetter(name) {
 }
 
 function updatePeerCount() {
-    peerCount.textContent = String(peerItems.size + (selfLine ? 1 : 0));
+    peerCount.textContent = String([...peerItems.keys()].filter(id => !idlePeerIds.has(id)).length + (selfLine && !selfIdle ? 1 : 0));
 }
 
 // The node map panel opens and closes with a CSS transition (body.map-open).
@@ -102,7 +104,7 @@ function makeMessageItem(from, text, time, own = false, id = null, peerId = null
     if (typeof peerId === 'string' && peerId) item.dataset.peerId = peerId;
     const fromText = String(from ?? '');
     if (own) item.classList.add('own');
-    else item.classList.add(nameColorClass(fromText));
+    item.classList.add(nameColorClass(fromText));
     const fromSpan = document.createElement('span');
     fromSpan.className = 'from';
     fromSpan.textContent = fromText;
@@ -139,49 +141,36 @@ function groupWithPrevious(item) {
     item.classList.toggle('cont', same);
 }
 
-// Saved rooms (milestone 6): the IDs that the archive of this computer has. An ID can come in line-saved before the
-// line is shown: addMessage and insertMessage mark the line when they add it.
+// Archive acknowledgements can arrive before the corresponding live row.
 const savedMessageIds = new Set();
+const messageDetails = document.getElementById('message-details');
 
-function makeSavedMark() {
-    const mark = document.createElement('span');
-    mark.className = 'saved-mark';
-    mark.title = 'Saved on this device';
-    mark.setAttribute('aria-label', 'Saved on this device');
-    return mark;
+function showArchiveFact() {
+    if (!messageDetails?.open) return;
+    const saved = savedMessageIds.has(messageDetails.dataset.messageId);
+    document.getElementById('message-detail-archive').textContent = saved ? 'Saved on this device' : 'No local archive copy recorded';
 }
 
-// Saved rooms (milestone 6): put the saved class and mark on a line when its ID is saved.
-function markSaved(item) {
-    if (!item || !item.dataset.id || !savedMessageIds.has(item.dataset.id)) return;
-    if (item.classList.contains('saved')) return;
-    item.classList.add('saved');
-    const bubble = item.querySelector('.bubble-text');
-    if (bubble) bubble.appendChild(makeSavedMark());
+function showMessageDetails(row) {
+    if (row?.parentElement !== messageList || !row.querySelector('.text')) return false;
+    messageDetails.dataset.messageId = row.dataset.id ?? '';
+    document.getElementById('message-detail-author').textContent = row.querySelector('.from').textContent;
+    document.getElementById('message-detail-time').textContent = new Date(Number(row.dataset.time)).toLocaleString();
+    messageDetails.showModal();
+    showArchiveFact();
+    return true;
 }
 
-// Saved rooms (milestone 6): the line with this ID, or null.
-function messageItemById(id) {
-    for (const li of messageList.children) if (li.dataset.id === id) return li;
-    return null;
-}
-
-// Saved rooms (milestone 6): note a saved ID and mark its line, when it is shown.
 function noteSaved(id) {
     if (id === null || id === undefined || id === '') return;
     savedMessageIds.add(String(id));
-    markSaved(messageItemById(String(id)));
+    showArchiveFact();
 }
 
-// Saved rooms (milestone 6): after Clear, no line is saved.
 function clearSavedMarks() {
     savedMessageIds.clear();
-    for (const li of messageList.querySelectorAll('li.saved')) {
-        li.classList.remove('saved');
-        for (const mark of li.querySelectorAll('.saved-mark')) mark.remove();
-    }
+    showArchiveFact();
 }
-
 // Saved rooms (milestone 6): an own send with no accepting peer. The line is only in this window.
 function markLocalOnly(item) {
     if (!item || item.classList.contains('local-only')) return;
@@ -199,22 +188,21 @@ const shownMessageIds = new Set();
 
 // Add a line at the end. Returns the new <li>, or null when the id is already shown.
 // The caller calls window.reading.beforeChange() and afterChange() around it.
-function addMessage(from, text, time, own = false, id = null, peerId = null) {
+function addMessage(from, text, time, own = false, id = null, peerId = null, channelId = 'general') {
     if (id !== null && id !== undefined && id !== '') {
         if (shownMessageIds.has(String(id))) return null;
         shownMessageIds.add(String(id));
     }
     const item = makeMessageItem(from, text, time, own, id, peerId);
-    messageList.appendChild(item);
+    (window.roomChannels?.listFor(channelId) ?? messageList).appendChild(item);
     groupWithPrevious(item);
-    markSaved(item);
     return item;
 }
 
 // Put a history line before the first line that is newer. Equal times keep the arrival sequence.
 // Returns the new <li>, or null when the id is already shown.
 // own: true or false for a saved line (milestone 6). null: a line with the name of this user is an own line.
-function insertMessage(from, text, time, id = null, own = null) {
+function insertMessage(from, text, time, id = null, own = null, channelId = 'general') {
     if (id !== null && id !== undefined && id !== '') {
         if (shownMessageIds.has(String(id))) return null;
         shownMessageIds.add(String(id));
@@ -222,22 +210,27 @@ function insertMessage(from, text, time, id = null, own = null) {
     // A history line has no peer ID: a line with the name of this user shows as an own line.
     const item = makeMessageItem(from, text, time, typeof own === 'boolean' ? own : String(from ?? '') === ownName, id);
     const t = Number(item.dataset.time);
-    const items = Array.from(messageList.children);
+    const list = window.roomChannels?.listFor(channelId) ?? messageList;
+    const items = Array.from(list.children);
     const next = items[window.readingCore.insertIndex(items.map(li => li.dataset.time), t)] ?? null;
-    messageList.insertBefore(item, next);
+    list.insertBefore(item, next);
     groupWithPrevious(item);
     groupWithPrevious(next);
-    markSaved(item);
     return item;
 }
 
 // A peer line: <li><span.avatar/><span.name/><span.host/><span.voice/></li>. All text goes in with textContent.
 // The avatar is the buddy icon: the first letter of the name on a ball with the name color.
-function makePeerLine(name, title, colorName = name) {
+function makePeerLine(name, title, colorName = name, self = false) {
     const item = document.createElement('li');
-    const avatar = document.createElement('span');
+    const avatar = document.createElement(self ? 'button' : 'span');
     avatar.className = 'avatar';
-    avatar.setAttribute('aria-hidden', 'true');
+    if (self) {
+        avatar.type = 'button';
+        avatar.setAttribute('aria-label', 'Edit your availability and status note');
+        avatar.setAttribute('aria-haspopup', 'dialog');
+        avatar.addEventListener('click', editAvailability);
+    } else avatar.setAttribute('aria-hidden', 'true');
     avatar.textContent = firstLetter(colorName);
     setNameColor(item, colorName);
     const nameSpan = document.createElement('span');
@@ -274,6 +267,7 @@ function addPeer(peerId) {
     if (peerItems.has(peerId)) return;
     const item = makePeerLine(peerNames.get(peerId) ?? String(peerId).slice(0, 12), peerId);
     item.dataset.peerId = String(peerId);
+    item.hidden = idlePeerIds.has(peerId);
     peerItems.set(peerId, item);
     peerList.appendChild(item);
     refreshFileRecipients();
@@ -315,8 +309,14 @@ window.asscrack.onMessage(data => {
     const item = peerItems.get(data.peerId);
     if (item && data.from) setPeerName(item, data.from);
     const state = window.reading.beforeChange();
-    const line = addMessage(data.from, data.text, data.time, false, data.id, data.peerId);
-    if (line) {
+    const line = addMessage(data.from, data.text, data.time, false, data.id, data.peerId, data.channelId);
+    if (line && !window.idlePeer?.isIdle()) {
+        window.roomAttention?.mention(data);
+        if (window.roomChannels && !window.roomChannels.isViewing(data.channelId)) {
+            window.roomChannels.missed(data.channelId);
+            window.chatHighlights?.note(line, data.text, true);
+            return;
+        }
         const unread = window.reading.noteIncoming(line);
         if (!data.peerId || data.peerId !== (selfId ?? topologySelf)) window.chatHighlights?.note(line, data.text, unread);
     }
@@ -325,17 +325,19 @@ window.asscrack.onMessage(data => {
 // A history event can come more than one time (each host election, each new session). Only lines with an id
 // that is not shown go in. History lines are not unread. The first history with lines on an empty list
 // starts at the newest line. A later history keeps the reading position.
-let historyShown = false;
+const historyShown = new Set();
 window.asscrack.onHistory(data => {
     const lines = window.readingCore.newHistoryLines(data?.messages, id => shownMessageIds.has(id));
-    const first = !historyShown && lines.length > 0 && messageList.children.length === 0;
+    const activeChannel = window.roomChannels?.active() ?? 'general';
+    const visible = lines.some(line => (line.channelId ?? 'general') === activeChannel);
+    const first = visible && !historyShown.has(activeChannel) && messageList.children.length === 0;
     const state = window.reading.beforeChange();
     let added = 0;
-    for (const line of lines) if (insertMessage(line.from, line.text, line.time, line.id)) added++;
-    if (lines.length > 0) historyShown = true;
+    for (const line of lines) if (insertMessage(line.from, line.text, line.time, line.id, null, line.channelId)) added++;
+    for (const line of lines) historyShown.add(line.channelId ?? 'general');
     console.info(`History shown: ${added} lines`);
     if (first) window.reading.followLatest();
-    else window.reading.afterChange(state);
+    else if (visible) window.reading.afterChange(state);
 });
 
 // ---- Room type on the login screen ----
@@ -408,7 +410,7 @@ function showChat(name, room) {
     statusBar.prepend(status);
     if (internetRoom) statusBar.querySelector('.net-note').textContent = 'Internet room';
     if (!selfLine) {
-        selfLine = makePeerLine(`${name} (you)`, name, name);
+        selfLine = makePeerLine(`${name} (you)`, name, name, true);
         selfLine.classList.add('self');
         peerList.prepend(selfLine);
     }
@@ -417,6 +419,8 @@ function showChat(name, room) {
 
 // After the node started: get the room state from the main process.
 function roomStarted(result) {
+    void window.roomChannels?.start();
+    window.whispers?.refresh();
     refreshRoomTopic();
     startPresence();
     updatePeerCount();
@@ -495,8 +499,13 @@ quoteRemove.addEventListener('click', removeQuote);
 let sendBusy = false;
 async function sendMessage() {
     if (sendBusy) return;
+    const channelId = window.roomChannels?.active() ?? 'general';
     const reply = messageInput.value;
     const quote = pendingQuote;
+    if (/^\/(?:whisper|w|msg)(?:\s|$)/i.test(reply.trimStart())) {
+        status.textContent = 'To send privately, open Whispers and select a buddy. Your draft is still here.';
+        return;
+    }
     if (!quote && window.peerInspector?.command(reply)) {
         if (messageInput.value === reply) messageInput.value = '';
         return;
@@ -521,7 +530,7 @@ async function sendMessage() {
     // Saved rooms (milestone 6): send returns the record { id, from, text, time, accepted }.
     let record;
     try {
-        record = await window.asscrack.send(text);
+        record = channelId === 'general' ? await window.asscrack.send(text) : await window.asscrack.send(text, channelId);
     } catch (err) {
         status.textContent = `Not sent: ${err?.message ?? err}. The message stays in the message box.`;
         return;
@@ -529,15 +538,18 @@ async function sendMessage() {
         sendBusy = false;
     }
     // A change of the draft while the send ran stays.
-    if (messageInput.value === reply) messageInput.value = '';
-    if (pendingQuote === quote) setQuote(null);
+    const visible = !window.roomChannels || window.roomChannels.isViewing(channelId);
+    if (visible) {
+        if (messageInput.value === reply) messageInput.value = '';
+        if (pendingQuote === quote) setQuote(null);
+    } else window.roomChannels.sent(channelId, reply, quote);
     // An own send goes to the newest line on purpose.
-    // Saved rooms (milestone 6): a saved send has the saved mark when it is added.
+    // Saved rooms (milestone 6): retain the local archive acknowledgement for Message details.
     if (record?.saved === true && record?.id) savedMessageIds.add(String(record.id));
-    const line = addMessage(ownName, text, record?.time ?? Date.now(), true, record?.id ?? null, selfId ?? topologySelf);
+    const line = addMessage(ownName, text, record?.time ?? Date.now(), true, record?.id ?? null, selfId ?? topologySelf, channelId);
     const count = record?.accepted;
     if (count === 0) markLocalOnly(line);
-    window.reading.followLatest();
+    if (visible) window.reading.followLatest();
     const none = typeof count === 'number' ? count === 0 : peerItems.size === 0;
     status.textContent = none ? NO_PEERS_TEXT : '';
     if (typeof record?.saveError === 'string' && record.saveError && window.savedRoomsUi) {
@@ -607,6 +619,12 @@ function updateVoiceView() {
     leaveVoiceButton.hidden = !ownInVoice;
     muteButton.hidden = !ownInVoice;
     muteButton.textContent = ownMuted ? 'Unmute' : 'Mute';
+    const ptt = document.getElementById('ptt-state');
+    if (ptt) {
+        ptt.hidden = !ownInVoice || state.inputMode !== 'ptt';
+        ptt.dataset.held = String(state.pttHeld === true);
+        ptt.textContent = state.pttHeld ? 'PTT held' : 'PTT released';
+    }
     muteButton.setAttribute('aria-pressed', String(ownMuted));
     document.body.classList.toggle('in-voice', ownInVoice);
     updateNodeMap();
@@ -654,11 +672,13 @@ async function joinVoice() {
     updateVoiceView();
     try {
         await window.voice.join();
+        if (window.idlePeer?.isIdle()) return;
+        window.roomAttention?.cue('join');
         ownInVoice = true;
         ownMuted = false;
         startStatsTimer();
     } catch (err) {
-        voiceError.textContent = `Voice error: ${err?.message ?? err}`;
+        if (err?.message !== 'Voice capture ended') voiceError.textContent = `Voice error: ${err?.message ?? err}`;
     } finally {
         joining = false;
         updateVoiceView();
@@ -672,6 +692,7 @@ async function leaveVoice() {
     updateVoiceView();
     try {
         await window.voice.leave();
+        window.roomAttention?.cue('leave');
     } catch (err) {
         voiceError.textContent = `Voice error: ${err?.message ?? err}`;
     }
@@ -682,6 +703,7 @@ function toggleMute() {
     if (!ownInVoice) return;
     ownMuted = !ownMuted;
     window.voice.setMuted(ownMuted);
+    window.roomAttention?.cue(ownMuted ? 'mute' : 'unmute');
     updateVoiceView();
 }
 
@@ -994,11 +1016,11 @@ function copyMessageText(row) {
 function rowInfo(row) {
     if (!row || !row.isConnected) return null;
     if (row.parentElement === peerList) {
-        if (row === selfLine) return { kind: 'buddy', inspect: Boolean(window.peerInspector), self: true, onMap: buddyId(row) !== null };
-        return buddyId(row) === null ? null : { kind: 'buddy', inspect: Boolean(window.peerInspector), self: false, onMap: true };
+        if (row === selfLine) return { kind: 'buddy', inspect: Boolean(window.peerInspector), self: true, availability: Boolean(presenceControls), onMap: buddyId(row) !== null };
+        return buddyId(row) === null ? null : { kind: 'buddy', inspect: Boolean(window.peerInspector), whisper: Boolean(window.whispers), self: false, onMap: true };
     }
     if (row.parentElement === messageList && !row.classList.contains('file-card')) {
-        return { kind: 'message', inspect: Boolean(window.peerInspector && peerItems.has(row.dataset.peerId)), quotable: selfLine !== null && row.querySelector('.text') !== null };
+        return { kind: 'message', details: Boolean(row.querySelector('.text')), inspect: Boolean(window.peerInspector && peerItems.has(row.dataset.peerId)), quotable: selfLine !== null && row.querySelector('.text') !== null };
     }
     if (row.parentElement === transferList || row.parentElement === messageList) {
         if (row.classList.contains('offer-head')) {
@@ -1022,6 +1044,9 @@ function rowInfo(row) {
 function runRowAction(action, row) {
     switch (action) {
         case 'inspect-peer': return window.peerInspector?.open(row.dataset.peerId || buddyId(row));
+        case 'availability': return row === selfLine && editAvailability();
+        case 'message-details': return showMessageDetails(row);
+        case 'whisper': return window.whispers?.open(buddyId(row));
         case 'copy-name': return copyBuddyName(row);
         case 'listening': return showListening(row);
         case 'show-on-map': return showBuddyOnMap(buddyId(row));
@@ -1038,7 +1063,7 @@ function runRowAction(action, row) {
 }
 
 window.roomActions = Object.freeze({
-    rowInfo,
+    rowInfo, editAvailability,
     run: runRowAction,
     notice: text => {
         status.textContent = String(text);
@@ -1058,6 +1083,7 @@ function makeTransferRow(offerId, peerId, direction, info, className) {
     // The cell around the bar shows the percent text (data-pct, see showProgress).
     const progressCell = makeSpan('progress-cell', '');
     progressCell.append(progress);
+    showProgress(progress);
     const fileName = makeSpan('file-name', info.name);
     fileName.title = fileName.textContent;
     const peerName = makeSpan('peer-name', `${direction === 'send' ? 'to' : 'from'} ${transferPeerName(peerId, info.from)} (${String(peerId).slice(-8)})`);
@@ -1089,7 +1115,9 @@ function getTransfer(offerId, peerId, direction, info = {}) {
 // View only: the percent text on the progress bar.
 function showProgress(progress) {
     const ratio = progress.max > 0 ? progress.value / progress.max : 0;
-    progress.parentElement.dataset.pct = `${Math.floor(ratio * 100)}%`;
+    const percent = `${Math.floor(ratio * 100)}%`;
+    progress.parentElement.dataset.pct = percent;
+    progress.setAttribute('aria-valuetext', percent);
 }
 
 // A file event can reach the window before the sender receives the IPC result with the recipient list.
@@ -1112,9 +1140,12 @@ window.asscrack.onFileOffer(data => {
     const reading = window.reading.beforeChange();
     entry.card = makeTransferRow(data.offerId, data.peerId, 'receive', data, 'file-card');
     entry.card.dataset.time = String(Date.now());
-    messageList.appendChild(entry.card);
+    (window.roomChannels?.listFor('general') ?? messageList).appendChild(entry.card);
     setTransferState(entry, 'offered', 'Offered');
-    window.reading.noteIncoming(entry.card);
+    if (!window.idlePeer?.isIdle()) {
+        if (!window.roomChannels || window.roomChannels.isViewing('general')) window.reading.noteIncoming(entry.card);
+        else window.roomChannels.missed('general');
+    }
     window.reading.afterChange(reading);
 });
 
@@ -1306,6 +1337,11 @@ function setTopology(data) {
     if (data.links !== null && typeof data.links === 'object') topologyLinks = data.links;
     if (data.kinds !== null && typeof data.kinds === 'object') topologyKinds = data.kinds;
     if (typeof data.self === 'string') topologySelf = data.self;
+    idlePeerIds = new Set(Array.isArray(data.idlePeers) ? data.idlePeers : []);
+    selfIdle = data.selfIdle === true;
+    for (const [id, item] of peerItems) item.hidden = idlePeerIds.has(id);
+    if (selfLine) selfLine.hidden = selfIdle;
+    updatePeerCount();
     updateNodeMap();
 }
 
@@ -1326,7 +1362,7 @@ function updateNodeMap() {
     const self = selfId ?? topologySelf;
     const nodes = [];
     if (self) {
-        nodes.push({ id: self, name: ownName, color: nameColorClass(ownName), inVoice: voice.inVoice === true, muted: ownMuted, speaking: voice.transmitting === true && !ownMuted, fullNode: fullNodeSelf });
+        nodes.push({ id: self, name: ownName, color: nameColorClass(ownName), idle: selfIdle, inVoice: voice.inVoice === true, muted: ownMuted, speaking: voice.transmitting === true && !ownMuted, fullNode: fullNodeSelf });
     }
     for (const [peerId, item] of peerItems) {
         const name = item.querySelector('.name').textContent;
@@ -1337,6 +1373,7 @@ function updateNodeMap() {
             inVoice: members[peerId]?.inVoice === true,
             muted: members[peerId]?.muted === true,
             speaking: speaking.has(peerId),
+            idle: idlePeerIds.has(peerId),
             fullNode: fullNodePeers.has(peerId)
         });
     }
@@ -1678,7 +1715,7 @@ function makePresenceControls() {
         }
     });
     box.append(select, note, button);
-    peerList.parentNode.insertBefore(box, peerList);
+    document.getElementById('presence-fields').appendChild(box);
     return { box, select, note, button };
 }
 
@@ -1711,6 +1748,13 @@ async function refreshPresence() {
     }
 }
 
+function editAvailability() {
+    if (!presenceControls) return false;
+    document.getElementById('availability-dialog').showModal();
+    presenceControls.select.focus();
+    return true;
+}
+
 function startPresence() {
     if (hasApi('setPresence') && !presenceControls) presenceControls = makePresenceControls();
     showOwnPresence();
@@ -1735,7 +1779,7 @@ function focusIsIn(element) {
 }
 
 document.addEventListener('keydown', e => {
-    if (e.key !== 'Escape' || e.defaultPrevented || listeningDialog?.open) return;
+    if (e.key !== 'Escape' || e.defaultPrevented || document.querySelector('dialog[open]')) return;
     if (window.contextMenu?.isOpen()) {
         e.preventDefault();
         window.contextMenu.close(true);
@@ -1776,3 +1820,40 @@ document.addEventListener('keydown', e => {
         if (returnFocus) mapToggle.focus({ preventScroll: true });
     }
 });
+
+// Subscribe before the initial read. Close-to-tray preference changes can also arrive while visible.
+{
+    const api = window.asscrack;
+    const setting = document.getElementById('view-close-idle');
+    let idle = false;
+    let closeToTray = true;
+    let updates = 0;
+    function apply(state) {
+        if (!state || typeof state.idle !== 'boolean') return;
+        const entering = !idle && state.idle;
+        idle = state.idle;
+        closeToTray = state.closeToTray;
+        setting?.setAttribute('aria-checked', String(closeToTray));
+        if (entering) {
+            window.voicePanel?.close();
+            stopStatsTimer();
+            ownInVoice = false;
+            ownMuted = false;
+            void window.voice.enterIdle();
+            updateVoiceView();
+        }
+    }
+    window.idlePeer = {
+        isIdle: () => idle,
+        enter: async () => {
+            try { if (!await api.enterIdlePeer()) status.textContent = 'The tray is unavailable. The room is still open.'; }
+            catch { status.textContent = 'Could not enter Idle Peer.'; }
+        },
+        toggleClose: async () => {
+            try { await api.setCloseToTray(!closeToTray); }
+            catch { status.textContent = 'Could not save the close preference.'; }
+        }
+    };
+    api.onIdlePeer?.(state => { updates++; apply(state); });
+    api.getIdlePeer?.().then(state => { if (!updates) apply(state); }).catch(() => {});
+}

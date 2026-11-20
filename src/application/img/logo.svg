@@ -1,26 +1,26 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
   <defs>
     <radialGradient id="orb" cx="50%" cy="34%" r="68%">
-      <stop offset="0" stop-color="#9fe9ff"/>
-      <stop offset="0.5" stop-color="#2496ee"/>
-      <stop offset="1" stop-color="#083a98"/>
+      <stop offset="0" stop-color="#a7ffff"/>
+      <stop offset="0.5" stop-color="#00a9c6"/>
+      <stop offset="1" stop-color="#07536b"/>
     </radialGradient>
     <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#ffffff" stop-opacity="0.95"/>
       <stop offset="1" stop-color="#ffffff" stop-opacity="0.05"/>
     </linearGradient>
     <linearGradient id="bolt" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#e9ffd0"/>
-      <stop offset="0.5" stop-color="#8fe84f"/>
-      <stop offset="1" stop-color="#38b012"/>
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.5" stop-color="#d9ffff"/>
+      <stop offset="1" stop-color="#72efff"/>
     </linearGradient>
     <radialGradient id="glow" cx="50%" cy="100%" r="60%">
       <stop offset="0" stop-color="#b6ffef" stop-opacity="0.85"/>
       <stop offset="1" stop-color="#b6ffef" stop-opacity="0"/>
     </radialGradient>
   </defs>
-  <circle cx="32" cy="32" r="29.5" fill="url(#orb)" stroke="#06307e" stroke-width="1.5"/>
+  <circle cx="32" cy="32" r="29.5" fill="url(#orb)" stroke="#075065" stroke-width="1.5"/>
   <circle cx="32" cy="32" r="28" fill="url(#glow)"/>
-  <path d="M37 9 L20 35 H30.5 L26 55 L44 28 H33.5 Z" fill="url(#bolt)" stroke="#ffffff" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M37 9 L20 35 H30.5 L26 55 L44 28 H33.5 Z" fill="url(#bolt)" stroke="#07586a" stroke-width="1.5" stroke-linejoin="round"/>
   <ellipse cx="32" cy="16.5" rx="20.5" ry="11.5" fill="url(#gloss)"/>
 </svg>

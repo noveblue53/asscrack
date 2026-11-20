@@ -23,12 +23,15 @@
     'use strict';
 
     const LABELS = Object.freeze({
+        whisper: 'Whisper…',
         'copy-name': 'Copy name',
         'inspect-peer': 'Peer details',
         'listening': 'Listening volume…',
         'show-on-map': 'Show on map',
         'copy-message': 'Copy message',
         quote: 'Quote',
+        availability: 'Edit availability…',
+        'message-details': 'Message details…',
         accept: 'Accept',
         refuse: 'Refuse',
         'cancel-receive': 'Cancel',
@@ -45,11 +48,13 @@
                 const actions = info.onMap ? ['copy-name', 'show-on-map'] : ['copy-name'];
                 if (info.self === false) actions.push('listening');
                 if (info.inspect) actions.push('inspect-peer');
+                if (info.whisper) actions.push('whisper');
+                if (info.availability) actions.push('availability');
                 return actions;
             }
             case 'message':
                 // quotable: the window can take a quote now (renderer.js rowInfo).
-                return [...(info.quotable ? ['quote', 'copy-message'] : ['copy-message']), ...(info.inspect ? ['inspect-peer'] : [])];
+                return [...(info.quotable ? ['quote', 'copy-message'] : ['copy-message']), ...(info.inspect ? ['inspect-peer'] : []), ...(info.details ? ['message-details'] : [])];
             case 'offer':
                 return info.active ? ['cancel-offer'] : [];
             case 'transfer':

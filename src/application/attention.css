@@ -1,0 +1,12 @@
+#attention-settings {
+    max-width: min(26rem, 90vw);
+    max-height: 88vh;
+    overflow: auto;
+    color: var(--ink, CanvasText);
+    background: var(--panel, Canvas);
+}
+#attention-settings fieldset { margin: 0.65rem 0; }
+#attention-settings label { display: block; margin: 0.5rem 0; }
+#attention-settings input[type="range"] { width: 100%; }
+#attention-settings p { max-width: 43ch; }
+#attention-settings #attention-status:empty { display: none; }

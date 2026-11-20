@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import Database from 'better-sqlite3-multiple-ciphers';
+import { validChannelId, validChannelName } from '../network/channels.mjs';
 import { HISTORY_LIMIT, MAX_MESSAGE_BYTES, validHistoryItem } from '../network/history.mjs';
 
 const ID_TAG = Buffer.from('asscrack-room-id', 'ascii');
@@ -77,6 +78,19 @@ CREATE TABLE IF NOT EXISTS messages(room_id TEXT NOT NULL REFERENCES rooms(room_
   msg_id TEXT NOT NULL, sender TEXT, body TEXT NOT NULL, time INTEGER NOT NULL, own INTEGER NOT NULL,
   source TEXT NOT NULL, peer_id TEXT, PRIMARY KEY(room_id, msg_id));
 CREATE INDEX IF NOT EXISTS messages_order ON messages(room_id, time, msg_id);
+CREATE TABLE IF NOT EXISTS channels(room_id TEXT NOT NULL REFERENCES rooms(room_id) ON DELETE CASCADE,
+  channel_id TEXT NOT NULL, name TEXT NOT NULL, PRIMARY KEY(room_id,channel_id));
+CREATE TABLE IF NOT EXISTS channel_messages(room_id TEXT NOT NULL, msg_id TEXT NOT NULL, sender TEXT, body TEXT NOT NULL,
+  time INTEGER NOT NULL, own INTEGER NOT NULL, source TEXT NOT NULL, peer_id TEXT, channel_id TEXT NOT NULL,
+  PRIMARY KEY(room_id,msg_id), FOREIGN KEY(room_id,channel_id) REFERENCES channels(room_id,channel_id) ON DELETE CASCADE);
+CREATE INDEX IF NOT EXISTS channel_message_order ON channel_messages(room_id,channel_id,time,msg_id);
+CREATE VIEW IF NOT EXISTS public_messages AS
+  SELECT room_id,msg_id,sender,body,time,own,source,peer_id,NULL AS channel_id FROM messages
+  UNION ALL SELECT room_id,msg_id,sender,body,time,own,source,peer_id,channel_id FROM channel_messages;
+CREATE TRIGGER IF NOT EXISTS remove_public_message INSTEAD OF DELETE ON public_messages BEGIN
+  DELETE FROM messages WHERE room_id=OLD.room_id AND msg_id=OLD.msg_id AND OLD.channel_id IS NULL;
+  DELETE FROM channel_messages WHERE room_id=OLD.room_id AND msg_id=OLD.msg_id AND OLD.channel_id IS NOT NULL;
+END;
 `;
 
 // Limits of each room and of each row (DECISIONS.md P6).
@@ -87,7 +101,7 @@ const ROW_BYTES_SQL = "length(CAST(body AS BLOB)) + length(CAST(coalesce(sender,
 function mapRow(r) {
   return {
     id: r.msg_id, from: r.sender, text: r.body, time: r.time, own: r.own === 1, source: r.source,
-    peerId: r.peer_id,
+    peerId: r.peer_id, ...(r.channel_id ? { channelId: r.channel_id } : {}),
   };
 }
 
@@ -141,8 +155,12 @@ export function openRoomArchive({ dir, protector, limits = null }) {
     try {
       handle.pragma('temp_store=MEMORY');
       handle.pragma('foreign_keys=ON');
-      handle.exec(SCHEMA);
-      handle.pragma('user_version=2');
+      const version = handle.pragma('user_version', { simple: true });
+      if (version > 3) throw new Error('Archive written by a newer version');
+      handle.transaction(() => {
+        handle.exec(SCHEMA);
+        handle.pragma('user_version=3');
+      })();
     } catch {
       try { handle.close(); } catch { /* ignore */ }
       return setState('locked', 'database-unreadable');
@@ -206,7 +224,18 @@ export function openRoomArchive({ dir, protector, limits = null }) {
         d.prepare('DELETE FROM rooms WHERE room_id = ?').run(roomId);
       })();
     },
-    addMessage(roomId, { id, from = null, text, time, own = false, source, peerId = null }) {
+    channels(roomId) {
+      return need().prepare('SELECT channel_id AS id, name FROM channels WHERE room_id=? ORDER BY channel_id').all(roomId);
+    },
+    saveChannels(roomId, rows) {
+      const d = need();
+      const put = d.prepare(`INSERT INTO channels(room_id,channel_id,name) VALUES(?,?,?)
+        ON CONFLICT(room_id,channel_id) DO UPDATE SET name=excluded.name WHERE excluded.name < channels.name`);
+      d.transaction(() => { for (const row of rows) {
+        if (validChannelId(row?.id) && validChannelName(row.name)) put.run(roomId, row.id, row.name);
+      } })();
+    },
+    addMessage(roomId, { id, from = null, text, time, own = false, source, peerId = null, channelId = null }) {
       const d = need();
       if (source !== 'send' && source !== 'live') throw new Error(`addMessage: bad source ${source}`);
       const body = String(text);
@@ -217,18 +246,24 @@ export function openRoomArchive({ dir, protector, limits = null }) {
         throw err;
       }
       return d.transaction(() => {
-        const info = d.prepare(`INSERT OR IGNORE INTO messages(room_id, msg_id, sender, body, time, own, source,
-          peer_id) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`).run(roomId, String(id), from ?? null, body, time, own ? 1 : 0,
-          source, peerId ?? null);
-        if (info.changes !== 1) return false;
+        // Legacy readers can reopen General without treating named messages as General posts.
+        if (d.prepare('SELECT 1 FROM public_messages WHERE room_id=? AND msg_id=?').get(roomId,String(id))) return false;
+        const values = [roomId, String(id), from, body, time, own ? 1 : 0, source, peerId];
+        if (channelId !== null) {
+          if (!validChannelId(channelId)) throw new Error('Invalid channel');
+          d.prepare('INSERT INTO channel_messages(room_id,msg_id,sender,body,time,own,source,peer_id,channel_id) VALUES(?,?,?,?,?,?,?,?,?)')
+            .run(...values, channelId);
+        } else {
+          d.prepare('INSERT INTO messages(room_id,msg_id,sender,body,time,own,source,peer_id) VALUES(?,?,?,?,?,?,?,?)').run(...values);
+        }
         // Prune the oldest rows by (time, msg_id) until the room is in the limits.
-        const usage = d.prepare(`SELECT count(*) AS n, coalesce(sum(${ROW_BYTES_SQL}), 0) AS b FROM messages
+        const usage = d.prepare(`SELECT count(*) AS n, coalesce(sum(${ROW_BYTES_SQL}), 0) AS b FROM public_messages
           WHERE room_id = ?`).get(roomId);
         let rows = usage.n;
         let bytes = usage.b;
         if (rows > lim.maxRows || bytes > lim.maxBytes) {
-          const del = d.prepare('DELETE FROM messages WHERE room_id = ? AND msg_id = ?');
-          const it = d.prepare(`SELECT msg_id, ${ROW_BYTES_SQL} AS sz FROM messages WHERE room_id = ?
+          const del = d.prepare('DELETE FROM public_messages WHERE room_id = ? AND msg_id = ?');
+          const it = d.prepare(`SELECT msg_id, ${ROW_BYTES_SQL} AS sz FROM public_messages WHERE room_id = ?
             ORDER BY time ASC, msg_id ASC`).iterate(roomId);
           const victims = [];
           for (const r of it) {
@@ -245,43 +280,46 @@ export function openRoomArchive({ dir, protector, limits = null }) {
     replayMessages(roomId) {
       // Only the public live/send rows in the v2 archive can go on the wire. Read newest first so an
       // older installation's non-shareable record cannot displace one of the newest eligible 200.
-      const rows = need().prepare(`SELECT msg_id AS id, sender AS "from", body AS text, time
-        FROM messages WHERE room_id = ? AND ((source = 'live' AND own = 0) OR (source = 'send' AND own = 1))
+      const rows = need().prepare(`SELECT msg_id AS id, sender AS "from", body AS text, time, channel_id AS channelId
+        FROM public_messages WHERE room_id = ? AND ((source = 'live' AND own = 0) OR (source = 'send' AND own = 1))
         ORDER BY time DESC, msg_id DESC`).iterate(roomId);
       const messages = [];
       for (const row of rows) {
+        if (row.channelId === null) delete row.channelId;
         if (validHistoryItem(row)) messages.push(row);
         if (messages.length === HISTORY_LIMIT) break;
       }
       return messages.reverse();
     },
-    listMessages(roomId, { limit = 200, before = null } = {}) {
+    listMessages(roomId, { limit = 200, before = null, channelId = null } = {}) {
       const d = need();
       let n = Math.trunc(Number(limit));
       if (!Number.isFinite(n) || n < 1) n = 1;
       if (n > 500) n = 500;
+      const filter = channelId === null ? '' : " AND coalesce(channel_id,'general')=?";
+      const args = channelId === null ? [roomId] : [roomId, channelId];
       let rows;
       if (before) {
-        rows = d.prepare(`SELECT * FROM (SELECT * FROM messages WHERE room_id = ?
+        rows = d.prepare(`SELECT * FROM (SELECT * FROM public_messages WHERE room_id = ?${filter}
           AND (time < ? OR (time = ? AND msg_id < ?))
           ORDER BY time DESC, msg_id DESC LIMIT ?) ORDER BY time ASC, msg_id ASC`)
-          .all(roomId, before.time, before.time, String(before.id), n);
+          .all(...args, before.time, before.time, String(before.id), n);
       } else {
-        rows = d.prepare(`SELECT * FROM (SELECT * FROM messages WHERE room_id = ?
-          ORDER BY time DESC, msg_id DESC LIMIT ?) ORDER BY time ASC, msg_id ASC`).all(roomId, n);
+        rows = d.prepare(`SELECT * FROM (SELECT * FROM public_messages WHERE room_id = ?${filter}
+          ORDER BY time DESC, msg_id DESC LIMIT ?) ORDER BY time ASC, msg_id ASC`).all(...args, n);
       }
       return rows.map(mapRow);
     },
     clearMessages(roomId) {
       const d = need();
       return d.transaction(() => {
-        const ids = d.prepare('SELECT msg_id FROM messages WHERE room_id = ?').all(roomId).map((r) => r.msg_id);
-        d.prepare('DELETE FROM messages WHERE room_id = ?').run(roomId);
+        const ids = d.prepare('SELECT msg_id FROM public_messages WHERE room_id = ?').all(roomId).map((r) => r.msg_id);
+        d.prepare('DELETE FROM public_messages WHERE room_id = ?').run(roomId);
         return ids;
       })();
     },
     roomUsage(roomId) {
-      const r = need().prepare(`SELECT count(*) AS n, coalesce(sum(${ROW_BYTES_SQL}), 0) AS b FROM messages
+      const r = need().prepare(`SELECT count(*) AS n, coalesce(sum(${ROW_BYTES_SQL}), 0) AS b FROM public_messages
         WHERE room_id = ?`).get(roomId);
       return { rows: r.n, bytes: r.b };
     },

@@ -392,3 +392,49 @@ test('menuCore gives Quote for a quotable message line', async () => {
     assert.equal(allowed('quote', { kind: 'message' }), false);
     assert.equal(label('quote'), 'Quote');
 });
+
+test('each progress bar reports its own percentage when another recipient cancels', async () => {
+    const room = await loadRoomWindow();
+    const offer = { offerId: 'shared', direction: 'send', name: 'plans.txt', size: 10 };
+    room.handlers.onFileProgress({ ...offer, peerId: 'a', bytes: 5 });
+    room.handlers.onFileProgress({ ...offer, peerId: 'b', bytes: 2 });
+    room.handlers.onFileCancelled({ ...offer, peerId: 'b' });
+    const rows = room.el('transfers').children;
+    assert.deepEqual(rows.map(row => [
+        row.querySelector('.progress-cell').dataset.pct,
+        row.querySelector('progress').getAttribute('aria-valuetext'),
+        row.querySelector('.state-text').textContent
+    ]), [['50%', '50%', 'Sending'], ['20%', '20%', 'Cancelled']]);
+});
+
+test('message details show the local archive fact for the selected message only', async () => {
+    const room = await loadRoomWindow({ send: async () => ({ saved: true, id: 'saved', time: 123, accepted: 1 }) });
+    await room.login('Me');
+    const dialog = room.el('message-details');
+    dialog.showModal = () => { dialog.open = true; };
+    room.el('message-input').value = 'saved text';
+    room.el('send').click();
+    await settle();
+    const saved = room.rows()[0];
+    const other = room.receive({ from: 'Sam', text: 'other', peerId: 'sam', id: 'other' });
+    for (const [row, fact] of [[saved, 'Saved on this device'], [other, 'No local archive copy recorded']]) {
+        const info = room.window.roomActions.rowInfo(row);
+        assert.ok(room.window.menuCore.actionsFor(info).includes('message-details'));
+        assert.equal(row.querySelector('.saved-mark'), null);
+        assert.equal(room.window.roomActions.run('message-details', row), true);
+        assert.equal(room.el('message-detail-archive').textContent, fact);
+        assert.equal(room.el('message-detail-author').textContent, row.querySelector('.from').textContent);
+        dialog.open = false;
+    }
+});
+
+test('the self orb opens availability editing and focuses the state selector', async () => {
+    const room = await loadRoomWindow();
+    await room.login('Me');
+    const dialog = room.el('availability-dialog');
+    dialog.showModal = () => { dialog.open = true; };
+    const row = room.el('peers').children.find(li => li.classList.contains('self'));
+    row.querySelector('button.avatar').click();
+    assert.equal(dialog.open, true);
+    assert.equal(room.document.activeElement, room.el('presence-state'));
+});

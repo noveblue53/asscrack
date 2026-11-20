@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, safeStorage, session, shell } from 'electron';
+import { app, BrowserWindow, Menu, Notification, Tray, powerMonitor, clipboard, dialog, ipcMain, safeStorage, session, shell } from 'electron';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { createRequire } from 'module';
 import path from 'path';
@@ -11,15 +11,21 @@ import { observeRoomActivity } from './room-activity.mjs';
 // Saved rooms (milestone 6).
 import { createSavedRooms, makeProtector } from './saved-rooms.mjs';
 import * as voiceSettings from './voice-settings.mjs';
+import { attentionSettings, createAttention, registerNotificationShortcut, WINDOWS_APP_ID, WINDOWS_TOAST_ID } from './attention.mjs';
 import { createPttHook } from './ptt-hook.mjs';
+import { createWindowFrame } from './window-frame.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const require = createRequire(import.meta.url);
 
 Menu.setApplicationMenu(null);
+if (process.platform === 'win32') {
+    app.setAppUserModelId(WINDOWS_APP_ID);
+    app.setToastActivatorCLSID(WINDOWS_TOAST_ID);
+}
 
-const EVENTS = ['peer-discovered', 'peer-joined', 'peer-left', 'message', 'history', 'signal', 'voice-state', 'host-changed', 'peer-name',
+const EVENTS = ['channels', 'peer-discovered', 'peer-joined', 'peer-left', 'message', 'history', 'signal', 'voice-state', 'host-changed', 'peer-name',
     'file-offer', 'file-progress', 'file-done', 'file-failed', 'file-refused', 'file-cancelled', 'topology', 'full-node', 'full-node-addrs',
     'voice-frame', 'connection', 'dial-failed', 'upnp', 'presence', 'topic'];
 
@@ -175,11 +181,11 @@ function isAppPage(url) {
 function setPermissions() {
     session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
         const url = details?.requestingUrl ?? webContents?.getURL();
-        callback(permission === 'media' && isAppPage(url));
+        callback(!idlePeer && permission === 'media' && isAppPage(url));
     });
     session.defaultSession.setPermissionCheckHandler((_webContents, permission, requestingOrigin, details) => {
         const url = details?.requestingUrl ?? requestingOrigin;
-        return permission === 'media' && isAppPage(url);
+        return !idlePeer && permission === 'media' && isAppPage(url);
     });
 }
 
@@ -199,8 +205,108 @@ function sendToWindow(channel, data) {
     }
 }
 
+// Participation belongs to the room. Minimizing the window leaves voice and capture alone.
+let idlePeer = false;
+let tray = null;
+let quitting = false;
+const closePreference = path.join(app.getPath('userData'), 'close-to-idle.json');
+let closeToTray = true;
+try { closeToTray = JSON.parse(readFileSync(closePreference, 'utf8')) !== false; } catch { /* new profile */ }
+const idleState = () => ({ idle: idlePeer, closeToTray });
+
+const attentionPrefs = attentionSettings(path.join(app.getPath('userData'), 'attention.json'));
+const attention = createAttention({
+    settings: attentionPrefs.get,
+    room: () => node,
+    quiet: () => quitting || stopping || idlePeer || node?.presence().state === 'dnd',
+    allowed: target => target.kind === 'whisper'
+        ? node?.whisperPeers().includes(target.peerId)
+        : target.channelId === 'general' || node?.channels().channels.some(channel => channel.id === target.channelId),
+    notify: options => new Notification(options),
+    navigate: target => {
+        restoreRoomWindow();
+        sendToWindow('asscrack:attention-open', target);
+    }
+});
+
+function registerAlerts() {
+    if (!Notification.isSupported()) throw new Error('Desktop notifications are unavailable on this system.');
+    if (process.platform === 'win32' && app.isPackaged) {
+        registerNotificationShortcut({
+            appData: app.getPath('appData'),
+            executable: process.env.PORTABLE_EXECUTABLE_FILE || process.execPath, shell
+        });
+    }
+}
+
+ipcMain.handle('asscrack:attention-settings', () => attentionPrefs.get());
+ipcMain.handle('asscrack:attention-set', (_event, patch) => {
+    if (patch?.alerts === true) registerAlerts();
+    const next = attentionPrefs.set(patch);
+    if (patch?.alerts === false || patch?.previews !== undefined || patch?.sound !== undefined) attention.clear();
+    return next;
+});
+ipcMain.on('asscrack:attention-add', (_event, target) => attention.add(target));
+ipcMain.on('asscrack:attention-read', (_event, target) => attention.read(target));
+
+function restoreRoomWindow() {
+    if (!mainWindow || mainWindow.isDestroyed() || quitting) return;
+    if (idlePeer) {
+        idlePeer = false;
+        node?.setIdle(false);
+        sendToWindow('asscrack:idle-peer', idleState());
+        node?.refreshRoutes();
+    }
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+}
+
+function enterIdlePeer() {
+    if (!node || !mainWindow || mainWindow.isDestroyed() || quitting) return false;
+    if (!tray) {
+        try {
+            tray = new Tray(path.join(__dirname, 'img', 'tray.png'));
+            tray.setToolTip('Asscrack');
+            tray.setContextMenu(Menu.buildFromTemplate([
+                { label: 'Open Asscrack', click: restoreRoomWindow },
+                { label: 'Quit Asscrack', click: () => app.quit() }
+            ]));
+            tray.on('click', restoreRoomWindow);
+        } catch (err) {
+            tray?.destroy();
+            tray = null;
+            writeLog('WARN', 'Cannot open the tray: ' + (err?.message ?? err));
+            return false;
+        }
+    }
+    if (!idlePeer) {
+        idlePeer = true;
+        attention.clear();
+        node.setIdle(true);
+        updatePttHook(() => pttHook.setInVoice(false));
+        sendToWindow('asscrack:idle-peer', idleState());
+    }
+    mainWindow.hide();
+    return true;
+}
+
+ipcMain.handle('asscrack:idle-peer', idleState);
+ipcMain.handle('asscrack:enter-idle-peer', enterIdlePeer);
+ipcMain.handle('asscrack:close-to-tray', (_event, enabled) => {
+    if (typeof enabled !== 'boolean') throw new TypeError('Expected a close preference');
+    writeFileSync(closePreference + '.tmp', JSON.stringify(enabled));
+    renameSync(closePreference + '.tmp', closePreference);
+    closeToTray = enabled;
+    sendToWindow('asscrack:idle-peer', idleState());
+    return idleState();
+});
+ipcMain.on('asscrack:quit', () => app.quit());
+
 function createMainWindow() {
+    const frame = createWindowFrame(app.getPath('userData'));
     mainWindow = new BrowserWindow({
+        ...frame.options,
         title: 'AssCrack',
         width: 800,
         height: 600,
@@ -215,11 +321,18 @@ function createMainWindow() {
         }
     });
 
+    frame.attach(mainWindow, ipcMain);
     const startUrl = new URL(`file://${path.join(__dirname, 'index.html')}`).href;
 
     mainWindow.webContents.on('console-message', details => {
         writeLog('WINDOW', `${details.level} ${details.message} (${details.sourceId}:${details.lineNumber})`);
     });
+
+    mainWindow.on('close', event => {
+        if (!quitting && closeToTray && enterIdlePeer()) event.preventDefault();
+    });
+    // Windows shutdown may bypass before-quit. Do not hide or veto session termination.
+    mainWindow.on('session-end', () => { quitting = true; });
 
     mainWindow.loadURL(startUrl);
 
@@ -277,6 +390,7 @@ async function startRoom(options, publicAddress) {
             const tag = keyedServiceTag(options.room, options.roomKey);
             options.storePath = path.join(dir, `${tag}.json`);
             hostFile = path.join(dir, `${tag}.host.json`);
+            options.seedChannels = getSavedRooms().loadChannels(options.room, options.roomKey);
             options.seedHistory = removeHistory => getSavedRooms().prepareReplay(options.room, options.roomKey, removeHistory);
         }
         // A host that rejoins its room with an empty Public address field uses the saved address again.
@@ -301,6 +415,11 @@ async function startRoom(options, publicAddress) {
                 writeLog('INFO', `Saved UPnP port ${savedPort} used for this room`);
             }
         }
+        options.receiveWhisper = message => {
+            if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isCrashed()) return false;
+            sendToWindow('asscrack:whisper', message);
+            return true;
+        };
         const fromSavedUpnpPort = options.savedUpnpPort === true;
         delete options.savedUpnpPort;
         try {
@@ -333,12 +452,14 @@ async function startRoom(options, publicAddress) {
     getSavedRooms().attachNode(node);
     readRoomActivity = observeRoomActivity(node);
     // Typing goes straight to the window; transient controls never enter diagnostics or the archive.
+    node.events.on('whisper-capability', data => sendToWindow('asscrack:whisper-capability', data));
     node.events.on('typing', data => sendToWindow('asscrack:typing', data));
     for (const type of EVENTS) {
         node.events.on(type, data => {
+            if (type === 'channels') savedRooms?.persistChannels(data.added);
             logEvent(type, data);
             // The diagnostic window reads a redacted projection of these local events.
-            if (type === 'connection' || type === 'dial-failed') return;
+            if (type === 'connection' || type === 'dial-failed' || (idlePeer && type === 'voice-frame')) return;
             sendToWindow(`asscrack:${type}`, data);
         });
     }
@@ -393,6 +514,7 @@ function afterRoomStart(result, { invite = null, userName, save = false, keepHis
         writeLog('WARN', `Saved rooms: ${err?.message ?? err}`);
         if (save === true) saveInfo.saveError = String(err?.message ?? err);
     }
+    getSavedRooms().persistChannels(node.channels().channels);
     return { ...result, ...saveInfo };
 }
 
@@ -427,7 +549,8 @@ ipcMain.handle('asscrack:saved-room-lines', (_event, roomId, opts) => {
         before = { time: Number(b.time), id: b.id };
     }
     try {
-        return before ? getSavedRooms().lines(roomId, { before, limit: 100 }) : getSavedRooms().lines(roomId);
+        const channelId = typeof opts?.channelId === 'string' ? opts.channelId : 'general';
+        return getSavedRooms().lines(roomId, { before, limit: before ? 100 : 200, channelId });
     } catch (err) {
         writeLog('WARN', `Saved lines not read: ${err?.message ?? err}`);
         return [];
@@ -499,10 +622,15 @@ ipcMain.handle('asscrack:full-node', () => {
     return { self: node.fullNode(), peers: node.fullNodes() };
 });
 
-ipcMain.handle('asscrack:send', (_event, text) => {
+ipcMain.handle('asscrack:whisper-peers', () => node?.whisperPeers() ?? []);
+ipcMain.handle('asscrack:whisper-send', (_event, peerId, text, id) => node?.sendWhisper(peerId, text, id) ?? 'unavailable');
+
+ipcMain.handle('asscrack:channels', () => node?.channels());
+ipcMain.handle('asscrack:create-channel', (_event, name) => node.createChannel(name));
+ipcMain.handle('asscrack:send', (_event, text, channelId) => {
     if (!node) throw new Error('Not logged in');
     // Saved rooms (milestone 6): the window gets the record. An archive error does not stop the send.
-    const record = node.sendRecord(text);
+    const record = node.sendRecord(text, channelId);
     let save = { saved: false, saveError: null };
     try {
         const result = savedRooms?.recordSend(record);
@@ -521,7 +649,7 @@ ipcMain.handle('asscrack:signal', (_event, { peerId, data } = {}) => {
 
 // One Opus frame of the own microphone. An ipc send, not invoke: 50 frames each second.
 ipcMain.on('asscrack:voice-frame', (_event, bytes) => {
-    if (!node || !(bytes instanceof Uint8Array)) return;
+    if (!node || idlePeer || !(bytes instanceof Uint8Array)) return;
     try {
         node.sendVoiceFrame(bytes);
     } catch (err) {
@@ -531,6 +659,7 @@ ipcMain.on('asscrack:voice-frame', (_event, bytes) => {
 
 ipcMain.handle('asscrack:set-voice', (_event, state) => {
     if (!node) throw new Error('Not logged in');
+    if (idlePeer && state?.inVoice === true) throw new Error('Idle Peer has left voice');
     node.setVoice(state ?? {});
     updatePttHook(() => pttHook.setInVoice(state?.inVoice === true));
 });
@@ -619,12 +748,14 @@ ipcMain.handle('asscrack:set-share-typing', (_event, enabled) => {
     return shareTyping;
 });
 ipcMain.on('asscrack:typing-edit', (_event, active) => {
-    if (shareTyping && typeof active === 'boolean') node?.setTyping(active);
+    if (!idlePeer && shareTyping && typeof active === 'boolean') node?.setTyping(active);
 });
 
 ipcMain.handle('asscrack:set-presence', (_event, { state, note } = {}) => {
     if (!node) throw new Error('Not logged in');
-    return node.setPresence({ state, note });
+    const updated = node.setPresence({ state, note });
+    if (node.presence().state === 'dnd') attention.clear();
+    return updated;
 });
 
 ipcMain.handle('asscrack:presence', () => {
@@ -683,6 +814,10 @@ ipcMain.handle('asscrack:reveal-file', (_event, key) => {
 });
 
 app.on('before-quit', event => {
+    quitting = true;
+    attention.clear();
+    tray?.destroy();
+    tray = null;
     pttHook.stop();
     // Saved rooms (milestone 6): close the archive.
     if (savedRooms) {
@@ -711,17 +846,16 @@ app.on('before-quit', event => {
 app.on('window-all-closed', () => app.quit());
 
 if (singleInstance && isFirstInstance) {
-    app.on('second-instance', () => {
-        if (!mainWindow || mainWindow.isDestroyed()) return;
-        if (mainWindow.isMinimized()) mainWindow.restore();
-        mainWindow.show();
-        mainWindow.focus();
-    });
+    app.on('second-instance', restoreRoomWindow);
 }
 
 app.whenReady().then(() => {
     if (!isFirstInstance) return;
+    powerMonitor.on('resume', () => node?.refreshRoutes());
     setPermissions();
     pttHook.configure(currentVoiceSettings());
+    if (attentionPrefs.get().alerts && process.platform === 'win32' && app.isPackaged) {
+        try { registerAlerts(); } catch { writeLog('WARN', 'Windows notification registration unavailable'); }
+    }
     createMainWindow();
 });

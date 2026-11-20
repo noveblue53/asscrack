@@ -249,3 +249,23 @@ test('importing a refreshed invite for a saved room keeps its identity, messages
     assert.deepEqual(reopened.lines(roomId).map(m => m.id), ['prior']);
     assert.equal(reopened.getRoom(roomId).keepHistory, false);
 });
+
+test('a saved room retains its empty channel catalog with saving off and after Clear', t => {
+    const { rooms } = setup(t);
+    const n = fakeNode(1);
+    const roomId = start(rooms, n, { keepHistory: false });
+    const channel = {id: 'ef165263-9724-47f6-81db-787f490ea255', name: 'Game night'};
+    rooms.persistChannels([channel]);
+    assert.deepEqual(rooms.loadChannels('room', KEY_A), [channel]);
+    assert.deepEqual(rooms.loadChannels('room', KEY_B), []);
+    const record = {id: 'named', from: 'me', text: 'test', time: 1, channelId: channel.id, accepted: 1};
+    rooms.recordSend(record);
+    assert.deepEqual(rooms.lines(roomId), []);
+    rooms.setKeepHistory(roomId, true);
+    rooms.recordSend(record);
+    assert.deepEqual(rooms.lines(roomId, {channelId: channel.id}).map(m => m.channelId), [channel.id]);
+    assert.deepEqual(rooms.lines(roomId, {channelId: 'general'}), []);
+    rooms.clear(roomId);
+    assert.deepEqual(rooms.loadChannels('room', KEY_A), [channel]);
+    assert.deepEqual(rooms.lines(roomId), []);
+});

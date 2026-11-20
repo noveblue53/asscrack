@@ -8,7 +8,7 @@
     let busy = true;
 
     function render() {
-        const ids = [...active];
+        const ids = !window.roomChannels || window.roomChannels.isViewing('general') ? [...active] : [];
         const names = ids.map(id => peerNames.get(id) || id.slice(-8));
         let text = '';
         if (ids.length === 1) text = names[0] + ' is typing…';
@@ -26,6 +26,10 @@
     }
 
     window.typingUi = {
+        channelChanged() {
+            if (enabled) api.typingEdit(false);
+            render();
+        },
         async toggleShare() {
             if (busy) return;
             busy = true;
@@ -44,7 +48,7 @@
 
     api.getShareTyping().then(setEnabled).catch(() => setEnabled(false)).finally(() => { busy = false; });
     messageInput.addEventListener('input', () => {
-        if (!enabled || !peerItems.size) return;
+        if (!enabled || !peerItems.size || (window.roomChannels && !window.roomChannels.isViewing('general'))) return;
         const draft = messageInput.value.trimStart();
         api.typingEdit(draft.length > 0 && !draft.startsWith('/'));
     });

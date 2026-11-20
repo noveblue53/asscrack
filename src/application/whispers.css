@@ -1,0 +1,16 @@
+#whisper-dialog {
+    box-sizing: border-box;
+    width: min(32rem, calc(100vw - 1rem));
+    max-height: calc(100vh - 1rem);
+    overflow: auto;
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+}
+#whisper-title { margin-top: 0; }
+#whisper-dialog label { display: block; font-weight: bold; }
+#whisper-peer, #whisper-draft { box-sizing: border-box; width: 100%; }
+#whisper-identity { display: block; overflow-wrap: anywhere; }
+#whisper-lines { height: min(26vh, 16rem); overflow: auto; padding: 0.5rem; border: 1px solid var(--line); }
+#whisper-lines li { list-style: none; white-space: pre-wrap; overflow-wrap: anywhere; margin-bottom: .4em; }
+#whisper-status { min-height: 1.4em; }

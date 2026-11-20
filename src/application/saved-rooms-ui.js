@@ -35,6 +35,7 @@
     let openRoomId = null;
     // The roomId whose saved lines are shown (reopen or login).
     let linesLoadedFor = null;
+    const loadedPages = new Set();
     let olderBusy = false;
     const archiveChanges = new Map();
 
@@ -161,11 +162,11 @@
     api.onPeerLeft(() => updateWaiting());
 
     // A concurrent Clear or Forget invalidates any page the main process already read.
-    async function readLines(roomId, before = null) {
+    async function readLines(roomId, before = null, channelId = 'general') {
         const change = archiveChanges.get(roomId);
         if (change?.pending) return null;
         try {
-            const lines = await api.savedRoomLines(roomId, before ? { before } : undefined);
+            const lines = await api.savedRoomLines(roomId, channelId === 'general' && !before ? undefined : { ...(before ? {before} : {}), ...(channelId !== 'general' ? {channelId} : {}) });
             if (change !== archiveChanges.get(roomId)) return null;
             return Array.isArray(lines) ? lines : [];
         } catch (err) {
@@ -179,8 +180,11 @@
     }
 
     // Saved lines after a login into a saved room. Lines with an ID that is shown do not come again.
-    async function loadAfterLogin(roomId) {
-        const lines = await readLines(roomId);
+    async function loadAfterLogin(roomId, channelId = 'general') {
+        const pageKey = roomId + '/' + channelId;
+        if (loadedPages.has(pageKey)) return;
+        loadedPages.add(pageKey);
+        const lines = await readLines(roomId, null, channelId);
         if (!lines || openRoomId !== roomId) return;
         linesLoadedFor = roomId;
         for (const line of lines) if (line.id) savedMessageIds.add(String(line.id));
@@ -190,11 +194,16 @@
             return true;
         });
         const empty = messageList.children.length === 0;
-        window.reading.keepPosition(() => {
-            for (const line of fresh) insertMessage(line.from, line.text, line.time, line.id, line.own === true);
-        });
-        if (empty) window.reading.followLatest();
-        setOlder(lines.length >= FIRST_PAGE ? 'more' : 'none');
+        const insertPage = () => {
+            for (const line of fresh) insertMessage(line.from, line.text, line.time, line.id, line.own === true, line.channelId);
+        };
+        const visible = !window.roomChannels || window.roomChannels.isViewing(channelId);
+        if (visible) window.reading.keepPosition(insertPage);
+        else insertPage();
+        if (visible && empty) window.reading.followLatest();
+        const older = lines.length >= FIRST_PAGE ? 'more' : 'none';
+        if (window.roomChannels) window.roomChannels.setOlder(channelId, older);
+        else setOlder(older);
     }
 
     // Paging: at the top of the list, load the older page and put it above the first line.
@@ -211,13 +220,18 @@
         olderBusy = true;
         try {
             const roomId = openRoomId;
-            const lines = await readLines(roomId, { time: Number(first.dataset.time) || 0, id: first.dataset.id });
+            const channelId = window.roomChannels?.active() ?? 'general';
+            const lines = await readLines(roomId, { time: Number(first.dataset.time) || 0, id: first.dataset.id }, channelId);
             if (!lines || roomId !== openRoomId) return;
             for (const line of lines) if (line.id) savedMessageIds.add(String(line.id));
-            window.reading.keepPosition(() => {
-                for (const line of lines) insertMessage(line.from, line.text, line.time, line.id, line.own === true);
-            });
-            setOlder(lines.length >= OLDER_PAGE ? 'more' : 'none');
+            const insertPage = () => {
+                for (const line of lines) insertMessage(line.from, line.text, line.time, line.id, line.own === true, line.channelId);
+            };
+            if (!window.roomChannels || window.roomChannels.isViewing(channelId)) window.reading.keepPosition(insertPage);
+            else insertPage();
+            const older = lines.length >= OLDER_PAGE ? 'more' : 'none';
+            if (window.roomChannels) window.roomChannels.setOlder(channelId, older);
+            else setOlder(older);
         } finally {
             olderBusy = false;
         }
@@ -277,6 +291,7 @@
         try {
             const result = await deleteSavedData(openRoomId, api.clearHistory);
             clearSavedMarks();
+            window.roomChannels?.clearOlder();
             setOlder('none');
             clearConfirm.hidden = true;
             status.textContent = `Saved history deleted on this device (${Number(result?.cleared) || 0} messages).`;
@@ -317,6 +332,7 @@
             addMessage(line.from, line.text, line.time, line.own === true, line.id, line.peerId ?? null);
         }
         linesLoadedFor = String(room.roomId);
+        loadedPages.add(linesLoadedFor + '/general');
         setOlder(lines.length >= FIRST_PAGE ? 'more' : 'none');
         window.reading.followLatest();
         watchPeers = true;
@@ -330,6 +346,7 @@
     }
 
     window.savedRoomsUi = {
+        channelOpened(id) { if (openRoomId) void loadAfterLogin(openRoomId, id); },
         // The login fields of the save choice. Only a keyed room sends them.
         loginOptions(type) {
             if (type === 'lan') return {};

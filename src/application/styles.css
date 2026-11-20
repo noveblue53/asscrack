@@ -359,7 +359,7 @@ input[type="text"]:focus {
   /* minmax(0, 1fr): a long name in the title band must not make the screen wider than the window. */
   grid-template-columns: minmax(0, 1fr);
   /* Transfers can shrink (minmax(0, auto)): the composer and Send always stay in the window. */
-  grid-template-rows: auto auto minmax(0, 1fr) minmax(0, auto) auto;
+  grid-template-rows: auto minmax(0, 1fr) minmax(0, auto) auto;
   animation: screen-in 260ms var(--ease);
 }
 
@@ -2145,7 +2145,6 @@ body.layout-dragging #buddy-panel {
 
 /* Saved rooms (milestone 6): the line marks, the room storage controls and Forget. */
 #messages li .local-only-mark { display: block; margin-top: 2px; font-size: 0.8em; font-style: italic; color: #b45309; }
-#messages li .saved-mark { display: inline-block; width: 6px; height: 10px; margin-left: 6px; border: solid currentColor; border-width: 0 2px 2px 0; transform: rotate(45deg); opacity: 0.55; vertical-align: middle; }
 #history-toggle { anchor-name: --room-history-button; }
 #room-storage {
   inset: 40px auto auto 8px;
@@ -2189,3 +2188,9 @@ body.layout-dragging #buddy-panel {
 @media (max-width: 900px) {
   #map-panel.inspecting #node-map, #map-panel.inspecting #map-legend { display: none; }
 }
+
+.channel-bar { display:flex; align-items:center; gap:.4em; padding:2px 8px; font-size:.85em; }
+.channel-bar select { min-width:0; max-width:13em; }
+.channel-bar button { padding:0 .5em; }
+#channel-note { font-size:.9em; }
+#channel-error:empty { display:none; }
