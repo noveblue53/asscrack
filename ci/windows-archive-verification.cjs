@@ -29,7 +29,8 @@ function verifyCurrentUserDpapi(localState) {
         $state = Get-Content -Raw -LiteralPath $env:ASSCRACK_PILOT_LOCAL_STATE | ConvertFrom-Json
         $blob = [Convert]::FromBase64String($state.os_crypt.encrypted_key)
         if ($blob.Length -le 5 -or [Text.Encoding]::ASCII.GetString($blob, 0, 5) -cne 'DPAPI') { exit 2 }
-        $key = [Security.Cryptography.ProtectedData]::Unprotect([byte[]]$blob[5..($blob.Length - 1)], $null,
+        [byte[]]$payload = $blob[5..($blob.Length - 1)]
+        $key = [Security.Cryptography.ProtectedData]::Unprotect($payload, $null,
             [Security.Cryptography.DataProtectionScope]::CurrentUser)
         try { if ($key.Length -ne 32) { exit 3 } }
         finally { [Array]::Clear($key, 0, $key.Length) }
@@ -63,15 +64,13 @@ async function verifyProtectedBytes(files, logDirectory, markers) {
 
     const archiveEntries = await fs.readdir(files.directory, { withFileTypes: true });
     const logEntries = await fs.readdir(logDirectory, { withFileTypes: true });
-    const paths = [files.localState, ...archiveEntries.filter(entry => entry.isFile())
-        .map(entry => path.join(files.directory, entry.name)), ...logEntries.filter(entry => entry.isFile())
-        .map(entry => path.join(logDirectory, entry.name))];
+    const archivePaths = archiveEntries.filter(entry => entry.isFile()).map(entry => path.join(files.directory, entry.name));
+    const logPaths = logEntries.filter(entry => entry.isFile()).map(entry => path.join(logDirectory, entry.name));
+    const paths = [files.localState, ...archivePaths, ...logPaths];
+    const needles = markers.flatMap(marker => [Buffer.from(marker, 'utf8'), Buffer.from(marker, 'utf16le')]);
     for (const file of paths) {
         const bytes = await fs.readFile(file);
-        for (const marker of markers) {
-            assert.ok(!bytes.includes(Buffer.from(marker, 'utf8')) && !bytes.includes(Buffer.from(marker, 'utf16le')),
-                'chat and invite fixtures must be absent from raw archive and log files');
-        }
+        assert.ok(!needles.some(marker => bytes.includes(marker)), 'chat and invite fixtures must be absent from raw archive and log files');
     }
     return paths.length;
 }
@@ -88,7 +87,7 @@ async function reopenAndRead(page, { selectChannel, waitForMessage, roomName, ch
         rows.filter(row => row.querySelector('.text')?.textContent === text).map(row => row.dataset.id)),
     [publicReceived, publicSent, privateText]);
     assert.deepEqual(observed.map(ids => ids.length), [1, 1, 0], 'reopened archive has exactly the public fixture messages');
-    assert.notEqual(observed[0][0], observed[1][0]);
+    assert.ok(observed[0][0] !== observed[1][0], 'the recorded public lines have distinct message identities');
     return observed.slice(0, 2).map(ids => ids[0]);
 }
 

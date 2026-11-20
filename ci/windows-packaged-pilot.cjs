@@ -29,6 +29,11 @@ const report = {
 };
 let stage = 'startup';
 
+function begin(name) {
+    stage = name;
+    console.log(`Checking ${name} on the packaged Windows app`);
+}
+
 function exited(child) {
     return child.exitCode !== null || child.signalCode !== null;
 }
@@ -64,6 +69,7 @@ async function launch(label, extraArgs = [], profileOverride) {
     const endpoint = `http://127.0.0.1:${debugPort}`;
     const output = await open(path.join(home, 'electron-output.log'), 'a');
     let child;
+    let spawnError;
     try {
         child = spawn(executable, [
             `--remote-debugging-port=${debugPort}`, '--remote-debugging-address=127.0.0.1',
@@ -71,21 +77,22 @@ async function launch(label, extraArgs = [], profileOverride) {
             '--use-fake-ui-for-media-stream', '--profile', profile, '--downloads', downloads,
             '--log-dir', appLogs, ...extraArgs
         ], { cwd: path.dirname(executable), windowsHide: true, stdio: ['ignore', output.fd, output.fd] });
+        child.once('error', error => { spawnError = error; });
     } finally {
         await output.close();
     }
     const client = { label, child, profile, downloads, appLogs, browser: null, page: null };
     clients.add(client);
-    let spawnError;
-    child.once('error', error => { spawnError = error; });
     await until(async () => {
         if (spawnError) throw spawnError;
         if (exited(child)) throw new Error(`${label} quit during startup with code ${child.exitCode}`);
         return fetch(`${endpoint}/json/list`, { signal: AbortSignal.timeout(1500) }).then(response => response.ok).catch(() => false);
     }, `${label} CDP listener`);
-    client.browser = await chromium.connectOverCDP(endpoint, { timeout: 20_000 });
+    // Electron's file chooser must receive local paths. In remote CDP mode,
+    // Playwright substitutes in-memory File objects without a native path.
+    client.browser = await chromium.connectOverCDP(endpoint, { isLocal: true, timeout: 20_000 });
     client.page = await until(() => client.browser.contexts().flatMap(context => context.pages())
-        .find(page => /\/app\.asar\/src\/application\/index\.html$/.test(page.url())), `${label} application window`);
+        .find(page => /\/app\.asar\/src\/application\/index\.html$/i.test(page.url())), `${label} application window`);
     client.page.setDefaultTimeout(20_000);
     client.page.on('pageerror', error => rendererErrors.push(`${label}: ${error.message}`));
     await client.page.locator('#login').waitFor();
@@ -154,6 +161,18 @@ async function compareDownload(client, name, source) {
     return { bytes: received.length, sha256: hash };
 }
 
+async function attach(client, filename) {
+    await client.page.locator('#file-input').setInputFiles(filename);
+    await client.page.locator('#file-draft-name').and(client.page.getByText(path.basename(filename), { exact: true })).waitFor();
+}
+
+async function confirmOffer(client) {
+    await client.page.waitForFunction(() => document.getElementById('file-draft').hidden ||
+        Boolean(document.getElementById('status').textContent));
+    assert.ok(await client.page.locator('#file-draft').isHidden(),
+        `Sender did not post the file: ${await client.page.locator('#status').textContent()}`);
+}
+
 async function exerciseVoice(host, guest) {
     for (const client of [host, guest]) {
         await client.page.locator('#join-voice').click();
@@ -180,6 +199,7 @@ async function exerciseVoice(host, guest) {
 
 async function run() {
     await mkdir(evidenceDir, { recursive: true });
+    begin('fresh invite join');
     const roomName = 'Windows friend pilot';
     const channelName = 'Paddock';
     const hostName = 'John Asscrack';
@@ -194,7 +214,7 @@ async function run() {
     }
     report.checks.invite = 'A fresh packaged Windows profile joined another packaged Windows profile by invite.';
 
-    stage = 'named public chat';
+    begin('named public chat');
     const publicReceived = 'Public archive marker from John';
     const publicSent = 'Public archive marker from Laptop';
     await host.page.locator('#room-options-toggle').click();
@@ -209,7 +229,7 @@ async function run() {
     await waitForMessage(host.page, publicSent);
     report.checks.chat = 'Two-way chat in a named room channel.';
 
-    stage = 'private whisper';
+    begin('private whisper');
     const privateText = 'Private archive exclusion marker from Laptop';
     const privateReply = 'Private reply from John';
     const draft = 'Unsent public draft';
@@ -231,21 +251,22 @@ async function run() {
     await guest.page.locator('#message-input').fill('');
     report.checks.whisper = 'Both entry points, two-way receipt, preserved public draft and no private text in the public transcript.';
 
-    stage = 'ordinary original download';
+    begin('ordinary original download');
     await selectChannel(host.page, 'general');
     await selectChannel(guest.page, 'general');
     const fileName = 'pilot-original.bin';
     const source = Buffer.alloc(2 * 1024 * 1024, 'ASSCRACK native Windows loopback original\n');
     const filePath = path.join(sandbox, fileName);
     await writeFile(filePath, source);
-    await host.page.locator('#file-input').setInputFiles(filePath);
+    await attach(host, filePath);
     await host.page.locator('#send-file').click();
+    await confirmOffer(host);
     const card = guest.page.locator('#messages .file-card').filter({ hasText: fileName });
     await card.getByRole('button', { name: 'Accept', exact: true }).click();
     await card.getByRole('button', { name: 'Show in Explorer', exact: true }).waitFor();
     report.checks.original = await compareDownload(guest, fileName, source);
 
-    stage = 'inline media and independent original';
+    begin('inline media and independent original');
     await selectChannel(host.page, channelName);
     await selectChannel(guest.page, channelName);
     const mediaName = 'pilot-image.png';
@@ -253,16 +274,17 @@ async function run() {
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMQCdjyHwADrAIYvvruLQAAAABJRU5ErkJggg==', 'base64');
     const mediaPath = path.join(sandbox, mediaName);
     await writeFile(mediaPath, png);
-    await host.page.locator('#file-input').setInputFiles(mediaPath);
+    await attach(host, mediaPath);
     await host.page.locator('#message-input').fill(mediaCaption);
     await host.page.locator('#send-file').click();
+    await confirmOffer(host);
     const media = guest.page.locator('#messages li[data-attachment-id]').filter({ hasText: mediaCaption });
     await media.locator('img').waitFor();
     await media.getByRole('button', { name: 'Download original' }).click();
     await media.getByRole('button', { name: 'Show saved original' }).waitFor();
     report.checks.media = await compareDownload(guest, mediaName, png);
 
-    stage = 'voice and push to talk';
+    begin('voice and push to talk');
     try {
         report.checks.voice = { outcome: 'passed', detail: await exerciseVoice(host, guest) };
     } catch (error) {
@@ -271,7 +293,7 @@ async function run() {
     }
     await guest.page.screenshot({ path: path.join(evidenceDir, 'windows-packaged-room.png') });
 
-    stage = 'isolated protected archive';
+    begin('isolated protected archive');
     await quit(guest);
     await quit(host);
     report.checks.archive = await verifyArchive({
@@ -288,9 +310,20 @@ run().catch(async error => {
     report.outcome = 'failed';
     report.failure = { stage, detail: error.message };
     console.error(error);
-    await Promise.allSettled([...clients].map(client => client.page?.screenshot({
-        path: path.join(evidenceDir, `${client.label}-failure.png`), timeout: 3000
-    })));
+    report.diagnostics = {};
+    await Promise.allSettled([...clients].map(async client => {
+        if (!client.page || client.page.isClosed()) return;
+        report.diagnostics[client.label] = await client.page.evaluate(() => ({
+            peers: document.getElementById('peer-count').textContent,
+            channel: document.getElementById('channel-select').selectedOptions[0]?.textContent,
+            status: document.getElementById('status').textContent.slice(0, 230),
+            voiceError: document.getElementById('voice-error').textContent.slice(0, 230),
+            transfers: [...document.querySelectorAll('#transfers .transfer')].map(row => ({
+                state: row.dataset.state, text: row.querySelector('.state-text')?.textContent.slice(0, 120)
+            }))
+        }));
+        await client.page.screenshot({ path: path.join(evidenceDir, `${client.label}-failure.png`), timeout: 3000 });
+    }));
     process.exitCode = 1;
 }).finally(async () => {
     await Promise.allSettled([...clients].map(async client => {
