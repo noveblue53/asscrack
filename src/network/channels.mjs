@@ -2,7 +2,8 @@
 import { randomUUID } from 'node:crypto'
 
 export const validChannelId = id => typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id)
-export const validChannelName = name => typeof name === 'string' && name === name.trim() && name.length > 0 &&
+export const validChannelName = name => typeof name === 'string' && name.length > 0 && name.length <= 80 &&
+    name.isWellFormed() && name === name.trim() && name === name.normalize('NFC') && name.toLowerCase() !== 'general' &&
     [...name].length <= 40 && !/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(name)
 const general = { id: 'general', name: 'General' }
 const PAGE = 64
@@ -37,9 +38,9 @@ export function createChannels({ self, host, send, changed, ready, seed = [] }) 
     }
     project(seed)
     return {
-        view, capable: id => peers.has(id), known: id => names.has(id), changedHost: () => changed(view(), []),
+        view, available, capable: id => peers.has(id), known: id => names.has(id), changedHost: () => changed(view(), []),
         opened(id) {
-            peers.delete(id)
+            if (peers.delete(id)) changed(view(), [])
             send(id, { type: 'channels', v: 1, op: 'hello' })
         },
         closed(id) { if (peers.delete(id)) changed(view(), []) },
@@ -56,9 +57,10 @@ export function createChannels({ self, host, send, changed, ready, seed = [] }) 
         },
         create(input) {
             const name = typeof input === 'string' ? input.trim().normalize('NFC') : ''
+            if (name.toLowerCase() === 'general') throw new Error('That channel name already exists.')
             if (!validChannelName(name)) throw new Error('Use a channel name of 1–40 characters.')
             if (!available()) throw new Error('Named channels need a host with channel support.')
-            if ([general, ...list()].some(c => c.name.toLowerCase() === name.toLowerCase())) throw new Error('That channel name already exists.')
+            if ([...names.values()].some(label => label.toLowerCase() === name.toLowerCase())) throw new Error('That channel name already exists.')
             const id = randomUUID()
             merge([{ id, name }], null)
             return id

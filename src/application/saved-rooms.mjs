@@ -92,7 +92,8 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
         const a = ensure();
         if (!a || a.state().state !== 'open' || typeof roomId !== 'string') return [];
         return a.listMessages(roomId, { before, limit, channelId }).map(m => ({
-            id: m.id, from: m.from, text: m.text, time: m.time, own: m.own, peerId: m.peerId, ...(m.channelId ? { channelId: m.channelId } : {})
+            id: m.id, from: m.from, text: m.text, time: m.time, own: m.own, peerId: m.peerId,
+            ...(m.channelId ? { channelId: m.channelId } : {}), ...(m.attachment ? { attachment: m.attachment } : {})
         }));
     }
 
@@ -121,7 +122,12 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
 
     function loadChannels(room, key) {
         const a = ensure();
-        return a?.state().state === 'open' ? a.channels(roomFingerprint(room, key)) : [];
+        if (!a || a.state().state !== 'open') return [];
+        try { return a.channels(roomFingerprint(room, key)); }
+        catch (err) {
+            log('WARN', 'Saved channel catalog unavailable: ' + errText(err));
+            return [];
+        }
     }
     function persistChannels(rows) {
         if (!active || !rows?.length) return;
@@ -202,7 +208,8 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
     // An own send: only a record that a session accepted.
     function recordSend(record) {
         if (!record || !(record.accepted >= 1)) return { saved: false, saveError: null };
-        return add({ id: record.id, from: record.from, text: record.text, time: record.time, own: true, source: 'send', peerId: null, channelId: record.channelId });
+        return add({ id: record.id, from: record.from, text: record.text, time: record.time, own: true,
+            source: 'send', peerId: null, channelId: record.channelId, attachment: record.attachment });
     }
 
     function emit(type, data) {
@@ -215,7 +222,8 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
         attachedNode = node;
         node.events.on('live', data => {
             if (!data || node !== attachedNode) return;
-            const r = add({ id: data.id, from: data.from, text: data.text, time: data.time, own: false, source: 'live', peerId: data.peerId ?? null, channelId: data.channelId });
+            const r = add({ id: data.id, from: data.from, text: data.text, time: data.time, own: false,
+                source: 'live', peerId: data.peerId ?? null, channelId: data.channelId, attachment: data.attachment });
             if (r.saved) emit('line-saved', { id: data.id });
             else if (r.saveError) emit('save-failed', { id: data.id, reason: r.saveError });
         });

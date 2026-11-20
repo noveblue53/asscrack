@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' room-media:; media-src room-media:; connect-src 'self' room-media:">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="styles.css">
@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="voice-panel.css">
   <link rel="stylesheet" href="activity.css">
   <link rel="stylesheet" href="attention.css">
+  <link rel="stylesheet" href="chat-media.css">
   <link rel="stylesheet" href="whispers.css">
   <link rel="stylesheet" href="themes.css">
   <link rel="stylesheet" href="window-frame.css">
@@ -106,6 +107,8 @@
         <li id="view-idle" role="menuitem" tabindex="-1">Enter Idle Peer</li>
         <li id="view-close-idle" role="menuitemcheckbox" aria-checked="true" tabindex="-1">Close to Idle Peer</li>
         <li id="view-quit" role="menuitem" tabindex="-1">Quit Asscrack</li>
+        <li id="view-clear-previews" role="menuitem" tabindex="-1">Clear thumbnail cache</li>
+        <li id="view-previews" role="menuitemcheckbox" aria-checked="true" tabindex="-1">Automatic image thumbnails</li>
         <li id="view-attention" role="menuitem" aria-haspopup="dialog" aria-controls="attention-settings" tabindex="-1">Sound &amp; notifications…</li>
         <li id="view-reset" role="menuitem" tabindex="-1">Reset layout</li>
       </ul>
@@ -211,6 +214,7 @@
           <button id="mute" type="button" aria-pressed="false" hidden>Mute</button>
           <span id="ptt-state" hidden>PTT released</span>
           <button id="voice-settings-toggle" type="button" aria-expanded="false" aria-controls="voice-settings">Voice settings</button>
+          <button id="detach-voice" type="button">Detach voice panel</button>
           <button id="leave-voice" type="button" hidden>Leave voice</button>
           <span id="voice-error" role="alert"></span>
         </div>
@@ -378,7 +382,7 @@
     <small id="whisper-identity"></small>
     <ul id="whisper-lines" aria-label="Private messages" role="log"></ul>
     <label for="whisper-draft">Private message</label>
-    <textarea id="whisper-draft" rows="3" maxlength="4096" spellcheck="false"></textarea>
+    <textarea id="whisper-draft" rows="3" maxlength="4096" autocomplete="off" spellcheck="false"></textarea>
     <p id="whisper-status" role="status"></p>
     <button id="whisper-send" type="button" disabled>Send whisper</button>
     <button id="whisper-close" type="button">Close</button>
@@ -427,6 +431,8 @@
   <script src="highlights.js"></script>
   <script src="voice-cues.js"></script>
   <script src="attention.js"></script>
+  <script src="chat-media.js"></script>
+  <script src="chat-attachments.js"></script>
   <script src="renderer.js"></script>
   <script src="channels-ui.js"></script>
   <script src="typing.js"></script>

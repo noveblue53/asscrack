@@ -410,3 +410,23 @@ test('named channels survive offline restart, share retention with General and r
   assert.deepEqual(a.channels(room), []);
   assert.equal(a.listMessages(other).length, 1);
 });
+
+test('attachment bytes share row and room retention, and pruning removes the descriptor with its row', t => {
+  const attachment = {
+    id: crypto.randomUUID(), source: '12D3KooWDESEF99R85j6RjTNo9RTboTu35bUNHKEY8NtQ5BY4hhF',
+    sha256: 'a'.repeat(64), size: 275, kind: 'image', name: 'car.png', expires: 2000000000000
+  };
+  const bytes = Buffer.byteLength(JSON.stringify(attachment)) + 2; // body and sender each occupy one byte
+  const { a, roomId } = openRoom(t, { maxBytes: bytes, maxRowBytes: bytes });
+  const msg = { ...row('card', 1, 'x', 'u'), attachment };
+  a.addMessage(roomId, msg);
+  assert.deepEqual(a.roomUsage(roomId), { rows: 1, bytes });
+  assert.deepEqual(a.listMessages(roomId)[0].attachment, attachment);
+  assert.throws(() => a.addMessage(roomId, { ...msg, id: 'long', text: 'xx' }), { code: 'row-too-large' });
+  a.addMessage(roomId, row('next', 2, 'x', 'u'));
+  assert.deepEqual(a.roomUsage(roomId), { rows: 1, bytes: 2 });
+  // Reusing the pruned ID as text detects a side row left behind by deletion.
+  a.addMessage(roomId, row('card', 3, 'x', 'u'));
+  assert.equal(a.listMessages(roomId)[1].attachment, undefined);
+  assert.equal(a.replayMessages(roomId).some(r => r.attachment), false);
+});

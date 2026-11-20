@@ -16,6 +16,13 @@ contextBridge.exposeInMainWorld('desktopFrame', {
     onChanged: listen('asscrack:frame-changed')
 });
 
+contextBridge.exposeInMainWorld('roomVoiceMonitor', {
+    open: () => ipcRenderer.send('asscrack:voice-monitor-open'),
+    publish: view => ipcRenderer.send('asscrack:voice-monitor-publish', view),
+    onActive: listen('asscrack:voice-monitor-active'),
+    onMute: listen('asscrack:voice-monitor-mute')
+});
+
 contextBridge.exposeInMainWorld('asscrack', {
     getIdlePeer: () => ipcRenderer.invoke('asscrack:idle-peer'),
     onIdlePeer: listen('asscrack:idle-peer'),
@@ -69,6 +76,10 @@ contextBridge.exposeInMainWorld('asscrack', {
     getShareTyping: () => ipcRenderer.invoke('asscrack:get-share-typing'),
     setShareTyping: value => ipcRenderer.invoke('asscrack:set-share-typing', value === true),
     getHost: () => ipcRenderer.invoke('asscrack:host'),
+    clearMediaPreviews: () => ipcRenderer.invoke('asscrack:media-clear-previews'),
+    getMediaInfo: ref => ipcRenderer.invoke('asscrack:media-info', ref),
+    requestMediaPreview: ref => ipcRenderer.invoke('asscrack:media-preview', ref),
+    onMediaChanged: listen('asscrack:media-changed'),
     getAttentionSettings: () => ipcRenderer.invoke('asscrack:attention-settings'),
     setAttentionSettings: patch => ipcRenderer.invoke('asscrack:attention-set', patch),
     addAttention: data => ipcRenderer.send('asscrack:attention-add', data),
@@ -97,6 +108,15 @@ contextBridge.exposeInMainWorld('asscrack', {
         if (!filePath) throw new Error('The file has no path');
         return ipcRenderer.invoke('asscrack:offer-file', filePath, recipientId);
     },
+    postMedia: async (file, caption, channelId, recipientId) => {
+        const filePath = webUtils.getPathForFile(file);
+        if (filePath) return ipcRenderer.invoke('asscrack:post-media', filePath, caption, channelId, recipientId);
+        if (file.type !== 'image/png' || file.size < 33 || file.size > 16 * 1024 * 1024) throw new Error('Clipboard images must be PNGs of at most 16 MiB');
+        return ipcRenderer.invoke('asscrack:post-media', new Uint8Array(await file.arrayBuffer()), caption, channelId, recipientId);
+    },
+    attachmentAvailable: id => ipcRenderer.invoke('asscrack:attachment-available', id),
+    requestOriginal: id => ipcRenderer.invoke('asscrack:request-original', id),
+    onAttachmentStatus: listen('asscrack:attachment-status'),
     acceptFile: offerId => ipcRenderer.invoke('asscrack:accept-file', offerId),
     refuseFile: offerId => ipcRenderer.invoke('asscrack:refuse-file', offerId),
     cancelFile: (offerId, peerId) => ipcRenderer.invoke('asscrack:cancel-file', offerId, peerId),

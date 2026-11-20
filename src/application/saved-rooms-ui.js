@@ -171,7 +171,7 @@
             return Array.isArray(lines) ? lines : [];
         } catch (err) {
             console.warn(`Saved lines not read: ${err?.message ?? err}`);
-            return change === archiveChanges.get(roomId) ? [] : null;
+            return null;
         }
     }
 
@@ -185,7 +185,10 @@
         if (loadedPages.has(pageKey)) return;
         loadedPages.add(pageKey);
         const lines = await readLines(roomId, null, channelId);
-        if (!lines || openRoomId !== roomId) return;
+        if (!lines || openRoomId !== roomId) {
+            loadedPages.delete(pageKey);
+            return;
+        }
         linesLoadedFor = roomId;
         for (const line of lines) if (line.id) savedMessageIds.add(String(line.id));
         const fresh = window.readingCore.newHistoryLines(lines, id => {
@@ -195,11 +198,12 @@
         });
         const empty = messageList.children.length === 0;
         const insertPage = () => {
-            for (const line of fresh) insertMessage(line.from, line.text, line.time, line.id, line.own === true, line.channelId);
+            for (const line of fresh) insertMessage(line.from, line.text, line.time, line.id, line.own === true, line.channelId, line.attachment);
         };
         const visible = !window.roomChannels || window.roomChannels.isViewing(channelId);
         if (visible) window.reading.keepPosition(insertPage);
         else insertPage();
+        window.chatAttachments?.restoreSaved(lines);
         if (visible && empty) window.reading.followLatest();
         const older = lines.length >= FIRST_PAGE ? 'more' : 'none';
         if (window.roomChannels) window.roomChannels.setOlder(channelId, older);
@@ -225,10 +229,11 @@
             if (!lines || roomId !== openRoomId) return;
             for (const line of lines) if (line.id) savedMessageIds.add(String(line.id));
             const insertPage = () => {
-                for (const line of lines) insertMessage(line.from, line.text, line.time, line.id, line.own === true, line.channelId);
+                for (const line of lines) insertMessage(line.from, line.text, line.time, line.id, line.own === true, line.channelId, line.attachment);
             };
             if (!window.roomChannels || window.roomChannels.isViewing(channelId)) window.reading.keepPosition(insertPage);
             else insertPage();
+            window.chatAttachments?.restoreSaved(lines);
             const older = lines.length >= OLDER_PAGE ? 'more' : 'none';
             if (window.roomChannels) window.roomChannels.setOlder(channelId, older);
             else setOlder(older);
@@ -291,6 +296,7 @@
         try {
             const result = await deleteSavedData(openRoomId, api.clearHistory);
             clearSavedMarks();
+            window.chatAttachments?.clearedSaved();
             window.roomChannels?.clearOlder();
             setOlder('none');
             clearConfirm.hidden = true;
@@ -319,7 +325,7 @@
         loginButton.disabled = true;
         for (const b of savedList.querySelectorAll('.reopen-room')) b.disabled = true;
         const lines = await readLines(room.roomId);
-        if (!lines) {
+        if (!lines && archiveChanges.get(room.roomId)?.pending) {
             reopenBusy = false;
             loginButton.disabled = false;
             for (const b of savedList.querySelectorAll('.reopen-room')) b.disabled = false;
@@ -327,19 +333,22 @@
         }
         internetRoom = true;
         showChat(String(room.userName ?? ''), String(room.name ?? ''));
-        for (const line of lines) {
+        for (const line of lines ?? []) {
             if (line.id) savedMessageIds.add(String(line.id));
-            addMessage(line.from, line.text, line.time, line.own === true, line.id, line.peerId ?? null);
+            addMessage(line.from, line.text, line.time, line.own === true, line.id, line.peerId ?? null, line.channelId, line.attachment);
         }
-        linesLoadedFor = String(room.roomId);
-        loadedPages.add(linesLoadedFor + '/general');
-        setOlder(lines.length >= FIRST_PAGE ? 'more' : 'none');
+        if (lines) {
+            linesLoadedFor = String(room.roomId);
+            loadedPages.add(linesLoadedFor + '/general');
+        }
+        setOlder((lines?.length ?? 0) >= FIRST_PAGE ? 'more' : 'none');
         window.reading.followLatest();
         watchPeers = true;
         updateWaiting();
         try {
             const result = await api.reopenRoom(room.roomId);
             roomStarted(result);
+            window.chatAttachments?.restoreSaved(lines);
         } catch (err) {
             status.textContent = `Error: the room did not start: ${err?.message ?? err}`;
         }

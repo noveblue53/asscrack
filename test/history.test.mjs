@@ -239,3 +239,15 @@ test('127.0.0.1: pending replay waits for host authority and drops cleared IDs',
         await stopAll([a, b])
     }
 })
+
+test('attachment projection keeps only validated public fields and downgrades invalid descriptors to text', () => {
+    const history = createHistory()
+    const attachment = { id: 'b2c204e7-4d85-4844-b5ca-9e2574d350e5', source: '12D3KooWQ2SdLZ5PxnAqMgXdLDyqBXhAVabbqVmmZbrXQY1zXkbP',
+        sha256: 'a'.repeat(64), size: 32, name: 'image.png', kind: 'image', expires: 1234 }
+    const line = { id: 'message', from: 'Sam', text: 'caption and filename', time: 10 }
+    history.add({ ...line, attachment: { ...attachment, localPath: 'private' } })
+    history.add({ ...line, id: 'bad', attachment: { ...attachment, name: '../note.png' } })
+    const byId = Object.fromEntries(history.list().map(row => [row.id, row]))
+    assert.deepEqual(byId.message.attachment, attachment)
+    assert.deepEqual(byId.bad, { ...line, id: 'bad' })
+})

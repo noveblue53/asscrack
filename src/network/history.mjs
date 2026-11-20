@@ -1,5 +1,6 @@
 import { MAX_CHAT_FRAME_BYTES } from './chat-session.mjs'
 
+import { normalizeAttachment } from './attachment.mjs'
 import { validChannelId } from './channels.mjs'
 
 export const HISTORY_LIMIT = 200
@@ -63,6 +64,8 @@ export function createHistory(limit = HISTORY_LIMIT) {
         add(message) {
             if (ids.has(message.id)) return false
             const item = { id: message.id, from: message.from, text: message.text, time: message.time }
+            const descriptor = normalizeAttachment(message.attachment)
+            if (descriptor) item.attachment = descriptor
             if (message.channelId) item.channelId = message.channelId
             let i = items.length
             while (i > 0 && compare(items[i - 1], item) > 0) i--

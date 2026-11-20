@@ -294,7 +294,7 @@
         return audio;
     }
 
-    async function openMicrophone() {
+    async function openMicrophone(generation) {
         const useDevice = Boolean(settings?.inputDeviceId);
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints(useDevice) });
@@ -302,6 +302,7 @@
             return stream;
         } catch (err) {
             if (!useDevice || !['OverconstrainedError', 'NotFoundError'].includes(err?.name)) throw err;
+            checkCapture(generation);
             console.warn(`Voice input device not found (${err.name}); the default device is used`);
             const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints(false) });
             inputFallback = true;
@@ -359,7 +360,7 @@
         if ((settings?.noiseSuppression ?? 'rnnoise') === 'rnnoise') await ensureRnnoiseNode();
         closeCapture();
         checkCapture(generation);
-        const stream = await openMicrophone();
+        const stream = await openMicrophone(generation);
         try { checkCapture(generation); } catch (err) {
             for (const track of stream.getTracks()) track.stop();
             throw err;
@@ -570,7 +571,7 @@
         // The push-to-talk key went down or up (voice-panel.js listens to the keys).
         setPushToTalk(down) {
             const before = gate.keyDown();
-            gate.setKey(down === true, performance.now());
+            gate.setKey(!window.idlePeer?.isIdle() && down === true, performance.now());
             if (before !== gate.keyDown()) changed();
         },
         settings: () => settings,

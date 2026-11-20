@@ -51,7 +51,7 @@ test('Windows frame forwards genuine window actions and remembers the native ove
     assert.equal(overlay.options.titleBarStyle, 'hidden');
     assert.ok(overlay.options.titleBarOverlay);
     const native = attach(overlay);
-    native.action('colors', '#253847', '#ffffff');
+    native.action('colors', '#253847', '#fff');
     native.action('colors', 'invalid', '#ffffff');
     assert.deepEqual(native.calls, [{ color: '#253847', symbolColor: '#ffffff', height: 36 }]);
     native.action('system', false);

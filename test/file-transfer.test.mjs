@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash, randomBytes } from 'node:crypto'
-import { createReadStream } from 'node:fs'
+import { createReadStream, writeSync } from 'node:fs'
 import * as fsp from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
@@ -321,13 +321,17 @@ test('i: a changed byte gives a hash mismatch', { timeout: 30000 }, async () => 
         const offer = await a.offerFile(file)
         const fh = await fsp.open(file, 'r+')
         const one = Buffer.alloc(1)
-        await fh.read(one, 0, 1, 1000)
-        one[0] ^= 0xff
-        await fh.write(one, 0, 1, 1000)
-        await fh.close()
-        await waitUntil(() => b.log.offer.length === 1, 5000)
-        b.acceptFile(offer.offerId)
-        await waitUntil(() => b.log.failed.length === 1, 10000)
+        try {
+            const offset = 199999
+            await fh.read(one, 0, 1, offset)
+            one[0] ^= 0xff
+            // The sender checks the original before reading. Change an unread byte in the already-open
+            // file to keep this regression exercising verification on the receiver.
+            a.events.once('file-progress', () => writeSync(fh.fd, one, 0, 1, offset))
+            await waitUntil(() => b.log.offer.length === 1, 5000)
+            b.acceptFile(offer.offerId)
+            await waitUntil(() => b.log.failed.length === 1, 10000)
+        } finally { await fh.close() }
         assert.equal(b.log.failed[0].reason, 'hash mismatch')
         assert.deepEqual(b.log.done, [])
         assert.deepEqual(await entries(b.dir), [])
@@ -443,6 +447,25 @@ test('m: a stream abort before the file-cancel line gives cancelled by peer on t
     }
 })
 
+test('127.0.0.1: a receiver unable to create its partial file fails only its own send leg', async t => {
+    const ctx = await setup(3)
+    t.after(() => cleanup(ctx))
+    const [a, b, c] = ctx.nodes
+    // A regular file at a directory path fails open on Windows and Linux, even when running as root.
+    await fsp.rmdir(b.dir)
+    await fsp.writeFile(b.dir, 'occupied')
+    const file = path.join(ctx.src, 'map.png')
+    await fsp.writeFile(file, 'fixture')
+    acceptOnOffer(b)
+    acceptOnOffer(c)
+    const { offerId } = await a.offerFile(file)
+    await waitUntil(() => b.log.failed.length && a.log.failed.length && a.log.done.length, 5000)
+    assert.deepEqual(a.log.failed, [{ offerId, peerId: b.peerId, direction: 'send', reason: 'receiver could not verify or save file' }])
+    assert.deepEqual(a.log.done.map(event => [event.peerId, event.confirmed]), [[c.peerId, true]])
+    assert.deepEqual(b.log.done, [])
+    assert.equal(await fsp.readFile(b.dir, 'utf8'), 'occupied')
+});
+
 // A wire-level receiver can choose the 0.7.0 header or advertise receipts and withhold one.
 async function requestFile(receiver, sender, header) {
     await waitUntil(() => receiver.log.offer.some(e => e.offerId === header.offerId), 5000)
@@ -516,4 +539,86 @@ test('p: an unanswered receipt times out even with the chat session open', { tim
     } finally {
         await cleanup(ctx)
     }
+})
+
+test('127.0.0.1: a preview, original and fresh targeted offer have independent verified bytes and one descriptor', { timeout: 20000 }, async () => {
+    // The network transports the bounded derivative; validating the PNG and producing the thumbnail belong to the media provider.
+    const derivative = Buffer.from('separate thumbnail')
+    const ctx = await setup(2, { previewProvider: async () => derivative })
+    const [source, receiver] = ctx.nodes
+    try {
+        const original = path.join(ctx.src, 'race.png')
+        const contents = Buffer.from('byte-identical original fixture')
+        await fsp.writeFile(original, contents)
+        const { message, offer } = await source.postAttachment(original, 'race day')
+        await waitUntil(() => receiver.log.offer.length === 1 && receiver.attachmentAvailable(message.attachment.id), 5000)
+        assert.equal(offer.offerId, message.attachment.id)
+        assert.equal(message.text, `race day\nrace.png (${contents.length} bytes)`)
+        assert.equal(receiver.log.offer[0].attachmentId, message.attachment.id)
+        assert.deepEqual(receiver.history().find(row => row.id === message.id).attachment, message.attachment)
+        assert.deepEqual(await receiver.requestPreviewById(message.attachment.id), { descriptor: message.attachment, bytes: derivative })
+        assert.deepEqual(await entries(receiver.dir), [])
+        assert.ok(receiver.acceptFile(offer.offerId))
+        await waitUntil(() => receiver.log.done.length === 1 && source.log.done.length === 1, 4000)
+        assert.equal(source.log.done[0].confirmed, true)
+        assert.deepEqual(await fsp.readFile(receiver.log.done[0].path), contents)
+        assert.equal(receiver.log.done[0].sha256, message.attachment.sha256)
+        assert.ok(receiver.requestOriginal(message.attachment.id))
+        await waitUntil(() => receiver.log.offer.length === 2, 3000)
+        assert.notEqual(receiver.log.offer[1].offerId, offer.offerId)
+        assert.equal(receiver.log.offer[1].attachmentId, offer.offerId)
+        const another = await source.postAttachment(original, 'same file, different post')
+        assert.notEqual(another.message.attachment.id, message.attachment.id)
+        assert.equal(another.message.attachment.sha256, message.attachment.sha256)
+    } finally { await cleanup(ctx) }
+})
+
+test('127.0.0.1: replacing an original before acceptance transmits zero bytes on ordinary and reissued attachment offers', async t => {
+    const ctx = await setup(2, { previewProvider: async () => null })
+    t.after(() => cleanup(ctx))
+    const [source, receiver] = ctx.nodes
+    for (const rich of [false, true]) {
+        const original = path.join(ctx.src, rich ? 'post.png' : 'offered.txt')
+        await fsp.writeFile(original, 'first file')
+        let id
+        if (rich) {
+            const { message, offer } = await source.postAttachment(original, 'before replacement')
+            await waitUntil(() => receiver.log.offer.some(ev => ev.offerId === offer.offerId) && receiver.attachmentAvailable(message.attachment.id), 5000)
+            assert.ok(receiver.refuseFile(offer.offerId))
+            await waitUntil(() => source.log.refused.some(ev => ev.offerId === offer.offerId), 5000)
+            assert.ok(receiver.requestOriginal(message.attachment.id))
+            await waitUntil(() => receiver.log.offer.some(ev => ev.attachmentId === message.attachment.id && ev.offerId !== offer.offerId), 5000)
+            id = receiver.log.offer.at(-1).offerId
+        } else {
+            const offer = await source.offerFile(original, receiver.peerId)
+            id = offer.offerId
+            await waitUntil(() => receiver.log.offer.some(ev => ev.offerId === id), 5000)
+        }
+        await fsp.rename(original, original + '.original')
+        await fsp.writeFile(original, 'other file')
+        assert.ok(receiver.acceptFile(id))
+        await waitUntil(() => receiver.log.failed.some(ev => ev.offerId === id), 5000)
+        await waitUntil(() => source.log.failed.some(ev => ev.offerId === id), 5000)
+        assert.equal(source.log.progress.some(ev => ev.offerId === id && ev.bytes > 0), false)
+        assert.deepEqual(await entries(receiver.dir), [])
+    }
+})
+
+test('127.0.0.1: excessive or unsupported preview leaves the streamed original available', { timeout: 15000 }, async () => {
+    let large = true
+    const ctx = await setup(2, { previewProvider: async () => large ? Buffer.alloc(512 * 1024 + 1) : null })
+    const [source, receiver] = ctx.nodes
+    try {
+        const original = path.join(ctx.src, 'unsupported.webp')
+        await fsp.writeFile(original, 'unchanged, opaque original')
+        const { message, offer } = await source.postAttachment(original, '')
+        await waitUntil(() => receiver.attachmentAvailable(message.attachment.id), 5000)
+        assert.equal(await receiver.requestPreviewById(message.attachment.id), null)
+        large = false
+        assert.equal(await receiver.requestPreviewById(message.attachment.id), null)
+        assert.deepEqual(await entries(receiver.dir), [])
+        assert.ok(receiver.acceptFile(offer.offerId))
+        await waitUntil(() => receiver.log.done.length === 1, 3000)
+        assert.equal(await sha(receiver.log.done[0].path), message.attachment.sha256)
+    } finally { await cleanup(ctx) }
 })

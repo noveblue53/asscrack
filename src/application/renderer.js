@@ -188,7 +188,7 @@ const shownMessageIds = new Set();
 
 // Add a line at the end. Returns the new <li>, or null when the id is already shown.
 // The caller calls window.reading.beforeChange() and afterChange() around it.
-function addMessage(from, text, time, own = false, id = null, peerId = null, channelId = 'general') {
+function addMessage(from, text, time, own = false, id = null, peerId = null, channelId = 'general', attachment = null) {
     if (id !== null && id !== undefined && id !== '') {
         if (shownMessageIds.has(String(id))) return null;
         shownMessageIds.add(String(id));
@@ -196,13 +196,14 @@ function addMessage(from, text, time, own = false, id = null, peerId = null, cha
     const item = makeMessageItem(from, text, time, own, id, peerId);
     (window.roomChannels?.listFor(channelId) ?? messageList).appendChild(item);
     groupWithPrevious(item);
+    if (attachment) window.chatAttachments?.decorate(item, attachment, own);
     return item;
 }
 
 // Put a history line before the first line that is newer. Equal times keep the arrival sequence.
 // Returns the new <li>, or null when the id is already shown.
 // own: true or false for a saved line (milestone 6). null: a line with the name of this user is an own line.
-function insertMessage(from, text, time, id = null, own = null, channelId = 'general') {
+function insertMessage(from, text, time, id = null, own = null, channelId = 'general', attachment = null) {
     if (id !== null && id !== undefined && id !== '') {
         if (shownMessageIds.has(String(id))) return null;
         shownMessageIds.add(String(id));
@@ -216,6 +217,7 @@ function insertMessage(from, text, time, id = null, own = null, channelId = 'gen
     list.insertBefore(item, next);
     groupWithPrevious(item);
     groupWithPrevious(next);
+    if (attachment) window.chatAttachments?.decorate(item, attachment, attachment.source === selfId);
     return item;
 }
 
@@ -309,7 +311,7 @@ window.asscrack.onMessage(data => {
     const item = peerItems.get(data.peerId);
     if (item && data.from) setPeerName(item, data.from);
     const state = window.reading.beforeChange();
-    const line = addMessage(data.from, data.text, data.time, false, data.id, data.peerId, data.channelId);
+    const line = addMessage(data.from, data.text, data.time, false, data.id, data.peerId, data.channelId, data.attachment);
     if (line && !window.idlePeer?.isIdle()) {
         window.roomAttention?.mention(data);
         if (window.roomChannels && !window.roomChannels.isViewing(data.channelId)) {
@@ -333,7 +335,7 @@ window.asscrack.onHistory(data => {
     const first = visible && !historyShown.has(activeChannel) && messageList.children.length === 0;
     const state = window.reading.beforeChange();
     let added = 0;
-    for (const line of lines) if (insertMessage(line.from, line.text, line.time, line.id, null, line.channelId)) added++;
+    for (const line of lines) if (insertMessage(line.from, line.text, line.time, line.id, null, line.channelId, line.attachment)) added++;
     for (const line of lines) historyShown.add(line.channelId ?? 'general');
     console.info(`History shown: ${added} lines`);
     if (first) window.reading.followLatest();
@@ -584,6 +586,17 @@ let ownMuted = false;
 let joining = false;
 let speaking = new Set(); // peerIds above SPEAKING_LEVEL in the last stats() read
 let statsTimer = null;
+let monitorActive = false;
+let lastMonitorView = '';
+
+function publishMonitorView(state, speakers) {
+    const view = { inVoice: ownInVoice, muted: ownMuted, transmitting: state.transmitting === true,
+        speakers, theme: document.documentElement.dataset.theme || 'aero-classic' };
+    const key = JSON.stringify(view);
+    if (key === lastMonitorView) return;
+    lastMonitorView = key;
+    window.roomVoiceMonitor.publish(view);
+}
 
 function setVoiceState(item, text) {
     const span = item.querySelector('.voice-state');
@@ -596,6 +609,7 @@ function setVoiceState(item, text) {
 function updateVoiceView() {
     const state = window.voice.state();
     const members = state.members ?? {};
+    const speakers = monitorActive ? [] : null;
     if (state.self) selfId = state.self;
     if (state.host !== undefined && state.host !== null) hostId = state.host;
     for (const [peerId, item] of peerItems) {
@@ -605,6 +619,7 @@ function updateVoiceView() {
             if (members[peerId].muted) text = 'in voice (muted)';
             else text = speaking.has(peerId) ? 'speaking' : 'in voice';
         }
+        if (speakers && text === 'speaking') speakers.push(peerNames.get(peerId) || peerId.slice(-8));
         setVoiceState(item, text);
     }
     if (selfLine) {
@@ -612,6 +627,7 @@ function updateVoiceView() {
         let text = 'not in voice';
         // transmitting: the send gate of voice.js is open (voice activity or push to talk).
         if (ownInVoice) text = ownMuted ? 'in voice (muted)' : (state.transmitting ? 'speaking' : 'in voice');
+        if (speakers && text === 'speaking') speakers.unshift('You');
         setVoiceState(selfLine, text);
     }
     joinVoiceButton.hidden = ownInVoice;
@@ -626,6 +642,7 @@ function updateVoiceView() {
         ptt.textContent = state.pttHeld ? 'PTT held' : 'PTT released';
     }
     muteButton.setAttribute('aria-pressed', String(ownMuted));
+    if (speakers) publishMonitorView(state, speakers);
     document.body.classList.toggle('in-voice', ownInVoice);
     updateNodeMap();
 }
@@ -710,6 +727,14 @@ function toggleMute() {
 joinVoiceButton.addEventListener('click', joinVoice);
 leaveVoiceButton.addEventListener('click', leaveVoice);
 muteButton.addEventListener('click', toggleMute);
+document.getElementById('detach-voice')?.addEventListener('click', () => window.roomVoiceMonitor?.open());
+window.roomVoiceMonitor?.onActive(active => {
+    monitorActive = active;
+    lastMonitorView = '';
+    if (active) updateVoiceView();
+});
+window.roomVoiceMonitor?.onMute(desired => { if (desired !== ownMuted) toggleMute(); });
+window.addEventListener('asscrack-theme-changed', () => { if (monitorActive) updateVoiceView(); });
 window.voice.onChange(updateVoiceView);
 window.asscrack.onHostChanged(info => {
     hostId = info?.peerId ?? null;
@@ -738,8 +763,7 @@ function recipientLabel(peerId) {
     return `${peerNames.get(peerId) || 'Peer'} (${peerId.slice(-8)})`;
 }
 
-function refreshFileRecipients() {
-    const selected = fileRecipient.value;
+function refreshFileRecipients(selected = fileRecipient.value) {
     const roomOption = fileRecipient.firstElementChild;
     const peerIds = [...peerItems.keys()];
     // Removing a selected <option> would silently select the whole room for a private draft.
@@ -830,6 +854,7 @@ function setTransferState(entry, state, text) {
     render(entry.item);
     if (entry.card) window.reading.keepPosition(() => render(entry.card));
     if (entry.direction === 'send') updateOfferSummary(entry.item.dataset.offerId);
+    if (entry.richOffer) window.chatAttachments?.changed(entry.richOffer);
     updateNodeMap();
 }
 
@@ -1137,6 +1162,12 @@ function setTransferResult(entry, state, text) {
 window.asscrack.onFileOffer(data => {
     const entry = getTransfer(data.offerId, data.peerId, 'receive', data);
     if (entry.card || entry.state !== null) return;
+    if (data.attachmentId && window.chatAttachments) {
+        entry.richOffer = data;
+        setTransferState(entry, 'offered', 'Offered');
+        window.chatAttachments.offer(data, entry);
+        return;
+    }
     const reading = window.reading.beforeChange();
     entry.card = makeTransferRow(data.offerId, data.peerId, 'receive', data, 'file-card');
     entry.card.dataset.time = String(Date.now());
@@ -1273,14 +1304,34 @@ async function sendFile() {
     }
     offeringFile = true;
     updateFileDraft();
+    const file = pendingFile, reply = messageInput.value, quote = pendingQuote;
+    const caption = window.quoteCore.compose(quote, reply);
+    const channelId = window.roomChannels?.active() ?? 'general';
     try {
-        const result = await window.asscrack.offerFile(pendingFile, recipientId);
+        const media = /\.(png|jpe?g|webp|gif|mp4|webm|m4v|mov|ogv)$/i.test(file.name) || file.type === 'image/png';
+        let posted;
+        if (media && typeof window.asscrack.postMedia === 'function') {
+            posted = await window.asscrack.postMedia(file, caption, channelId, recipientId);
+        }
+        const result = posted?.offer ?? await window.asscrack.offerFile(file, recipientId);
         if (result.peers === 0) {
             status.textContent = 'No peer received the offer. The file is still attached.';
             return;
         }
+        if (posted?.message) {
+            const m = posted.message;
+            if (m.saved) noteSaved(m.id);
+            addMessage(m.from, m.text, m.time, true, m.id, selfId, channelId, m.attachment);
+            if (!window.roomChannels || window.roomChannels.isViewing(channelId)) {
+                if (messageInput.value === reply) messageInput.value = '';
+                if (pendingQuote === quote) setQuote(null);
+                window.reading.followLatest();
+            } else window.roomChannels.sent(channelId, reply, quote);
+        }
         addOfferHead(result, recipientId);
-        pendingFile = null;
+        if (!window.roomChannels || window.roomChannels.isViewing(channelId)) {
+            if (pendingFile === file) pendingFile = null;
+        } else window.roomChannels.fileSent(channelId, file);
         if (document.activeElement === document.body || composer.contains(document.activeElement)) {
             messageInput.focus({ preventScroll: true });
         }
@@ -1292,6 +1343,16 @@ async function sendFile() {
         updateFileDraft();
     }
 }
+
+messageInput.addEventListener('paste', event => {
+    const item = Array.from(event.clipboardData?.items ?? []).find(item => item.kind === 'file' && item.type === 'image/png');
+    const file = item?.getAsFile();
+    if (!file) return;
+    event.preventDefault();
+    if (file.size > 16 * 1024 * 1024) { status.textContent = 'Clipboard PNG exceeds 16 MiB.'; return; }
+    attachFile(file);
+    messageInput.focus({ preventScroll: true });
+});
 
 attachFileButton.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', () => {

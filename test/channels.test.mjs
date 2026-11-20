@@ -115,11 +115,27 @@ test('catalog convergence and validation are independent of peer arrival order',
         c.handle('peer', { v: 1, op: 'add', rows: [alpha] })
         assert.deepEqual(c.view().channels.map(x => x.id), ['general'])
         c.handle('peer', { v: 1, op: 'hello' })
-        for (const row of [first, second, quiet, { id: 'general', name: 'Replaced' }, { id: randomUUID(), name: 'line\nbreak' }]) {
+        for (const row of [first, second, quiet, { id: 'general', name: 'Replaced' },
+            { id: randomUUID(), name: 'line\nbreak' }, { id: randomUUID(), name: 'General' },
+            { id: randomUUID(), name: 'broken\ud800' }]) {
             c.handle('peer', { v: 1, op: 'add', rows: [row] })
         }
         assert.deepEqual(c.view().channels.map(x => x.id), ['general', ...[id, other].sort()])
         assert.equal(c.view().channels.find(x => x.id === id).name, 'Alpha')
         assert.throws(() => c.create('general'), /already exists/)
     }
+})
+
+test('replacing the same host identity disables named Send until the new session advertises support', () => {
+    const visible = []
+    const c = createChannels({ self: 'member', host: () => 'host', send() {}, ready() {},
+        changed: snapshot => visible.push(snapshot.available) })
+    c.opened('host')
+    c.handle('host', { v: 1, op: 'hello' })
+    assert.deepEqual(visible, [true])
+    c.opened('host')
+    assert.deepEqual(visible, [true, false], 'UI receives replacement capability loss even if this session is legacy')
+    assert.throws(() => c.create('Named'), /support/)
+    c.handle('host', { v: 1, op: 'hello' })
+    assert.deepEqual(visible, [true, false, true])
 })

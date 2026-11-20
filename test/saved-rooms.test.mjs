@@ -269,3 +269,42 @@ test('a saved room retains its empty channel catalog with saving off and after C
     assert.deepEqual(rooms.loadChannels('room', KEY_A), [channel]);
     assert.deepEqual(rooms.lines(roomId), []);
 });
+
+test('cold attachment archive reopens live and own cards with just the projected metadata in their original channels', t => {
+    const {rooms, dir} = setup(t);
+    const node = fakeNode(1);
+    const roomId = start(rooms, node);
+    const channelId = 'eeb5f87a-8f35-4dac-9aa2-5bb32953f93c';
+    rooms.persistChannels([{id: channelId, name: 'Race photos'}]);
+    const attachment = {
+        id: '7d034c92-7730-4254-87ef-8b4116b6dc6a', source: '12D3KooWDESEF99R85j6RjTNo9RTboTu35bUNHKEY8NtQ5BY4hhF',
+        sha256: 'e'.repeat(64), size: 4712, kind: 'image', name: 'harbor.png', expires: 2000000000000
+    };
+    const untrusted = {...attachment, filePath: '/private/screenshot.png', preview: 'never archive preview bytes'};
+    const text = 'Braking point\nharbor.png (4712 bytes)';
+    const own = {...node.sendRecord(text), attachment: untrusted};
+    assert.equal(rooms.recordSend(own).saved, true);
+    const live = {id: 'b', time: 2010, text, from: 'Bob', peerId: attachment.source, channelId,
+        attachment: {...untrusted, id: '93a1701b-a6ad-41b0-8a22-d09612beae7b'}};
+    node.events.emit('live', live);
+    node.events.emit('live', {...live, attachment: {...attachment, name: 'overwrite.png'}});
+    node.events.emit('live', {...live, id: 'malformed', attachment: {...attachment, name: '../private.png'}});
+    node.events.emit('history', {messages: [{...live, id: 'catch-up'}]});
+    rooms.close();
+    const restarted = createSavedRooms({dir: path.join(dir,'saved-rooms'), protector: fakeProtector});
+    t.after(() => restarted.close());
+    const general = restarted.lines(roomId,{channelId:'general'});
+    assert.deepEqual(general.map(r => r.id), [own.id]);
+    assert.deepEqual(general[0].attachment, attachment);
+    const named = restarted.lines(roomId,{channelId});
+    assert.deepEqual(named.map(r => r.id), ['b','malformed']);
+    assert.deepEqual(named[0].attachment, {...attachment, id: live.attachment.id});
+    assert.equal(named[1].attachment, undefined);
+    const replay = restarted.prepareReplay('room', KEY_A, () => {});
+    assert.deepEqual(replay.map(m => m.attachment), [attachment, named[0].attachment, undefined]);
+    assert.equal(replay[1].channelId, channelId);
+    assert.ok(replay.every(m => !('peerId' in m) && !('own' in m)));
+    restarted.clear(roomId);
+    assert.deepEqual(restarted.lines(roomId), []);
+    assert.deepEqual(restarted.prepareReplay('room', KEY_A, () => {}), []);
+});

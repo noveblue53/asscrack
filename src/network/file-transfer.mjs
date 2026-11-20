@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { createReadStream } from 'node:fs'
+import { constants, createReadStream } from 'node:fs'
 import * as fsp from 'node:fs/promises'
 import * as path from 'node:path'
 
@@ -73,6 +73,7 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
     // Peer cancel signals for active transfers: key `${offerId}|${peerId}`
     const cancelSignals = new Map()
     let stopping = false
+    const preparation = new AbortController()
 
     const sendLine = (peerId, message) => sendTo(peerId, message)
 
@@ -135,27 +136,61 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
         abortStream(t.stream, reason)
     }
 
+    function matchesOriginal(stat, prepared) {
+        return stat.isFile() && stat.size === prepared.size && stat.dev === prepared.dev && stat.ino === prepared.ino &&
+            stat.mtimeMs === prepared.mtimeMs && stat.ctimeMs === prepared.ctimeMs
+    }
+
+    async function unchanged(prepared) {
+        try { return matchesOriginal(await fsp.stat(prepared.filePath), prepared) }
+        catch { return false }
+    }
+
+    async function prepareFile(filePath, displayName) {
+        if (stopping) throw new Error('Node stopped')
+        const stat = await fsp.stat(filePath)
+        if (!stat.isFile()) throw new Error('The path is not a regular file')
+        const prepared = { filePath, name: safeFileName(displayName ?? path.basename(filePath)), size: stat.size,
+            dev: stat.dev, ino: stat.ino, mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs }
+        const hash = createHash('sha256')
+        for await (const chunk of createReadStream(filePath, { highWaterMark: CHUNK_SIZE, signal: preparation.signal })) hash.update(chunk)
+        if (!await unchanged(prepared)) throw new Error('File changed during preparation')
+        return { ...prepared, sha256: hash.digest('hex') }
+    }
+
+    function publishOffer(prepared, recipients, offerId = randomUUID(), attachmentId = null) {
+        if (stopping) throw new Error('Node stopped')
+        const { name, size, sha256 } = prepared
+        const offer = { ...prepared, offerId, attachmentId, targets: new Set(), started: new Set() }
+        const line = { type: 'file-offer', offerId, name, size, sha256 }
+        if (attachmentId) line.attachmentId = attachmentId
+        for (const peerId of recipients) if (sendLine(peerId, line)) offer.targets.add(peerId)
+        if (offer.targets.size) ownOffers.set(offerId, offer)
+        return { offerId, name, size, sha256, peers: offer.targets.size, recipients: [...offer.targets] }
+    }
+
+    function offerAttachmentTo(prepared, descriptor, peerId) {
+        for (const offer of ownOffers.values()) {
+            if (offer.attachmentId === descriptor.id && offer.targets.has(peerId) && !offer.started.has(peerId)) return
+        }
+        publishOffer(prepared, [peerId], randomUUID(), descriptor.id)
+    }
+
+    function expireAttachment(id) {
+        for (const [offerId, offer] of ownOffers) {
+            if (offer.attachmentId !== id) continue
+            for (const peer of offer.targets) if (!offer.started.has(peer)) sendLine(peer, { type: 'file-cancel', offerId })
+            ownOffers.delete(offerId)
+        }
+    }
+
     async function offerFile(filePath, recipientId) {
         const targeted = recipientId !== undefined
         if (targeted && !openPeers().includes(recipientId)) throw new Error('The selected recipient is not connected')
-        const stat = await fsp.stat(filePath)
-        if (!stat.isFile()) throw new Error('The path is not a regular file')
-        const hash = createHash('sha256')
-        for await (const chunk of createReadStream(filePath, { highWaterMark: CHUNK_SIZE })) hash.update(chunk)
-        const sha256 = hash.digest('hex')
-        const offerId = randomUUID()
-        const name = path.basename(filePath)
-        const size = stat.size
-        const offer = { offerId, filePath, name, size, sha256, targets: new Set(), started: new Set() }
-        ownOffers.set(offerId, offer)
-        const line = { type: 'file-offer', offerId, name, size, sha256 }
-        const recipients = targeted ? [recipientId] : openPeers()
-        for (const peerId of recipients) if (sendLine(peerId, line)) offer.targets.add(peerId)
-        if (targeted && offer.targets.size === 0) {
-            ownOffers.delete(offerId)
-            throw new Error('The selected recipient disconnected before the file could be offered')
-        }
-        return { offerId, name, size, sha256, peers: offer.targets.size, recipients: [...offer.targets] }
+        const prepared = await prepareFile(filePath)
+        const offer = publishOffer(prepared, targeted ? [recipientId] : openPeers())
+        if (targeted && !offer.peers) throw new Error('The selected recipient disconnected before the file could be offered')
+        return offer
     }
 
     // The sender side of one data stream.
@@ -192,15 +227,23 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
         if (request.ack === 1) t.receipt = Promise.withResolvers()
         active.set(key, t)
         const p = progress(offerId, peerId, 'send', offer.size)
+        let original
         try {
-            const readStream = createReadStream(offer.filePath, { highWaterMark: CHUNK_SIZE })
+            // The peer can accept long after the offer was prepared. Bind reads to the checked handle
+            // and the offered extent, even if the path is replaced or the file grows during the send.
+            original = await fsp.open(offer.filePath, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0))
+            if (!matchesOriginal(await original.stat(), offer)) throw new TransferFailure('original file changed')
+            if (t.selfCancel || stopping) throw new Error('cancelled')
+            const readStream = offer.size ? original.createReadStream({ highWaterMark: CHUNK_SIZE, end: offer.size - 1 }) : null
             t.readStream = readStream
             await stream.sink((async function* () {
+                if (!readStream) return
                 for await (const chunk of readStream) {
                     p.add(chunk.length)
                     yield chunk
                 }
             })())
+            if (p.bytes !== offer.size) throw new TransferFailure('original file changed')
             if (stream.status === 'reset' || stream.status === 'aborted') throw new TransferFailure('stream ended')
             await stream.close()
             if (t.receipt) {
@@ -236,11 +279,14 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
                 active.delete(key)
                 events.emit('file-failed', { offerId, peerId, direction: 'send', reason: shortReason(err) })
             }
+        } finally {
+            await original?.close().catch(() => {})
         }
     }
 
     function shortReason(err) {
         if (err instanceof TransferFailure) return err.message
+        if (err?.code === 'ENOSPC' || err?.code === 'EDQUOT') return 'not enough disk space'
         return 'stream ended'
     }
 
@@ -288,7 +334,7 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
             received.delete(offerId)
             cancelSignals.delete(`${offerId}|${peerId}`)
             p.end()
-            events.emit('file-done', { offerId, peerId, direction: 'receive', name: offer.name, size: offer.size, path: finalPath })
+            events.emit('file-done', { offerId, peerId, direction: 'receive', name: offer.name, size: offer.size, path: finalPath, ...(offer.attachmentId ? { attachmentId: offer.attachmentId, sha256: offer.sha256 } : {}) })
         } catch (err) {
             abortStream(t.stream, 'Transfer ended')
             if (fh) await fh.close().catch(() => {})
@@ -386,11 +432,21 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
             if (!UUID_RE.test(offerId) || received.has(offerId) || ownOffers.has(offerId)) return
             if (!Number.isSafeInteger(size) || size < 0 || typeof sha256 !== 'string' || !SHA_RE.test(sha256)) return
             const name = safeFileName(control.name)
-            received.set(offerId, { offerId, peerId, name, size, sha256, state: 'offered' })
-            events.emit('file-offer', { offerId, peerId, from: peerNames()[peerId] ?? '', name, size })
+            const rich = typeof control.attachmentId === 'string' && UUID_RE.test(control.attachmentId) ? { attachmentId: control.attachmentId, sha256 } : {}
+            received.set(offerId, { offerId, peerId, name, size, sha256, ...rich, state: 'offered' })
+            events.emit('file-offer', { offerId, peerId, from: peerNames()[peerId] ?? '', name, size, ...rich })
         } else if (control.type === 'file-received' || control.type === 'file-receive-failed') {
             const t = active.get(`send|${offerId}|${peerId}`)
-            t?.receipt?.resolve(control.type === 'file-received' ? null : 'receiver could not verify or save file')
+            const failed = control.type === 'file-receive-failed'
+            const reason = 'receiver could not verify or save file'
+            if (t?.receipt) t.receipt.resolve(failed ? reason : null)
+            else if (failed) {
+                // A disk error can occur before the receiver opens the data stream.
+                const offer = ownOffers.get(offerId)
+                if (offer && !offer.started.has(peerId) && offer.targets.delete(peerId)) {
+                    events.emit('file-failed', { offerId, peerId, direction: 'send', reason })
+                }
+            }
         } else if (control.type === 'file-refuse') {
             const own = ownOffers.get(offerId)
             if (!own || !own.targets.has(peerId) || own.started.has(peerId)) return
@@ -449,6 +505,7 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
 
     async function stop() {
         stopping = true
+        preparation.abort()
         const waits = []
         for (const t of active.values()) {
             sendLine(t.peerId, { type: 'file-cancel', offerId: t.offerId })
@@ -458,5 +515,5 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
         await Promise.allSettled(waits)
     }
 
-    return { offerFile, acceptFile, refuseFile, cancelFile, handleControl, peerLeft, handleStream, stop }
+    return { prepareFile, publishOffer, offerAttachmentTo, expireAttachment, unchanged, offerFile, acceptFile, refuseFile, cancelFile, handleControl, peerLeft, handleStream, stop }
 }

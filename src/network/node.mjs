@@ -1,5 +1,6 @@
 import { createLibp2p } from 'libp2p'
 import { tcp } from '@libp2p/tcp'
+import { createAttachments, PREVIEW_PROTOCOL } from './attachment.mjs'
 import { createWhispers } from './whispers.mjs'
 import { createTyping } from './typing.mjs'
 import { mdns } from '@libp2p/mdns'
@@ -114,12 +115,13 @@ function parseMessage(line, peerId) {
 ${time}
 ${text}`).digest('hex')
     const record = { id, from, text, time }
+    if (value.attachment) record.attachment = value.attachment
     return validHistoryItem(record) ? record : null
 }
 
 export async function createAsscrackNode({ room, listen, port = 0, discovery = true, discoveryInterval, name,
     heartbeatInterval = 1000, hostTimeout = 5000, electionDelay = 3000, downloadDir, fileAckTimeout,
-    receiveWhisper = null, fullNode = 'auto', allowPrivateFullNode = false, relayOnly = false, roomKey = null, announce = [], storePath = null,
+    previewProvider = null, receiveWhisper = null, fullNode = 'auto', allowPrivateFullNode = false, relayOnly = false, roomKey = null, announce = [], storePath = null,
     redialInterval = 5000, inviteNodes = [], upnp = false, upnpTimeout = 70000, upnpLeaseSeconds = 1800,
     upnpClient = null, seedHistory = [], seedChannels = [] } = {}) {
     if (typeof room !== 'string') throw new TypeError('room must be a string')
@@ -260,7 +262,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     }
 
     function applyHistory(messages) {
-        const added = messages.filter(m => history.add(m))
+        const added = messages.map(m => attachments.remember(m)).filter(m => history.add(m))
         console.info(`History applied: ${added.length} of ${messages.length} messages are new`)
         events.emit('history', { messages: added })
     }
@@ -283,7 +285,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     function handleHistory(peerId, control) {
         if (!Array.isArray(control.messages) || control.messages.length > HISTORY_LIMIT) return
         const messages = control.messages.filter(m => validHistoryItem(m) && (!m.channelId || (channels.capable(peerId) && channels.known(m.channelId))))
-            .map(({ id, from, text, time, channelId }) => channelId ? { id, from, text, time, channelId } : { id, from, text, time })
+            .map(({ id, from, text, time, channelId, attachment }) => ({ id, from, text, time, ...(channelId ? { channelId } : {}), ...(attachment ? { attachment } : {}) }))
         if (election.host()?.peerId === peerId) {
             applyHistory(messages)
             return
@@ -412,6 +414,15 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         openPeers: () => [...sessions.keys()],
         peerNames: () => Object.fromEntries([...names].filter(([peerId]) => sessions.has(peerId))),
         downloadDir, fileAckTimeout
+    })
+
+    const attachments = createAttachments({
+        self: node.peerId.toString(), sessions, connections: () => node.getConnections(), files, events, previewProvider, sendRecord,
+        canPost(channelId, peer) {
+            if (channelId === 'general') return true
+            if (!channels.known(channelId) || !channels.available()) throw new Error('This channel is read-only.')
+            return !peer || channels.capable(peer)
+        }
     })
 
     // A line with a "type" field is a control line. Other lines are chat lines.
@@ -552,10 +563,11 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                     else if (control.type === 'channel-post' && sessions.get(peerId) === session && channels.capable(peerId) &&
                         control.v === 1 && channels.known(control.message?.channelId) && validHistoryItem(control.message)) {
                         const { id, from, text, time, channelId } = control.message
-                        const record = { peerId, id, from, text, time, channelId }
+                        const record = attachments.remember({ peerId, id, from, text, time, channelId, attachment: control.message.attachment }, peerId)
                         if (history.add(record)) events.emit('message', record)
                         events.emit('live', record)
                     }
+                    else if (control.type === 'attachment' && sessions.get(peerId) === session) attachments.handle(peerId, control).catch(() => {})
                     else if (control.type === 'whisper') whispers.handle(peerId, session, control)
                     else if (control.type === 'topic' && sessions.get(peerId) === session) topic.handle(peerId, control)
                     else if (control.type === 'history' && sessions.get(peerId) === session) handleHistory(peerId, control)
@@ -630,6 +642,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 }
                 const message = parseMessage(line, peerId)
                 if (message) {
+                    attachments.remember(message, peerId)
                     if (sessions.get(peerId) === session) typing.remove(peerId)
                     if (history.add(message)) events.emit('message', { peerId, ...message })
                     // Saved rooms (milestone 6): each valid live line, also a line that a host replay gave first.
@@ -669,6 +682,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         }
         if (sendHello) session.send(JSON.stringify({ type: 'hello', name: senderName }))
         channels.opened(peerId)
+        attachments.opened(peerId)
         whispers.opened(peerId, session)
         session.send(nodeLine())
         // Always send the own presence, also when it is 'available'.
@@ -726,6 +740,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 election.sessionClosed(peerId)
                 topic.sessionClosed(peerId)
                 channels.closed(peerId)
+                attachments.closed(peerId)
                 files.peerLeft(peerId)
                 links.delete(peerId)
                 broadcastLinks()
@@ -762,6 +777,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         voiceRelay.handleDirect(data)
     }, { runOnTransientConnection: true })
 
+    await node.handle(PREVIEW_PROTOCOL, attachments.handlePreview, { runOnTransientConnection: true, maxInboundStreams: 2, maxOutboundStreams: 2 })
     await node.handle(FILE_PROTOCOL, data => files.handleStream(data), { runOnTransientConnection: true })
 
     // In a keyed room, answer a dial-back only for a peer with an open session. The proof of the peer can
@@ -1359,7 +1375,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     // synchronous step so Clear can remove these rows even while the network is still starting.
     const initialHistory = typeof seedHistory === 'function' ? seedHistory(removeHistory) : seedHistory
     if (Array.isArray(initialHistory)) {
-        for (const m of initialHistory) if (validHistoryItem(m)) history.add(m)
+        for (const m of initialHistory) if (validHistoryItem(m)) history.add(attachments.remember({ ...m }))
     }
     await node.start()
     // Not awaited: the UPnP task must not slow down or stop the start. The TCP listener is bound now.
@@ -1391,14 +1407,15 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     // accepted is the number of sessions that accepted the line. The wire line has no accepted field.
     // A line that no session accepted stays local: it does not go in the history, thus no host replay sends it
     // (milestone 6, plan section 6 part 2).
-    function sendRecord(text, channelId = 'general') {
+    function sendRecord(text, channelId = 'general', attachment = null) {
         const message = { id: randomUUID(), from: senderName, text, time: Date.now() }
         if (typeof text !== 'string') throw new TypeError('Message text must be a string')
         if (!validHistoryItem(message)) throw new RangeError(`Message and sender name exceed ${MAX_MESSAGE_BYTES} UTF-8 bytes`)
         const named = channelId !== 'general'
-        if (named && (!channels.known(channelId) || !channels.view().available))
+        if (named && (!channels.known(channelId) || !channels.available()))
             throw new Error('This channel is read-only until a compatible host is connected.')
         if (named) message.channelId = channelId
+        if (attachment) attachments.remember(Object.assign(message, { attachment }), node.peerId.toString())
         const line = JSON.stringify(named ? { type: 'channel-post', v: 1, message } : message)
         let count = 0
         for (const [peerId, session] of sessions) if ((!named || channels.capable(peerId)) && session.send(line)) count++
@@ -1441,6 +1458,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         whisperPeers: whispers.peers,
         sendWhisper: whispers.send,
         channels: channels.view, createChannel: channels.create,
+        postAttachment: attachments.post, requestOriginal: attachments.requestOriginal, requestPreviewById: attachments.requestPreviewById,
+        attachmentAvailable: attachments.available, attachmentDescriptor: attachments.descriptor,
         sendRecord,
         setTyping: active => { if (!stopped && !selfIdle && typeof active === 'boolean') typing.edited(active) },
         // Returns the number of sessions that accepted the line.
@@ -1529,6 +1548,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             waitingDial.clear()
             if (relayDialTimer) clearTimeout(relayDialTimer)
             if (settleTimer) clearTimeout(settleTimer)
+            attachments.stop()
             await files.stop()
             election.stop()
             voiceRelay.stop()

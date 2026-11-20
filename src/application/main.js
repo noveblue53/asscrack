@@ -1,4 +1,6 @@
-import { app, BrowserWindow, Menu, Notification, Tray, powerMonitor, clipboard, dialog, ipcMain, safeStorage, session, shell } from 'electron';
+import { app, BrowserWindow, Menu, Notification, nativeImage, protocol, Tray, screen, powerMonitor, clipboard, dialog, ipcMain, safeStorage, session, shell } from 'electron';
+import { createRoomMedia } from './room-media.mjs';
+import { createClipboardStaging } from './clipboard-image.mjs';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { createRequire } from 'module';
 import path from 'path';
@@ -14,12 +16,16 @@ import * as voiceSettings from './voice-settings.mjs';
 import { attentionSettings, createAttention, registerNotificationShortcut, WINDOWS_APP_ID, WINDOWS_TOAST_ID } from './attention.mjs';
 import { createPttHook } from './ptt-hook.mjs';
 import { createWindowFrame } from './window-frame.mjs';
+import { attachVoiceMonitor } from './voice-monitor.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const require = createRequire(import.meta.url);
 
 Menu.setApplicationMenu(null);
+protocol.registerSchemesAsPrivileged([{ scheme: 'room-media', privileges: {
+    standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true
+} }]);
 if (process.platform === 'win32') {
     app.setAppUserModelId(WINDOWS_APP_ID);
     app.setToastActivatorCLSID(WINDOWS_TOAST_ID);
@@ -190,11 +196,28 @@ function setPermissions() {
 }
 
 let mainWindow = null;
+let voiceMonitor = null;
 let node = null;
 let readRoomActivity = () => [];
 // The files that this computer received: `${offerId}|${peerId}` -> the final path (after a rename for a name
 // collision). Only a file-done event with the direction receive adds a path. The window sends only the key.
+const clipboardImages = createClipboardStaging(app.getPath('temp'));
 const receivedFiles = new Map();
+const roomMedia = createRoomMedia({ nativeImage, changed: id => sendToWindow('asscrack:media-changed', id) });
+let mediaGeneration = 0;
+function clearRoomMedia() { mediaGeneration++; roomMedia.clear(); }
+ipcMain.handle('asscrack:media-clear-previews', () => { mediaGeneration++; roomMedia.clearPreviews(); });
+ipcMain.handle('asscrack:media-info', (_event, ref) => node ? roomMedia.info(ref) : {});
+ipcMain.handle('asscrack:media-preview', async (_event, id) => {
+    if (!node?.attachmentDescriptor(id)) return {};
+    const version = mediaGeneration;
+    if (!roomMedia.info(id).thumbnailUrl) {
+        const result = await node.requestPreviewById(id);
+        if (version !== mediaGeneration) return {};
+        if (result) roomMedia.storePreview(result.descriptor, result.bytes);
+    }
+    return roomMedia.info(id);
+});
 const MAX_RECEIVED_KEY = 300;
 let loginStarted = false;
 let stopping = false;
@@ -282,6 +305,7 @@ function enterIdlePeer() {
     }
     if (!idlePeer) {
         idlePeer = true;
+        voiceMonitor?.dismiss();
         attention.clear();
         node.setIdle(true);
         updatePttHook(() => pttHook.setInVoice(false));
@@ -322,6 +346,11 @@ function createMainWindow() {
     });
 
     frame.attach(mainWindow, ipcMain);
+    voiceMonitor = attachVoiceMonitor({
+        room: mainWindow, ipc: ipcMain, BrowserWindow, screen, profile: app.getPath('userData'), assets: __dirname,
+        participating: () => !!node && !idlePeer && !quitting && !mainWindow.isDestroyed(),
+        restoreRoom: restoreRoomWindow, warn: message => writeLog('WARN', message)
+    });
     const startUrl = new URL(`file://${path.join(__dirname, 'index.html')}`).href;
 
     mainWindow.webContents.on('console-message', details => {
@@ -415,6 +444,7 @@ async function startRoom(options, publicAddress) {
                 writeLog('INFO', `Saved UPnP port ${savedPort} used for this room`);
             }
         }
+        options.previewProvider = (descriptor, filePath) => roomMedia.makePreview(filePath, descriptor);
         options.receiveWhisper = message => {
             if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isCrashed()) return false;
             sendToWindow('asscrack:whisper', message);
@@ -444,9 +474,14 @@ async function startRoom(options, publicAddress) {
         throw err;
     }
     // Record the path before the window gets the event, so that a Show in Explorer at once finds it.
+    node.events.on('attachment-status', data => sendToWindow('asscrack:attachment-status', data));
     node.events.on('file-done', data => {
         if (data?.direction !== 'receive' || typeof data.path !== 'string') return;
         receivedFiles.set(`${data.offerId}|${data.peerId}`, data.path);
+        const descriptor = node.attachmentDescriptor(data.attachmentId);
+        if (descriptor && descriptor.source === data.peerId && descriptor.sha256 === data.sha256 && descriptor.size === data.size) {
+            Promise.resolve(roomMedia.verified(descriptor, data.path)).catch(err => writeLog('WARN', `Verified file preview unavailable: ${err.message}`));
+        }
     });
     // Saved rooms (milestone 6): the archive listener comes before the window listener.
     getSavedRooms().attachNode(node);
@@ -553,7 +588,7 @@ ipcMain.handle('asscrack:saved-room-lines', (_event, roomId, opts) => {
         return getSavedRooms().lines(roomId, { before, limit: before ? 100 : 200, channelId });
     } catch (err) {
         writeLog('WARN', `Saved lines not read: ${err?.message ?? err}`);
-        return [];
+        throw new Error('Could not read this page from the saved room.');
     }
 });
 
@@ -593,7 +628,9 @@ ipcMain.handle('asscrack:clear-history', (_event, roomId) => {
 
 ipcMain.handle('asscrack:forget-room', (_event, roomId) => {
     if (!validRoomId(roomId)) throw new Error('Saved room not found');
+    const active = getSavedRooms().activeInfo()?.roomId === roomId;
     const result = getSavedRooms().forget(roomId);
+    if (active) clearRoomMedia();
     writeLog('INFO', 'Saved room forgotten');
     return result;
 });
@@ -631,6 +668,10 @@ ipcMain.handle('asscrack:send', (_event, text, channelId) => {
     if (!node) throw new Error('Not logged in');
     // Saved rooms (milestone 6): the window gets the record. An archive error does not stop the send.
     const record = node.sendRecord(text, channelId);
+    return archiveSend(record);
+});
+
+function archiveSend(record) {
     let save = { saved: false, saveError: null };
     try {
         const result = savedRooms?.recordSend(record);
@@ -640,7 +681,7 @@ ipcMain.handle('asscrack:send', (_event, text, channelId) => {
         save = { saved: false, saveError: String(err?.message ?? err) };
     }
     return { ...record, ...save };
-});
+}
 
 ipcMain.handle('asscrack:signal', (_event, { peerId, data } = {}) => {
     if (!node) throw new Error('Not logged in');
@@ -774,6 +815,32 @@ ipcMain.handle('asscrack:offer-file', (_event, filePath, recipientId) => {
     return result;
 });
 
+// Clipboard IPC accepts bounded PNG bytes only. Path-backed originals use Electron's native File path.
+ipcMain.handle('asscrack:post-media', async (_event, input, caption, channelId, recipientId) => {
+    if (!node) throw new Error('Not logged in');
+    const staged = input instanceof Uint8Array;
+    const filePath = staged ? clipboardImages.stage(input) : input;
+    try {
+        if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) throw new Error('A local file is required');
+        if (recipientId !== undefined) {
+            const offer = await node.offerFile(filePath, recipientId);
+            return { offer };
+        }
+        const { message, offer } = await node.postAttachment(filePath, caption, channelId);
+        if (offer.peers) {
+            if (staged) clipboardImages.retain(filePath, message.attachment.expires);
+            Promise.resolve(roomMedia.verified(message.attachment, filePath)).catch(err => writeLog('WARN', `Original preview unavailable: ${err.message}`));
+        } else if (staged) clipboardImages.discard(filePath);
+        return { message: archiveSend(message), offer };
+    } catch (err) {
+        if (staged) clipboardImages.discard(filePath);
+        throw err;
+    }
+});
+
+ipcMain.handle('asscrack:attachment-available', (_event, id) => node?.attachmentAvailable(id) === true);
+ipcMain.handle('asscrack:request-original', (_event, id) => node?.requestOriginal(id) === true);
+
 ipcMain.handle('asscrack:accept-file', (_event, offerId) => {
     if (!node) throw new Error('Not logged in');
     logAction('accept-file', String(offerId));
@@ -815,7 +882,9 @@ ipcMain.handle('asscrack:reveal-file', (_event, key) => {
 
 app.on('before-quit', event => {
     quitting = true;
+    voiceMonitor?.dismiss();
     attention.clear();
+    clearRoomMedia();
     tray?.destroy();
     tray = null;
     pttHook.stop();
@@ -838,6 +907,7 @@ app.on('before-quit', event => {
         timeout
     ]).finally(() => {
         clearTimeout(timer);
+        clipboardImages.clear();
         node = null;
         app.exit(0);
     });
@@ -852,6 +922,7 @@ if (singleInstance && isFirstInstance) {
 app.whenReady().then(() => {
     if (!isFirstInstance) return;
     powerMonitor.on('resume', () => node?.refreshRoutes());
+    protocol.handle('room-media', request => roomMedia.serve(request));
     setPermissions();
     pttHook.configure(currentVoiceSettings());
     if (attentionPrefs.get().alerts && process.platform === 'win32' && app.isPackaged) {

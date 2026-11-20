@@ -623,6 +623,8 @@
         else if (item.id === 'view-idle') window.idlePeer?.enter();
         else if (item.id === 'view-close-idle') window.idlePeer?.toggleClose();
         else if (item.id === 'view-quit') window.asscrack.quit();
+        else if (item.id === 'view-clear-previews') void window.chatMedia?.clearPreviews();
+        else if (item.id === 'view-previews') window.chatMedia?.toggleAuto();
         else if (item.id === 'view-attention') window.roomAttention?.openSettings();
         else if (item.id === 'view-typing') window.typingUi?.toggleShare();
         else if (item === items.side) setPref({ buddySide: pref.buddySide === 'left' ? 'right' : 'left' });

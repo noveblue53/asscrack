@@ -44,6 +44,8 @@
         const old = state(selected);
         old.draft = messageInput.value;
         old.quote = pendingQuote;
+        old.file = pendingFile;
+        old.fileRecipient = fileRecipient.value;
         old.reading = window.reading.leaveChannel();
         old.older = messageList.dataset.older;
         old.list.replaceChildren(...messageList.children);
@@ -52,6 +54,9 @@
         messageList.replaceChildren(...next.list.children);
         messageInput.value = next.draft;
         setQuote(next.quote);
+        pendingFile = next.file ?? null;
+        refreshFileRecipients(next.fileRecipient ?? 'room');
+        updateFileDraft();
         next.missed = 0;
         messageList.dataset.older = next.older || 'none';
         window.reading.enterChannel(next.reading);
@@ -69,7 +74,9 @@
         e.preventDefault();
         try {
             const id = await window.asscrack.createChannel(nameInput.value);
-            update(await window.asscrack.getChannels());
+            const version = revision;
+            const snapshot = await window.asscrack.getChannels();
+            if (version === revision) update(snapshot);
             dialog.close();
             open(id);
             messageInput.focus();
@@ -92,6 +99,10 @@
         },
         storedLists: () => [...states.values()].map(s => s.list),
         missed(id = 'general') { if (id !== selected) { state(id).missed++; refresh(); } },
+        fileSent(id, file) {
+            const s = state(id);
+            if (s.file === file) s.file = null;
+        },
         sent(id, draft, quote) {
             if (id === selected) return;
             const s = state(id);

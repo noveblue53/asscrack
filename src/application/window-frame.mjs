@@ -2,6 +2,13 @@
 import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 import path from 'node:path';
 
+function overlayColor(value) {
+    if (typeof value !== 'string') return null;
+    if (/^#[\da-f]{6}$/i.test(value)) return value;
+    if (/^#[\da-f]{3}$/i.test(value)) return '#' + [...value.slice(1)].map(digit => digit + digit).join('');
+    return null;
+}
+
 export function createWindowFrame(profile, platform = process.platform) {
     const file = path.join(profile, 'window-frame.json');
     let systemButtons = false;
@@ -34,9 +41,11 @@ export function createWindowFrame(profile, platform = process.platform) {
                 systemButtons = enabled;
                 return state();
             },
-            colors(color, ink) {
-                if (mode === 'overlay' && [color, ink].every(v => typeof v === 'string' && /^#[\da-f]{6}$/i.test(v))) {
-                    win.setTitleBarOverlay({ color, symbolColor: ink, height: 36 });
+            colors(frameColor, ink) {
+                const color = overlayColor(frameColor);
+                const symbolColor = overlayColor(ink);
+                if (mode === 'overlay' && color && symbolColor) {
+                    win.setTitleBarOverlay({ color, symbolColor, height: 36 });
                 }
             }
         };
