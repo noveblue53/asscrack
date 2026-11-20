@@ -47,9 +47,11 @@ function verifyCurrentUserDpapi(localState) {
 
 function verifyDifferentUserDpapi(files) {
     const script = path.join(__dirname, 'windows-foreign-account-dpapi.ps1');
+    // The workflow runs PowerShell 7, while the native account fixture uses Windows PowerShell.
+    const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => name.toLowerCase() !== 'psmodulepath'));
     const result = spawnSync('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-File', script,
         '-LocalState', files.localState, '-Database', files.database, '-Wrapper', files.wrapper], {
-        windowsHide: true, encoding: 'utf8', timeout: 90_000
+        env, windowsHide: true, encoding: 'utf8', timeout: 90_000
     });
     assert.equal(result.status, 0, 'alternate account DPAPI verification did not complete');
     const evidence = JSON.parse(result.stdout);

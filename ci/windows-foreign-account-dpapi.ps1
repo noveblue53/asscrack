@@ -6,6 +6,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+$env:PSModulePath = (Join-Path $PSHOME 'Modules') + ';' + $env:PSModulePath
 $owner = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = [Security.Principal.WindowsPrincipal]::new($owner)
 if (!$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -34,6 +35,7 @@ function Get-ErrorFacts($record) {
 
 $workerCode = @'
 $ErrorActionPreference = 'Stop'
+$env:PSModulePath = (Join-Path $PSHOME 'Modules') + ';' + $env:PSModulePath
 try {
     $fixture = Get-Content -LiteralPath (Join-Path $directory 'fixture.json') -Raw | ConvertFrom-Json
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
