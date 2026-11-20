@@ -7,6 +7,41 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased — three fixes from the 0.7.0 internet test
+
+The November 20 field test used the packaged 0.7.0 executable on three Windows computers. PC accepted
+incoming TCP through UPnP. Brother and Laptop each connected directly to PC and used PC as their relay
+to reach one another. Times below are UTC. The fixes are on `fix/0.7.0-internet-faults`, based on `de54371`.
+
+| Fault | Evidence from the 0.7.0 field test | Change for review |
+|---|---|---|
+| Host election | Laptop lost its last session at 02:18:17 and claimed host at 02:18:20.874. Brother accepted at 02:18:22.795 and PC at 02:18:22.930. PC regained the role at 02:19:01.688. | A member that loses its last session clears its host and waits. After reconnect it gives the group time to announce its incumbent. Host ranking, term comparison and the three-field host message stay compatible with 0.6.0 and 0.7.0. An isolated legacy member can still originate a higher term. |
+| UPnP lease | PC logged the initial mapping on port 55247 at 02:01:46. The field log gives no lease-expiry measurement. The low-level mapper defaults to 1,800 seconds, but the locked 0.7.0 wrapper supplied 7,200 seconds and scheduled its own refresh after 6,600 seconds. | The app requests 1,800 seconds, refreshes the same TCP mapping after 900 seconds, logs one `upnp renew-failed` line per failed attempt and retries. It disables the library timer, stops its own timer on shutdown and unmaps the port. |
+| File delivery | For offer `bee7169b…`, PC logged sender `file-done` at 02:18:12.509. Laptop logged receiver `file-failed` with “stream ended” at 02:18:17.631. | An upgraded receiver advertises receipt support with `ack: 1` and confirms on chat after size and SHA-256 checks and the final save. Only then does the sender display **Delivered**. A failed transfer, lost session or 30-second receipt timeout displays **Failed**. An old receiver still gets the file and the sender displays **Sent (delivery unconfirmed)**. |
+
+**127.0.0.1 results** on one Linux computer with Node 24.22.3. The test harness supplied loopback interface metadata
+because the environment denies netlink enumeration. The fake-router suite also modeled a non-internal IPv4 interface
+on that same loopback address. TCP, mDNS and fake-router HTTP traffic stayed on the computer.
+
+- Against `de54371`, all seven new tests and both strengthened file-transfer checks failed. The same nine passed on the branch.
+  The three-node regression cut Laptop's TCP and relay connections, waited past the host timeout and verified that it rejoined
+  PC at the original term. The fake IGD saw the same ports and lease on retry after a failure, an unmap, and zero later map calls.
+  Cutting the receiver's connection with unread bytes buffered produced sender failure. The tests also cover hash rejection,
+  a missing receipt, a verified 50 MiB transfer, a legacy request and the window labels.
+- A mixed room with 0.6.0 as full host, a 0.7.0 member and an updated member kept the host at term 1 across the updated member's
+  disconnect and rejoin. File contents and subsequent chat were verified in both directions against both legacy source versions.
+- The two terminal demos started with `--room t` and names `a` and `b`, discovered each other on loopback and exchanged one
+  line in each direction.
+- Four full `npm test` runs each passed 274 of 275 checks, including one run from a clean checkout. Each failure was
+  `ERR_TOO_MANY_OUTBOUND_PROTOCOL_STREAMS` in `test/voice-direct.test.mjs`. Rerunning that file alone after each run
+  gave 1/2, 2/2, 2/2 and 2/2, in order. Its test and stream limits are unchanged.
+- `npm start` opened the login window with Electron 40.5.0 and exited normally after it closed. The developer console and app
+  log had zero errors. The terminal showed four Linux environment errors involving the netlink socket, the udev monitor and two
+  denied socket calls. The clean-terminal check remains open.
+
+Windows 10 startup and the packaged executable remain unverified for this branch. The operator deferred LAN and internet
+retesting, including failover on separate networks and renewal on a physical router.
+
 ## 0.7.0 (2026-11-20): portable build for a field test
 
 File: `dist/ASSCRACK-0.7.0-portable.exe`, SHA-256 `ffae5423607ef2271c89719059742147ae064007ca22fa71d00632efaeb02034`. The test card is "Internet test card 8 (0.7.0)" in
