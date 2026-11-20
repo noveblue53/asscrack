@@ -1,0 +1,48 @@
+dbus-daemon[8211]: [session uid=0 pid=8211] org.freedesktop.DBus.Error.AccessDenied: Failed to set fd limit to 65536: Operation not permitted
+RESULT {
+  "result": {
+    "bBadgesBefore": [
+      "Available",
+      "Available"
+    ],
+    "bBadgesAfter": [
+      [
+        "Available",
+        "Available"
+      ],
+      [
+        "Away: back at 9",
+        "Away: back at 9"
+      ]
+    ],
+    "pass": true
+  },
+  "terminal": {
+    "A": [
+      "conn session peer=12D3KooWKmJiPnzPRAVc8ifFVgBDx2U6qboFaKMDdFR9V8nKsLW3 type=direct dir=in addr=/ip4/127.0.0.1/tcp/48810/p2p/12D3KooWKmJiPnzPRAVc8ifFVgBDx2U6qboFaKMDdFR9V8nKsLW3",
+      "Dial-back from 12D3KooWKmJiPnzPRAVc8ifFVgBDx2U6qboFaKMDdFR9V8nKsLW3: ok, IP 127.0.0.1, full node false",
+      "Debugger ending on ws://127.0.0.1:34461/56acc955-90e4-4ee2-8d19-c432594eeec2",
+      "For help, see: https://nodejs.org/en/docs/inspector",
+      "conn closed peer=12D3KooWKmJiPnzPRAVc8ifFVgBDx2U6qboFaKMDdFR9V8nKsLW3 type=direct secs=1.4"
+    ],
+    "B": [
+      "conn session peer=12D3KooWPvssBX1dJ8DYtDZNZYgG8aXi7tCRhV4kxaVpoT6Vi2zp type=direct dir=out addr=/ip4/127.0.0.1/tcp/33239/p2p/12D3KooWPvssBX1dJ8DYtDZNZYgG8aXi7tCRhV4kxaVpoT6Vi2zp",
+      "Dial-back from 12D3KooWPvssBX1dJ8DYtDZNZYgG8aXi7tCRhV4kxaVpoT6Vi2zp: ok, IP 127.0.0.1, full node false",
+      "conn closed peer=12D3KooWPvssBX1dJ8DYtDZNZYgG8aXi7tCRhV4kxaVpoT6Vi2zp type=direct secs=1.4",
+      "Debugger ending on ws://127.0.0.1:44965/4c7021e2-5991-4b75-a124-d15f9d6be989",
+      "For help, see: https://nodejs.org/en/docs/inspector"
+    ]
+  },
+  "console": {
+    "A": [
+      "log: peer-discovered {peerId: 12D3KooWKmJiPnzPRAVc8ifFVgBDx2U6qboFaKMDdFR9V8nKsLW3, addresses: Array(2)}"
+    ],
+    "B": [
+      "log: peer-discovered {peerId: 12D3KooWPvssBX1dJ8DYtDZNZYgG8aXi7tCRhV4kxaVpoT6Vi2zp, addresses: Array(2)}"
+    ]
+  },
+  "pageErrors": {
+    "A": [],
+    "B": []
+  }
+}

@@ -1,0 +1,165 @@
+dbus-daemon[5469]: [session uid=0 pid=5469] org.freedesktop.DBus.Error.AccessDenied: Failed to set fd limit to 65536: Operation not permitted
+{
+  "network": "127.0.0.1 (cloud VM, not LAN)",
+  "profiles": "/tmp/p2-ylp6kG",
+  "checks": {
+    "1 H makes room, M joins, session": {
+      "result": "pass",
+      "detail": ""
+    },
+    "2 250 lines, each one time on each copy": {
+      "result": "pass",
+      "detail": {
+        "M": {
+          "li": 250,
+          "missing": [],
+          "missingN": 0,
+          "dup": []
+        },
+        "H": {
+          "li": 250,
+          "missing": [],
+          "missingN": 0,
+          "dup": []
+        }
+      }
+    },
+    "3 M each line gets class saved": {
+      "result": "pass",
+      "detail": {
+        "liSaved": 250,
+        "timedOut": false
+      }
+    },
+    "4a reopen shows 200 lines, data-older=more": {
+      "result": "pass",
+      "detail": {
+        "li": 200,
+        "older": "more"
+      }
+    },
+    "4b scroll to top loads 50, first visible line stays": {
+      "result": "pass",
+      "detail": {
+        "beforeScroll": "hanah122 from hana20:36Quote",
+        "firstVisibleBeforeLoad": "mikam025 from mika20:36Quote",
+        "offsetBefore": -18,
+        "offsetAfter": -27,
+        "firstVisibleAfterLoad": "mikam025 from mika20:36Quote",
+        "added": 50
+      }
+    },
+    "4c all pages: 250 lines each one time, data-older=none": {
+      "result": "pass",
+      "detail": {
+        "li": 250,
+        "missingN": 0,
+        "dup": [],
+        "older": "none"
+      }
+    },
+    "5 alone-1 is local-only, not saved": {
+      "result": "pass",
+      "detail": {
+        "local": true,
+        "saved": false,
+        "mark": "Only on this computer",
+        "markVisible": true
+      }
+    },
+    "6a uncheck keep history, state text": {
+      "result": "pass",
+      "detail": ""
+    },
+    "6b after reopen keep history is off": {
+      "result": "pass",
+      "detail": {
+        "checked": false
+      }
+    },
+    "6c H reopens, session, off-1 then on-1": {
+      "result": "pass",
+      "detail": ""
+    },
+    "6d reopen: on-1 shows, off-1 does not": {
+      "result": "pass",
+      "detail": {
+        "on1": true,
+        "off1": false
+      }
+    },
+    "7a clear confirm visible with text, Cancel keeps lines": {
+      "result": "pass",
+      "detail": {
+        "textOk": true,
+        "li": [
+          200,
+          200
+        ]
+      }
+    },
+    "7b clear yes": {
+      "result": "pass",
+      "detail": ""
+    },
+    "7c reopen after clear: 0 lines, keep history on": {
+      "result": "pass",
+      "detail": {
+        "li": 0,
+        "keepHistory": true
+      }
+    },
+    "8a forget then cancel keeps room": {
+      "result": "pass",
+      "detail": {
+        "rooms": 1
+      }
+    },
+    "8b forget yes removes room": {
+      "result": "pass",
+      "detail": ""
+    },
+    "8c H still has room, reopen shows lines": {
+      "result": "pass",
+      "detail": {
+        "li": 200
+      }
+    },
+    "9 no Electron process stays at end": {
+      "result": "pass",
+      "detail": ""
+    }
+  },
+  "errorLines": [
+    "M2 term: conn dial-failed peer=12D3KooW9rSmYcAhjPmvJVp6hr943B8UMPVzCH2HVngDtVKQtzVE via=full-node reason=refused addr=/ip4/127.0.0.1/tcp/41870/p2p/12D3KooW9rSmYcAhjPmvJVp6hr943B8UMPVzCH2HVngDtVKQtzVE error=\"connection error 127.0.0.1:41870: connect ECONNREFUSED 127.0.0.1:41870\"",
+    "M2 term: conn dial-failed peer=? via=address reason=refused addr=/ip4/127.0.0.1/tcp/41870 error=\"connection error 127.0.0.1:41870: connect ECONNREFUSED 127.0.0.1:41870\"",
+    "M3 term: conn dial-failed peer=12D3KooW9rSmYcAhjPmvJVp6hr943B8UMPVzCH2HVngDtVKQtzVE via=full-node reason=refused addr=/ip4/127.0.0.1/tcp/41870/p2p/12D3KooW9rSmYcAhjPmvJVp6hr943B8UMPVzCH2HVngDtVKQtzVE error=\"connection error 127.0.0.1:41870: connect ECONNREFUSED 127.0.0.1:41870\"",
+    "M3 term: conn dial-failed peer=? via=address reason=refused addr=/ip4/127.0.0.1/tcp/41870 error=\"connection error 127.0.0.1:41870: connect ECONNREFUSED 127.0.0.1:41870\"",
+    "M3 term: conn dial-failed peer=12D3KooW9rSmYcAhjPmvJVp6hr943B8UMPVzCH2HVngDtVKQtzVE via=full-node reason=other addr=/ip4/127.0.0.1/tcp/41870/p2p/12D3KooW9rSmYcAhjPmvJVp6hr943B8UMPVzCH2HVngDtVKQtzVE error=\"Error occurred during XX handshake: Error occurred while verifying signed payload: Payload identity key 12D3KooWNoZ3gjKNyuzdp9n8HDkf6z4yxGfXkrnTbq481tgGrqyq does not match expected remote peer 12D3Koo\"",
+    "M3 term: conn dial-failed peer=? via=address reason=other addr=/ip4/127.0.0.1/tcp/41870 error=\"not valid Id\"",
+    "M4 term: conn dial-failed peer=12D3KooW9rSmYcAhjPmvJVp6hr943B8UMPVzCH2HVngDtVKQtzVE via=full-node reason=refused addr=/ip4/127.0.0.1/tcp/41870/p2p/12D3KooW9rSmYcAhjPmvJVp6hr943B8UMPVzCH2HVngDtVKQtzVE error=\"connection error 127.0.0.1:41870: connect ECONNREFUSED 127.0.0.1:41870\"",
+    "M4 term: conn dial-failed peer=? via=address reason=refused addr=/ip4/127.0.0.1/tcp/41870 error=\"connection error 127.0.0.1:41870: connect ECONNREFUSED 127.0.0.1:41870\"",
+    "M5 term: conn dial-failed peer=12D3KooW9rSmYcAhjPmvJVp6hr943B8UMPVzCH2HVngDtVKQtzVE via=full-node reason=refused addr=/ip4/127.0.0.1/tcp/41870/p2p/12D3KooW9rSmYcAhjPmvJVp6hr943B8UMPVzCH2HVngDtVKQtzVE error=\"connection error 127.0.0.1:41870: connect ECONNREFUSED 127.0.0.1:41870\"",
+    "M5 term: conn dial-failed peer=? via=address reason=refused addr=/ip4/127.0.0.1/tcp/41870 error=\"connection error 127.0.0.1:41870: connect ECONNREFUSED 127.0.0.1:41870\"",
+    "M2 log: 2026-11-19T20:36:57.392Z WARN conn dial-failed peer=12D3KooW9rSmYcAhjPmvJVp6hr943B8UMPVzCH2HVngDtVKQtzVE via=full-node reason=refused addr=/ip4/127.0.0.1/tcp/41870/p2p/12D3KooW9rSmYcAhjPmvJVp6hr943B8UMPVzCH2HVngDtVKQtzVE error=\"connection error 127.0.0.1:41870: connect ECONNREFUSED 127.0.0.1:41870\"",
+    "M2 log: 2026-11-19T20:36:57.392Z EVENT event dial-failed peer \"12D3KooW9rSmYcAhjPmvJVp6hr943B8UMPVzCH2HVngDtVKQtzVE\" via \"full-node\" reason \"refused\" addr \"/ip4/127.0.0.1/tcp/41870/p2p/12D3KooW9rSmYcAhjPmvJVp6hr943B8UMPVzCH2HVngDtVKQtzVE\" error \"connection error 127.0.0.1:41870: connect ECONNREFUSED 127.0.0.1:41870\"",
+    "M2 log: 2026-11-19T20:36:57.396Z WARN conn dial-failed peer=? via=address reason=refused addr=/ip4/127.0.0.1/tcp/41870 error=\"connection error 127.0.0.1:41870: connect ECONNREFUSED 127.0.0.1:41870\"",
+    "M2 log: 2026-11-19T20:36:57.396Z EVENT event dial-failed peer \"?\" via \"address\" reason \"refused\" addr \"/ip4/127.0.0.1/tcp/41870\" error \"connection error 127.0.0.1:41870: connect ECONNREFUSED 127.0.0.1:41870\"",
+    "M3 log: 2026-11-19T20:37:01.685Z WARN conn dial-failed peer=12D3KooW9rSmYcAhjPmvJVp6hr943B8UMPVzCH2HVngDtVKQtzVE via=full-node reason=refused addr=/ip4/127.0.0.1/tcp/41870/p2p/12D3KooW9rSmYcAhjPmvJVp6hr943B8UMPVzCH2HVngDtVKQtzVE error=\"connection error 127.0.0.1:41870: connect ECONNREFUSED 127.0.0.1:41870\"",
+    "M3 log: 2026-11-19T20:37:01.685Z EVENT event dial-failed peer \"12D3KooW9rSmYcAhjPmvJVp6hr943B8UMPVzCH2HVngDtVKQtzVE\" via \"full-node\" reason \"refused\" addr \"/ip4/127.0.0.1/tcp/41870/p2p/12D3KooW9rSmYcAhjPmvJVp6hr943B8UMPVzCH2HVngDtVKQtzVE\" error \"connection error 127.0.0.1:41870: connect ECONNREFUSED 127.0.0.1:41870\"",
+    "M3 log: 2026-11-19T20:37:01.689Z WARN conn dial-failed peer=? via=address reason=refused addr=/ip4/127.0.0.1/tcp/41870 error=\"connection error 127.0.0.1:41870: connect ECONNREFUSED 127.0.0.1:41870\"",
+    "M3 log: 2026-11-19T20:37:01.689Z EVENT event dial-failed peer \"?\" via \"address\" reason \"refused\" addr \"/ip4/127.0.0.1/tcp/41870\" error \"connection error 127.0.0.1:41870: connect ECONNREFUSED 127.0.0.1:41870\"",
+    "M3 log: 2026-11-19T20:37:06.691Z WARN conn dial-failed peer=12D3KooW9rSmYcAhjPmvJVp6hr943B8UMPVzCH2HVngDtVKQtzVE via=full-node reason=other addr=/ip4/127.0.0.1/tcp/41870/p2p/12D3KooW9rSmYcAhjPmvJVp6hr943B8UMPVzCH2HVngDtVKQtzVE error=\"Error occurred during XX handshake: Error occurred while verifying signed payload: Payload identity key 12D3KooWNoZ3gjKNyuzdp9n8HDkf6z4yxGfXkrnTbq481tgGrqyq does not match expected remote peer 12D3Koo\"",
+    "M3 log: 2026-11-19T20:37:06.691Z EVENT event dial-failed peer \"12D3KooW9rSmYcAhjPmvJVp6hr943B8UMPVzCH2HVngDtVKQtzVE\" via \"full-node\" reason \"other\" addr \"/ip4/127.0.0.1/tcp/41870/p2p/12D3KooW9rSmYcAhjPmvJVp6hr943B8UMPVzCH2HVngDtVKQtzVE\" error \"Error occurred during XX handshake: Error occurred while verifying signed payload: Payload identity key 12D3KooWNoZ3gjKNyuzdp9n8HDkf6z4yxGfXkrnTbq481tgGrqyq does not match expected remote peer 12D3Koo\"",
+    "M3 log: 2026-11-19T20:37:06.691Z WARN conn dial-failed peer=? via=address reason=other addr=/ip4/127.0.0.1/tcp/41870 error=\"not valid Id\"",
+    "M3 log: 2026-11-19T20:37:06.692Z EVENT event dial-failed peer \"?\" via \"address\" reason \"other\" addr \"/ip4/127.0.0.1/tcp/41870\" error \"not valid Id\"",
+    "M4 log: 2026-11-19T20:37:08.537Z WARN conn dial-failed peer=12D3KooW9rSmYcAhjPmvJVp6hr943B8UMPVzCH2HVngDtVKQtzVE via=full-node reason=refused addr=/ip4/127.0.0.1/tcp/41870/p2p/12D3KooW9rSmYcAhjPmvJVp6hr943B8UMPVzCH2HVngDtVKQtzVE error=\"connection error 127.0.0.1:41870: connect ECONNREFUSED 127.0.0.1:41870\"",
+    "M4 log: 2026-11-19T20:37:08.537Z EVENT event dial-failed peer \"12D3KooW9rSmYcAhjPmvJVp6hr943B8UMPVzCH2HVngDtVKQtzVE\" via \"full-node\" reason \"refused\" addr \"/ip4/127.0.0.1/tcp/41870/p2p/12D3KooW9rSmYcAhjPmvJVp6hr943B8UMPVzCH2HVngDtVKQtzVE\" error \"connection error 127.0.0.1:41870: connect ECONNREFUSED 127.0.0.1:41870\"",
+    "M4 log: 2026-11-19T20:37:08.541Z WARN conn dial-failed peer=? via=address reason=refused addr=/ip4/127.0.0.1/tcp/41870 error=\"connection error 127.0.0.1:41870: connect ECONNREFUSED 127.0.0.1:41870\"",
+    "M4 log: 2026-11-19T20:37:08.541Z EVENT event dial-failed peer \"?\" via \"address\" reason \"refused\" addr \"/ip4/127.0.0.1/tcp/41870\" error \"connection error 127.0.0.1:41870: connect ECONNREFUSED 127.0.0.1:41870\"",
+    "M5 log: 2026-11-19T20:37:12.788Z WARN conn dial-failed peer=12D3KooW9rSmYcAhjPmvJVp6hr943B8UMPVzCH2HVngDtVKQtzVE via=full-node reason=refused addr=/ip4/127.0.0.1/tcp/41870/p2p/12D3KooW9rSmYcAhjPmvJVp6hr943B8UMPVzCH2HVngDtVKQtzVE error=\"connection error 127.0.0.1:41870: connect ECONNREFUSED 127.0.0.1:41870\"",
+    "M5 log: 2026-11-19T20:37:12.788Z EVENT event dial-failed peer \"12D3KooW9rSmYcAhjPmvJVp6hr943B8UMPVzCH2HVngDtVKQtzVE\" via \"full-node\" reason \"refused\" addr \"/ip4/127.0.0.1/tcp/41870/p2p/12D3KooW9rSmYcAhjPmvJVp6hr943B8UMPVzCH2HVngDtVKQtzVE\" error \"connection error 127.0.0.1:41870: connect ECONNREFUSED 127.0.0.1:41870\"",
+    "M5 log: 2026-11-19T20:37:12.792Z WARN conn dial-failed peer=? via=address reason=refused addr=/ip4/127.0.0.1/tcp/41870 error=\"connection error 127.0.0.1:41870: connect ECONNREFUSED 127.0.0.1:41870\"",
+    "M5 log: 2026-11-19T20:37:12.792Z EVENT event dial-failed peer \"?\" via \"address\" reason \"refused\" addr \"/ip4/127.0.0.1/tcp/41870\" error \"connection error 127.0.0.1:41870: connect ECONNREFUSED 127.0.0.1:41870\""
+  ]
+}

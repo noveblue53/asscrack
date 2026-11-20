@@ -1,0 +1,17 @@
+Transceiver started with peer id: 12D3KooWGbrwkazX4Axjej1sk8GHfZdKoHDgxGyjkTR9nB7weNW8 room: e3test228addr
+Listening on:
+/ip4/127.0.0.1/tcp/42629/p2p/12D3KooWGbrwkazX4Axjej1sk8GHfZdKoHDgxGyjkTR9nB7weNW8
+/ip4/192.0.2.2/tcp/42629/p2p/12D3KooWGbrwkazX4Axjej1sk8GHfZdKoHDgxGyjkTR9nB7weNW8
+Discovered peer: 12D3KooWGdMaqufTKfxvKDuU6xbqvJSB4u4v4TFMss8DuoWcnabq
+Peer address: /ip4/127.0.0.1/tcp/33875
+Peer address: /ip4/192.0.2.2/tcp/33875
+Chat ready with peer: 12D3KooWGdMaqufTKfxvKDuU6xbqvJSB4u4v4TFMss8DuoWcnabq
+conn session peer=12D3KooWGdMaqufTKfxvKDuU6xbqvJSB4u4v4TFMss8DuoWcnabq type=direct dir=out addr=/ip4/127.0.0.1/tcp/33875/p2p/12D3KooWGdMaqufTKfxvKDuU6xbqvJSB4u4v4TFMss8DuoWcnabq
+Connected to peer at /ip4/127.0.0.1/tcp/33875/p2p/12D3KooWGdMaqufTKfxvKDuU6xbqvJSB4u4v4TFMss8DuoWcnabq
+Type messages below:
+Peer name: ann (12D3KooWGdMaqufTKfxvKDuU6xbqvJSB4u4v4TFMss8DuoWcnabq)
+Dial-back from 12D3KooWGdMaqufTKfxvKDuU6xbqvJSB4u4v4TFMss8DuoWcnabq: ok, IP 127.0.0.1, full node false
+Host: 12D3KooWGbrwkazX4Axjej1sk8GHfZdKoHDgxGyjkTR9nB7weNW8 (term 1)
+History sent to 12D3KooWGdMaqufTKfxvKDuU6xbqvJSB4u4v4TFMss8DuoWcnabq: 0 messages
+
+> ann: hello from ann

@@ -1,0 +1,16 @@
+Transceiver started with peer id: 12D3KooWJfSv2quaPEu5ZtdeLsiaAKiRmyLQ9t31obFTw73msd6B room: e3test32566addr
+Listening on:
+/ip4/127.0.0.1/tcp/38123/p2p/12D3KooWJfSv2quaPEu5ZtdeLsiaAKiRmyLQ9t31obFTw73msd6B
+/ip4/192.0.2.2/tcp/38123/p2p/12D3KooWJfSv2quaPEu5ZtdeLsiaAKiRmyLQ9t31obFTw73msd6B
+Waiting for incoming connection...
+Discovered peer: 12D3KooWT3fama1mnrwoJ7w7phWt4ck6LrCsmBBTyGj41M3Yffmx
+Peer address: /ip4/127.0.0.1/tcp/33037
+Peer address: /ip4/192.0.2.2/tcp/33037
+Chat ready with peer: 12D3KooWT3fama1mnrwoJ7w7phWt4ck6LrCsmBBTyGj41M3Yffmx
+conn session peer=12D3KooWT3fama1mnrwoJ7w7phWt4ck6LrCsmBBTyGj41M3Yffmx type=direct dir=in addr=/ip4/127.0.0.1/tcp/54008/p2p/12D3KooWT3fama1mnrwoJ7w7phWt4ck6LrCsmBBTyGj41M3Yffmx
+Peer name: bob (12D3KooWT3fama1mnrwoJ7w7phWt4ck6LrCsmBBTyGj41M3Yffmx)
+Dial-back from 12D3KooWT3fama1mnrwoJ7w7phWt4ck6LrCsmBBTyGj41M3Yffmx: ok, IP 127.0.0.1, full node false
+Host: 12D3KooWJfSv2quaPEu5ZtdeLsiaAKiRmyLQ9t31obFTw73msd6B (term 1)
+History sent to 12D3KooWT3fama1mnrwoJ7w7phWt4ck6LrCsmBBTyGj41M3Yffmx: 0 messages
+
+> bob: hello from bob

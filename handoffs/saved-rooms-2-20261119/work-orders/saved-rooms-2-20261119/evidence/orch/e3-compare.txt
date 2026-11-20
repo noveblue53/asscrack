@@ -1,0 +1,13 @@
+base addr 1: ann got: 0  bob got: 0  too-many: 2
+branch addr 1: ann got: 0  bob got: 0  too-many: 0
+base addr 2: ann got: 0  bob got: 0  too-many: 2
+branch addr 2: ann got: 0  bob got: 0  too-many: 2
+base addr 3: ann got: 1  bob got: 1  too-many: 0
+branch addr 3: ann got: 1  bob got: 1  too-many: 0
+base addr 4: ann got: 0  bob got: 0  too-many: 2
+branch addr 4: ann got: 0  bob got: 0  too-many: 2
+base addr 5: ann got: 1  bob got: 1  too-many: 0
+branch addr 5: ann got: 1  bob got: 1  too-many: 0
+base addr 6: ann got: 0  bob got: 0  too-many: 2
+branch addr 6: ann got: 0  bob got: 0  too-many: 2
+branch mdns: ann got: 1  bob got: 1  too-many: 0

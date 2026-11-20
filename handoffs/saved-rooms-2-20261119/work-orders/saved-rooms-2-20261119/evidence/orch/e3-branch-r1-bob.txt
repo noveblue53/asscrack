@@ -1,0 +1,16 @@
+Transceiver started with peer id: 12D3KooWH85uwZzP31J8ZseuWSP8YATCxJpXjfdzDJCuA3tx3dYT room: e3test3726addr
+Listening on:
+/ip4/127.0.0.1/tcp/41775/p2p/12D3KooWH85uwZzP31J8ZseuWSP8YATCxJpXjfdzDJCuA3tx3dYT
+/ip4/192.0.2.2/tcp/41775/p2p/12D3KooWH85uwZzP31J8ZseuWSP8YATCxJpXjfdzDJCuA3tx3dYT
+Discovered peer: 12D3KooWASz3Yhj6ebCjxdmKuDTrik3nz8GqEUJRyiMYa3R4UWY7
+Peer address: /ip4/127.0.0.1/tcp/34147
+Peer address: /ip4/192.0.2.2/tcp/34147
+Chat ready with peer: 12D3KooWASz3Yhj6ebCjxdmKuDTrik3nz8GqEUJRyiMYa3R4UWY7
+conn session peer=12D3KooWASz3Yhj6ebCjxdmKuDTrik3nz8GqEUJRyiMYa3R4UWY7 type=direct dir=in addr=/ip4/127.0.0.1/tcp/40642/p2p/12D3KooWASz3Yhj6ebCjxdmKuDTrik3nz8GqEUJRyiMYa3R4UWY7
+Connected to peer at /ip4/127.0.0.1/tcp/34147/p2p/12D3KooWASz3Yhj6ebCjxdmKuDTrik3nz8GqEUJRyiMYa3R4UWY7
+Type messages below:
+conn closed peer=12D3KooWASz3Yhj6ebCjxdmKuDTrik3nz8GqEUJRyiMYa3R4UWY7 type=direct secs=0
+Chat closed with peer: 12D3KooWASz3Yhj6ebCjxdmKuDTrik3nz8GqEUJRyiMYa3R4UWY7
+Dial-back from 12D3KooWASz3Yhj6ebCjxdmKuDTrik3nz8GqEUJRyiMYa3R4UWY7: ok, IP 127.0.0.1, full node false
+Host: 12D3KooWH85uwZzP31J8ZseuWSP8YATCxJpXjfdzDJCuA3tx3dYT (term 1)
+No active chat peers. Connect to a peer to send messages.

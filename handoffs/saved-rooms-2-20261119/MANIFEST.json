@@ -1,0 +1,246 @@
+{
+ "handoff": "saved-rooms-2-20261119",
+ "work_commit": "b2ac72f",
+ "files": {
+  "DECISIONS.md": {
+   "sha256": "182bf5da0c09d2b7cf8a6288bfa3a4170f839647c17dfcf45a8ccd135b89620b",
+   "bytes": 8416
+  },
+  "START_HERE.md": {
+   "sha256": "9ce91d60b6ee33d81a5518324b3ec8f9ed9c3709da15a56cc92ec11943c40f8d",
+   "bytes": 5665
+  },
+  "WORK_ORDER.md": {
+   "sha256": "ee93a51b1bd762c8bdd4a749b8faf26d595fb680e02ba6271dff3761135843ff",
+   "bytes": 11055
+  },
+  "work-orders/saved-rooms-2-20261119/CONTINUE.md": {
+   "sha256": "d0993225cdf603b65b2589b56d9e2389353807b61cd232129a46821ec124d21d",
+   "bytes": 1248
+  },
+  "work-orders/saved-rooms-2-20261119/GOAL.md": {
+   "sha256": "d613dd0e70d4d677cf1be986910a8cae16b0fb576ef9ac4d69f805c26e659966",
+   "bytes": 937
+  },
+  "work-orders/saved-rooms-2-20261119/GOAL_ACTIVE": {
+   "sha256": "19b099687b81b90f49cce423090b0bb1ce532de3f17b09b2ed1d1cbd1f2931ef",
+   "bytes": 1333
+  },
+  "work-orders/saved-rooms-2-20261119/WORK_ORDER.md": {
+   "sha256": "ee93a51b1bd762c8bdd4a749b8faf26d595fb680e02ba6271dff3761135843ff",
+   "bytes": 11055
+  },
+  "work-orders/saved-rooms-2-20261119/brief-B-archive.md": {
+   "sha256": "8018fa8b97ceb9e7519336dedd718936354133c1f61e28c7e95884fe6029f87f",
+   "bytes": 3397
+  },
+  "work-orders/saved-rooms-2-20261119/brief-C-window.md": {
+   "sha256": "9dd2bce67c0639d8429be12eeeaedbcbcd47d7747e671c73b7fdd8eaee2b472e",
+   "bytes": 4233
+  },
+  "work-orders/saved-rooms-2-20261119/brief-D-check.md": {
+   "sha256": "b9bc62acaef71d7c56cf61ba503a4dd5359f13762266dda72a192db632cc0a10",
+   "bytes": 4955
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/check/check-part2.cjs": {
+   "sha256": "3fcb8aa80ab28b1fc3491646c0c0bb3de55c0575e501e6a850638d839763ed27",
+   "bytes": 16113
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/check/check-saved-rooms-part1.cjs": {
+   "sha256": "bb60de9326561106d62d5a9778799f799ad829034e7f5274b7382393db26a3c0",
+   "bytes": 9666
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/check/d2-out.json": {
+   "sha256": "3055beabf835162015ba67731b966a33f19f26a36e0df22aa15f4a512fed3470",
+   "bytes": 11072
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/app-A.png": {
+   "sha256": "7aa47e1e40cbf379dc0e4367f54085d1ef5ffcaf886e8ff0f1beeb98fac9cc76",
+   "bytes": 150076
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/app-B.png": {
+   "sha256": "3e03aa8727c01312f9ef89fde299cab1b4de791205199aca1e026b16cfd963be",
+   "bytes": 152010
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/app-start-logs/app-A-asscrack-20261119-204306.log": {
+   "sha256": "7214e9b78cac32ad90d4854357946989f41c2be46b9a5d594c87a0153798b478",
+   "bytes": 2309
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/app-start-logs/app-B-asscrack-20261119-204307.log": {
+   "sha256": "e394756fa4457a4b250b38e79defbc49834c4c7d5f6567d01e5593db294448ca",
+   "bytes": 2519
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/app-start.cjs": {
+   "sha256": "35ebc91f7aa50fccd71ec1e7c3fa8ec72262b6c0678af8d9c5757770eb0aa58f",
+   "bytes": 2940
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/baseline-npmtest.txt": {
+   "sha256": "221ff7754bda1d83c9dbab93c5f7c1e0742a224442d13a31d6cf76457ac5ee1b",
+   "bytes": 151479
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e1-npmtest.txt": {
+   "sha256": "4de47baf5c0713d341f3251eb45b7673bd029a4a28f7d60cf647698f320251c2",
+   "bytes": 153121
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e2-appstart.out": {
+   "sha256": "0ab9536e4853ad6aac8fe0e3cf3600a04995570a183f0e0f4ea9e217c06d00bb",
+   "bytes": 1885
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e2-rejoin.txt": {
+   "sha256": "d48d29a67a7344969476265ed48be166d7e057fc31d06b81672bbc99925ea073",
+   "bytes": 34
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-ann.txt": {
+   "sha256": "d124b00e189c7579d88d00346561497f35e3efe26ded91fa2c4d630b8a19ffab",
+   "bytes": 1287
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-base-addr1-ann.txt": {
+   "sha256": "71690e3e7edc78ac8716beb5d746ca7858b6137f610aa341ff73292cd7a8c6be",
+   "bytes": 1066
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-base-addr1-bob.txt": {
+   "sha256": "d162e87e500203b18315f1bd8ce68ea824c77681c8ad14ab69bcb62d392e4354",
+   "bytes": 1116
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-base-addr2-ann.txt": {
+   "sha256": "bbe2468f01dd21f3a5d2446a588a8e2a24d5e91224f77e4bef20622ef1434f4c",
+   "bytes": 1066
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-base-addr2-bob.txt": {
+   "sha256": "5efd87047e0a208a17cab5c6581085bd0917de7936282b2836bd4a36d398a308",
+   "bytes": 1116
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-base-r1-ann.txt": {
+   "sha256": "da66a42993717e79afd75d2751a5dc8623f8d17cf0057ce51844da79ef5eb80b",
+   "bytes": 1226
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-base-r1-bob.txt": {
+   "sha256": "620b02072fb89a3d39dad14f9140623e6912eac7cf99a284afe7bb6891018e1d",
+   "bytes": 1774
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-base-r2-ann.txt": {
+   "sha256": "b0c38c93b80a22dd3ad4e33a331177c5292f4d20e6de10368e2efe2e0f1c999d",
+   "bytes": 1295
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-base-r2-bob.txt": {
+   "sha256": "654e54a4c8d716e071941c504347e1770ae2e8a304444eee627ccf97ebed2c73",
+   "bytes": 1773
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-base-r3-ann.txt": {
+   "sha256": "ab186010c2bfb76db757255f4d69537538273d29931e0812710fa5c47f3dfb35",
+   "bytes": 1067
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-base-r3-bob.txt": {
+   "sha256": "df200430bbfe2632fff6e7f7110e32f94be0a39d0a4011e674d59f356eadb9bc",
+   "bytes": 1117
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-base-r4-ann.txt": {
+   "sha256": "e29774af160beec9ce312f7267c0849358658a7bb27efffa24c05b7d3a33a13d",
+   "bytes": 1296
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-base-r4-bob.txt": {
+   "sha256": "d404b26feebbf48dd3a6848893395dd382b596b34ec5798d345d5c4f5c9b5ee4",
+   "bytes": 1844
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-base-r5-ann.txt": {
+   "sha256": "97880a308330dbb97fd2d7b9f0addc75d39861ad737135e2b8fe8d1a41197b9c",
+   "bytes": 1025
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-base-r5-bob.txt": {
+   "sha256": "27a6d7296abeea61a2f330fc1773ad1971630be6eae4aee7c7e41c99c5efd027",
+   "bytes": 1155
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-base-r6-ann.txt": {
+   "sha256": "9812138b3251e2a473f998260579482b0abf75ffe0fe9ad52d901bd0f705ed03",
+   "bytes": 1295
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-base-r6-bob.txt": {
+   "sha256": "a2bdea78f188fa7abecc1bcfb5d4b9eb435003ddab4d50c78f878f73c973ceb5",
+   "bytes": 1773
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-bob.txt": {
+   "sha256": "0c94967bfa6336914ef9503b975da14b264129c057cd1fb33790bdb202b631d7",
+   "bytes": 1649
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-branch-addr1-ann.txt": {
+   "sha256": "7ae37088d54d3b94b1685e45c95a4b04cebddb6653a1bb4955dded1776c29642",
+   "bytes": 1067
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-branch-addr1-bob.txt": {
+   "sha256": "85cd61f0bdd037d0de7ce4b2960d23adb9bd4e2e3ed4fe101b15a749101f5b03",
+   "bytes": 1117
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-branch-addr2-ann.txt": {
+   "sha256": "2a4248d86cfb04daadc29f5b58b6aa413146834233f8a278ee3bd024e2fb487c",
+   "bytes": 1296
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-branch-addr2-bob.txt": {
+   "sha256": "42697d64bd6d82c0b0c1f0b91708dee31d258a61d251b2312a284a2f7eab3e39",
+   "bytes": 1658
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-branch-mdns-ann.txt": {
+   "sha256": "3642c19851e17457ab71ced63409cd43b5a6a5241550bc71f4ebd37a452154ef",
+   "bytes": 1027
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-branch-mdns-bob.txt": {
+   "sha256": "a875b2f27e3bc9e9fd1cca16022f726629497552ff77583baa592d2da0d2342d",
+   "bytes": 1068
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-branch-r1-ann.txt": {
+   "sha256": "c39702508f6b032dd0e1767d4e89bf67bb3649ea60d2d926ee4cffaf290a2916",
+   "bytes": 1115
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-branch-r1-bob.txt": {
+   "sha256": "622b572d89d10901be83e3196c90959c1a9b44642e4dc7096119017995d3a9ec",
+   "bytes": 1204
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-branch-r2-ann.txt": {
+   "sha256": "55f6a1fe972d4c1ae2eec719d3c2023518fb75bba424fd8b985b69cb51943a5d",
+   "bytes": 1226
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-branch-r2-bob.txt": {
+   "sha256": "b7689c8051785bfd672232c7d409d4707bd4fb0af4fd12ff4be2cd5d76229495",
+   "bytes": 1658
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-branch-r3-ann.txt": {
+   "sha256": "b0b3289795685522d13077d7aa7f1036f564271d5ab646490c9356044db57e7c",
+   "bytes": 1027
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-branch-r3-bob.txt": {
+   "sha256": "c2fbd0e2d10aecdaa089f70ece9866972acf0a5245e3fb9385b6dc0d2417dcbb",
+   "bytes": 1157
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-branch-r4-ann.txt": {
+   "sha256": "d859b4074e442c7efd4c71b0d6258b1a39e03cca51e62ed77398e5c1c8a61d2f",
+   "bytes": 1296
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-branch-r4-bob.txt": {
+   "sha256": "abf1cc18d99611b33d9aebb73bc8e1289637bd4514fcfed18a505d46baea380b",
+   "bytes": 1658
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-branch-r5-ann.txt": {
+   "sha256": "891a65350de33539f59277f6c4e62c2e10cb7bf465985a4f5f4ca28ef979f7f0",
+   "bytes": 1067
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-branch-r5-bob.txt": {
+   "sha256": "d1ff0ea29916565d2623ff043828fa25a27a6c4f2734fe9ed0ef07bc7366975f",
+   "bytes": 1117
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-branch-r6-ann.txt": {
+   "sha256": "e2ff89d2996f5e8ebee831d44b3672f722d0b8cda483e5c85d0330f0fb2ce215",
+   "bytes": 1296
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-branch-r6-bob.txt": {
+   "sha256": "9b9c17150a01784ca44e9bbf52ca69e4e2c83ab9df683413a7d21171b665bb48",
+   "bytes": 1658
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/e3-compare.txt": {
+   "sha256": "9abd6d45b6c29f6a84ef7f2160728e3c2dbb91a735fcb956235a708451e00a2e",
+   "bytes": 649
+  },
+  "work-orders/saved-rooms-2-20261119/evidence/orch/voice-direct-compare.txt": {
+   "sha256": "c3b8d2fb42127fb93fe02fec76ddbb962793e39d5a9be01367c0865b339a9a06",
+   "bytes": 220
+  }
+ }
+}

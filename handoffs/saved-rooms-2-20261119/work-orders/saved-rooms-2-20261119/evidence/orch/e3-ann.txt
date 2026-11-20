@@ -1,0 +1,16 @@
+Transceiver started with peer id: 12D3KooWLDoXwzgZpGnURRMRNtieed1DXpPWK63xthsow9L4KTzn room: e3test
+Listening on:
+/ip4/127.0.0.1/tcp/44105/p2p/12D3KooWLDoXwzgZpGnURRMRNtieed1DXpPWK63xthsow9L4KTzn
+/ip4/192.0.2.2/tcp/44105/p2p/12D3KooWLDoXwzgZpGnURRMRNtieed1DXpPWK63xthsow9L4KTzn
+Waiting for incoming connection...
+Discovered peer: 12D3KooWAL2fuUz9VDRfW4YEmqriioRWBKVpimzioK2mUzHjCwdb
+Peer address: /ip4/127.0.0.1/tcp/43173
+Peer address: /ip4/192.0.2.2/tcp/43173
+Chat ready with peer: 12D3KooWAL2fuUz9VDRfW4YEmqriioRWBKVpimzioK2mUzHjCwdb
+conn session peer=12D3KooWAL2fuUz9VDRfW4YEmqriioRWBKVpimzioK2mUzHjCwdb type=direct dir=in addr=/ip4/127.0.0.1/tcp/40586/p2p/12D3KooWAL2fuUz9VDRfW4YEmqriioRWBKVpimzioK2mUzHjCwdb
+Peer name: bob (12D3KooWAL2fuUz9VDRfW4YEmqriioRWBKVpimzioK2mUzHjCwdb)
+conn closed peer=12D3KooWAL2fuUz9VDRfW4YEmqriioRWBKVpimzioK2mUzHjCwdb type=direct secs=0
+Chat closed with peer: 12D3KooWAL2fuUz9VDRfW4YEmqriioRWBKVpimzioK2mUzHjCwdb
+conn dial-failed peer=12D3KooWAL2fuUz9VDRfW4YEmqriioRWBKVpimzioK2mUzHjCwdb via=dial-back reason=other addr=/ip4/127.0.0.1/tcp/40586/p2p/12D3KooWAL2fuUz9VDRfW4YEmqriioRWBKVpimzioK2mUzHjCwdb error="read ECONNRESET"
+Host: 12D3KooWLDoXwzgZpGnURRMRNtieed1DXpPWK63xthsow9L4KTzn (term 1)
+No active chat peers. Connect to a peer to send messages.

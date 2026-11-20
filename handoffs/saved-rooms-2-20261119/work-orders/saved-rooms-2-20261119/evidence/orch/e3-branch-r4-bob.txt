@@ -1,0 +1,24 @@
+Transceiver started with peer id: 12D3KooWMPk7SoPbm5E1TcwwdqiV4NbKuwcRiRgmsYozEh2imsS5 room: e3test11310addr
+Listening on:
+/ip4/127.0.0.1/tcp/36515/p2p/12D3KooWMPk7SoPbm5E1TcwwdqiV4NbKuwcRiRgmsYozEh2imsS5
+/ip4/192.0.2.2/tcp/36515/p2p/12D3KooWMPk7SoPbm5E1TcwwdqiV4NbKuwcRiRgmsYozEh2imsS5
+Discovered peer: 12D3KooWRZNhLoLmKmoDE5SdBtjdiGh5KrAXcKivMg5oSmvpdyHr
+Peer address: /ip4/127.0.0.1/tcp/46051
+Peer address: /ip4/192.0.2.2/tcp/46051
+Chat ready with peer: 12D3KooWRZNhLoLmKmoDE5SdBtjdiGh5KrAXcKivMg5oSmvpdyHr
+conn session peer=12D3KooWRZNhLoLmKmoDE5SdBtjdiGh5KrAXcKivMg5oSmvpdyHr type=direct dir=out addr=/ip4/127.0.0.1/tcp/46051/p2p/12D3KooWRZNhLoLmKmoDE5SdBtjdiGh5KrAXcKivMg5oSmvpdyHr
+file:///home/user/asscrack/node_modules/libp2p/dist/src/upgrader.js:343
+                        const err = new CodeError(`Too many outbound protocol streams for protocol "${protocol}" - ${streamCount}/${outgoingLimit}`, codes.ERR_TOO_MANY_OUTBOUND_PROTOCOL_STREAMS);
+                                    ^
+
+CodeError: Too many outbound protocol streams for protocol "/asscrack/chat/receive" - 1/1
+    at ConnectionImpl.newStream [as _newStream] (file:///home/user/asscrack/node_modules/libp2p/dist/src/upgrader.js:343:37)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async ConnectionImpl.newStream (file:///home/user/asscrack/node_modules/libp2p/dist/src/connection/index.js:94:24)
+    at async Object.connect (file:///home/user/asscrack/src/network/node.mjs:1167:32)
+    at async file:///home/user/asscrack/src/network/transceiver.mjs:45:5 {
+  code: 'ERR_TOO_MANY_OUTBOUND_PROTOCOL_STREAMS',
+  props: {}
+}
+
+Node.js v24.22.3

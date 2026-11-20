@@ -1,0 +1,12 @@
+- [x] A1: `node --test test/send-record.test.mjs` passes. A test shows that a record with `accepted: 0` is not in `history()`. A test shows that a peer that connects later does not get it in a replay.
+- [x] A2: a test shows a `live` event for a line whose ID came first in a host replay.
+- [x] B1: `node --test test/room-archive.test.mjs test/saved-rooms.test.mjs` passes.
+- [x] B2: tests pass for paging, Clear with tombstones, the three limits, a failed write, keep history off and on, Forget, and Forget of the open room.
+- [x] B3: a test with 250 numbered rows: 200 rows, then one page of 50. Each ID one time.
+- [x] C1: `npm test` passes, other than the known intermittent `test/voice-direct.test.mjs` failure (compared with the base).
+- [x] D1: the check script runs to the end and prints one JSON result.
+- [x] D2: all checks of the script pass after builder C stops (127.0.0.1).
+- [x] E1: `npm test` passes on the branch (127.0.0.1). Each failed test also ran on the base.
+- [x] E2: one app start with no error line in the terminal or the developer console (Xvfb). `test/rejoin.test.mjs` passes.
+- [x] E3: the terminal demo `src/network/transceiver.mjs` sends and receives one line between two copies.
+- [x] E4: `CHANGELOG.md` and `README.md` give the results with the label 127.0.0.1, the limits of P6, and the open checks.
