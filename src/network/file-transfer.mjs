@@ -63,7 +63,7 @@ async function moveToFreeName(temp, dir, name) {
 }
 
 // The file transfer part of a node. The node sends the file control lines to handleControl().
-export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerNames, downloadDir }) {
+export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerNames, downloadDir, fileAckTimeout = 30000 }) {
     // Own offers: offerId -> { offerId, filePath, name, size, sha256, targets: Set, started: Set }
     const ownOffers = new Map()
     // Received offers: offerId -> { offerId, peerId, name, size, sha256, state }
@@ -129,6 +129,12 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
         } catch {}
     }
 
+    function interruptTransfer(t, reason) {
+        // The data stream can already be closed while the sender still waits for the receipt on chat.
+        t.receipt?.resolve(reason)
+        abortStream(t.stream, reason)
+    }
+
     async function offerFile(filePath) {
         const stat = await fsp.stat(filePath)
         if (!stat.isFile()) throw new Error('The path is not a regular file')
@@ -146,7 +152,8 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
     }
 
     // The sender side of one data stream.
-    async function serve(stream, peerId) {
+    async function serve(t) {
+        const { stream, peerId } = t
         const it = stream.source[Symbol.asyncIterator]()
         let buf = Buffer.alloc(0)
         let line = null
@@ -161,19 +168,21 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
                 return
             }
         }
-        let offerId = null
+        let request
         try {
-            const value = JSON.parse(line)
-            if (value !== null && typeof value === 'object' && typeof value.offerId === 'string') offerId = value.offerId
+            request = JSON.parse(line)
         } catch {}
-        const offer = offerId === null ? undefined : ownOffers.get(offerId)
+        const offerId = request?.offerId
+        const offer = ownOffers.get(offerId)
         if (stopping || !offer || !offer.targets.has(peerId) || offer.started.has(peerId)) {
             await stream.close().catch(() => abortStream(stream, 'Request refused'))
             return
         }
         offer.started.add(peerId)
         const key = `send|${offerId}|${peerId}`
-        const t = { direction: 'send', offerId, peerId, stream, selfCancel: false, readStream: null }
+        t.offerId = offerId
+        // Register before sending any bytes. A fast receiver can confirm before our close() returns.
+        if (request.ack === 1) t.receipt = Promise.withResolvers()
         active.set(key, t)
         const p = progress(offerId, peerId, 'send', offer.size)
         try {
@@ -185,10 +194,22 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
                     yield chunk
                 }
             })())
-            await stream.close().catch(() => {})
+            if (stream.status === 'reset' || stream.status === 'aborted') throw new TransferFailure('stream ended')
+            await stream.close()
+            if (t.receipt) {
+                // The receiver needs EOF to verify the file. The chat session carries its independent result.
+                const timer = setTimeout(() => t.receipt.resolve('delivery confirmation timed out'), fileAckTimeout)
+                try {
+                    const failure = await t.receipt.promise
+                    if (failure) throw new TransferFailure(failure)
+                } finally {
+                    clearTimeout(timer)
+                }
+            }
             active.delete(key)
+            cancelSignals.delete(`${offerId}|${peerId}`)
             p.end()
-            events.emit('file-done', { offerId, peerId, direction: 'send', name: offer.name, size: offer.size })
+            events.emit('file-done', { offerId, peerId, direction: 'send', name: offer.name, size: offer.size, confirmed: !!t.receipt })
         } catch (err) {
             t.readStream?.destroy()
             abortStream(stream, 'Transfer ended')
@@ -235,7 +256,8 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
                 abortStream(stream, 'Transfer cancelled')
                 throw new Error('cancelled')
             }
-            stream.sink([Buffer.from(JSON.stringify({ offerId }) + '\n')]).catch(() => {})
+            // 0.6.0 and 0.7.0 senders read only offerId in this header and ignore unknown chat control types.
+            stream.sink([Buffer.from(JSON.stringify({ offerId, ack: 1 }) + '\n')]).catch(() => {})
             const hash = createHash('sha256')
             for await (const chunk of stream.source) {
                 const data = chunk.subarray()
@@ -244,7 +266,7 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
                     throw new TransferFailure('too many bytes')
                 }
                 hash.update(data)
-                await fh.write(data)
+                await fh.writeFile(data)
                 p.add(data.length)
             }
             if (t.selfCancel || stopping) throw new Error('cancelled')
@@ -254,6 +276,7 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
             fh = null
             const finalPath = await moveToFreeName(temp, downloadDir, offer.name)
             tempCreated = false
+            sendLine(peerId, { type: 'file-received', offerId })
             active.delete(t.key)
             received.delete(offerId)
             cancelSignals.delete(`${offerId}|${peerId}`)
@@ -281,6 +304,7 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
             }
             active.delete(t.key)
             received.delete(offerId)
+            if (ended[0] === 'file-failed') sendLine(peerId, { type: 'file-receive-failed', offerId })
             events.emit(...ended)
         }
     }
@@ -315,7 +339,7 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
             sendLine(peerId, { type: 'file-cancel', offerId })
             if (t) {
                 t.selfCancel = true
-                abortStream(t.stream, 'Transfer cancelled')
+                interruptTransfer(t, 'Transfer cancelled')
             } else {
                 events.emit('file-cancelled', { offerId, peerId, direction: 'send', by: 'self' })
             }
@@ -329,7 +353,7 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
             for (const t of active.values()) {
                 if (t.offerId === offerId && t.direction === 'send') {
                     t.selfCancel = true
-                    abortStream(t.stream, 'Transfer cancelled')
+                    interruptTransfer(t, 'Transfer cancelled')
                 }
             }
             return true
@@ -355,6 +379,9 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
             const name = safeFileName(control.name)
             received.set(offerId, { offerId, peerId, name, size, sha256, state: 'offered' })
             events.emit('file-offer', { offerId, peerId, from: peerNames()[peerId] ?? '', name, size })
+        } else if (control.type === 'file-received' || control.type === 'file-receive-failed') {
+            const t = active.get(`send|${offerId}|${peerId}`)
+            t?.receipt?.resolve(control.type === 'file-received' ? null : 'receiver could not verify or save file')
         } else if (control.type === 'file-refuse') {
             const own = ownOffers.get(offerId)
             if (!own || !own.targets.has(peerId) || own.started.has(peerId)) return
@@ -365,7 +392,7 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
             const sendT = active.get(sendKey)
             if (sendT) {
                 noteCancel(`${offerId}|${peerId}`)
-                abortStream(sendT.stream, 'Transfer cancelled by peer')
+                interruptTransfer(sendT, 'Transfer cancelled by peer')
                 return
             }
             const own = ownOffers.get(offerId)
@@ -389,6 +416,9 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
     }
 
     function peerLeft(peerId) {
+        for (const t of active.values()) {
+            if (t.peerId === peerId && t.receipt) interruptTransfer(t, 'peer left before confirming delivery')
+        }
         for (const offer of [...received.values()]) {
             if (offer.peerId === peerId && offer.state === 'offered') {
                 received.delete(offer.offerId)
@@ -399,7 +429,8 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
     }
 
     function handleStream({ stream, connection }) {
-        serve(stream, connection.remotePeer.toString()).catch(() => abortStream(stream, 'Transfer ended'))
+        const t = { direction: 'send', peerId: connection.remotePeer.toString(), stream, selfCancel: false }
+        t.promise = serve(t).catch(() => abortStream(stream, 'Transfer ended'))
     }
 
     async function stop() {
@@ -407,7 +438,7 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
         const waits = []
         for (const t of active.values()) {
             sendLine(t.peerId, { type: 'file-cancel', offerId: t.offerId })
-            abortStream(t.stream, 'Node stopped')
+            interruptTransfer(t, 'Node stopped')
             if (t.promise) waits.push(t.promise)
         }
         await Promise.allSettled(waits)

@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
+import { loadRoomWindow } from './helpers/renderer-fixture.mjs';
 
 const read = name => readFile(new URL(`../src/application/${name}`, import.meta.url), 'utf8');
 
@@ -55,6 +56,17 @@ test('main.js logs the direction, the cancel side and the file actions', async (
 test('preload.cjs passes a peer ID in cancelFile', async () => {
     const source = await read('preload.cjs');
     assert.ok(source.includes("cancelFile: (offerId, peerId) => ipcRenderer.invoke('asscrack:cancel-file', offerId, peerId)"));
+});
+
+test('the transfer window labels confirmed delivery, legacy sends, failure and the saved file', async () => {
+    const room = await loadRoomWindow();
+    const send = { offerId: 'first', peerId: 'peer', direction: 'send', name: 'note.txt', size: 5 };
+    room.handlers.onFileDone({ ...send, confirmed: true });
+    room.handlers.onFileDone({ ...send, offerId: 'second', confirmed: false });
+    room.handlers.onFileFailed({ ...send, offerId: 'third', reason: 'peer left' });
+    room.handlers.onFileDone({ ...send, offerId: 'fourth', direction: 'receive', path: 'C:\\Downloads\\note.txt' });
+    const labels = room.el('transfers').children.map(row => row.querySelector('.state-text').textContent);
+    assert.deepEqual(labels, ['Delivered', 'Sent (delivery unconfirmed)', 'Failed: peer left', 'Saved as note.txt']);
 });
 
 // ---- Package C (room window): row actions, context menus, Escape, Show in Explorer ----

@@ -118,7 +118,7 @@ function validHistoryItem(m) {
 }
 
 export async function createAsscrackNode({ room, listen, port = 0, discovery = true, discoveryInterval, name,
-    heartbeatInterval = 1000, hostTimeout = 5000, electionDelay = 3000, downloadDir,
+    heartbeatInterval = 1000, hostTimeout = 5000, electionDelay = 3000, downloadDir, fileAckTimeout,
     fullNode = 'auto', allowPrivateFullNode = false, relayOnly = false, roomKey = null, announce = [], storePath = null,
     redialInterval = 5000, inviteNodes = [], upnp = false, upnpTimeout = 70000, upnpLeaseSeconds = 1800,
     upnpClient = null, seedHistory = [] } = {}) {
@@ -364,7 +364,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         sendTo: (peerId, message) => sessions.get(peerId)?.send(JSON.stringify(message)) ?? false,
         openPeers: () => [...sessions.keys()],
         peerNames: () => Object.fromEntries([...names].filter(([peerId]) => sessions.has(peerId))),
-        downloadDir
+        downloadDir, fileAckTimeout
     })
 
     // A line with a "type" field is a control line. Other lines are chat lines.
@@ -484,8 +484,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                     }
                     else if (control.type === 'signal') {
                         if (control.data !== null && typeof control.data === 'object') events.emit('signal', { peerId, data: control.data })
-                    } else if (control.type === 'file-offer' || control.type === 'file-refuse' || control.type === 'file-cancel') {
-                        files.handleControl(peerId, control)
+                    } else if (typeof control.type === 'string' && control.type.startsWith('file-')) {
+                        if (sessions.get(peerId) === session) files.handleControl(peerId, control)
                     } else if (control.type === 'voice') {
                         if (control.inVoice === true) peerVoice.set(peerId, true)
                         else peerVoice.delete(peerId)

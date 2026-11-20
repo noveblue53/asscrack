@@ -1026,7 +1026,7 @@ window.asscrack.onFileDone(data => {
             }
         }
     } else {
-        setTransferResult(entry, 'done', 'Sent');
+        setTransferResult(entry, 'done', data.confirmed === true ? 'Delivered' : 'Sent (delivery unconfirmed)');
     }
 });
 

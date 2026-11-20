@@ -29,7 +29,7 @@ async function tempDir(prefix) {
 }
 
 // Makes count nodes, each with its own download folder, in a full mesh.
-async function setup(count) {
+async function setup(count, options = {}) {
     const dirs = []
     const nodes = []
     const src = await tempDir('src')
@@ -37,7 +37,7 @@ async function setup(count) {
     for (let i = 0; i < count; i++) {
         const d = await tempDir('dl')
         dirs.push(d)
-        nodes.push(await createAsscrackNode({ ...base, downloadDir: d }))
+        nodes.push(await createAsscrackNode({ ...base, ...options, downloadDir: d }))
         nodes[i].dir = d
         nodes[i].log = record(nodes[i])
     }
@@ -96,6 +96,9 @@ test('a: a 50 MB file goes from A to B with the correct SHA-256', { timeout: 120
         assert.deepEqual(b.log.failed, [])
         assert.equal(b.log.done[0].direction, 'receive')
         assert.equal(await sha(b.log.done[0].path), await sha(file))
+        await waitUntil(() => a.log.done.length + a.log.failed.length > 0, 5000)
+        assert.deepEqual(a.log.failed, [])
+        assert.equal(a.log.done[0].confirmed, true)
         assert.equal(offer.sha256, await sha(file))
         assert.deepEqual(await entries(b.dir), ['big.bin'])
         assert.deepEqual(a.host(), hostBefore)
@@ -254,6 +257,10 @@ test('i: a changed byte gives a hash mismatch', { timeout: 30000 }, async () => 
         assert.equal(b.log.failed[0].reason, 'hash mismatch')
         assert.deepEqual(b.log.done, [])
         assert.deepEqual(await entries(b.dir), [])
+        await waitUntil(() => a.log.done.length + a.log.failed.length > 0, 5000)
+        assert.deepEqual(a.log.done, [])
+        assert.equal(a.log.failed[0].offerId, offer.offerId)
+        assert.equal(a.log.failed[0].direction, 'send')
     } finally {
         await cleanup(ctx)
     }
@@ -364,5 +371,80 @@ test('m: a stream abort before the file-cancel line gives cancelled by peer on t
         assert.deepEqual(log.cancelled, [{ offerId, peerId: peer, direction: 'send', by: 'peer' }])
     } finally {
         await fsp.rm(src, { recursive: true, force: true })
+    }
+})
+
+// A wire-level receiver can choose the 0.7.0 header or advertise receipts and withhold one.
+async function requestFile(receiver, sender, header) {
+    await waitUntil(() => receiver.log.offer.some(e => e.offerId === header.offerId), 5000)
+    const [connection] = receiver.libp2p.getConnections(sender.libp2p.peerId)
+    const stream = await connection.newStream(FILE_PROTOCOL)
+    await stream.sink([Buffer.from(JSON.stringify(header) + '\n')])
+    return { connection, stream }
+}
+
+test('n: losing the receiver while its file is still buffered fails the sender', { timeout: 30000 }, async () => {
+    const ctx = await setup(2)
+    const [a, b] = ctx.nodes
+    try {
+        const file = path.join(ctx.src, 'buffered.bin')
+        await writeRandom(file, 96 * 1024)
+        const { offerId } = await a.offerFile(file)
+        const { connection, stream } = await requestFile(b, a, { offerId, ack: 1 })
+
+        // The sender's FIN has reached B, but B has yet to consume or save any data.
+        // Cutting the real TCP connection here reproduces a clean local write and a lost receipt.
+        await waitUntil(() => stream.readStatus === 'closing' || stream.readStatus === 'closed', 5000)
+        connection.abort(new Error('Receiver disconnected before saving the file'))
+        await waitUntil(() => a.log.done.length + a.log.failed.length > 0, 5000)
+        assert.deepEqual(a.log.done, [])
+        assert.equal(a.log.failed.length, 1)
+        assert.equal(a.log.failed[0].offerId, offerId)
+        assert.equal(a.log.failed[0].peerId, b.peerId)
+        assert.equal(a.log.failed[0].direction, 'send')
+        assert.deepEqual(await entries(b.dir), [])
+    } finally {
+        await cleanup(ctx)
+    }
+})
+
+test('o: a 0.7.0 receiver gets the file and the sender reports an unconfirmed send', { timeout: 30000 }, async () => {
+    const ctx = await setup(2)
+    const [a, b] = ctx.nodes
+    try {
+        const file = path.join(ctx.src, 'legacy.txt')
+        await fsp.writeFile(file, 'sent to an old receiver')
+        const { offerId, sha256 } = await a.offerFile(file)
+        const { stream } = await requestFile(b, a, { offerId })
+        const hash = createHash('sha256')
+        for await (const chunk of stream.source) hash.update(chunk.subarray())
+        assert.equal(hash.digest('hex'), sha256)
+        await waitUntil(() => a.log.done.length + a.log.failed.length > 0, 5000)
+        assert.deepEqual(a.log.failed, [])
+        assert.equal(a.log.done.length, 1)
+        assert.equal(a.log.done[0].offerId, offerId)
+        assert.equal(a.log.done[0].confirmed, false)
+    } finally {
+        await cleanup(ctx)
+    }
+})
+
+test('p: an unanswered receipt times out even with the chat session open', { timeout: 30000 }, async () => {
+    const ctx = await setup(2, { fileAckTimeout: 250 })
+    const [a, b] = ctx.nodes
+    try {
+        const file = path.join(ctx.src, 'empty.bin')
+        await fsp.writeFile(file, '')
+        const { offerId } = await a.offerFile(file)
+        const { stream } = await requestFile(b, a, { offerId, ack: 1 })
+        for await (const chunk of stream.source) assert.equal(chunk.length, 0)
+        await waitUntil(() => a.log.done.length + a.log.failed.length > 0, 5000)
+        assert.ok(a.peers().includes(b.peerId))
+        assert.deepEqual(a.log.done, [])
+        assert.equal(a.log.failed.length, 1)
+        assert.equal(a.log.failed[0].offerId, offerId)
+        assert.match(a.log.failed[0].reason, /receipt|confirm|ack/i)
+    } finally {
+        await cleanup(ctx)
     }
 })
