@@ -7,6 +7,30 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## 0.7.0 (2026-11-20): portable build for a field test
+
+File: `dist/ASSCRACK-0.7.0-portable.exe`, SHA-256 `327a7f71f644e3dbfde6b37bd6aac2ce7328a8d94061aab27e613d862f5cab3a`. The test card is "Internet test card 8 (0.7.0)" in
+`src/network/chatreadme.md`. All results of the features in this build are 127.0.0.1 results. This build has no field
+result yet (no LAN result, no internet result and no packaged .exe result).
+
+Build: `npm run dist` on a Linux cloud VM (no Wine) from commit `03679f7`, 106,728,631 bytes. The package has the
+`win32-x64` native files of `better-sqlite3-multiple-ciphers` and `uiohook-napi` in `app.asar.unpacked`. Full check
+(127.0.0.1): `npm test` 267 of 268 pass. The failure is the known intermittent test in `test/voice-direct.test.mjs`.
+The branch changes no source code against `main`. One app start: no error line in the app log.
+
+This release contains these "Unreleased" entries:
+- **Live chat and the archive agree, milestone 6 part 2:** local-only sends, saved marks, Clear, Forget and older lines.
+- **Saved rooms, milestone 6 part 1:** saved internet rooms with an encrypted local history and Reopen room.
+- **Voice processing and push-to-talk, milestone 5C:** noise suppression, voice activity, push to talk and Voice settings.
+- **Manual status, milestone 3:** Available, Away or Do not disturb, with a note.
+- **Voice processing added to the 1.0 plan:** the plan section 5C. No code change.
+- **Quote and Find on main, the 1.0 work plan and a new README:** the merge of Quote and Find, and the plan.
+- **Milestone 2 fixes, quote boundary and Quote button:** the quote header with a line count, and the Quote button.
+- **Milestone 2, Quote and Find:** Quote a line, and Find with Ctrl+F.
+- **Room window, milestone 1:** saved panel sizes, the reading position and context menus.
+- **Faults of 0.6.0:** the invite panel, the second start, voice start, history, direct voice, dial warnings and the
+  status line.
+
 ## Unreleased: live chat and the archive agree, milestone 6 part 2 (on main)
 
 The operator accepted branch `opus/saved-rooms-2` on 2026-11-20 without the LAN checks. Base: `main` at `5982914`. All results in this entry are 127.0.0.1 results on a Linux cloud VM (Node 24.22.3,

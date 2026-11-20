@@ -13,9 +13,9 @@ members elect a new host with no user action.
 
 | Item | State (2026-11-19) |
 |---|---|
-| Latest build | **0.6.0**, a portable Windows `.exe`. There is no public download yet. |
+| Latest build | **0.7.0**, a portable Windows `.exe`. There is no public download yet. |
 | `main` | 0.6.0 plus fixes for faults F1 to F6, the stale "No peers" status line, room window milestone 1 and Quote and Find (milestone 2). Also manual status (milestone 3) voice processing with push-to-talk (5C) and saved rooms (milestone 6 parts 1 and 2). Not released. |
-| Open field checks | The packaged Windows check of Quote and Find on a LAN, with a 0.6.0 client and a host change. Manual status on a LAN and in an internet room, with a 0.6.0 client. Voice processing (5C) on 2 computers with speakers. The internet test card 7. |
+| Open field checks | The internet test card 8 (0.7.0) on 2 Windows computers: saved rooms, Quote and Find, manual status and voice settings. |
 | Current phase | Phase 8 (internet rooms) and Phase 7 (desktop experience), toward release 1.0. Steps 1 and 2 of the 1.0 plan are on `main`. Step 4 started: milestone 6 part 1 (saved rooms with an encrypted local history) is on `main` with 127.0.0.1 results only. Milestone 6 part 2 (local-only sends, saved marks, Clear, Forget and older lines) is on `main` with 127.0.0.1 results only. The step 3 field tests wait for the operator. |
 | Plan | [`docs/WORK_PLAN_1.0.md`](docs/WORK_PLAN_1.0.md) gives the release order, the scope and the exit checks of 1.0. |
 
