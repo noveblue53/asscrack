@@ -176,10 +176,13 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     const events = new EventEmitter()
     const sessions = new Map()
     const typing = createTyping({
-        broadcast(active) {
+        snapshot: () => new Set(sessions.values()),
+        broadcast(active, audience) {
             const line = JSON.stringify({ type: 'typing', v: 1, active })
             let sent = false
-            for (const session of sessions.values()) if (session.send(line)) sent = true
+            for (const session of sessions.values()) {
+                if ((!audience || audience.has(session)) && session.send(line)) sent = true
+            }
             return sent
         },
         changed: (peerId, active) => events.emit('typing', { peerId, active })

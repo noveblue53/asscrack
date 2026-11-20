@@ -6,9 +6,11 @@ import { setTimeout as delay } from 'node:timers/promises'
 
 test('typing is driven by edits, rate limited, peer scoped and expires after the last update', t => {
     t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 10000 })
-    const outgoing = [], events = []
+    const outgoing = [], events = [], audiences = []
+    let session = 'first'
     const typing = createTyping({
-        now: Date.now, broadcast(active) { outgoing.push(active); return true },
+        now: Date.now, snapshot: () => [session],
+        broadcast(active, audience) { outgoing.push(active); audiences.push(audience); return true },
         changed: (peer, active) => events.push([peer, active])
     })
     for (let i = 0; i < 100; i++) typing.edited(true)
@@ -19,8 +21,10 @@ test('typing is driven by edits, rate limited, peer scoped and expires after the
     typing.edited(true)
     for (let i = 0; i < 100; i++) { typing.edited(false); typing.edited(true) }
     assert.deepEqual(outgoing, [true, true, false])
+    session = 'late'
     typing.received('a', true)
     t.mock.timers.tick(3000)
+    assert.deepEqual(audiences.at(-1), ['first'])
     typing.received('a', true)
     typing.received('b', true)
     t.mock.timers.tick(5999)
@@ -29,9 +33,10 @@ test('typing is driven by edits, rate limited, peer scoped and expires after the
     t.mock.timers.tick(1)
     assert.deepEqual(events.slice(2), [['b', false], ['a', false]])
     t.mock.timers.tick(6000)
-    assert.deepEqual(outgoing, [true, true, false])
+    assert.deepEqual(outgoing, [true, true, false, true])
     typing.received('a', true)
     typing.stop()
+    typing.received('closing-session', true)
     t.mock.timers.tick(6000)
     assert.deepEqual(events.at(-1), ['a', true])
 })
