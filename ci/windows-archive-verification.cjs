@@ -54,7 +54,7 @@ function verifyDifferentUserDpapi(files) {
     assert.equal(result.status, 0, 'alternate account DPAPI verification did not complete');
     const evidence = JSON.parse(result.stdout);
     assert.ok(evidence.outcome === 'passed' || evidence.outcome === 'unavailable',
-        `alternate account DPAPI verification failed at ${evidence.stage} (worker exit ${evidence.workerExit ?? 'not started'})`);
+        `alternate account DPAPI verification did not pass: ${JSON.stringify(evidence)}`);
     return evidence;
 }
 

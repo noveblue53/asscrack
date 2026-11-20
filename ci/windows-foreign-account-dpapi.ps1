@@ -27,7 +27,7 @@ function Get-ErrorFacts($record) {
     @{
         category = $record.CategoryInfo.Category.ToString()
         type = $record.Exception.GetType().Name
-        code = $record.FullyQualifiedErrorId.Split(',')[0]
+        code = ([string]$record.FullyQualifiedErrorId).Split(',')[0]
         hresult = $record.Exception.HResult
     }
 }
@@ -88,22 +88,28 @@ try {
         $result.accountKind = 'local-service'
     }
 
-    $result.stage = 'readable-fixture'
+    $result.stage = 'fixture-directory'
     $null = New-Item -ItemType Directory -Path $directory
-    $acl = Get-Acl -LiteralPath $directory
-    $acl.SetAccessRuleProtection($true, $false)
-    $inherits = [Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
-    $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($owner.User, 'FullControl', $inherits, 'None', 'Allow'))
-    $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($reader, 'ReadAndExecute', $inherits, 'None', 'Allow'))
-    Set-Acl -LiteralPath $directory -AclObject $acl
+    $result.stage = 'fixture-permissions'
+    $icacls = Join-Path $env:SystemRoot 'System32\icacls.exe'
+    $ownerRule = '*' + $owner.User.Value + ':(OI)(CI)F'
+    $readerRule = '*' + $reader.Value + ':(OI)(CI)RX'
+    $null = & $icacls $directory /grant:r $ownerRule $readerRule /inheritance:r 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        $result.aclExit = $LASTEXITCODE
+        throw 'Could not set isolated fixture ACL'
+    }
 
+    $result.stage = 'fixture-copy'
     [IO.File]::WriteAllBytes((Join-Path $directory 'archive.db'), [IO.File]::ReadAllBytes($Database))
     [IO.File]::WriteAllBytes((Join-Path $directory 'archive.key'), [IO.File]::ReadAllBytes($Wrapper))
+    $result.stage = 'fixture-ciphertext'
     $state = Get-Content -LiteralPath $LocalState -Raw | ConvertFrom-Json
     $blob = [Convert]::FromBase64String($state.os_crypt.encrypted_key)
     if ($blob.Length -le 5 -or [Text.Encoding]::ASCII.GetString($blob, 0, 5) -cne 'DPAPI') { throw 'Unexpected profile-key envelope' }
     [byte[]]$payload = $blob[5..($blob.Length - 1)]
     [IO.File]::WriteAllBytes((Join-Path $directory 'profile-key.dpapi'), $payload)
+    $result.stage = 'fixture-manifest'
     $files = foreach ($name in $fixtureNames) {
         @{ name = $name; hash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $directory $name)).Hash }
     }
@@ -155,7 +161,7 @@ try {
     } else { $result.outcome = 'failed' }
 } catch {
     $result.failure = Get-ErrorFacts $_
-    if ($result.stage -eq 'readable-fixture' -or $result.stage -eq 'foreign-account-read') { $result.outcome = 'failed' }
+    if ($result.stage.StartsWith('fixture-') -or $result.stage -eq 'foreign-account-read') { $result.outcome = 'failed' }
 } finally {
     if ($worker) { $worker.Dispose() }
     if ($taskRegistered) {
