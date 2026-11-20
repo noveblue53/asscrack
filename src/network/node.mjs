@@ -12,6 +12,7 @@ import { EventEmitter } from 'node:events'
 import { networkInterfaces } from 'node:os'
 import { createChatSession } from './chat-session.mjs'
 import { createElection } from './election.mjs'
+import { createRoomTopic } from './room-topic.mjs'
 import { createHistory, HISTORY_LIMIT, MAX_MESSAGE_BYTES, historyLines, validHistoryItem } from './history.mjs'
 import { createFileTransfer, FILE_PROTOCOL } from './file-transfer.mjs'
 import { createVoiceRelay, VOICE_PROTOCOL, VOICE_DIRECT_PROTOCOL } from './voice-relay.mjs'
@@ -307,6 +308,15 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         return list
     }
 
+    const topic = createRoomTopic({
+        selfId,
+        send: (peerId, msg) => sessions.get(peerId)?.send(JSON.stringify(msg)) ?? false,
+        broadcast: msg => {
+            const line = JSON.stringify(msg)
+            for (const session of sessions.values()) session.send(line)
+        },
+        changed: value => events.emit('topic', value)
+    })
     const election = createElection({
         selfId: node.peerId.toString(),
         sendTo: (peerId, line) => { sessions.get(peerId)?.send(line) },
@@ -317,6 +327,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             const wasHost = lastHostId === selfId
             lastHostId = info.peerId
             events.emit('host-changed', info)
+            topic.elected(info)
             // A new host sends the history to each member with a session. A member whose session opened before
             // this election got no history from openSession(). Send after the host announcement.
             if (info.peerId === selfId && !wasHost) queueMicrotask(sendHistoryToAll)
@@ -501,6 +512,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 if (control) {
                     // Ignore an unknown type with no warning.
                     if (control.type === 'host') election.handleAnnouncement(peerId, control)
+                    else if (control.type === 'topic' && sessions.get(peerId) === session) topic.handle(peerId, control)
                     else if (control.type === 'history' && sessions.get(peerId) === session) handleHistory(peerId, control)
                     else if (control.type === 'hello') {
                         const peerName = typeof control.name === 'string' ? control.name.trim().slice(0, 64) : ''
@@ -613,6 +625,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         console.info(connText('conn session', { peer: opened.peer, type: opened.type, dir: opened.dir, relay: opened.relay, addr: opened.addr }))
         events.emit('connection', opened)
         election.sessionOpened(peerId)
+        topic.sessionOpened(peerId)
         if (election.isHost()) sendHistoryTo(peerId, session)
         if (voiceState.inVoice) session.send(voiceLine())
         broadcastLinks()
@@ -644,6 +657,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 peerDirect.delete(peerId)
                 voiceRelay.peerLeft(peerId)
                 election.sessionClosed(peerId)
+                topic.sessionClosed(peerId)
                 files.peerLeft(peerId)
                 links.delete(peerId)
                 broadcastLinks()
@@ -1384,6 +1398,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         // Send one Opus frame of this node on the voice path (direct streams, and the star through the host).
         sendVoiceFrame: bytes => voiceRelay.sendFrame(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)),
         voiceStats: () => voiceRelay.stats(),
+        topic: topic.view,
+        setTopic: topic.set,
         host: () => election.host(),
         isHost: () => election.isHost(),
         history: () => history.list(),
