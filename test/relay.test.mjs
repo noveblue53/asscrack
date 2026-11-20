@@ -62,16 +62,23 @@ test('two relay-only nodes chat through a full node, beyond the default relay da
         assert.ok(Array.isArray(A.topology().links[A.peerId]))
 
         // More than 128 KiB of chat lines from A to B.
+        // A host replay on R's direct link can beat the original on A's relayed link.
+        // 'live' counts the bytes from A. 'message' and 'history' together count the rows presented to B.
         const got = []
-        B.events.on('message', m => { if (m.peerId === A.peerId) got.push(m.text) })
+        const shownIds = []
+        B.events.on('live', m => { if (m.peerId === A.peerId) got.push({ id: m.id, text: m.text }) })
+        B.events.on('message', m => shownIds.push(m.id))
+        B.events.on('history', ({ messages }) => shownIds.push(...messages.map(m => m.id)))
         const sent = []
         for (let i = 0; i < 200; i++) {
             const text = `${String(i).padStart(4, '0')}:${'x'.repeat(995)}`
-            sent.push(text)
-            assert.ok(A.send(text) >= 1)
+            const record = A.sendRecord(text)
+            assert.ok(record.accepted >= 1)
+            sent.push({ id: record.id, text })
         }
         await waitFor(() => got.length >= 200, 20000, 'B gets 200 lines')
         assert.deepEqual(got, sent)
+        assert.deepEqual(shownIds.sort(), sent.map(m => m.id).sort())
         assert.ok(A.peers().includes(B.peerId), 'session stays open')
 
         // R is the host after the first election (rule 7).
