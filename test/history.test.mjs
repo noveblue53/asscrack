@@ -3,8 +3,8 @@ import assert from 'node:assert/strict'
 import { setTimeout as delay } from 'node:timers/promises'
 import { multiaddr } from '@multiformats/multiaddr'
 import { createAsscrackNode, CHAT_PROTOCOL } from '../src/network/node.mjs'
-import { createHistory } from '../src/network/history.mjs'
-import { createChatSession } from '../src/network/chat-session.mjs'
+import { createHistory, HISTORY_LIMIT, MAX_MESSAGE_BYTES, historyLines, validHistoryItem } from '../src/network/history.mjs'
+import { createChatSession, MAX_CHAT_FRAME_BYTES } from '../src/network/chat-session.mjs'
 
 const base = {
     room: 'history', listen: ['/ip4/127.0.0.1/tcp/0'], discovery: false,
@@ -162,5 +162,80 @@ test('e: a member with a session before the first election gets the history', { 
         assert.equal(member.history().length, 2)
     } finally {
         await stopAll(nodes)
+    }
+})
+
+test('history batches fit by encoded bytes and record count, including JSON escaping', () => {
+    const record = (id, text) => ({ id, from: 'A', text, time: 1 })
+    const first = record('a', '\0'.repeat(MAX_MESSAGE_BYTES - 1))
+    const second = record('b', '')
+    const envelope = JSON.stringify({ type: 'history', messages: [first, second] })
+    const roomLeft = MAX_CHAT_FRAME_BYTES - Buffer.byteLength(envelope)
+    second.text = '\0'.repeat(Math.floor(roomLeft / 6)) + 'x'.repeat(roomLeft % 6)
+    assert.ok(validHistoryItem(first) && validHistoryItem(second))
+    const [exact, next] = [...historyLines([first, second, record('c', 'x')])]
+    assert.equal(Buffer.byteLength(exact), MAX_CHAT_FRAME_BYTES)
+    assert.deepEqual(JSON.parse(exact).messages, [first, second])
+    assert.deepEqual(JSON.parse(next).messages, [record('c', 'x')])
+
+    const short = Array.from({ length: HISTORY_LIMIT + 1 }, (_, i) => record(String(i), 'x'))
+    assert.deepEqual([...historyLines(short)].map(line => JSON.parse(line).messages.length), [200, 1])
+    assert.equal(validHistoryItem({ ...first, text: first.text + 'x' }), false)
+    assert.equal(validHistoryItem({ ...first, id: '🌍'.repeat(33) }), false)
+    assert.equal(validHistoryItem({ ...first, time: Infinity }), false)
+})
+
+test('127.0.0.1: a late join receives a split replay and rejects invalid live and replay records', { timeout: 15000 }, async () => {
+    const records = Array.from({ length: 200 }, (_, i) =>
+        ({ id: String(i), time: i, from: 'A', text: '\0'.repeat(600) }))
+    const a = await createAsscrackNode({ ...base, fullNode: true, name: 'A', seedHistory: records })
+    const b = await createAsscrackNode({ ...base, fullNode: false })
+    const batches = []
+    const live = []
+    b.events.on('history', ({ messages }) => batches.push(messages))
+    b.events.on('live', m => live.push(m))
+    try {
+        await connectPair(a, b)
+        await waitUntil(() => b.host()?.peerId === a.peerId && b.history().length === 200, 5000)
+        assert.deepEqual(b.history(), records)
+        assert.ok(batches.filter(batch => batch.length).length > 1)
+
+        const bad = { id: 'bad', time: 1, from: '', text: '🌍'.repeat(MAX_MESSAGE_BYTES / 4) + 'x' }
+        const marker = { id: 'marker', time: 300, from: 'A', text: 'still connected' }
+        assert.throws(() => a.sendRecord(bad.text), /UTF-8 bytes/)
+        a.sendTo(b.peerId, bad)
+        a.sendTo(b.peerId, { type: 'history', messages: [{ ...marker, id: 'too-many' }, ...records.map(m => ({ ...m, text: '-' }))] })
+        a.sendTo(b.peerId, { type: 'history', messages: [bad, { ...marker, id: 'valid' }] })
+        a.sendTo(b.peerId, marker)
+        await waitUntil(() => live.some(m => m.id === marker.id), 5000)
+        assert.deepEqual(live.map(m => m.id), ['marker'])
+        assert.ok(b.history().some(m => m.id === 'valid'))
+        assert.ok(!b.history().some(m => ['too-many', 'bad'].includes(m.id)))
+    } finally {
+        await stopAll([a, b])
+    }
+})
+
+test('127.0.0.1: pending replay waits for host authority and drops cleared IDs', { timeout: 15000 }, async () => {
+    const [a, b] = await makeNodes(2)
+    let raw
+    try {
+        const stream = await a.libp2p.dialProtocol(multiaddr(b.getMultiaddrs()[0]), CHAT_PROTOCOL)
+        raw = createChatSession(stream, { onMessage() {} })
+        const control = m => assert.equal(raw.send(JSON.stringify(m)), true)
+        const row = id => ({ id, from: 'a', time: 1, text: id })
+        control({ type: 'history', messages: [row('one'), row('cleared')] })
+        control({ type: 'history', messages: [row('two')] })
+        control(row('marker'))  // delivery is ordered on this stream
+        await waitUntil(() => b.history().some(m => m.id === 'marker'), 5000)
+        assert.deepEqual(b.history().map(m => m.id), ['marker'])
+        b.removeHistory(['cleared', 'marker'])
+        control({ type: 'host', host: a.peerId, term: 7 })
+        await waitUntil(() => b.host()?.peerId === a.peerId, 5000)
+        assert.deepEqual(b.history().map(m => m.id), ['one', 'two'])
+    } finally {
+        raw?.done.catch(() => {})
+        raw?.close()
+        await stopAll([a, b])
     }
 })

@@ -12,7 +12,7 @@ import { EventEmitter } from 'node:events'
 import { networkInterfaces } from 'node:os'
 import { createChatSession } from './chat-session.mjs'
 import { createElection } from './election.mjs'
-import { createHistory } from './history.mjs'
+import { createHistory, HISTORY_LIMIT, MAX_MESSAGE_BYTES, historyLines, validHistoryItem } from './history.mjs'
 import { createFileTransfer, FILE_PROTOCOL } from './file-transfer.mjs'
 import { createVoiceRelay, VOICE_PROTOCOL, VOICE_DIRECT_PROTOCOL } from './voice-relay.mjs'
 import { makeInvite, validAddr, validPeerId } from './invite.mjs'
@@ -109,12 +109,8 @@ function parseMessage(line, peerId) {
         : createHash('sha256').update(`${peerId}
 ${time}
 ${text}`).digest('hex')
-    return { id, from, text, time }
-}
-
-function validHistoryItem(m) {
-    return m !== null && typeof m === 'object' && typeof m.id === 'string' && typeof m.from === 'string' &&
-        typeof m.text === 'string' && typeof m.time === 'number'
+    const record = { id, from, text, time }
+    return validHistoryItem(record) ? record : null
 }
 
 export async function createAsscrackNode({ room, listen, port = 0, discovery = true, discoveryInterval, name,
@@ -179,14 +175,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     const sessions = new Map()
     // The name that each open session sent in its hello line.
     const names = new Map()
-    const history = createHistory(200)
-    // seedHistory: records that this device keeps (for example saved lines). They go in the history before the
-    // first session, thus a host replay can send them. Records that are not valid are ignored.
-    if (Array.isArray(seedHistory)) {
-        for (const m of seedHistory) if (validHistoryItem(m)) history.add(m)
-    }
+    const history = createHistory()
     const HISTORY_KEEP_MS = 10000
-    // The last history line from each peer that was not the host when it arrived.
+    // Up to one replay window per peer, in case history arrives just before host acceptance.
     const pendingHistory = new Map()
     const selfId = node.peerId.toString()
     // The last valid links list from each peer with an open session.
@@ -248,12 +239,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     }
 
     function applyHistory(messages) {
-        if (!Array.isArray(messages)) return
-        const added = []
-        for (const m of messages) {
-            if (!validHistoryItem(m)) continue
-            if (history.add(m)) added.push({ id: m.id, from: m.from, text: m.text, time: m.time })
-        }
+        const added = messages.filter(m => history.add(m))
         console.info(`History applied: ${added.length} of ${messages.length} messages are new`)
         events.emit('history', { messages: added })
     }
@@ -262,7 +248,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     let lastHostId = null
     function sendHistoryTo(peerId, session) {
         const messages = history.list()
-        session.send(JSON.stringify({ type: 'history', messages }))
+        for (const line of historyLines(messages)) session.send(line)
         console.info(`History sent to ${peerId}: ${messages.length} messages`)
     }
     function sendHistoryToAll() {
@@ -271,12 +257,26 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     }
 
     function handleHistory(peerId, control) {
+        if (!Array.isArray(control.messages) || control.messages.length > HISTORY_LIMIT) return
+        const messages = control.messages.filter(validHistoryItem).map(({ id, from, text, time }) => ({ id, from, text, time }))
         if (election.host()?.peerId === peerId) {
-            applyHistory(control.messages)
+            applyHistory(messages)
             return
         }
-        console.info(`History from ${peerId} kept until it is the host`)
-        pendingHistory.set(peerId, { messages: control.messages, at: Date.now() })
+        const now = Date.now()
+        const previous = pendingHistory.get(peerId)
+        if (previous && now - previous.at <= HISTORY_KEEP_MS) {
+            // All parts of a pending replay share the original deadline. Empty updates cannot keep it alive.
+            previous.messages = previous.messages.concat(messages).slice(-HISTORY_LIMIT)
+        } else {
+            pendingHistory.set(peerId, { messages, at: now })
+        }
+    }
+
+    function removeHistory(ids) {
+        const removed = new Set(ids)
+        history.removeIds(removed)
+        for (const kept of pendingHistory.values()) kept.messages = kept.messages.filter(m => !removed.has(m.id))
     }
     let voiceState = { inVoice: false, streamId: null, muted: false }
     // peerId -> true for the peers in voice (from their voice lines).
@@ -501,7 +501,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 if (control) {
                     // Ignore an unknown type with no warning.
                     if (control.type === 'host') election.handleAnnouncement(peerId, control)
-                    else if (control.type === 'history') handleHistory(peerId, control)
+                    else if (control.type === 'history' && sessions.get(peerId) === session) handleHistory(peerId, control)
                     else if (control.type === 'hello') {
                         const peerName = typeof control.name === 'string' ? control.name.trim().slice(0, 64) : ''
                         if (peerName && sessions.get(peerId) === session) {
@@ -718,24 +718,41 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         return []
     }
 
-    // The addresses of each full node that sent addrs (self not included).
+    // Keep hints from an invite separate from addresses advertised by an authenticated peer.
     const knownFullNodes = new Map()
+    const invitedFullNodes = new Map()
+    const hintIds = () => new Set([...knownFullNodes.keys(), ...invitedFullNodes.keys()])
+    const hintAddrs = id => [...new Set([...(knownFullNodes.get(id) ?? []), ...(invitedFullNodes.get(id) ?? [])])]
     function validAddrList(addrs) {
         if (!Array.isArray(addrs) || addrs.length < 1 || addrs.length > MAX_ADDRS || !addrs.every(validAddr)) return null
         return [...new Set(addrs)]
     }
-    function learnFullNode(peerId, addrs, save = true) {
+    function learnFullNode(peerId, addrs) {
         if (peerId === selfId || !validPeerId(peerId)) return
+        const bare = addr => addr.replace(/\/p2p\/[^/]+$/, '')
+        const conn = sessionConns.get(peerId)
+        const reached = conn?.direction === 'outbound' ? bare(conn.remoteAddr.toString()) : null
+        // Prefer the advertised or previously known address that this connection actually reached.
+        const working = [...addrs, ...hintAddrs(peerId)].find(addr => bare(addr) === reached)
+        if (working) addrs = [working, ...addrs.filter(addr => bare(addr) !== reached)].slice(0, MAX_ADDRS)
         const old = knownFullNodes.get(peerId)
-        if (!old || old.length !== addrs.length || old.some((a, i) => a !== addrs[i])) {
-            knownFullNodes.set(peerId, addrs)
-            // A different peer ID with the same address list: the old entry is stale (the full node started again).
-            const same = new Set(addrs)
-            for (const [otherId, otherAddrs] of [...knownFullNodes]) {
-                if (otherId !== peerId && otherAddrs.length === same.size && otherAddrs.every(a => same.has(a))) knownFullNodes.delete(otherId)
+        let changed = !old || old.length !== addrs.length || old.some((a, i) => a !== addrs[i])
+        knownFullNodes.set(peerId, addrs)
+        if (invitedFullNodes.delete(peerId)) changed = true
+        // A restarted node can reclaim one of an old ID's endpoints. Keep any other hints for that ID.
+        for (const hints of [knownFullNodes, invitedFullNodes]) {
+            for (const [otherId, list] of hints) {
+                if (otherId === peerId) continue
+                const remaining = list.filter(addr => bare(addr) !== reached)
+                if (remaining.length === list.length) continue
+                if (remaining.length) hints.set(otherId, remaining)
+                else hints.delete(otherId)
+                changed = true
             }
+        }
+        if (changed) {
+            saveStore()
             events.emit('full-node-addrs', { peerId, addrs: [...addrs] })
-            if (save) saveStore()
         }
         dialFullNode(peerId)
     }
@@ -789,8 +806,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
 
     // Dial a known full node directly when this node has no direct connection to it.
     function dialFullNode(peerId) {
-        const addrs = knownFullNodes.get(peerId)
-        if (stopped || !addrs || dialing.has(peerId)) return
+        const addrs = hintAddrs(peerId)
+        if (stopped || !addrs.length || dialing.has(peerId)) return
         const direct = node.getConnections().some(c => c.remotePeer.toString() === peerId && !c.remoteAddr.toString().includes('/p2p-circuit'))
         if (direct) return
         // Two full nodes: only the lower peer ID dials (as in dialDiscovered).
@@ -909,7 +926,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         if (stopped || relayDialTimer) return
         relayDialTimer = setTimeout(() => { relayDialTimer = null; relayDials() }, delay)
     }
-    function relayDials() {
+    function relayDials(probeExhausted = false) {
         if (stopped) return
         const relays = [...sessions.keys()].filter(p => peerFull.get(p) === true && addrOf(p))
         if (relays.length === 0) return
@@ -923,11 +940,11 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         for (const k of noReservationTries.keys()) if (!wanted.has(k.split(' ')[0])) noReservationTries.delete(k)
         for (const target of retrySameRelay) if (!wanted.has(target)) retrySameRelay.delete(target)
         const now = Date.now()
-        const holdNodes = [...new Set([...relays, ...knownFullNodes.keys()])].filter(p => p !== selfId)
+        const holdNodes = [...new Set([...relays, ...hintIds()])].filter(p => p !== selfId)
         for (const target of wanted) {
             if (chatBusy(target)) continue
             const tries = relayDialTries.get(target) ?? 0
-            if (tries >= RELAY_DIAL_TRIES) continue
+            if (tries >= RELAY_DIAL_TRIES && !probeExhausted) continue
             if (!wantedSince.has(target)) wantedSince.set(target, now)
             // Hold the first try until each full node with a direct session and each known full node lists the
             // target, or until the hold time is more than RELAY_SETTLE_MS. A known full node with no session yet
@@ -936,7 +953,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 const left = wantedSince.get(target) + RELAY_SETTLE_MS - now
                 if (left > 0) { scheduleSettle(left); continue }
             }
-            relayDialTries.set(target, tries + 1)
+            relayDialTries.set(target, Math.min(tries + 1, RELAY_DIAL_TRIES))
             const relay = pickRelay(target, relays, tries)
             dialing.add(target)
             relayDialVia.set(target, relay)
@@ -1227,6 +1244,12 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             .finally(() => { clearTimeout(timer); upnpPhase = 'done' })
     }
 
+    // Read the active room's archive before any session can open. Register invalidation in the same
+    // synchronous step so Clear can remove these rows even while the network is still starting.
+    const initialHistory = typeof seedHistory === 'function' ? seedHistory(removeHistory) : seedHistory
+    if (Array.isArray(initialHistory)) {
+        for (const m of initialHistory) if (validHistoryItem(m)) history.add(m)
+    }
     await node.start()
     // Not awaited: the UPnP task must not slow down or stop the start. The TCP listener is bound now.
     // setImmediate: the caller attaches its event listeners before the first 'upnp' event can come.
@@ -1236,15 +1259,19 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     if (Array.isArray(inviteNodes)) {
         for (const entry of inviteNodes) {
             const valid = validAddrList(entry?.addrs)
-            if (valid && entry.id !== selfId && validPeerId(entry.id)) knownFullNodes.set(entry.id, valid)
+            if (valid && entry.id !== selfId && validPeerId(entry.id)) invitedFullNodes.set(entry.id, valid)
         }
     }
-    for (const peerId of knownFullNodes.keys()) dialFullNode(peerId)
+    for (const peerId of hintIds()) dialFullNode(peerId)
     // Redial: a member with no session to a full node dials the known full nodes again.
     const redialTimer = setInterval(() => {
-        if (stopped || selfFull) return
+        if (stopped) return
+        // A reservation can become usable without any link change. After the fast retries,
+        // let a still-wanted, exhausted target try once per ordinary redial interval.
+        if ([...relayDialTries.values()].includes(RELAY_DIAL_TRIES)) relayDials(true)
+        if (selfFull) return
         if ([...sessions.keys()].some(id => peerFull.get(id) === true)) return
-        for (const peerId of [...knownFullNodes.keys()]) dialFullNode(peerId)
+        for (const peerId of hintIds()) dialFullNode(peerId)
     }, redialInterval)
     redialTimer.unref?.()
 
@@ -1254,6 +1281,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     // (milestone 6, plan section 6 part 2).
     function sendRecord(text) {
         const message = { id: randomUUID(), from: senderName, text, time: Date.now() }
+        if (typeof text !== 'string') throw new TypeError('Message text must be a string')
+        if (!validHistoryItem(message)) throw new RangeError(`Message and sender name exceed ${MAX_MESSAGE_BYTES} UTF-8 bytes`)
         const line = JSON.stringify(message)
         let count = 0
         for (const session of sessions.values()) if (session.send(line)) count++
@@ -1303,7 +1332,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         upnpPending: () => useUpnp && upnpPhase !== 'done' && !stopped,
         roomKey: () => key ? key.toString('base64url') : null,
         publicAddrs,
-        knownFullNodes: () => Object.fromEntries([...knownFullNodes].map(([p, a]) => [p, [...a]])),
+        knownFullNodes: () => Object.fromEntries([...hintIds()].map(id => [id, hintAddrs(id)])),
         // The invite code: the self node (with public addresses) and the known full nodes.
         // null in a LAN room, or with no full node with addresses.
         invite() {
@@ -1311,7 +1340,12 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             const nodes = []
             const own = publicAddrs()
             if (own.length > 0) nodes.push({ id: selfId, addrs: own })
-            for (const [id, addrs] of knownFullNodes) if (nodes.length < MAX_ADDRS) nodes.push({ id, addrs })
+            // Put currently connected full nodes before offline candidates in the bounded v1 invite.
+            for (const id of new Set([...sessions.keys(), ...hintIds()])) {
+                const addrs = hintAddrs(id).slice(0, MAX_ADDRS)
+                if (addrs.length) nodes.push({ id, addrs })
+                if (nodes.length >= MAX_ADDRS) break
+            }
             if (nodes.length === 0) return null
             return makeInvite({ room, key: key.toString('base64url'), nodes })
         },
@@ -1348,6 +1382,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         host: () => election.host(),
         isHost: () => election.isHost(),
         history: () => history.list(),
+        removeHistory,
         pauseHeartbeats: paused => election.pauseHeartbeats(paused),
         offerFile: filePath => files.offerFile(filePath),
         acceptFile: offerId => files.acceptFile(offerId),

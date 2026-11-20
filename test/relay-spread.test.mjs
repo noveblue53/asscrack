@@ -101,3 +101,46 @@ test('spread: when the relay stops, the member session opens again through the o
         await stopAll(nodes)
     }
 })
+
+test('relay: a reservation that becomes usable after ten failed dials reconnects waiting members', { timeout: 40000 }, async t => {
+    const opts = { room: 'late reservation', roomKey: newRoomKey(), discovery: false, ...fast, redialInterval: 500 }
+    const nodes = []
+    t.after(() => stopAll(nodes))
+    const relay = await createAsscrackNode({ ...opts, fullNode: true, listen: LOCAL })
+    nodes.push(relay)
+    const members = []
+    for (let i = 0; i < 2; i++) {
+        const n = await createAsscrackNode({ ...opts, fullNode: false, relayOnly: true })
+        nodes.push(n)
+        members.push(n)
+    }
+    const [a, b] = members.sort((x, y) => x.peerId < y.peerId ? -1 : 1)
+    const gate = Promise.withResolvers()
+    const tm = b.libp2p.components.transportManager
+    const listen = tm.listen.bind(tm)
+    t.mock.method(tm, 'listen', async (...args) => { await gate.promise; return listen(...args) })
+    let failed = 0
+    const dial = a.libp2p.dial.bind(a.libp2p)
+    t.mock.method(a.libp2p, 'dial', async (address, ...args) => {
+        try { return await dial(address, ...args) } catch (err) {
+            if (address.toString().includes(`/p2p-circuit/p2p/${b.peerId}`)) failed++
+            throw err
+        }
+    })
+    try {
+        await a.connect(localAddr(relay))
+        await b.connect(localAddr(relay))
+        await waitFor(() => failed >= 10, 25000, 'ten failed circuit dials while B has no reservation')
+        assert.ok(!a.peers().includes(b.peerId))
+    } finally {
+        gate.resolve()
+    }
+    await waitFor(() => allPairs(members), 5000, 'members reconnect without reopening the relay session')
+    const fromA = new Set()
+    const fromB = new Set()
+    b.events.on('live', m => { if (m.peerId === a.peerId) fromA.add(m.id) })
+    a.events.on('live', m => { if (m.peerId === b.peerId) fromB.add(m.id) })
+    const sentA = a.sendRecord('A after recovery')
+    const sentB = b.sendRecord('B after recovery')
+    await waitFor(() => fromA.has(sentA.id) && fromB.has(sentB.id), 5000, 'bidirectional live messages after recovery')
+})

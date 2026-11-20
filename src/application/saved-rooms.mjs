@@ -30,6 +30,8 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
     let archive = null;
     // The active room: { roomId, keepHistory } or null.
     let active = null;
+    let replay = null;
+    let attachedNode = null;
     // Tombstones for the run of the app (DECISIONS.md P7): room ID -> Set of cleared message IDs.
     const tombstones = new Map();
 
@@ -101,6 +103,33 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
         return a.getRoom(roomId);
     }
 
+    // Called synchronously before network start, including the retry on another port.
+    function prepareReplay(room, roomKey, removeHistory) {
+        const roomId = roomFingerprint(room, roomKey);
+        replay = { roomId, removeHistory, seedIds: [] };
+        try {
+            const a = ensure();
+            if (!a || a.state().state !== 'open' || !a.getRoom(roomId)) return [];
+            const rows = a.replayMessages(roomId);
+            replay.seedIds = rows.map(m => m.id);
+            return rows;
+        } catch (err) {
+            log('WARN', `Saved replay unavailable: ${errText(err)}`);
+            return [];
+        }
+    }
+
+    function releaseReplay() {
+        replay = null;
+    }
+
+    function invalidateReplay(roomId, deletedIds) {
+        if (replay?.roomId !== roomId) return;
+        // A seed row may have been pruned from the archive while retained by the live node.
+        replay.removeHistory(new Set([...replay.seedIds, ...deletedIds]));
+        replay.seedIds = [];
+    }
+
     // After the node of a keyed room starts. Returns { roomId, saved, saveError }. A save failure does not throw.
     function afterLogin({ room, roomKey, invite = null, userName, save = false, keepHistory = true }) {
         active = null;
@@ -130,6 +159,11 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
                     a.markOpened(roomId);
                     active = { roomId, keepHistory: row.keepHistory };
                     log('INFO', `Saved room active, keep history ${row.keepHistory ? 'on' : 'off'}`);
+                    // A refreshed invite for an existing room only updates its connection hints.
+                    if (!save && invite && invite !== row.invite) {
+                        try { a.setInvite(roomId, invite); }
+                        catch (err) { saveError = errText(err); log('WARN', `Refreshed invite not saved: ${saveError}`); }
+                    }
                 }
             } catch (err) {
                 log('WARN', `Saved room not marked: ${errText(err)}`);
@@ -168,8 +202,9 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
 
     // Live lines only (event live, DECISIONS.md P4). The history event (host replay) is not saved.
     function attachNode(node) {
+        attachedNode = node;
         node.events.on('live', data => {
-            if (!data) return;
+            if (!data || node !== attachedNode) return;
             const r = add({ id: data.id, from: data.from, text: data.text, time: data.time, own: false, source: 'live', peerId: data.peerId ?? null });
             if (r.saved) emit('line-saved', { id: data.id });
             else if (r.saveError) emit('save-failed', { id: data.id, reason: r.saveError });
@@ -191,6 +226,7 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
         if (!a || a.state().state !== 'open') throw new Error('room archive is not open');
         if (typeof roomId !== 'string') throw new Error('bad room ID');
         const ids = a.clearMessages(roomId);
+        invalidateReplay(roomId, ids);
         let set = tombstones.get(roomId);
         if (!set) { set = new Set(); tombstones.set(roomId, set); }
         for (const id of ids) set.add(String(id));
@@ -208,6 +244,7 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
             try { forgetHints(row); } catch (err) { log('WARN', `Room hints not deleted: ${errText(err)}`); }
         }
         a.removeRoom(roomId);
+        invalidateReplay(roomId, []);
         tombstones.delete(roomId);
         log('INFO', 'Saved room forgotten');
         return { forgotten: true };
@@ -219,11 +256,13 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
 
     function close() {
         active = null;
+        attachedNode = null;
+        releaseReplay();
         if (archive) archive.close();
     }
 
     return {
-        status, unlock, lines, getRoom, afterLogin, recordSend, attachNode, setKeepHistory, clear, forget, activeInfo,
+        status, unlock, lines, getRoom, prepareReplay, releaseReplay, afterLogin, recordSend, attachNode, setKeepHistory, clear, forget, activeInfo,
         close, active: () => active
     };
 }

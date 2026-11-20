@@ -38,7 +38,11 @@ node.events.on('history', ({ messages }) => {
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: false })
 // One terminal reader, shared by all active peer sessions.
 rl.on('line', line => {
-    if (node.send(line) === 0) console.log('No active chat peers. Connect to a peer to send messages.')
+    try {
+        if (node.send(line) === 0) console.log('No active chat peers. Connect to a peer to send messages.')
+    } catch (err) {
+        console.error('Message not sent:', err.message)
+    }
 })
 
 if (target) {

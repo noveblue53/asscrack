@@ -2,10 +2,11 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { setTimeout as delay } from 'node:timers/promises'
 import { createLibp2p } from 'libp2p'
+import { pushable } from 'it-pushable'
 import { tcp } from '@libp2p/tcp'
 import { yamux } from '@chainsafe/libp2p-yamux'
 import { noise } from '@chainsafe/libp2p-noise'
-import { createChatSession } from '../src/network/chat-session.mjs'
+import { createChatSession, MAX_CHAT_FRAME_BYTES } from '../src/network/chat-session.mjs'
 
 async function waitFor(check) {
     for (let attempt = 0; attempt < 100; attempt++) {
@@ -72,4 +73,37 @@ test('one duplex stream carries chat both ways and cleans up on disconnect', { t
         await Promise.all(nodes.map(node => node.stop()))
         await Promise.allSettled(sessions.filter(Boolean).map(session => session.done))
     }
+})
+
+test('frame bounds count UTF-8 bytes before decoding and discard only the oversized line', async () => {
+    const source = pushable()
+    const sent = []
+    const received = []
+    const session = createChatSession({
+        source,
+        async sink(chunks) { for await (const bytes of chunks) sent.push(bytes) },
+        abort(error) { source.end(error) }
+    }, { onMessage: line => received.push(line) })
+    const exact = '🌍'.repeat(MAX_CHAT_FRAME_BYTES / 4)
+    const bytes = Buffer.from(exact)
+    assert.equal(session.send(exact), true)
+    assert.equal(session.send(exact + 'a'), false)
+    // Force a split inside a multi-byte code point, then a newline in the next chunk.
+    source.push(bytes.subarray(0, 3))
+    source.push(bytes.subarray(3))
+    source.push(Buffer.from('\n'))
+    // A libp2p chunk can consist of many separate buffers. Flattening this input would exceed the budget.
+    const piece = Buffer.alloc(32 * 1024, 97)
+    source.push({
+        byteLength: 2 * MAX_CHAT_FRAME_BYTES,
+        *[Symbol.iterator]() {
+            for (let i = 0; i < this.byteLength; i += piece.length) yield piece
+        },
+        subarray() { throw new Error('Do not flatten transport chunks') }
+    })
+    source.push(Buffer.from('tail\nnext\n\nfinal'))
+    source.end()
+    await session.done
+    assert.deepEqual(received, [exact, 'next', '', 'final'])
+    assert.deepEqual(sent, [Buffer.from(exact + '\n')])
 })

@@ -35,6 +35,17 @@
     // The roomId whose saved lines are shown (reopen or login).
     let linesLoadedFor = null;
     let olderBusy = false;
+    const archiveChanges = new Map();
+
+    async function deleteSavedData(roomId, action) {
+        const change = { pending: true };
+        archiveChanges.set(roomId, change);
+        try {
+            return await action(roomId);
+        } finally {
+            change.pending = false;
+        }
+    }
 
     function keyedType() {
         return roomTypeSelect.value !== 'lan';
@@ -110,7 +121,7 @@
             yes.disabled = true;
             no.disabled = true;
             try {
-                await api.forgetRoom(room.roomId);
+                await deleteSavedData(room.roomId, api.forgetRoom);
                 item.remove();
                 await refresh(() => api.listSavedRooms());
             } catch (err) {
@@ -148,14 +159,17 @@
     api.onPeerJoined(() => updateWaiting());
     api.onPeerLeft(() => updateWaiting());
 
-    // The saved lines of a room: the newest page, or the page before { time, id }. Returns an array.
+    // A concurrent Clear or Forget invalidates any page the main process already read.
     async function readLines(roomId, before = null) {
+        const change = archiveChanges.get(roomId);
+        if (change?.pending) return null;
         try {
             const lines = await api.savedRoomLines(roomId, before ? { before } : undefined);
+            if (change !== archiveChanges.get(roomId)) return null;
             return Array.isArray(lines) ? lines : [];
         } catch (err) {
             console.warn(`Saved lines not read: ${err?.message ?? err}`);
-            return [];
+            return change === archiveChanges.get(roomId) ? [] : null;
         }
     }
 
@@ -166,7 +180,7 @@
     // Saved lines after a login into a saved room. Lines with an ID that is shown do not come again.
     async function loadAfterLogin(roomId) {
         const lines = await readLines(roomId);
-        if (openRoomId !== roomId) return;
+        if (!lines || openRoomId !== roomId) return;
         linesLoadedFor = roomId;
         for (const line of lines) if (line.id) savedMessageIds.add(String(line.id));
         const fresh = window.readingCore.newHistoryLines(lines, id => {
@@ -197,7 +211,7 @@
         try {
             const roomId = openRoomId;
             const lines = await readLines(roomId, { time: Number(first.dataset.time) || 0, id: first.dataset.id });
-            if (roomId !== openRoomId) return;
+            if (!lines || roomId !== openRoomId) return;
             for (const line of lines) if (line.id) savedMessageIds.add(String(line.id));
             window.reading.keepPosition(() => {
                 for (const line of lines) insertMessage(line.from, line.text, line.time, line.id, line.own === true);
@@ -256,7 +270,7 @@
         if (!openRoomId) return;
         clearYes.disabled = true;
         try {
-            const result = await api.clearHistory(openRoomId);
+            const result = await deleteSavedData(openRoomId, api.clearHistory);
             clearSavedMarks();
             setOlder('none');
             clearConfirm.hidden = true;
@@ -285,6 +299,12 @@
         loginButton.disabled = true;
         for (const b of savedList.querySelectorAll('.reopen-room')) b.disabled = true;
         const lines = await readLines(room.roomId);
+        if (!lines) {
+            reopenBusy = false;
+            loginButton.disabled = false;
+            for (const b of savedList.querySelectorAll('.reopen-room')) b.disabled = false;
+            return;
+        }
         internetRoom = true;
         showChat(String(room.userName ?? ''), String(room.name ?? ''));
         for (const line of lines) {

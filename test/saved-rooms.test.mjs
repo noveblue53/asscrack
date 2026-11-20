@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import Database from 'better-sqlite3-multiple-ciphers';
+import { makeInvite, readInvite } from '../src/network/invite.mjs';
 import { createSavedRooms } from '../src/application/saved-rooms.mjs';
 import { roomFingerprint } from '../src/application/room-archive.mjs';
 
@@ -221,4 +222,30 @@ test('forget continues when forgetHints throws', t => {
     assert.deepEqual(rooms.forget(idA), { forgotten: true });
     assert.equal(rooms.getRoom(idA), null);
     assert.ok(logs.some(([l, x]) => l === 'WARN' && /hint error/.test(x)));
+});
+
+
+test('importing a refreshed invite for a saved room keeps its identity, messages and history preference on reopen', t => {
+    const { rooms, dir } = setup(t);
+    const peerId = 'QmYwAPJzv5CZsnAzt8auVZRnGKYcmwZKKf7E1hgZ5tC6J8';
+    const code = port => makeInvite({ room: 'room', key: KEY_A, nodes: [{ id: peerId, addrs: [`/ip4/127.0.0.1/tcp/${port}`] }] });
+    const original = code(4001);
+    const refreshed = code(4002);
+    const join = invite => {
+        const { room, key: roomKey } = readInvite(invite);
+        return { room, roomKey, invite, userName: 'me' };
+    };
+    const { roomId } = rooms.afterLogin({ ...join(original), save: true });
+    rooms.recordSend({ id: 'prior', from: 'me', text: 'before refresh', time: 1, accepted: 1 });
+    rooms.setKeepHistory(roomId, false);
+    const imported = rooms.afterLogin(join(refreshed));
+    assert.equal(imported.roomId, roomId);
+    assert.equal(imported.keepHistory, false);
+    rooms.close();
+    const reopened = createSavedRooms({ dir: path.join(dir, 'saved-rooms'), protector: fakeProtector });
+    t.after(() => reopened.close());
+    assert.equal(reopened.status().rooms.length, 1);
+    assert.equal(reopened.getRoom(roomId).invite, refreshed);
+    assert.deepEqual(reopened.lines(roomId).map(m => m.id), ['prior']);
+    assert.equal(reopened.getRoom(roomId).keepHistory, false);
 });

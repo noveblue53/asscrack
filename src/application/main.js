@@ -275,6 +275,7 @@ async function startRoom(options, publicAddress) {
             const tag = keyedServiceTag(options.room, options.roomKey);
             options.storePath = path.join(dir, `${tag}.json`);
             hostFile = path.join(dir, `${tag}.host.json`);
+            options.seedHistory = removeHistory => getSavedRooms().prepareReplay(options.room, options.roomKey, removeHistory);
         }
         // A host that rejoins its room with an empty Public address field uses the saved address again.
         let address = publicAddress === undefined || publicAddress === null ? '' : String(publicAddress).trim();
@@ -317,6 +318,7 @@ async function startRoom(options, publicAddress) {
             });
         }
     } catch (err) {
+        savedRooms?.releaseReplay();
         loginStarted = false;
         throw err;
     }

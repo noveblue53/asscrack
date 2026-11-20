@@ -70,3 +70,36 @@ test('the login screen has Forget with a confirmation, and the list has paging',
     const reading = await read('reading.js');
     assert.ok(reading.includes('keepPosition,'));
 });
+
+test('a page already returned by the archive cannot restore saved marks after Clear', async () => {
+    const { createDom } = await import('./helpers/fake-dom.mjs');
+    const { runInNewContext } = await import('node:vm');
+    const html = await read('index.html');
+    const { document, window } = createDom([...html.matchAll(/\bid="([^"]+)"/g)].map(m => ({ id: m[1] })));
+    const el = id => document.getElementById(id);
+    const page = Promise.withResolvers();
+    const marked = new Set();
+    let reads = 0;
+    let clears = 0;
+    window.asscrack = {
+        listSavedRooms: async () => ({ state: 'open', rooms: [] }),
+        savedRoomLines: () => { reads++; return page.promise; },
+        clearHistory: async () => { clears++; return { cleared: 1 }; },
+        onPeerJoined() {}, onPeerLeft() {}, onLineSaved() {}, onSaveFailed() {}
+    };
+    window.reading = { keepPosition: fn => fn(), followLatest() {} };
+    window.readingCore = { newHistoryLines: lines => lines };
+    runInNewContext(await read('saved-rooms-ui.js'), {
+        document, window, status: el('status'), roomTypeSelect: el('room-type'), messageList: el('messages'),
+        peerItems: new Map(), savedMessageIds: marked, clearSavedMarks: () => marked.clear(), insertMessage() {}
+    });
+    window.savedRoomsUi.roomStarted({ savedRoom: true, roomId: 'r' });
+    assert.equal(reads, 1);
+    el('clear-confirm-yes').click();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(clears, 1);
+    page.resolve([{ id: 'stale', text: 'deleted' }]);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(marked.has('stale'), false);
+    assert.equal(el('messages').dataset.older, 'none');
+});

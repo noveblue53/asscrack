@@ -1,7 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createAsscrackNode } from '../src/network/node.mjs'
-import { newRoomKey } from '../src/network/invite.mjs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import { makeInvite, readInvite, newRoomKey } from '../src/network/invite.mjs'
 
 // All results of this file are 127.0.0.1 results, not LAN results.
 const LOCAL = ['/ip4/127.0.0.1/tcp/0']
@@ -77,14 +80,20 @@ test('rejoin: an invite node with an old peer ID connects to the new node at tha
     const roomKey = newRoomKey()
     const nodes = []
     try {
-        const { addr, oldId } = await freeAddr(room, roomKey)
+        const { addr } = await freeAddr(room, roomKey)
+        const original = await fullNodeAt(room, roomKey, addr)
+        const oldId = original.peerId
+        const originalCode = original.invite()
+        await original.stop()
         const A2 = await fullNodeAt(room, roomKey, addr)
         nodes.push(A2)
         assert.notEqual(A2.peerId, oldId)
-        const B = await createAsscrackNode({ room, roomKey, relayOnly: true, fullNode: false, inviteNodes: [{ id: oldId, addrs: [addr] }], ...fast })
+        const B = await createAsscrackNode({ room, roomKey, relayOnly: true, fullNode: false, inviteNodes: readInvite(originalCode).nodes, ...fast })
         nodes.push(B)
         await waitFor(() => B.peers().includes(A2.peerId), 20000, 'B session with A2 from the invite')
         await waitFor(() => B.knownFullNodes()[A2.peerId] !== undefined && B.knownFullNodes()[oldId] === undefined, 5000, 'old invite entry replaced')
+        const record = B.sendRecord('original invite still works')
+        await waitFor(() => A2.history().some(line => line.id === record.id), 5000, 'fresh line at restarted host')
     } finally {
         await stopAll(nodes)
     }
@@ -111,4 +120,71 @@ test('rejoin: an invite node at the own address gives no session with self and n
     } finally {
         await stopAll(nodes)
     }
+})
+
+
+test('rejoin: pasted invite and saved hints both get a dial, even when one contains an obsolete endpoint', { timeout: 30000 }, async t => {
+    const key = newRoomKey()
+    const room = 'changed endpoint'
+    const nodes = []
+    const dir = mkdtempSync(path.join(tmpdir(), 'rejoin-'))
+    t.after(async () => { await stopAll(nodes); rmSync(dir, { recursive: true, force: true }) })
+    const { addr } = await freeAddr(room, key)
+    const a = await fullNodeAt(room, key, addr)
+    nodes.push(a)
+    const { addr: retired } = await freeAddr(room, key)
+    const newInvite = a.invite()
+    const oldInvite = makeInvite({ room, key, nodes: [{ id: a.peerId, addrs: [retired] }] })
+    const clean = await createAsscrackNode({ room, roomKey: key, inviteNodes: readInvite(oldInvite).nodes,
+        relayOnly: true, fullNode: false, ...fast })
+    nodes.push(clean)
+    const failures = []
+    clean.events.on('dial-failed', event => failures.push(event))
+    await waitFor(() => failures.some(e => e.via === 'address'), 5000, 'clean member tried old endpoint with and without its ID')
+    assert.deepEqual(clean.peers(), [])
+    assert.equal(clean.sendRecord('waiting').accepted, 0)
+    await clean.stop()
+    nodes.pop()
+    const storePath = path.join(dir, 'room.json')
+    // First, an existing member imports the new code while the old address is in their profile.
+    writeFileSync(storePath, JSON.stringify({ fullNodes: { [a.peerId]: [retired] } }))
+    for (const invite of [newInvite, oldInvite]) {
+        const parsed = readInvite(invite)
+        const b = await createAsscrackNode({ room: parsed.room, roomKey: parsed.key, inviteNodes: parsed.nodes,
+            relayOnly: true, fullNode: false, storePath, ...fast })
+        nodes.push(b)
+        await waitFor(() => b.fullNodes().includes(a.peerId) && a.peers().includes(b.peerId), 5000, 'authenticated connection to A')
+        assert.equal(b.send('still the same room'), 1)
+        assert.deepEqual(JSON.parse(readFileSync(storePath, 'utf8')).fullNodes[a.peerId], [addr])
+        const shared = readInvite(b.invite())
+        assert.deepEqual(shared, readInvite(newInvite))
+        await b.stop()
+        nodes.pop()
+        await waitFor(() => !a.peers().includes(b.peerId), 5000, 'peer left before next import')
+        // On the second pass the working address is cached but the pasted original code is stale.
+    }
+})
+
+test('rejoin: a fresh profile persists the authenticated invite endpoint for an invite-free reopen', { timeout: 30000 }, async t => {
+    const key = newRoomKey()
+    const room = 'saved endpoint'
+    const dir = mkdtempSync(path.join(tmpdir(), 'rejoin-'))
+    const storePath = path.join(dir, 'room.json')
+    const nodes = []
+    t.after(async () => { await stopAll(nodes); rmSync(dir, { recursive: true, force: true }) })
+    const { addr } = await freeAddr(room, key)
+    const a = await fullNodeAt(room, key, addr)
+    nodes.push(a)
+    const opts = { room, roomKey: key, relayOnly: true, fullNode: false, storePath, ...fast }
+    const b = await createAsscrackNode({ ...opts, inviteNodes: readInvite(a.invite()).nodes })
+    nodes.push(b)
+    await waitFor(() => b.fullNodes().includes(a.peerId), 5000, 'full node from invite')
+    assert.deepEqual(JSON.parse(readFileSync(storePath, 'utf8')).fullNodes, { [a.peerId]: [addr] })
+    await b.stop()
+    nodes.pop()
+    const reopened = await createAsscrackNode(opts)
+    nodes.push(reopened)
+    await waitFor(() => reopened.fullNodes().includes(a.peerId), 5000, 'full node from saved hints only')
+    const record = reopened.sendRecord('reopened')
+    await waitFor(() => a.history().some(line => line.id === record.id), 5000, 'fresh message at host')
 })

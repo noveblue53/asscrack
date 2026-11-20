@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import Database from 'better-sqlite3-multiple-ciphers';
+import { HISTORY_LIMIT, MAX_MESSAGE_BYTES, validHistoryItem } from '../network/history.mjs';
 
 const ID_TAG = Buffer.from('asscrack-room-id', 'ascii');
 
@@ -79,7 +80,7 @@ CREATE INDEX IF NOT EXISTS messages_order ON messages(room_id, time, msg_id);
 `;
 
 // Limits of each room and of each row (DECISIONS.md P6).
-export const ARCHIVE_LIMITS = Object.freeze({ maxRows: 10000, maxBytes: 8388608, maxRowBytes: 65536 });
+export const ARCHIVE_LIMITS = Object.freeze({ maxRows: 10000, maxBytes: 8388608, maxRowBytes: MAX_MESSAGE_BYTES });
 
 const ROW_BYTES_SQL = "length(CAST(body AS BLOB)) + length(CAST(coalesce(sender, '') AS BLOB))";
 
@@ -189,6 +190,9 @@ export function openRoomArchive({ dir, protector, limits = null }) {
         savedAt: r.saved_at, openedAt: r.opened_at,
       }));
     },
+    setInvite(roomId, invite) {
+      need().prepare('UPDATE rooms SET invite = ? WHERE room_id = ?').run(invite, roomId);
+    },
     markOpened(roomId, time = Date.now()) {
       need().prepare('UPDATE rooms SET opened_at = ? WHERE room_id = ?').run(time, roomId);
     },
@@ -237,6 +241,19 @@ export function openRoomArchive({ dir, protector, limits = null }) {
         }
         return true;
       })();
+    },
+    replayMessages(roomId) {
+      // Only the public live/send rows in the v2 archive can go on the wire. Read newest first so an
+      // older installation's non-shareable record cannot displace one of the newest eligible 200.
+      const rows = need().prepare(`SELECT msg_id AS id, sender AS "from", body AS text, time
+        FROM messages WHERE room_id = ? AND ((source = 'live' AND own = 0) OR (source = 'send' AND own = 1))
+        ORDER BY time DESC, msg_id DESC`).iterate(roomId);
+      const messages = [];
+      for (const row of rows) {
+        if (validHistoryItem(row)) messages.push(row);
+        if (messages.length === HISTORY_LIMIT) break;
+      }
+      return messages.reverse();
     },
     listMessages(roomId, { limit = 200, before = null } = {}) {
       const d = need();
