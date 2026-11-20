@@ -19,21 +19,17 @@
 #chat-screen {
   grid-template-rows: minmax(0, 1fr) minmax(0, auto) auto;
 }
-#login-window-title, #titlebar #chat-room {
+#window-brand {
   flex: 1 1 auto;
   min-width: 28px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-#login-window-title {
-  order: 1;
-  font: 700 15px var(--font-title);
+  font: 700 16px var(--font-title);
   letter-spacing: .025em;
 }
 #window-controls { order: 2; }
-body.chat #login-window-title,
-body:not(.chat) #titlebar > :is(#chat-room, button, [role="menu"]) { display: none; }
+body:not(.chat) #titlebar > :is(button, [role="menu"]) { display: none; }
 
 html[data-frame="mac"] #titlebar { padding-left: 82px; }
 html[data-frame="overlay"] #titlebar {
@@ -105,6 +101,4 @@ html[data-theme="amber-terminal"] #window-controls { border-radius: 0; }
 html[data-theme="amber-terminal"] #window-controls button:not(#window-close) { background: var(--control-bottom, #352817); }
 @media (max-width: 560px) {
   :root { --frame-button-width: 27px; --frame-close-width: 35px; }
-  /* Both commands also have keyboard-accessible entries in View. Preserve a drag target in a small room. */
-  #titlebar > #map-toggle, #titlebar > #buddy-toggle { display: none; }
 }

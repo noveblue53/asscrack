@@ -12,17 +12,6 @@
   position: relative;
 }
 
-.highlight-tools {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 4px 10px;
-  padding: 3px 8px;
-}
-
-.highlight-tools summary { cursor: pointer; }
-.highlight-tools details label { display: block; }
-.highlight-tools input { max-width: 100%; }
 #messages .nick-highlight { background: #fff0a5; color: #462d00; font-weight: 700; }
 #messages .selected-highlight > .bubble-text { outline: 2px solid #664a16; outline-offset: 1px; }
 

@@ -35,6 +35,7 @@
         accept: 'Accept',
         refuse: 'Refuse',
         'cancel-receive': 'Cancel',
+        retry: 'Retry',
         'cancel-receiver': 'Cancel for this user',
         'cancel-offer': 'Cancel for all users',
         reveal: 'Show in Explorer'
@@ -61,6 +62,7 @@
                 if (info.direction === 'receive') {
                     if (info.state === 'offered') return ['accept', 'refuse'];
                     if (info.state === 'receiving') return info.cancelRequested ? [] : ['cancel-receive'];
+                    if (info.state === 'failed' && info.canRetry) return ['retry'];
                     if (info.state === 'done' && info.revealable) return ['reveal'];
                     return [];
                 }

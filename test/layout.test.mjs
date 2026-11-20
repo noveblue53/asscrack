@@ -43,7 +43,7 @@ const DEFAULTS = {
     buddiesShown: true,
     mapWidth: null,
     transferHeight: null,
-    transfersShown: true,
+    transfersPinned: false,
     compactTranscript: false,
 };
 
@@ -97,7 +97,7 @@ test('wrong types recover field by field', () => {
         buddiesShown: 'no',
         mapWidth: 400,
         transferHeight: [120],
-        transfersShown: false,
+        transfersPinned: true,
     });
     const pref = core.readPref({ localStorage: memoryStorage({ [KEY]: text }) });
     assert.deepEqual(plain(pref), {
@@ -107,7 +107,7 @@ test('wrong types recover field by field', () => {
         buddiesShown: true,
         mapWidth: 400,
         transferHeight: null,
-        transfersShown: false,
+        transfersPinned: true,
         compactTranscript: false,
     });
 });
@@ -135,6 +135,14 @@ test('missing fields get their defaults, the other fields stay', () => {
     const { core } = load();
     const pref = core.parsePref('{"version":1,"buddyWidth":250}');
     assert.deepEqual(plain(pref), { ...DEFAULTS, buddyWidth: 250 });
+});
+
+test('existing splitter and density preferences do not pin the idle transfer tray', () => {
+    const { core } = load();
+    const pref = core.parsePref('{"version":1,"transfersShown":true,"transferHeight":160,"compactTranscript":true}');
+    assert.equal(pref.transfersPinned, false);
+    assert.equal(pref.transferHeight, 160);
+    assert.equal(pref.compactTranscript, true);
 });
 
 test('a size out of the absolute limits is clamped and rounded', () => {
@@ -183,26 +191,25 @@ test('layout.js loads with a throwing localStorage getter and makes no console o
 test('write and read give the same preference', () => {
     const { core } = load();
     const host = { localStorage: memoryStorage() };
-    const pref = { ...DEFAULTS, buddyWidth: 260, buddySide: 'right', mapWidth: 420, transferHeight: 180, transfersShown: false };
+    const pref = { ...DEFAULTS, buddyWidth: 260, buddySide: 'right', mapWidth: 420, transferHeight: 180, transfersPinned: true };
     assert.equal(core.writePref(host, pref), true);
     assert.deepEqual(plain(core.readPref(host)), pref);
     assert.deepEqual(plain(JSON.parse(host.localStorage.getItem(KEY))), pref);
 });
 
-test('the responsive defaults are the old breakpoints', () => {
+test('fresh widescreen defaults give conversation more space while keeping narrow layouts usable', () => {
     const { core } = load();
     assert.equal(core.responsiveDefaults(560, 480).buddyWidth, 148);
     assert.equal(core.responsiveDefaults(600, 480).buddyWidth, 148);
     assert.equal(core.responsiveDefaults(800, 600).buddyWidth, 192);
-    assert.equal(core.responsiveDefaults(1099, 600).buddyWidth, 192);
-    assert.equal(core.responsiveDefaults(1280, 800).buddyWidth, 236);
+    assert.equal(core.responsiveDefaults(1099, 600).buddyWidth, 239);
+    assert.equal(core.responsiveDefaults(1280, 800).buddyWidth, 279);
     assert.equal(core.responsiveDefaults(800, 600).transferHeight, 90);
     assert.equal(core.responsiveDefaults(800, 700).transferHeight, 150);
     assert.equal(core.responsiveDefaults(800, 900).transferHeight, 210);
-    // 36 % of the chat body (1280 - 2 x 6), between 320 and 500.
-    assert.equal(core.responsiveDefaults(1280, 800).mapWidth, 456);
-    assert.equal(core.responsiveDefaults(1000, 800).mapWidth, 356);
-    assert.equal(core.responsiveDefaults(2000, 800).mapWidth, 500);
+    assert.equal(core.responsiveDefaults(1280, 800).mapWidth, 368);
+    assert.equal(core.responsiveDefaults(1000, 800).mapWidth, 300);
+    assert.equal(core.responsiveDefaults(2000, 800).mapWidth, 520);
 });
 
 test('clamp at 1280 x 800: defaults, docked map and requested sizes', () => {
@@ -210,9 +217,9 @@ test('clamp at 1280 x 800: defaults, docked map and requested sizes', () => {
     const view = { width: 1280, height: 800, chromeH: 220, mapOpen: true };
     const eff = core.effectiveLayout(core.defaultPref(), view);
     assert.equal(eff.buddyMode, 'docked');
-    assert.equal(eff.buddyWidth, 236);
+    assert.equal(eff.buddyWidth, 279);
     assert.equal(eff.mapDocked, true);
-    assert.equal(eff.mapWidth, 456);
+    assert.equal(eff.mapWidth, 368);
     assert.equal(eff.transferHeight, 150);
     assert.equal(eff.transferSet, false);
     assertComposerRoom(core, eff, view.height);

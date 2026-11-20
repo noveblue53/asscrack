@@ -23,7 +23,7 @@
             option.value = id;
             const suffix = counts.get(name) > 1 ? ' · ' + id.slice(-6) : '';
             const missed = state(id).missed;
-            option.textContent = name + suffix + (missed ? ' (' + missed + ' unread)' : '');
+            option.textContent = '#' + (id === 'general' ? 'general' : name) + suffix + (missed ? ' (' + missed + ' unread)' : '');
             return option;
         }));
         picker.value = selected;
@@ -69,6 +69,9 @@
     }
     picker.addEventListener('change', () => open(picker.value));
     add.addEventListener('click', () => { nameInput.value = ''; document.getElementById('channel-error').textContent = ''; dialog.showModal(); nameInput.focus(); });
+    dialog.addEventListener('close', () => {
+        if (document.activeElement === document.body) document.getElementById('room-options-toggle')?.focus();
+    });
     document.getElementById('channel-cancel').addEventListener('click', () => dialog.close());
     document.getElementById('channel-create-form').addEventListener('submit', async e => {
         e.preventDefault();

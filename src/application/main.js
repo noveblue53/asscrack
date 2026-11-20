@@ -32,7 +32,7 @@ if (process.platform === 'win32') {
 }
 
 const EVENTS = ['channels', 'peer-discovered', 'peer-joined', 'peer-left', 'message', 'history', 'signal', 'voice-state', 'host-changed', 'peer-name',
-    'file-offer', 'file-progress', 'file-done', 'file-failed', 'file-refused', 'file-cancelled', 'topology', 'full-node', 'full-node-addrs',
+    'file-offer', 'file-retried', 'file-progress', 'file-done', 'file-failed', 'file-refused', 'file-cancelled', 'topology', 'full-node', 'full-node-addrs',
     'voice-frame', 'connection', 'dial-failed', 'upnp', 'presence', 'topic'];
 
 // Test option: --profile <dir> gives each instance its own user data folder.
@@ -131,6 +131,7 @@ function logEvent(type, data) {
         parts.push(`ids ${messages.map(m => m?.id).join(',')}`, `count ${messages.length}`);
     } else if (data?.offerId) {
         parts.push(`offer ${data.offerId}`);
+        if (data.retryOf) parts.push(`retry-of ${data.retryOf}`);
         // direction: the side of this node (send or receive).
         // by: the side whose user action caused the event (self or peer). A done or failed transfer has no such
         // action, so it gets "by none". An offer comes from the peer.
@@ -502,6 +503,8 @@ async function startRoom(options, publicAddress) {
     }
     // Record the path before the window gets the event, so that a Show in Explorer at once finds it.
     node.events.on('attachment-status', data => sendToWindow('asscrack:attachment-status', data));
+    node.events.on('shelf', data => sendToWindow('asscrack:shelf', data));
+    node.events.on('shelf-offered', data => sendToWindow('asscrack:shelf-offered', data));
     node.events.on('file-done', data => {
         if (data?.direction !== 'receive' || typeof data.path !== 'string') return;
         receivedFiles.set(`${data.offerId}|${data.peerId}`, data.path);
@@ -523,7 +526,8 @@ async function startRoom(options, publicAddress) {
             logEvent(type, data);
             // The diagnostic window reads a redacted projection of these local events.
             if (type === 'connection' || type === 'dial-failed' || (idlePeer && type === 'voice-frame')) return;
-            sendToWindow(`asscrack:${type}`, data);
+            const shelfId = type === 'file-offer' ? node.shelfTransfer(data.peerId, data.offerId) : undefined;
+            sendToWindow(`asscrack:${type}`, shelfId ? { ...data, shelfId } : data);
         });
     }
     // The node dials the invite nodes at start and again with the redial timer (option inviteNodes).
@@ -835,6 +839,14 @@ ipcMain.handle('asscrack:topology', () => {
     return node ? node.topology() : null;
 });
 
+ipcMain.handle('asscrack:refresh-shelf', () => node?.refreshShelf());
+ipcMain.handle('asscrack:share-file', (_event, filePath) => {
+    if (!node || typeof filePath !== 'string' || !path.isAbsolute(filePath)) throw new Error('Choose a local file to share');
+    return node.publishShelfFile(filePath);
+});
+ipcMain.handle('asscrack:remove-shared-file', (_event, id) => node?.removeShelfFile(id) === true);
+ipcMain.handle('asscrack:download-shared-file', (_event, peerId, id) => node?.downloadShelfFile(peerId, id) === true);
+
 ipcMain.handle('asscrack:offer-file', (_event, filePath, recipientId) => {
     if (!node) throw new Error('Not logged in');
     if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) throw new Error('The file path is not an absolute path');
@@ -873,6 +885,12 @@ ipcMain.handle('asscrack:accept-file', (_event, offerId) => {
     if (!node) throw new Error('Not logged in');
     logAction('accept-file', String(offerId));
     return node.acceptFile(String(offerId));
+});
+
+ipcMain.handle('asscrack:retry-file', (_event, offerId) => {
+    if (!node) throw new Error('Not logged in');
+    logAction('retry-file', String(offerId));
+    return node.retryFile(String(offerId));
 });
 
 ipcMain.handle('asscrack:refuse-file', (_event, offerId) => {

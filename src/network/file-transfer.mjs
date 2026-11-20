@@ -14,6 +14,7 @@ const WRITE_UPDATE_MS = 1000
 const REQUEST_LIMIT = 1024
 const PROGRESS_INTERVAL_MS = 100
 const CANCEL_WAIT_MS = 500
+const RETRY_WAIT_MS = 10000
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const SHA_RE = /^[0-9a-f]{64}$/
 const RESERVED_RE = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i
@@ -128,10 +129,11 @@ export async function moveToFreeName(temp, dir, name, fs = fsp) {
 
 // The file transfer part of a node. The node sends the file control lines to handleControl().
 export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerNames, downloadDir, fileAckTimeout = 30000 }) {
-    // Own offers: offerId -> { offerId, filePath, name, size, sha256, targets: Set, started: Set }
+    // Offer and download state lives for the current room session.
     const ownOffers = new Map()
-    // Received offers: offerId -> { offerId, peerId, name, size, sha256, state }
     const received = new Map()
+    const retryable = new Map()
+    const retryRequests = new Map()
     // Active transfers: key `${direction}|${offerId}|${peerId}` -> transfer
     const active = new Map()
     // Peer cancel signals for active transfers: key `${offerId}|${peerId}`
@@ -223,12 +225,15 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
         return { ...prepared, sha256: hash.digest('hex') }
     }
 
-    function publishOffer(prepared, recipients, offerId = randomUUID(), attachmentId = null) {
+    function publishOffer(prepared, recipients, offerId = randomUUID(), attachmentId = null, retryOf = null) {
         if (stopping) throw new Error('Node stopped')
         const { name, size, sha256 } = prepared
-        const offer = { ...prepared, offerId, attachmentId, targets: new Set(), started: new Set() }
+        const offer = { ...prepared, offerId, attachmentId, retryOf, targets: new Set(), started: new Set(),
+            failed: new Set(), retries: new Map() }
         const line = { type: 'file-offer', offerId, name, size, sha256, flow: 1 }
         if (attachmentId) line.attachmentId = attachmentId
+        else line.retry = 1
+        if (retryOf) line.retryOf = retryOf
         for (const peerId of recipients) if (sendLine(peerId, line)) offer.targets.add(peerId)
         if (offer.targets.size) ownOffers.set(offerId, offer)
         return { offerId, name, size, sha256, peers: offer.targets.size, recipients: [...offer.targets] }
@@ -258,6 +263,82 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
         return offer
     }
 
+    function consumeRetryGrant(offer, peerId) {
+        if (!offer.retryOf || offer.retryClaimed) return true
+        const prior = ownOffers.get(offer.retryOf)
+        if (prior?.retries.get(peerId)?.attemptId !== offer.offerId || !prior.failed.has(peerId)) return false
+        prior.failed.delete(peerId)
+        prior.retries.delete(peerId)
+        offer.retryClaimed = true
+        return true
+    }
+
+    // Each retry gets a new wire ID so late progress, cancellation and receipts cannot
+    // affect the new stream. The prior grant belongs only to the original recipient.
+    async function offerRetry(peerId, offerId, attemptId) {
+        if (!UUID_RE.test(offerId) || typeof attemptId !== 'string' || !UUID_RE.test(attemptId) || attemptId === offerId || ownOffers.has(attemptId) ||
+            received.has(attemptId) || retryable.has(attemptId)) return
+        const prior = ownOffers.get(offerId)
+        const deny = () => sendLine(peerId, { type: 'file-retry-unavailable', offerId, attemptId })
+        if (!prior || prior.attachmentId) return deny()
+        const pending = prior.retries.get(peerId)
+        if (pending?.checking) return
+        if (pending) {
+            const old = ownOffers.get(pending.attemptId)
+            if (old?.started.has(peerId)) return deny()
+            ownOffers.delete(pending.attemptId)
+            if (old?.targets.has(peerId)) events.emit('file-failed', { offerId: old.offerId, peerId,
+                direction: 'send', reason: 'replaced by a newer retry' })
+        }
+        const retry = { attemptId, checking: true }
+        prior.retries.set(peerId, retry)
+        const authorized = () => !stopping && ownOffers.get(offerId) === prior && prior.failed.has(peerId)
+        try {
+            const previous = active.get(`send|${offerId}|${peerId}`)
+            if (previous) await previous.promise
+            if (!authorized() || !await unchanged(prior) || !authorized() || !openPeers().includes(peerId) ||
+                ownOffers.has(attemptId) || received.has(attemptId) || retryable.has(attemptId)) return deny()
+            // A retry may itself disconnect before its stream opens. The request for that
+            // offer proves it arrived, so the same recipient can no longer reopen its parent.
+            if (!prior.started.has(peerId) && !consumeRetryGrant(prior, peerId)) return deny()
+            const next = publishOffer(prior, [peerId], attemptId, null, offerId)
+            if (next.peers) {
+                events.emit('file-retried', { offerId: attemptId, retryOf: offerId, peerId, direction: 'send',
+                    name: next.name, size: next.size })
+            }
+        } finally {
+            retry.checking = false
+            if (!ownOffers.has(attemptId) && prior.retries.get(peerId) === retry) prior.retries.delete(peerId)
+        }
+    }
+
+    function failReceive(offer, reason) {
+        if (offer.retry) retryable.set(offer.offerId, offer)
+        events.emit('file-failed', { offerId: offer.offerId, peerId: offer.peerId, direction: 'receive', reason,
+            ...(offer.retry ? { retryable: true } : {}) })
+    }
+
+    function finishRetry(offerId, reason, canRetry) {
+        const retry = retryRequests.get(offerId)
+        if (!retry) return
+        clearTimeout(retry.timer)
+        retryRequests.delete(offerId)
+        if (!canRetry) retryable.delete(offerId)
+        if (reason) events.emit('file-failed', { offerId, peerId: retry.peerId, direction: 'receive', reason, retryable: canRetry })
+    }
+
+    function retryFile(offerId) {
+        const offer = retryable.get(offerId)
+        if (!offer || retryRequests.has(offerId) || stopping || !openPeers().includes(offer.peerId)) return false
+        const attemptId = randomUUID()
+        const timer = setTimeout(() => finishRetry(offerId, 'retry request timed out', true), RETRY_WAIT_MS)
+        timer.unref?.()
+        retryRequests.set(offerId, { attemptId, timer, peerId: offer.peerId })
+        if (sendLine(offer.peerId, { type: 'file-retry', offerId, attemptId })) return true
+        finishRetry(offerId, null, true)
+        return false
+    }
+
     // The sender side of one data stream.
     async function serve(t) {
         const { stream, peerId } = t
@@ -281,7 +362,7 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
         } catch {}
         const offerId = request?.offerId
         const offer = ownOffers.get(offerId)
-        if (stopping || !offer || !offer.targets.has(peerId) || offer.started.has(peerId)) {
+        if (stopping || !offer || !offer.targets.has(peerId) || offer.started.has(peerId) || !consumeRetryGrant(offer, peerId)) {
             await stream.close().catch(() => abortStream(stream, 'Request refused'))
             return
         }
@@ -337,6 +418,7 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
                 events.emit('file-cancelled', { offerId, peerId, direction: 'send', by: 'self' })
             } else {
                 active.delete(key)
+                if (!offer.attachmentId && offer.targets.has(peerId)) offer.failed.add(peerId)
                 events.emit('file-failed', { offerId, peerId, direction: 'send', reason: shortReason(err) })
             }
         } finally {
@@ -363,12 +445,14 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
             fh = await fsp.open(temp, 'wx')
             tempCreated = true
             if (t.selfCancel || t.peerCancel || stopping) throw new Error('cancelled')
+            if (t.disconnected) throw new TransferFailure('peer left')
             const stream = await connection.newStream(FILE_PROTOCOL, { runOnTransientConnection: true })
             t.stream = stream
             if (t.selfCancel || t.peerCancel || stopping) {
                 abortStream(stream, 'Transfer cancelled')
                 throw new Error('cancelled')
             }
+            if (t.disconnected) throw new TransferFailure('peer left')
             // 0.6.0 and 0.7.0 senders read only offerId in this header and ignore unknown chat control types.
             const header = { offerId, ack: 1 }
             if (offer.flow) header.flow = 1
@@ -391,11 +475,13 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
                 }
             }
             if (t.selfCancel || t.peerCancel || stopping) throw new Error('cancelled')
+            if (t.disconnected) throw new TransferFailure('peer left')
             if (p.bytes !== offer.size) throw new TransferFailure('incomplete')
             if (hash.digest('hex') !== offer.sha256) throw new TransferFailure('hash mismatch')
             await fh.close()
             fh = null
             if (t.selfCancel || t.peerCancel || stopping) throw new Error('cancelled')
+            if (t.disconnected) throw new TransferFailure('peer left')
             // Once publishing starts, cancellation can no longer recall a verified saved file.
             t.finalizing = true
             const finalPath = await moveToFreeName(temp, downloadDir, offer.name)
@@ -413,23 +499,19 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
             const signalKey = `${offerId}|${peerId}`
             // Keep the transfer in `active` and the offer in `received` during the wait. The stream abort of a sender
             // cancel can come before its file-cancel line. handleControl must find them to note the cancel.
-            let ended
-            if (t.selfCancel || stopping) {
-                cancelSignals.delete(signalKey)
-                ended = ['file-cancelled', { offerId, peerId, direction: 'receive', by: 'self' }]
-            } else if ((!(err instanceof TransferFailure) || err.message === 'incomplete') && await peerCancelled(signalKey)) {
-                ended = ['file-cancelled', { offerId, peerId, direction: 'receive', by: 'peer' }]
-            } else if (t.selfCancel || stopping) {
-                cancelSignals.delete(signalKey)
-                ended = ['file-cancelled', { offerId, peerId, direction: 'receive', by: 'self' }]
-            } else {
-                cancelSignals.delete(signalKey)
-                ended = ['file-failed', { offerId, peerId, direction: 'receive', reason: shortReason(err) }]
-            }
+            let cancelled
+            if (t.selfCancel || stopping) cancelled = 'self'
+            else if ((!(err instanceof TransferFailure) || err.message === 'incomplete') && await peerCancelled(signalKey)) {
+                cancelled = 'peer'
+            } else if (t.selfCancel || stopping) cancelled = 'self'
+            cancelSignals.delete(signalKey)
             active.delete(t.key)
             received.delete(offerId)
-            if (ended[0] === 'file-failed') sendLine(peerId, { type: 'file-receive-failed', offerId })
-            events.emit(...ended)
+            if (cancelled) events.emit('file-cancelled', { offerId, peerId, direction: 'receive', by: cancelled })
+            else {
+                sendLine(peerId, { type: 'file-receive-failed', offerId })
+                failReceive(offer, t.disconnected ? 'peer left' : shortReason(err))
+            }
         }
     }
 
@@ -460,6 +542,7 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
             const t = active.get(`send|${offerId}|${peerId}`)
             if (own.started.has(peerId) && !t) return false
             own.targets.delete(peerId)
+            consumeRetryGrant(own, peerId)
             sendLine(peerId, { type: 'file-cancel', offerId })
             if (t) {
                 t.selfCancel = true
@@ -472,6 +555,7 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
         if (own) {
             ownOffers.delete(offerId)
             for (const peerId of own.targets) {
+                consumeRetryGrant(own, peerId)
                 const t = active.get(`send|${offerId}|${peerId}`)
                 if (own.started.has(peerId) && !t) continue
                 sendLine(peerId, { type: 'file-cancel', offerId })
@@ -498,14 +582,31 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
     function handleControl(peerId, control) {
         const offerId = control.offerId
         if (typeof offerId !== 'string') return
-        if (control.type === 'file-offer') {
+        if (control.type === 'file-retry') {
+            offerRetry(peerId, offerId, control.attemptId).catch(() => {})
+        } else if (control.type === 'file-retry-unavailable') {
+            const retry = retryRequests.get(offerId)
+            if (retry?.peerId === peerId && retry.attemptId === control.attemptId) {
+                finishRetry(offerId, 'the sender can no longer offer this file', false)
+            }
+        } else if (control.type === 'file-offer') {
             const { size, sha256 } = control
-            if (!UUID_RE.test(offerId) || received.has(offerId) || ownOffers.has(offerId)) return
+            if (!UUID_RE.test(offerId) || received.has(offerId) || ownOffers.has(offerId) || retryable.has(offerId)) return
             if (!Number.isSafeInteger(size) || size < 0 || typeof sha256 !== 'string' || !SHA_RE.test(sha256)) return
             const name = safeFileName(control.name)
             const rich = typeof control.attachmentId === 'string' && UUID_RE.test(control.attachmentId) ? { attachmentId: control.attachmentId, sha256 } : {}
-            received.set(offerId, { offerId, peerId, name, size, sha256, flow: control.flow === 1, ...rich, state: 'offered' })
-            events.emit('file-offer', { offerId, peerId, from: peerNames()[peerId] ?? '', name, size, ...rich })
+            const retryOf = control.retryOf
+            if (retryOf !== undefined) {
+                const previous = retryable.get(retryOf)
+                if (!previous || previous.peerId !== peerId || previous.name !== name || previous.sha256 !== sha256 ||
+                    previous.size !== size || retryRequests.get(retryOf)?.attemptId !== offerId || rich.attachmentId || control.retry !== 1) return
+                finishRetry(retryOf, null, false)
+            }
+            received.set(offerId, { offerId, peerId, name, size, sha256, flow: control.flow === 1,
+                retry: control.retry === 1 && !rich.attachmentId, ...rich, state: 'offered' })
+            events.emit('file-offer', { offerId, peerId, from: peerNames()[peerId] ?? '', name, size, ...rich,
+                ...(retryOf ? { retryOf } : {}) })
+            return true
         } else if (control.type === 'file-written') {
             active.get(`send|${offerId}|${peerId}`)?.window?.written(control.bytes)
         } else if (control.type === 'file-received' || control.type === 'file-receive-failed') {
@@ -520,6 +621,7 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
                 // A disk error can occur before the receiver opens the data stream.
                 const offer = ownOffers.get(offerId)
                 if (offer && !offer.started.has(peerId) && offer.targets.delete(peerId)) {
+                    if (!offer.attachmentId) offer.failed.add(peerId)
                     events.emit('file-failed', { offerId, peerId, direction: 'send', reason })
                 }
             }
@@ -527,6 +629,7 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
             const own = ownOffers.get(offerId)
             if (!own || !own.targets.has(peerId) || own.started.has(peerId)) return
             own.targets.delete(peerId)
+            consumeRetryGrant(own, peerId)
             events.emit('file-refused', { offerId, peerId })
         } else if (control.type === 'file-cancel') {
             const sendKey = `send|${offerId}|${peerId}`
@@ -539,6 +642,7 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
             const own = ownOffers.get(offerId)
             if (own && own.targets.has(peerId) && !own.started.has(peerId)) {
                 own.targets.delete(peerId)
+                consumeRetryGrant(own, peerId)
                 events.emit('file-cancelled', { offerId, peerId, direction: 'send', by: 'peer' })
                 return
             }
@@ -560,16 +664,24 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
 
     function peerLeft(peerId) {
         for (const t of active.values()) {
-            if (t.peerId === peerId && t.receipt) interruptTransfer(t, 'peer left before confirming delivery')
+            if (t.peerId !== peerId || t.finalizing) continue
+            if (t.direction === 'receive') {
+                t.disconnected = true
+                interruptTransfer(t, 'peer left')
+            } else if (t.receipt) interruptTransfer(t, 'peer left before confirming delivery')
         }
         for (const offer of [...received.values()]) {
             if (offer.peerId === peerId && offer.state === 'offered') {
                 received.delete(offer.offerId)
-                events.emit('file-failed', { offerId: offer.offerId, peerId, direction: 'receive', reason: 'peer left' })
+                failReceive(offer, 'peer left')
             }
+        }
+        for (const [offerId, retry] of retryRequests) {
+            if (retry.peerId === peerId) finishRetry(offerId, 'peer left', true)
         }
         for (const own of ownOffers.values()) {
             if (!own.started.has(peerId) && own.targets.delete(peerId)) {
+                if (!own.attachmentId) own.failed.add(peerId)
                 events.emit('file-failed', { offerId: own.offerId, peerId, direction: 'send', reason: 'peer left' })
             }
         }
@@ -583,6 +695,7 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
     async function stop() {
         stopping = true
         preparation.abort()
+        for (const offerId of retryRequests.keys()) finishRetry(offerId)
         const waits = []
         for (const t of active.values()) {
             if (!t.finalizing) {
@@ -594,5 +707,6 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
         await Promise.allSettled(waits)
     }
 
-    return { prepareFile, publishOffer, offerAttachmentTo, expireAttachment, unchanged, offerFile, acceptFile, refuseFile, cancelFile, handleControl, peerLeft, handleStream, stop }
+    return { prepareFile, publishOffer, offerAttachmentTo, expireAttachment, forgetOffer: id => ownOffers.delete(id), unchanged, offerFile, acceptFile, retryFile,
+        refuseFile, cancelFile, handleControl, peerLeft, handleStream, stop }
 }

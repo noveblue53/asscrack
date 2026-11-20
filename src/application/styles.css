@@ -44,7 +44,7 @@ html,
 body {
   height: 100%;
   margin: 0;
-  overflow: hidden;
+  overflow: clip;
 }
 
 body {
@@ -233,7 +233,7 @@ input[type="text"]:focus {
   padding: 16px;
   /* A green hill below the sky. */
   background: radial-gradient(ellipse 110% 44% at 50% 122%, #8be35e 0%, #4db52f 58%, rgba(77, 181, 47, 0) 59.5%);
-  transition: opacity 220ms ease, transform 220ms var(--ease), visibility 0s linear 220ms;
+  transition: opacity 220ms ease, visibility 0s linear 220ms;
 }
 
 /* After the login, the screen fades out. It stays out of the tab sequence (visibility). */
@@ -241,7 +241,6 @@ input[type="text"]:focus {
   display: flex !important;
   visibility: hidden;
   opacity: 0;
-  transform: scale(1.04);
   pointer-events: none;
 }
 
@@ -391,25 +390,6 @@ input[type="text"]:focus {
   text-overflow: ellipsis;
   white-space: nowrap;
   font: 700 18px var(--font-title);
-}
-
-#map-toggle {
-  flex: none;
-  height: 26px;
-  margin-left: auto;
-  padding: 0 12px;
-  border-color: rgba(255, 255, 255, 0.65);
-  border-radius: 13px;
-  font-size: 12px;
-  color: #ffffff;
-  text-shadow: 0 1px 1px rgba(0, 20, 70, 0.75);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.42) 0%, rgba(255, 255, 255, 0.16) 48%, rgba(255, 255, 255, 0.04) 52%, rgba(255, 255, 255, 0.2) 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 1px 2px rgba(0, 20, 70, 0.4);
-}
-
-#map-toggle[aria-expanded="true"] {
-  border-color: #d6ffb8;
-  background: linear-gradient(180deg, #9be577 0%, #52bd30 48%, #2f9c13 52%, #55bf33 100%);
 }
 
 /* The glass tool band: voice and file controls. */
@@ -779,6 +759,8 @@ body.layout-map-docked.layout-buddy-off #chat-body {
   color: #8aa3bc;
 }
 
+#waiting-peer:not([hidden]) + #messages::before { content: none; }
+
 #messages li {
   flex: none;
   align-self: flex-start;
@@ -871,7 +853,7 @@ body.layout-map-docked.layout-buddy-off #chat-body {
   right: 0;
   bottom: calc(var(--composer-height, 48px) + 1px);
   z-index: 3;
-  width: clamp(280px, 44%, 480px);
+  width: min(100%, clamp(300px, 44%, 480px));
   background: linear-gradient(180deg, rgba(248, 253, 255, 0.9), rgba(226, 243, 254, 0.84));
   -webkit-backdrop-filter: blur(10px) saturate(1.2);
   backdrop-filter: blur(10px) saturate(1.2);
@@ -1534,19 +1516,6 @@ body.map-open #node-map:not([data-paused]) .nm-node.speaking .nm-pulse {
 
 /* A wide window: layout.js docks the open node map in its own column (body.layout-map-docked, see the layout
    section). In a smaller window the map is an overlay above the chat. */
-@media (min-width: 1000px) {
-  #map-panel {
-    width: clamp(320px, 36%, 500px);
-  }
-}
-
-@media (min-width: 1100px) {
-  :root {
-    --buddy-w: 236px;
-  }
-
-}
-
 @media (min-height: 700px) {
   :root {
     --transfer-h: 150px;
@@ -1662,30 +1631,10 @@ body.map-open #node-map:not([data-paused]) .nm-node.speaking .nm-pulse {
   overflow-wrap: anywhere;
 }
 
-/* The invite button in the title band: the same glass style as the map button. */
-#invite-toggle,
-#history-toggle {
-  flex: none;
-  height: 26px;
-  padding: 0 12px;
-  border-color: rgba(255, 255, 255, 0.65);
-  border-radius: 13px;
-  font-size: 12px;
-  color: #ffffff;
-  text-shadow: 0 1px 1px rgba(0, 20, 70, 0.75);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.42) 0%, rgba(255, 255, 255, 0.16) 48%, rgba(255, 255, 255, 0.04) 52%, rgba(255, 255, 255, 0.2) 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 1px 2px rgba(0, 20, 70, 0.4);
-}
-
-#invite-toggle[aria-expanded="true"] {
-  border-color: #d6ffb8;
-  background: linear-gradient(180deg, #9be577 0%, #52bd30 48%, #2f9c13 52%, #55bf33 100%);
-}
-
-/* The invite panel: a small card below the title band. It is out of the grid of the chat screen. */
+/* The invite panel opens against its action in the conversation header. */
 #invite-panel {
   position: absolute;
-  top: 40px;
+  top: 50px;
   right: 8px;
   z-index: 5;
   display: flex;
@@ -1806,9 +1755,7 @@ body.map-open #node-map:not([data-paused]) .nm-node.speaking .nm-pulse {
 
 /* ---- Room layout (layout.js): View menu, separators, Buddies drawer ---- */
 
-/* The title band buttons of layout.js have the look of the map button. */
-#buddy-toggle,
-#view-toggle {
+#titlebar > button {
   flex: none;
   height: 26px;
   padding: 0 12px;
@@ -1821,23 +1768,9 @@ body.map-open #node-map:not([data-paused]) .nm-node.speaking .nm-pulse {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 1px 2px rgba(0, 20, 70, 0.4);
 }
 
-#buddy-toggle[aria-expanded="true"] {
-  border-color: #d6ffb8;
-  background: linear-gradient(180deg, #9be577 0%, #52bd30 48%, #2f9c13 52%, #55bf33 100%);
-}
-
 #view-toggle[aria-expanded="true"] {
   border-color: #ffffff;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.62) 0%, rgba(255, 255, 255, 0.34) 48%, rgba(255, 255, 255, 0.2) 52%, rgba(255, 255, 255, 0.4) 100%);
-}
-
-/* The Buddies button is only for the drawer (a window too narrow for a Buddies column). */
-#buddy-toggle {
-  display: none;
-}
-
-body.layout-buddy-drawer #buddy-toggle {
-  display: inline-flex;
 }
 
 /* The View menu: a small glass card below the View button. */
@@ -1847,9 +1780,11 @@ body.layout-buddy-drawer #buddy-toggle {
   right: 8px;
   z-index: 1;
   min-width: 214px;
+  max-height: calc(100vh - 44px);
   margin: 0;
   padding: 4px;
   list-style: none;
+  overflow-y: auto;
   border: 1px solid var(--line);
   border-radius: 8px;
   font: 12.5px var(--font-ui);
@@ -2029,35 +1964,13 @@ body.layout-map-docked #map-sep {
   background: #ffcf40;
 }
 
-#transfer-panel:not(:has(#transfers li)) #transfer-sep,
-body.layout-transfers-hidden #transfer-sep {
+#transfer-panel:not(:has(#transfers li)) #transfer-sep {
   display: none;
 }
 
 /* A height that the user set: the list keeps it. The cap in #transfers keeps the composer in the window. */
 body.layout-transfer-set #transfers {
   height: var(--transfer-h);
-}
-
-/* Transfers hidden: only the head with the count stays, so a new offer is still visible. */
-body.layout-transfers-hidden #transfer-panel .transfer-cols,
-body.layout-transfers-hidden #transfers {
-  display: none;
-}
-
-body.layout-transfers-hidden #transfer-panel .panel-head {
-  border-bottom: 0;
-}
-
-body.layout-transfers-hidden #transfer-panel .panel-head::after {
-  content: 'Hidden. Use View to show the list.';
-  min-width: 0;
-  overflow: hidden;
-  font: 400 11.5px var(--font-small);
-  letter-spacing: 0;
-  color: var(--ink-soft);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* The docked map: its own column in the grid of #chat-body. */
@@ -2169,28 +2082,4 @@ body.layout-dragging #buddy-panel {
 #saved-rooms .saved-room { flex-wrap: wrap; }
 #room-storage[hidden], #clear-confirm[hidden], #saved-rooms .forget-confirm[hidden] { display: none; }
 
-#room-topic, #topic-editor { display: flex; align-items: center; gap: 6px; }
-#room-topic { margin: 3px 8px; min-width: 0; }
-#topic-value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#topic-editor { flex: 1; min-width: 0; }
-#topic-input { flex: 1; min-width: 0; }
-#topic-editor[hidden], #topic-value[hidden], #topic-edit[hidden] { display: none; }
-
-/* Peer details occupy the map pane on narrow windows, keeping the composer available. */
-#peer-details { padding: 8px; overflow: auto; min-height: 0; }
-#peer-details h3 { margin: 6px 0; }
-#peer-details input { width: 100%; box-sizing: border-box; }
-#peer-choices { max-height: 9em; overflow-y: auto; }
-#peer-choices button { display: block; width: 100%; text-align: left; }
-#peer-detail-facts { white-space: pre-line; }
-.nm-node[role="button"], .inspect-sender { cursor: pointer; }
-.nm-node:focus-visible .nm-orb { stroke: var(--ink); stroke-width: 3; }
-@media (max-width: 900px) {
-  #map-panel.inspecting #node-map, #map-panel.inspecting #map-legend { display: none; }
-}
-
-.channel-bar { display:flex; align-items:center; gap:.4em; padding:2px 8px; font-size:.85em; }
-.channel-bar select { min-width:0; max-width:13em; }
-.channel-bar button { padding:0 .5em; }
-#channel-note { font-size:.9em; }
 #channel-error:empty { display:none; }

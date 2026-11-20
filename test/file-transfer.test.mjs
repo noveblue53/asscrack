@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createHash, randomBytes } from 'node:crypto'
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { createReadStream, writeSync } from 'node:fs'
 import * as fsp from 'node:fs/promises'
 import * as os from 'node:os'
@@ -8,6 +8,7 @@ import * as path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { multiaddr } from '@multiformats/multiaddr'
 import { createAsscrackNode } from '../src/network/node.mjs'
+import { newRoomKey } from '../src/network/invite.mjs'
 import { FILE_PROTOCOL, safeFileName, createFileTransfer, moveToFreeName } from '../src/network/file-transfer.mjs'
 import { EventEmitter } from 'node:events'
 
@@ -150,6 +151,178 @@ test('a room offer reports each pending recipient on departure and whole-offer c
     } finally {
         await cleanup(ctx)
     }
+})
+
+for (const relayed of [false, true]) {
+    test(`the receiver retries an interrupted ${relayed ? 'circuit-relayed' : 'direct'} download after reconnect (127.0.0.1)`, { timeout: 60000 }, async () => {
+        const ctx = { nodes: [], dirs: [] }
+        const release = Promise.withResolvers()
+        const localAddr = node => node.getMultiaddrs().find(addr => addr.startsWith('/ip4/127.0.0.1/') && !addr.includes('/p2p-circuit'))
+        const options = { ...base, roomKey: newRoomKey(), upnp: false, fullNode: false }
+        async function member(extra) {
+            const dir = await tempDir('retry')
+            ctx.dirs.push(dir)
+            const node = await createAsscrackNode({ ...options, ...extra, downloadDir: dir })
+            Object.assign(node, { dir, log: record(node) })
+            ctx.nodes.push(node)
+            return node
+        }
+        try {
+            const recipient = await member({ fullNode: relayed })
+            const a = await member(relayed ? { relayOnly: true, listen: [] } : {})
+            const laptop = await member(relayed ? { relayOnly: true, listen: [] } : {})
+            if (relayed) {
+                await a.connect(localAddr(recipient))
+                await laptop.connect(localAddr(recipient))
+            } else {
+                await recipient.connect(localAddr(a))
+                await laptop.connect(localAddr(a))
+            }
+            const connected = () => a.peers().includes(laptop.peerId) && laptop.peers().includes(a.peerId)
+            const laptopLinks = () => laptop.libp2p.getConnections().filter(c => c.status === 'open' && c.remotePeer.toString() === a.peerId)
+            const assertRoute = () => {
+                const links = laptopLinks()
+                assert.ok(links.length > 0)
+                assert.ok(links.every(c => c.remoteAddr.toString().includes('/p2p-circuit') === relayed))
+            }
+            await waitUntil(() => connected() && a.peers().includes(recipient.peerId) && recipient.peers().includes(a.peerId), 20000)
+            assertRoute()
+
+            // Keep the second real file stream in progress across Laptop's failed attempt and retry.
+            const otherConnection = recipient.libp2p.getConnections().find(c => c.remotePeer.toString() === a.peerId)
+            const openStream = otherConnection.newStream.bind(otherConnection)
+            otherConnection.newStream = async (protocol, opts) => {
+                const stream = await openStream(protocol, opts)
+                if (protocol === FILE_PROTOCOL) {
+                    const chunks = stream.source
+                    stream.source = (async function* () {
+                        for await (const chunk of chunks) {
+                            yield chunk
+                            await release.promise
+                        }
+                    })()
+                }
+                return stream
+            }
+            const file = path.join(a.dir, 'party-assets.bin')
+            const size = 16 * 1024 * 1024
+            await writeRandom(file, size)
+            const offer = await a.offerFile(file)
+            assert.deepEqual(new Set(offer.recipients), new Set([laptop.peerId, recipient.peerId]))
+            await waitUntil(() => laptop.log.offer.length === 1 && recipient.log.offer.length === 1, 5000)
+            assert.equal(recipient.acceptFile(offer.offerId), true)
+            await waitUntil(() => recipient.log.progress.length > 0, 5000)
+            const offline = Promise.withResolvers()
+            laptop.events.on('peer-left', ({ peerId }) => {
+                if (peerId === a.peerId) offline.resolve(laptop.retryFile(offer.offerId))
+            })
+            const interrupted = Promise.withResolvers()
+            laptop.events.once('file-progress', ({ bytes }) => {
+                interrupted.resolve(bytes)
+                for (const connection of laptopLinks()) connection.abort(new Error('Laptop disconnected'))
+            })
+            assert.equal(laptop.acceptFile(offer.offerId), true)
+            assert.ok(await interrupted.promise > 0)
+            assert.equal(await offline.promise, false)
+            await waitUntil(() => laptop.log.failed.length === 1 && a.log.failed.some(e => e.peerId === laptop.peerId), 10000)
+            assert.equal(laptop.log.failed[0].retryable, true)
+            assert.deepEqual(laptop.log.done, [])
+            assert.deepEqual(await entries(laptop.dir), [], 'the interrupted attempt removed its own partial')
+            assert.deepEqual(recipient.log.done, [], 'the other download is still running')
+            if (!relayed) {
+                assert.equal(laptop.retryFile(offer.offerId), false)
+                await laptop.connect(localAddr(a))
+            }
+            await waitUntil(connected, 20000)
+            assertRoute()
+
+            const oldPartial = path.join(laptop.dir, `.asscrack-${offer.offerId}.part`)
+            await fsp.writeFile(oldPartial, 'stale partial from a prior process')
+            assert.equal(laptop.retryFile(offer.offerId), true)
+            assert.equal(laptop.retryFile(offer.offerId), false, 'repeated clicks cannot start overlapping retries')
+            await waitUntil(() => laptop.log.offer.length === 2, 5000)
+            const next = laptop.log.offer[1]
+            assert.equal(next.retryOf, offer.offerId)
+            assert.notEqual(next.offerId, offer.offerId)
+            assert.equal(await fetchWithoutOffer(recipient, a, next.offerId), 0, 'a retry grants only Laptop access')
+            assert.equal(laptop.acceptFile(next.offerId), true)
+            assert.equal(laptop.acceptFile(next.offerId), false)
+            release.resolve()
+            await waitUntil(() => laptop.log.done.length === 1 && recipient.log.done.length === 1 && a.log.done.length === 2, 15000)
+            assert.deepEqual(recipient.log.failed, [])
+            assert.equal(recipient.log.offer.length, 1)
+            assert.ok(a.log.done.every(e => e.confirmed))
+            for (const receiver of [laptop, recipient]) {
+                assert.equal((await fsp.stat(receiver.log.done[0].path)).size, size)
+                assert.equal(await sha(receiver.log.done[0].path), offer.sha256)
+            }
+            assert.deepEqual((await entries(laptop.dir)).sort(), [path.basename(oldPartial), path.basename(file)].sort())
+            assert.equal(await fsp.readFile(oldPartial, 'utf8'), 'stale partial from a prior process')
+            assert.equal(laptop.retryFile(offer.offerId), false)
+            assert.equal(laptop.retryFile(next.offerId), false)
+
+            const unexpected = randomUUID()
+            laptop.sendTo(a.peerId, { type: 'file-retry', offerId: next.offerId, attemptId: unexpected })
+            assert.equal(await fetchWithoutOffer(laptop, a, unexpected), 0, 'a delivered grant cannot be reopened')
+        } finally {
+            release.resolve()
+            await cleanup(ctx)
+        }
+    })
+}
+
+test('a second reconnect can retry an offer interrupted before its stream and rejects a changed original', async t => {
+    const dir = await tempDir('repeated-retry')
+    t.after(() => fsp.rm(dir, { recursive: true, force: true }))
+    const pathToSource = path.join(dir, 'original.txt')
+    await fsp.writeFile(pathToSource, 'original')
+    const endpoints = new Map()
+    let online = true
+    function peer(id, remote) {
+        const events = new EventEmitter()
+        const log = { offers: [], failures: [] }
+        events.on('file-offer', offer => log.offers.push(offer))
+        events.on('file-failed', failure => log.failures.push(failure))
+        const node = createFileTransfer({ events, downloadDir: dir, peerNames: () => ({}), openPeers: () => online ? [remote] : [],
+            sendTo(peerId, control) {
+                if (!online || peerId !== remote) return false
+                endpoints.get(remote).handleControl(id, control)
+                return true
+            }
+        })
+        endpoints.set(id, node)
+        return { node, log }
+    }
+    const sender = peer('publisher', 'laptop')
+    const receiver = peer('laptop', 'publisher')
+    t.after(() => Promise.all([sender.node.stop(), receiver.node.stop()]))
+    const loseRoute = () => {
+        online = false
+        sender.node.peerLeft('laptop')
+        receiver.node.peerLeft('publisher')
+    }
+    const { offerId } = await sender.node.offerFile(pathToSource, 'laptop')
+    loseRoute()
+    online = true
+    assert.equal(receiver.node.retryFile(offerId), true)
+    await waitUntil(() => receiver.log.offers.length === 2, 5000)
+    const firstRetry = receiver.log.offers[1]
+    assert.equal(firstRetry.retryOf, offerId)
+    loseRoute()
+    online = true
+    assert.equal(receiver.node.retryFile(firstRetry.offerId), true)
+    await waitUntil(() => receiver.log.offers.length === 3, 5000)
+    const secondRetry = receiver.log.offers[2]
+    assert.equal(secondRetry.retryOf, firstRetry.offerId)
+    loseRoute()
+    await fsp.writeFile(pathToSource, 'replacement is longer')
+    online = true
+    assert.equal(receiver.node.retryFile(secondRetry.offerId), true)
+    await waitUntil(() => receiver.log.failures.length === 4, 5000)
+    assert.deepEqual(receiver.log.failures.at(-1), { offerId: secondRetry.offerId, peerId: 'publisher', direction: 'receive',
+        reason: 'the sender can no longer offer this file', retryable: false })
+    assert.equal(receiver.node.retryFile(secondRetry.offerId), false)
+    assert.equal(receiver.log.offers.length, 3)
 })
 
 test('a: a 50 MB file goes from A to B with the correct SHA-256', { timeout: 120000 }, async () => {

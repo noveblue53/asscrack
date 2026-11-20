@@ -18,6 +18,7 @@
   <link rel="stylesheet" href="window-frame.css">
   <title>ASSCRACK</title>
   <link rel="stylesheet" href="desktop-controls.css">
+  <link rel="stylesheet" href="shared-shelf.css">
 </head>
 <body>
   <!-- Decoration only: the sky bubbles behind the two screens. -->
@@ -83,22 +84,19 @@
   </section>
 
   <header id="titlebar">
-      <span id="login-window-title">ASSCRACK</span>
       <img class="logo" src="img/logo.svg" alt="" width="24" height="24">
-      <h1 id="chat-room"></h1>
-      <button id="invite-toggle" type="button" aria-expanded="false" aria-controls="invite-panel" hidden>Invite</button>
-      <button id="history-toggle" type="button" popovertarget="room-storage" aria-label="History settings for this room" hidden>History</button>
-      <button id="map-toggle" type="button" aria-expanded="false" aria-controls="map-panel">Network map</button>
-      <!-- layout.js: the Buddies drawer button (narrow window only) and the View menu. -->
-      <button id="buddy-toggle" type="button" aria-expanded="false" aria-controls="buddy-panel">Buddies</button>
+      <span id="window-brand">ASSCRACK</span>
+      <button id="frame-transfers" type="button" aria-expanded="false" aria-controls="transfer-panel">Transfers <span id="transfer-count" class="count">0</span></button>
+      <button id="map-toggle" type="button" aria-expanded="false" aria-controls="map-panel" hidden>Network map</button>
       <button id="view-toggle" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="view-menu">View</button>
       <ul id="view-menu" role="menu" aria-labelledby="view-toggle" hidden>
         <li id="view-buddies" role="menuitemcheckbox" aria-checked="true" tabindex="-1">Buddies</li>
         <li id="view-buddy-drawer" role="menuitem" tabindex="-1" hidden>Open Buddies</li>
-        <li id="view-transfers" role="menuitemcheckbox" aria-checked="true" tabindex="-1">Transfers</li>
+        <li id="view-transfers" role="menuitemcheckbox" aria-checked="false" tabindex="-1">Pin Transfers</li>
         <li id="view-map" role="menuitemcheckbox" aria-checked="false" tabindex="-1">Network map</li>
         <li class="view-rule" role="separator"></li>
         <li id="view-voice" role="menuitem" tabindex="-1">Voice controls</li>
+        <li id="detach-voice" role="menuitem" tabindex="-1">Detach voice panel</li>
         <li id="view-compact" role="menuitemcheckbox" aria-checked="false" tabindex="-1">Compact transcript</li>
         <li id="view-typing" role="menuitemcheckbox" aria-checked="false" tabindex="-1">Share typing status</li>
         <li id="view-theme" role="menuitem" aria-haspopup="dialog" aria-controls="theme-gallery" tabindex="-1">Theme…</li>
@@ -128,16 +126,6 @@
         <p id="clear-confirm-text">Delete the saved messages of this room from this computer? The room and its saving choice stay. Peers that are online can still show recent messages.</p>
         <button id="clear-confirm-yes" type="button">Delete saved messages</button>
         <button id="clear-confirm-no" type="button">Cancel</button>
-      </div>
-    </div>
-
-    <!-- The invite panel. renderer.js fills #invite-code with getInvite(). -->
-    <div id="invite-panel" hidden>
-      <label for="invite-code">Invite code of this room</label>
-      <textarea id="invite-code" rows="3" readonly spellcheck="false"></textarea>
-      <div class="invite-buttons">
-        <button id="copy-invite" type="button">Copy</button>
-        <span id="invite-note" role="status"></span>
       </div>
     </div>
 
@@ -214,38 +202,55 @@
           <button id="mute" type="button" aria-pressed="false" hidden>Mute</button>
           <span id="ptt-state" hidden>PTT released</span>
           <button id="voice-settings-toggle" type="button" aria-expanded="false" aria-controls="voice-settings">Voice settings</button>
-          <button id="detach-voice" type="button">Detach voice panel</button>
           <button id="leave-voice" type="button" hidden>Leave voice</button>
           <span id="voice-error" role="alert"></span>
         </div>
       </section>
       <div id="buddy-sep" class="layout-sep" role="separator" tabindex="0" aria-orientation="vertical" aria-controls="buddy-panel" aria-label="Resize Buddies" aria-valuenow="192" aria-valuemin="120" aria-valuemax="480"></div>
       <section id="message-panel" class="panel">
-        <div class="highlight-tools">
-          <button id="next-highlight" type="button" aria-keyshortcuts="Alt+J" title="Next unread highlight (Alt+J)" disabled>Next highlight</button>
-          <details><summary>Highlight words</summary><label>Keywords or phrases, separated by commas
+        <header id="room-heading">
+          <div class="room-identity">
+            <h1 id="chat-room"></h1>
+            <span id="topic-value" aria-live="polite" hidden></span>
+          </div>
+          <div class="room-actions">
+            <select id="channel-select" aria-label="Public channel"><option value="general">#general</option></select>
+            <button id="invite-toggle" type="button" aria-expanded="false" aria-controls="invite-panel" hidden>Invite</button>
+            <button id="room-options-toggle" type="button" popovertarget="room-options" aria-label="Room options">Room ▾</button>
+          </div>
+          <span id="channel-note" hidden>Read-only with this host. Select #general to send.</span>
+          <button id="next-highlight" type="button" aria-keyshortcuts="Alt+J" title="Next unread highlight (Alt+J)" hidden>Next highlight</button>
+        </header>
+        <section id="room-options" popover="auto" aria-label="Room options">
+          <div class="room-menu-actions">
+            <button id="history-toggle" type="button" popovertarget="room-storage" aria-label="History settings for this room" hidden>History</button>
+            <button id="topic-edit" type="button" aria-controls="topic-editor" aria-expanded="false" disabled>Edit topic</button>
+            <button type="button" id="channel-add" disabled>Create channel</button>
+            <button type="button" id="openSharedShelf" aria-haspopup="dialog" aria-controls="shared-shelf">Shared</button>
+            <button id="activity-open" type="button" aria-haspopup="dialog" aria-controls="room-activity">Room activity</button>
+          </div>
+          <span id="topic-unavailable" hidden>Topic editing requires a compatible host.</span>
+          <div id="topic-editor" hidden>
+            <input type="text" id="topic-input" aria-label="Room topic, up to 160 characters" placeholder="Leave empty to clear" autocomplete="off">
+            <button id="topic-save" type="button">Save</button>
+            <button id="topic-cancel" type="button">Cancel</button>
+          </div>
+          <label>Highlight words or phrases, separated by commas
             <input id="highlight-words" type="text" maxlength="512" autocomplete="off" placeholder="pit stop, grid time">
-          </label></details>
-        </div>
-        <div class="channel-bar">
-          <label for="channel-select">Channel</label>
-          <select id="channel-select" aria-label="Public channel"><option value="general">General</option></select>
-          <button type="button" id="channel-add" disabled aria-label="Create public channel">＋</button>
-          <span id="channel-note" hidden>Read-only with this host. Select General to send.</span>
+          </label>
+        </section>
+        <div id="invite-panel" hidden>
+          <label for="invite-code">Invite code of this room</label>
+          <textarea id="invite-code" rows="3" readonly spellcheck="false"></textarea>
+          <div class="invite-buttons">
+            <button id="copy-invite" type="button">Copy</button>
+            <span id="invite-note" role="status"></span>
+          </div>
         </div>
         <dialog id="channel-dialog" aria-labelledby="channel-title"><form id="channel-create-form">
           <h2 id="channel-title">Create public channel</h2><label>Channel name <input id="channel-name" required maxlength="80"></label>
           <p id="channel-error" role="status"></p><button id="channel-cancel" type="button">Cancel</button><button>Create channel</button>
         </form></dialog>
-        <div id="room-topic" role="group" aria-label="Room topic">
-          <span id="topic-value" aria-live="polite">Topic unavailable</span>
-          <button id="topic-edit" type="button" disabled>Edit topic</button>
-          <div id="topic-editor" hidden>
-            <input type="text" id="topic-input" aria-label="Room topic, up to 160 characters" placeholder="Leave empty to clear" autocomplete="off">
-            <button id="topic-save" type="button">Save topic</button>
-            <button id="topic-cancel" type="button">Cancel</button>
-          </div>
-        </div>
         <!-- find.js: Ctrl+F shows this bar. It searches the lines in the list now. -->
         <div id="find-bar" role="search" aria-label="Find in the loaded messages" hidden>
           <input type="text" id="find-input" placeholder="Find in the loaded messages" aria-label="Find in the loaded messages" aria-describedby="find-count" autocomplete="off" spellcheck="false">
@@ -254,10 +259,9 @@
           <button id="find-next" type="button" title="Next result (Enter)" disabled>Next</button>
           <button id="find-close" type="button" title="Close and go back (Escape)">Close</button>
         </div>
-        <!-- Saved rooms (milestone 6): saved-rooms-ui.js shows this while a reopened or saved room has no peer. -->
-        <p id="waiting-peer" role="status" hidden>Waiting for a peer</p>
         <div id="transcript-body">
-          <ul id="messages" role="log"></ul>
+          <p id="waiting-peer" role="status" hidden>Waiting for a peer</p>
+          <ul id="messages" role="log" tabindex="-1"></ul>
           <!-- reading.js shows this button when the user reads older lines. -->
           <button id="jump-latest" type="button" hidden>Jump to latest <span id="unread-count" class="count"></span></button>
         </div>
@@ -303,33 +307,51 @@
       <div id="map-sep" class="layout-sep" role="separator" tabindex="0" aria-orientation="vertical" aria-controls="map-panel" aria-label="Resize the network map" aria-valuenow="320" aria-valuemin="260" aria-valuemax="900"></div>
       <!-- The node map panel. nodemap.js draws one SVG into #node-map. -->
       <aside id="map-panel" class="panel" aria-hidden="true">
-        <h2 class="panel-head">Network map <button id="map-close" type="button">Close</button></h2>
+        <header class="panel-head map-heading">
+          <h2>Network map</h2>
+          <button id="peer-detail-map" type="button" aria-controls="node-map" hidden>Map</button>
+          <button id="peer-detail-show" type="button" aria-controls="peer-details" hidden>Details</button>
+          <button id="map-close" type="button">Close</button>
+        </header>
         <div id="node-map"></div>
-        <section id="peer-details" hidden aria-labelledby="peer-detail-name">
-          <button type="button" id="peer-detail-close">Back to map</button>
-          <h3 id="peer-detail-name" tabindex="-1">Find a buddy</h3>
-          <label>Find a buddy <input id="peer-search" type="search" autocomplete="off"></label>
-          <div id="peer-choices" hidden></div>
-          <p id="peer-detail-facts"></p>
-          <button id="peer-detail-activity" type="button" aria-haspopup="dialog" aria-controls="room-activity" hidden>Recent activity</button>
-          <p id="peer-audio-rate"></p>
-        </section>
-        <div id="map-legend">
-          <span class="key"><span class="sw sw-relay">RELAY</span>host, voice relay</span>
-          <span class="key"><span class="sw sw-mesh"></span>Direct chat</span>
-          <span class="key"><span class="sw sw-relaylink"></span>Relayed chat</span>
-          <span class="key"><span class="sw sw-unknown"></span>Unknown route</span>
-          <span class="key"><span class="sw sw-full">FULL</span>full node</span>
-          <span class="key"><span class="sw sw-voice"></span>Voice membership</span>
-          <span class="key"><span class="sw sw-speak"></span>speaks (while you are in voice)</span>
-          <span class="key"><span class="sw sw-file"></span>Your transfers</span>
+        <div id="map-legend" hidden>
+          <span class="key" data-legend="relay" hidden><span class="sw sw-relay">RELAY</span>Host / voice relay</span>
+          <span class="key" data-legend="direct" hidden><span class="sw sw-mesh"></span>Direct chat</span>
+          <span class="key" data-legend="relayed" hidden><span class="sw sw-relaylink"></span>Relayed chat</span>
+          <span class="key" data-legend="unknown" hidden><span class="sw sw-unknown"></span>Unknown route</span>
+          <span class="key" data-legend="full" hidden><span class="sw sw-full">FULL</span>Full node</span>
+          <span class="key" data-legend="voice" hidden><span class="sw sw-voice"></span>Voice</span>
+          <span class="key" data-legend="speaking" hidden><span class="sw sw-speak"></span>Speaking</span>
+          <span class="key" data-legend="file" hidden><span class="sw sw-file"></span>Your transfers</span>
         </div>
+        <section id="peer-details" hidden aria-labelledby="peer-detail-name">
+          <div class="peer-detail-head">
+            <h3 id="peer-detail-name" tabindex="-1">Find a buddy</h3>
+            <button type="button" id="peer-detail-close" aria-label="Clear buddy selection">Clear</button>
+          </div>
+          <label id="peer-search-field">Find a buddy <input id="peer-search" type="search" autocomplete="off"></label>
+          <div id="peer-choices" hidden></div>
+          <dl id="peer-readings" hidden>
+            <dt>Chat link</dt><dd id="peer-detail-link"></dd>
+            <dt>Voice</dt><dd id="peer-detail-voice"></dd>
+            <dt>Received audio</dt><dd id="peer-audio-rate"></dd>
+          </dl>
+          <p id="peer-detail-facts"></p>
+          <div id="peer-activity-summary" hidden>
+            <div class="peer-detail-head">
+              <h4>Recent events</h4>
+              <button id="peer-detail-activity" type="button" aria-haspopup="dialog" aria-controls="room-activity">Full activity</button>
+            </div>
+            <ul id="peer-recent-events"></ul>
+            <p id="peer-events-status">No recent events</p>
+          </div>
+        </section>
       </aside>
     </div>
 
-    <section id="transfer-panel" class="panel" tabindex="-1">
+    <section id="transfer-panel" class="panel" tabindex="-1" aria-labelledby="transfer-heading" hidden>
       <div id="transfer-sep" class="layout-sep" role="separator" tabindex="0" aria-orientation="horizontal" aria-controls="transfers" aria-label="Resize Transfers" aria-valuenow="90" aria-valuemin="32" aria-valuemax="800"></div>
-      <h2 class="panel-head">Transfers <span id="transfer-count" class="count">0</span>
+      <h2 id="transfer-heading" class="panel-head">Transfers
         <span class="hint">No transfers.</span>
       </h2>
       <div class="transfer-cols" aria-hidden="true">
@@ -340,7 +362,6 @@
 
 
     <footer id="statusbar">
-      <button id="activity-open" type="button" aria-haspopup="dialog" aria-controls="room-activity">Room activity</button>
       <span id="full-node-state" data-state="lan" hidden></span>
       <span class="net-note">Local network</span>
     </footer>
@@ -421,6 +442,21 @@
     <form method="dialog"><button>Done</button></form>
   </dialog>
 
+  <dialog id="shared-shelf" aria-labelledby="shared-title">
+    <header>
+      <h2 id="shared-title">Shared</h2>
+      <button type="button" id="share-in-room" autofocus>Share in room</button>
+      <input type="file" id="shared-file" hidden>
+    </header>
+    <p id="shared-empty">No files shared in this room.</p>
+    <ul id="shared-list" aria-label="Shared files"></ul>
+    <p id="shared-notice" role="status"></p>
+    <footer>
+      <button type="button" id="shared-transfers" hidden>View transfers</button>
+      <form method="dialog"><button>Done</button></form>
+    </footer>
+  </dialog>
+
   <script src="voice-gate.js"></script>
   <script src="activity-view.js"></script>
   <script src="voice.js"></script>
@@ -444,5 +480,6 @@
   <script src="saved-rooms-ui.js"></script>
   <script src="voice-panel.js"></script>
   <script src="menu.js"></script>
+  <script src="shared-shelf.js"></script>
 </body>
 </html>

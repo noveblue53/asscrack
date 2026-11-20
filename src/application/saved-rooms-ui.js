@@ -12,7 +12,6 @@
     const savedSection = document.getElementById('saved-rooms-section');
     const archiveState = document.getElementById('archive-state');
     const archiveUnlock = document.getElementById('archive-unlock');
-    const waitingPeer = document.getElementById('waiting-peer');
     const roomStorage = document.getElementById('room-storage');
     const historyToggle = document.getElementById('history-toggle');
     const roomKeepHistory = document.getElementById('room-keep-history');
@@ -28,8 +27,6 @@
         + 'choice and the saved addresses of this room. Peers keep their copies. To join again, you need an invite.';
 
     let archiveOpen = false;
-    // True in a reopened room or a saved room: show "Waiting for a peer" while the room has no peer (S5).
-    let watchPeers = false;
     let reopenBusy = false;
     // The saved room that is open in the chat screen: its roomId, or null.
     let openRoomId = null;
@@ -153,13 +150,6 @@
     }
 
     archiveUnlock.addEventListener('click', () => refresh(() => api.unlockArchive()));
-
-    function updateWaiting() {
-        waitingPeer.hidden = !(watchPeers && peerItems.size === 0);
-    }
-    // renderer.js registers its peer listeners first: peerItems is current here.
-    api.onPeerJoined(() => updateWaiting());
-    api.onPeerLeft(() => updateWaiting());
 
     // A concurrent Clear or Forget invalidates any page the main process already read.
     async function readLines(roomId, before = null, channelId = 'general') {
@@ -343,8 +333,6 @@
         }
         setOlder((lines?.length ?? 0) >= FIRST_PAGE ? 'more' : 'none');
         window.reading.followLatest();
-        watchPeers = true;
-        updateWaiting();
         try {
             const result = await api.reopenRoom(room.roomId);
             roomStarted(result);
@@ -362,11 +350,9 @@
             return { save: saveRoomBox.checked && !saveRoomBox.disabled, keepHistory: keepHistoryBox.checked };
         },
         roomStarted(result) {
-            if (result?.saved === true || watchPeers) watchPeers = true;
             if (result?.saveError) status.textContent = `The room was not saved: ${result.saveError}`;
             showStorage(result);
             if (openRoomId && linesLoadedFor !== openRoomId) loadAfterLogin(openRoomId);
-            updateWaiting();
         },
         saveFailed
     };

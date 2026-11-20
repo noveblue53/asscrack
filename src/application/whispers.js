@@ -97,8 +97,8 @@
         window.reading?.suspendForWhisper?.();
         window.typingUi?.channelChanged?.();
         const channelPicker = document.getElementById('channel-select');
-        const channelName = channelPicker?.selectedOptions?.[0]?.textContent || 'General';
-        back.textContent = '← #' + channelName;
+        const channelLabel = channelPicker?.selectedOptions?.[0]?.textContent || '#general';
+        back.textContent = '← ' + channelLabel;
         pane.hidden = false;
         document.body.classList.add('whisper-open');
     }

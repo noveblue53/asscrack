@@ -110,6 +110,16 @@ contextBridge.exposeInMainWorld('asscrack', {
         if (!filePath) throw new Error('The file has no path');
         return ipcRenderer.invoke('asscrack:offer-file', filePath, recipientId);
     },
+    refreshShelf: () => ipcRenderer.invoke('asscrack:refresh-shelf'),
+    shareFile: file => {
+        const filePath = webUtils.getPathForFile(file);
+        if (!filePath) throw new Error('Choose a local file to share');
+        return ipcRenderer.invoke('asscrack:share-file', filePath);
+    },
+    removeSharedFile: id => ipcRenderer.invoke('asscrack:remove-shared-file', id),
+    downloadSharedFile: (peerId, id) => ipcRenderer.invoke('asscrack:download-shared-file', peerId, id),
+    onShelf: listen('asscrack:shelf'),
+    onShelfOffered: listen('asscrack:shelf-offered'),
     postMedia: async (file, caption, channelId, recipientId) => {
         const filePath = webUtils.getPathForFile(file);
         if (filePath) return ipcRenderer.invoke('asscrack:post-media', filePath, caption, channelId, recipientId);
@@ -120,11 +130,13 @@ contextBridge.exposeInMainWorld('asscrack', {
     requestOriginal: id => ipcRenderer.invoke('asscrack:request-original', id),
     onAttachmentStatus: listen('asscrack:attachment-status'),
     acceptFile: offerId => ipcRenderer.invoke('asscrack:accept-file', offerId),
+    retryFile: offerId => ipcRenderer.invoke('asscrack:retry-file', offerId),
     refuseFile: offerId => ipcRenderer.invoke('asscrack:refuse-file', offerId),
     cancelFile: (offerId, peerId) => ipcRenderer.invoke('asscrack:cancel-file', offerId, peerId),
     // Show a received file in Explorer. key: `${offerId}|${peerId}`. The main process keeps the path.
     revealFile: key => ipcRenderer.invoke('asscrack:reveal-file', String(key)),
     onFileOffer: listen('asscrack:file-offer'),
+    onFileRetried: listen('asscrack:file-retried'),
     onFileProgress: listen('asscrack:file-progress'),
     onFileDone: listen('asscrack:file-done'),
     onFileFailed: listen('asscrack:file-failed'),

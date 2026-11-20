@@ -48,9 +48,10 @@
         const state = match ? entry.transfer.state : null;
         const saved = card.local || (state === 'done' && entry.transfer.revealable);
         button.hidden = card.own;
-        button.disabled = !saved && (card.waiting || d.expires <= Date.now() || !(state === 'offered' || card.available) || state === 'receiving');
+        button.disabled = !saved && (Boolean(card.waiting) || d.expires <= Date.now() || !(state === 'offered' || card.available) || state === 'receiving');
         button.textContent = saved ? 'Show saved original' : state === 'receiving' ? 'Receiving original…' :
-            card.waiting ? 'Requesting original…' : button.disabled ? 'Original unavailable' : 'Download original';
+            card.waiting ? 'Requesting original…' : button.disabled ? 'Original unavailable' :
+                state === 'failed' ? 'Retry original' : 'Download original';
     }
     function offer(data, transfer) {
         if (!data.attachmentId) return;
@@ -60,7 +61,7 @@
         offers.set(k, { data, transfer });
         if (!card) return;
         const requested = card.waiting;
-        card.waiting = false;
+        card.waiting = null;
         render(card);
         if (requested && !card.button.disabled) card.button.click();
     }
@@ -74,13 +75,14 @@
         button.type = 'button';
         controls.append(button);
         row.append(controls);
-        const card = { descriptor, row, button, own, available: false, waiting: false };
+        const card = { descriptor, row, button, own, available: false, waiting: null };
         cards.set(k, card);
         render(card);
         api.attachmentAvailable(descriptor).then(value => { card.available = value; render(card); }).catch(() => {});
         const remaining = descriptor.expires - Date.now();
         if (remaining > 0 && remaining <= 2147483647) setTimeout(() => render(card), remaining + 1);
         button.addEventListener('click', async () => {
+            if (button.disabled) return;
             if (card.local) {
                 const result = await api.revealSavedOriginal(row.dataset.id, descriptor.id).catch(() => ({ ok: false }));
                 if (!result?.ok) {
@@ -96,15 +98,21 @@
                 if (t.state === 'done' && t.revealable) { await api.revealFile(offerKey); return; }
                 if (t.state === 'offered') { await acceptTransfer(offerKey); render(card); return; }
             }
-            card.waiting = true;
+            const request = {};
+            card.waiting = request;
             render(card);
             try {
                 if (await api.requestOriginal(descriptor)) {
-                    setTimeout(() => { card.waiting = false; render(card); }, 10000);
+                    setTimeout(() => {
+                        if (card.waiting !== request) return;
+                        card.waiting = null;
+                        render(card);
+                    }, 10000);
                     return;
                 }
             } catch {}
-            card.waiting = false;
+            if (card.waiting !== request) return;
+            card.waiting = null;
             card.available = false;
             render(card);
         });
@@ -113,7 +121,7 @@
     api.onAttachmentStatus(({ id, available, descriptor }) => {
         for (const card of cards.values()) if (card.descriptor.id === id && card.descriptor.source === descriptor?.source && card.descriptor.sha256 === descriptor.sha256) {
             card.available = available;
-            if (!available) card.waiting = false;
+            if (!available) card.waiting = null;
             render(card);
         }
     });

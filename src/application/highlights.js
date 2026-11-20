@@ -29,6 +29,9 @@
     function updateCount() {
         const count = [...pending].filter(row => row.parentElement === list).length;
         next.disabled = count === 0;
+        const wasFocused = next === document.activeElement;
+        next.hidden = count === 0;
+        if (next.hidden && wasFocused) document.getElementById('messages').focus?.({ preventScroll: true });
         next.textContent = count ? `Next highlight (${count})` : 'Next highlight';
     }
 

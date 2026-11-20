@@ -238,6 +238,29 @@ test('a member with zero sessions waits for the live host announcement after rec
     assert.deepEqual(c.e.host(), { peerId: 'a', term: 1 })
 })
 
+test('a member briefly elected during relay loss waits after the last circuit closes', t => {
+    const { e, sent, setOpen } = unit('a', ['h', 'z'], ['h', 'r'])
+    t.after(() => e.stop())
+    e.sessionOpened('h')
+    e.sessionOpened('z')
+    e.handleAnnouncement('h', { host: 'h', term: 1 })
+
+    // The direct session to the only full node closes before the remaining circuit.
+    setOpen(['z'])
+    e.sessionClosed('h')
+    assert.deepEqual(e.host(), { peerId: 'a', term: 2 })
+    setOpen([])
+    e.sessionClosed('z')
+    assert.equal(e.host(), null)
+
+    const priorAnnouncements = sent.length
+    setOpen(['r'])
+    e.sessionOpened('r')
+    assert.equal(sent.length, priorAnnouncements, 'the isolated member cannot announce itself as the incumbent')
+    e.handleAnnouncement('r', { host: 'r', term: 1 })
+    assert.deepEqual(e.host(), { peerId: 'r', term: 1 })
+})
+
 test('rank: the only full node (highest ID) becomes host in the first election', () => {
     mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] })
     try {

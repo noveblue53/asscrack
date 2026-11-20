@@ -1,0 +1,37 @@
+#shared-shelf {
+    box-sizing: border-box;
+    width: min(540px, calc(100vw - 36px));
+    max-height: calc(100vh - 64px);
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: var(--surface-raised);
+    color: var(--ink);
+    font: 14px var(--font-ui);
+    box-shadow: 0 12px 36px rgb(0 0 0 / 24%);
+}
+#shared-shelf::backdrop { background: rgb(0 24 32 / 29%); }
+#shared-shelf header, #shared-shelf footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+#shared-shelf header { justify-content: space-between; }
+#shared-shelf footer { justify-content: flex-end; }
+#shared-shelf h2 { margin: 0; font-size: 18px; }
+#shared-shelf p { margin: 12px 0; }
+#shared-notice:empty, #shared-list:empty { display: none; }
+#shared-list { padding: 0; margin: 10px 0; list-style: none; }
+#shared-list li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 2px 10px;
+    padding: 9px 7px;
+    border-block-end: 1px solid var(--line-soft);
+}
+#shared-list li:first-child { border-block-start: 1px solid var(--line-soft); }
+#shared-list .shared-name { font-weight: 600; overflow-wrap: anywhere; }
+#shared-list .shared-info,
+#shared-list .shared-state { color: var(--ink-soft); font-size: 12px; overflow-wrap: anywhere; }
+#shared-list .shared-action { grid-column: 2; grid-row: 1 / 4; align-self: center; white-space: normal; }

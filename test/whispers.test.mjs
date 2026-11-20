@@ -69,9 +69,10 @@ for (const relayed of [false, true]) {
         a.send(publicText)
         await waitFor(() => rooms.lines(saved.roomId).length === 1, 'archive records the ordinary public control')
         const late = await make({ name: 'same' }) // An unadvertised receiver, with the same display name and a new keypair.
+        // Lock in the direct route before host discovery can enqueue a competing circuit dial.
+        if (!relayed) await a.connect(late.getMultiaddrs()[0])
         await late.connect(host.getMultiaddrs()[0])
         await waitFor(() => late.history().some(row => row.text === publicText), 'late peer receives public history')
-        if (!relayed) await a.connect(late.getMultiaddrs()[0])
         await waitFor(() => a.peers().includes(late.peerId), 'replacement identity connected')
         assert.equal(await a.sendWhisper(late.peerId, text, randomUUID()), 'unavailable')
         assert.equal(await a.sendWhisper(b.peerId, 'private-drop-fixture', randomUUID()), 'unconfirmed')

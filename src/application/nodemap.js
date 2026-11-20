@@ -13,6 +13,7 @@
 //   window.nodeMap.highlight(peerId): marks the node of that peer ID for a short time (data-highlight="true",
 //   see menu.css). Only that node, also when two users have the same name. Returns false when the map has no node
 //   for that peer ID.
+//   window.nodeMap.select(peerId): keeps the inspected peer marked until selection changes.
 //   state = {
 //     self: <peer ID or null>, host: <peer ID or null>,
 //     nodes: [{ id, name, color, inVoice, muted, speaking, fullNode }],   color is a name color class (nc0 to nc7)
@@ -31,13 +32,14 @@
 // prefers-reduced-motion.
 (function () {
     const SVG_NS = 'http://www.w3.org/2000/svg';
-    const NODE_R = 14;
+    const NODE_R = 17;
     const MOVE_MS = 280;
     const COLOR_RE = /^nc[0-7]$/;
 
     const container = document.getElementById('node-map');
+    const legend = document.getElementById('map-legend');
     if (!container) {
-        window.nodeMap = { update() {}, highlight() { return false; } };
+        window.nodeMap = { update() {}, highlight() { return false; }, select() {} };
         return;
     }
 
@@ -83,6 +85,7 @@
     const edges = new Map(); // key -> edge view
     let order = []; // peer IDs in ring sequence: the own node first, then the other nodes by peer ID
     let lastSignature = '';
+    let selected = null;
     let width = 0;
     let height = 0;
     let frame = 0; // the pending requestAnimationFrame ID, 0 when there is no motion
@@ -231,7 +234,7 @@
         else node.group.removeAttribute('data-full-node');
         const first = Array.from(data.name.trim())[0];
         node.letter.textContent = first ? first.toUpperCase() : '?';
-        node.label.textContent = shortName(data.name, labelMax) + (data.self ? ' (you)' : '') + (data.idle ? ' · Idle peer' : '');
+        node.label.textContent = (data.self ? 'You' : shortName(data.name, labelMax)) + (data.idle ? ' · Idle peer' : '');
         const facts = [data.name + (data.self ? ' (you)' : '')];
         if (data.idle) facts.push('Idle peer');
         if (data.host) facts.push('host: the voice relay of the room');
@@ -275,6 +278,7 @@
             if (!node) {
                 node = makeNode(data.id);
                 nodes.set(data.id, node);
+                if (data.id === selected) setSelected(node, true);
             }
             showNode(node, data, labelMax);
         }
@@ -340,20 +344,23 @@
         return Math.round(value * 10) / 10;
     }
 
-    // A joining peer takes the largest free arc. Existing peers keep their place on the ring.
+    // The first three members form a triangle. A later arrival takes the largest free arc.
+    // Existing peers keep their place on the ring as others join or leave.
     function assignSlots() {
         const occupied = order.map(id => nodes.get(id).slot).filter(Number.isFinite).sort((a, b) => a - b);
         for (const id of order) {
             const node = nodes.get(id);
             if (Number.isFinite(node.slot)) continue;
-            let largest = 0;
-            let slot = 0;
-            for (let i = 0; i < occupied.length; i++) {
-                const next = occupied[i + 1] ?? occupied[0] + 1;
-                const gap = next - occupied[i];
-                if (gap > largest) {
-                    largest = gap;
-                    slot = (occupied[i] + gap / 2) % 1;
+            let slot = occupied.length < 3 ? [0, 3 / 8, 5 / 8].find(value => !occupied.includes(value)) : null;
+            if (slot === null) {
+                let largest = 0;
+                for (let i = 0; i < occupied.length; i++) {
+                    const next = occupied[i + 1] ?? occupied[0] + 1;
+                    const gap = next - occupied[i];
+                    if (gap > largest) {
+                        largest = gap;
+                        slot = (occupied[i] + gap / 2) % 1;
+                    }
                 }
             }
             node.slot = slot;
@@ -487,6 +494,35 @@
         return true;
     }
 
+    function setSelected(node, value) {
+        if (!node) return;
+        if (value) node.group.setAttribute('data-selected', 'true');
+        else node.group.removeAttribute('data-selected');
+    }
+
+    function select(id) {
+        setSelected(nodes.get(selected), false);
+        selected = id;
+        setSelected(nodes.get(selected), true);
+    }
+
+    function updateLegend(state) {
+        if (!legend) return;
+        const kinds = new Set(state.chatEdges.map(edge => edge.kind));
+        const shown = {
+            relay: Boolean(state.host),
+            direct: kinds.has('mesh'),
+            relayed: kinds.has('relay'),
+            unknown: kinds.has('unknown'),
+            full: state.nodes.some(node => node.fullNode),
+            voice: state.nodes.some(node => node.inVoice),
+            speaking: state.nodes.some(node => node.speaking),
+            file: state.transfers.length > 0,
+        };
+        for (const key of legend.children) key.hidden = !shown[key.dataset.legend];
+        legend.hidden = !Object.values(shown).some(Boolean);
+    }
+
     // ---- Interface and page events ----
 
     function update(state) {
@@ -497,6 +533,7 @@
         window.peerInspector?.update(next);
         syncNodes(next);
         syncEdges(next);
+        updateLegend(next);
         layout(true);
     }
 
@@ -520,5 +557,5 @@
     document.addEventListener('visibilitychange', showPageState);
     showPageState();
 
-    window.nodeMap = { update, highlight };
+    window.nodeMap = { update, highlight, select };
 })();

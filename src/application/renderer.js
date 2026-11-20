@@ -12,6 +12,7 @@ const joinVoiceButton = document.getElementById('join-voice');
 const leaveVoiceButton = document.getElementById('leave-voice');
 const muteButton = document.getElementById('mute');
 const voiceError = document.getElementById('voice-error');
+const waitingPeer = document.getElementById('waiting-peer');
 
 const statusBar = document.getElementById('statusbar');
 const peerCount = document.getElementById('peer-count');
@@ -51,6 +52,7 @@ function firstLetter(name) {
 
 function updatePeerCount() {
     peerCount.textContent = String([...peerItems.keys()].filter(id => !idlePeerIds.has(id)).length + (selfLine && !selfIdle ? 1 : 0));
+    if (waitingPeer) waitingPeer.hidden = peerItems.size !== 0;
 }
 
 // The node map panel opens and closes with a CSS transition (body.map-open).
@@ -62,7 +64,10 @@ function setMapOpen(open) {
 }
 
 mapToggle.addEventListener('click', () => setMapOpen(!document.body.classList.contains('map-open')));
-mapClose.addEventListener('click', () => setMapOpen(false));
+mapClose.addEventListener('click', () => {
+    setMapOpen(false);
+    document.getElementById('view-toggle')?.focus({ preventScroll: true });
+});
 // Escape: see the one Escape dispatcher at the end of this file.
 
 function formatTime(ms) {
@@ -225,14 +230,17 @@ function insertMessage(from, text, time, id = null, own = null, channelId = 'gen
 // The avatar is the buddy icon: the first letter of the name on a ball with the name color.
 function makePeerLine(name, title, colorName = name, self = false) {
     const item = document.createElement('li');
-    const avatar = document.createElement(self ? 'button' : 'span');
+    const avatar = document.createElement('button');
+    avatar.type = 'button';
     avatar.className = 'avatar';
     if (self) {
-        avatar.type = 'button';
         avatar.setAttribute('aria-label', 'Edit your availability and status note');
         avatar.setAttribute('aria-haspopup', 'dialog');
         avatar.addEventListener('click', editAvailability);
-    } else avatar.setAttribute('aria-hidden', 'true');
+    } else {
+        avatar.setAttribute('aria-label', 'Inspect ' + name);
+        item.addEventListener('click', () => window.peerInspector?.open(title));
+    }
     avatar.textContent = firstLetter(colorName);
     setNameColor(item, colorName);
     const nameSpan = document.createElement('span');
@@ -252,7 +260,9 @@ function makePeerLine(name, title, colorName = name, self = false) {
 
 function setPeerName(item, name) {
     item.querySelector('.name').textContent = String(name);
-    item.querySelector('.avatar').textContent = firstLetter(name);
+    const avatar = item.querySelector('.avatar');
+    avatar.textContent = firstLetter(name);
+    avatar.setAttribute('aria-label', 'Inspect ' + name);
     setNameColor(item, name);
     updateNodeMap();
 }
@@ -260,10 +270,6 @@ function setPeerName(item, name) {
 let selfLine = null;
 // The name from the hello line of each peer.
 const peerNames = new Map();
-
-// The status line after a send with no peer. A peer that joins makes this text false, so addPeer removes it.
-// Saved rooms (milestone 6, decision P3): a send with no accepting peer is not in the history and not saved.
-const NO_PEERS_TEXT = 'No peer got this message. It is only in this window. It is not saved, and a peer that joins later does not get it.';
 
 function addPeer(peerId) {
     if (peerItems.has(peerId)) return;
@@ -273,7 +279,6 @@ function addPeer(peerId) {
     peerItems.set(peerId, item);
     peerList.appendChild(item);
     refreshFileRecipients();
-    if (status.textContent === NO_PEERS_TEXT) status.textContent = '';
     updatePeerCount();
     updateVoiceView();
 }
@@ -558,10 +563,10 @@ async function sendMessage() {
     if (record?.saved === true && record?.id) savedMessageIds.add(String(record.id));
     const line = addMessage(ownName, text, record?.time ?? Date.now(), true, record?.id ?? null, selfId ?? topologySelf, channelId);
     const count = record?.accepted;
-    if (count === 0) markLocalOnly(line);
-    if (visible) window.reading.followLatest();
     const none = typeof count === 'number' ? count === 0 : peerItems.size === 0;
-    status.textContent = none ? NO_PEERS_TEXT : '';
+    if (none) markLocalOnly(line);
+    if (visible) window.reading.followLatest();
+    status.textContent = '';
     if (typeof record?.saveError === 'string' && record.saveError && window.savedRoomsUi) {
         window.savedRoomsUi.saveFailed({ id: record.id, reason: record.saveError });
     }
@@ -735,7 +740,6 @@ function toggleMute() {
 joinVoiceButton.addEventListener('click', joinVoice);
 leaveVoiceButton.addEventListener('click', leaveVoice);
 muteButton.addEventListener('click', toggleMute);
-document.getElementById('detach-voice')?.addEventListener('click', () => window.roomVoiceMonitor?.open());
 window.roomVoiceMonitor?.onActive(active => {
     monitorActive = active;
     lastMonitorView = '';
@@ -826,6 +830,10 @@ async function callFile(fn, offerId) {
     }
 }
 
+function canRetryTransfer(entry) {
+    return peerItems.has(entry.item.dataset.peerId) && entry.retryable && hasApi('retryFile');
+}
+
 function renderTransferActions(entry, row) {
     const buttons = row.querySelector('.buttons');
     const hadFocus = buttons.contains(document.activeElement);
@@ -844,6 +852,11 @@ function renderTransferActions(entry, row) {
         );
     } else if (entry.state === 'receiving') {
         buttons.append(makeButton('Cancel', () => cancelReceive(key), 'cancel-receive'));
+    } else if (entry.state === 'failed' && entry.retryable && hasApi('retryFile')) {
+        const online = canRetryTransfer(entry);
+        const retry = makeButton(online ? 'Retry' : 'Sender offline', () => retryTransfer(key), 'retry', 'btn-retry');
+        retry.disabled = !online;
+        buttons.append(retry);
     } else if (entry.state === 'done' && entry.revealable && hasApi('revealFile')) {
         buttons.append(makeButton('Show in Explorer', () => revealTransfer(key), 'reveal', 'btn-reveal'));
     }
@@ -889,6 +902,28 @@ async function acceptTransfer(key) {
     if (ok !== true) setTransferResult(entry, 'failed', 'Failed: the offer is not available');
     return ok === true;
 }
+
+async function retryTransfer(key) {
+    const entry = liveTransfer(key);
+    if (!entry || entry.direction !== 'receive' || entry.state !== 'failed' || !canRetryTransfer(entry)) return false;
+    setTransferState(entry, 'requesting', 'Requesting retry…');
+    const ok = await callFile(window.asscrack.retryFile, entry.item.dataset.offerId);
+    if (ok !== true && entry.state === 'requesting' && transferKey(entry.item) === key) {
+        setTransferResult(entry, 'failed', 'Failed: retry could not start');
+    }
+    return ok === true;
+}
+
+function refreshTransferRetries({ peerId }) {
+    for (const entry of transfers.values()) {
+        if (entry.state !== 'failed' || !entry.retryable || entry.item.dataset.peerId !== peerId) continue;
+        renderTransferActions(entry, entry.item);
+        if (entry.card) window.reading.keepPosition(() => renderTransferActions(entry, entry.card));
+    }
+}
+
+window.asscrack.onPeerJoined(refreshTransferRetries);
+window.asscrack.onPeerLeft(refreshTransferRetries);
 
 async function refuseTransfer(key) {
     const entry = liveTransfer(key);
@@ -1034,6 +1069,7 @@ function showBuddyOnMap(peerId) {
     if (!peerId || (peerId !== self && !peerItems.has(peerId))) return false;
     setMapOpen(true);
     updateNodeMap();
+    if (peerId !== self && window.peerInspector?.open(peerId)) return true;
     if (window.nodeMap?.highlight?.(peerId)) return true;
     status.textContent = 'This buddy is not on the network map yet.';
     return false;
@@ -1067,6 +1103,7 @@ function rowInfo(row) {
             direction: entry.direction,
             state: entry.state,
             cancelRequested: entry.cancelRequested === true,
+            canRetry: canRetryTransfer(entry) === true,
             revealable: entry.revealable === true && hasApi('revealFile')
         };
     }
@@ -1089,6 +1126,7 @@ function runRowAction(action, row) {
         case 'copy-message': return copyMessageText(row);
         case 'quote': return quoteMessage(row);
         case 'accept': return acceptTransfer(transferKey(row));
+        case 'retry': return retryTransfer(transferKey(row));
         case 'refuse': return refuseTransfer(transferKey(row));
         case 'cancel-receive': return cancelReceive(transferKey(row));
         case 'cancel-receiver': return cancelToReceiver(transferKey(row));
@@ -1171,8 +1209,30 @@ function setTransferResult(entry, state, text) {
 }
 
 window.asscrack.onFileOffer(data => {
+    if (data.retryOf) {
+        const previousKey = `${data.retryOf}|${data.peerId}`;
+        const entry = liveTransfer(previousKey);
+        if (!entry || entry.direction !== 'receive' || entry.state !== 'requesting') return;
+        transfers.delete(previousKey);
+        for (const row of [entry.item, entry.card].filter(Boolean)) {
+            row.dataset.offerId = data.offerId;
+            const progress = row.querySelector('progress');
+            progress.value = 0;
+            showProgress(progress);
+        }
+        const key = transferKey(entry.item);
+        transfers.set(key, entry);
+        entry.retryable = false;
+        setTransferState(entry, 'offered', 'Offered');
+        void acceptTransfer(key);
+        return;
+    }
     const entry = getTransfer(data.offerId, data.peerId, 'receive', data);
     if (entry.card || entry.state !== null) return;
+    if (data.shelfId) {
+        setTransferState(entry, 'receiving', 'Receiving');
+        return;
+    }
     if (data.attachmentId && window.chatAttachments) {
         entry.richOffer = data;
         setTransferState(entry, 'offered', 'Offered');
@@ -1191,6 +1251,11 @@ window.asscrack.onFileOffer(data => {
     window.reading.afterChange(reading);
 });
 
+window.asscrack.onFileRetried?.(data => {
+    const entry = getTransfer(data.offerId, data.peerId, 'send', data);
+    if (entry.state === null) setTransferState(entry, 'offered', 'Retry offered');
+});
+
 window.asscrack.onFileProgress(data => {
     const entry = transferForEvent(data);
     if (RESULT_STATES.has(entry.state)) return;
@@ -1200,6 +1265,11 @@ window.asscrack.onFileProgress(data => {
         progress.value = Number(data.bytes) || 0;
         showProgress(progress);
     }
+});
+
+window.asscrack.onShelfOffered?.(data => {
+    const entry = getTransfer(data.offerId, data.peerId, 'send', data);
+    if (entry.state === null) setTransferState(entry, 'offered', 'Offered');
 });
 
 window.asscrack.onFileDone(data => {
@@ -1220,7 +1290,13 @@ window.asscrack.onFileDone(data => {
     }
 });
 
-window.asscrack.onFileFailed(data => setTransferResult(transferForEvent(data), 'failed', `Failed: ${data.reason ?? ''}`));
+window.asscrack.onFileFailed(data => {
+    const entry = transferForEvent(data);
+    if (entry.state !== 'failed' && RESULT_STATES.has(entry.state)) return;
+    entry.retryable = data.retryable === true;
+    entry.cancelRequested = false;
+    setTransferState(entry, 'failed', `Failed: ${data.reason ?? ''}`);
+});
 window.asscrack.onFileRefused(data => setTransferResult(transferForEvent({ ...data, direction: 'send' }), 'refused', 'Refused'));
 window.asscrack.onFileCancelled(data => setTransferResult(transferForEvent(data), 'cancelled', 'Cancelled'));
 
@@ -1435,6 +1511,7 @@ function updateNodeMap() {
     const self = selfId ?? topologySelf;
     const nodes = [];
     if (self) {
+        selfLine.dataset.peerId = self;
         nodes.push({ id: self, name: ownName, color: nameColorClass(ownName), idle: selfIdle, inVoice: voice.inVoice === true, muted: ownMuted, speaking: voice.transmitting === true && !ownMuted, fullNode: fullNodeSelf });
     }
     for (const [peerId, item] of peerItems) {
@@ -1590,6 +1667,7 @@ window.asscrack.onPeerLeft(() => showFullNodeState());
 
 // A proposed edit appears in the room header only when the host publishes it.
 const topicValue = document.getElementById('topic-value');
+const topicUnavailable = document.getElementById('topic-unavailable');
 const topicEdit = document.getElementById('topic-edit');
 const topicEditor = document.getElementById('topic-editor');
 const topicInput = document.getElementById('topic-input');
@@ -1598,8 +1676,7 @@ let topicEvents = 0;
 
 function editRoomTopic(edit) {
     topicEditor.hidden = !edit;
-    topicValue.hidden = edit;
-    topicEdit.hidden = edit;
+    topicEdit.setAttribute('aria-expanded', String(edit));
     if (edit) {
         topicInput.value = currentTopic.text;
         topicInput.focus();
@@ -1608,8 +1685,10 @@ function editRoomTopic(edit) {
 
 function showRoomTopic(value) {
     currentTopic = value?.available === true ? value : { available: false, text: '' };
-    topicValue.textContent = currentTopic.available ? currentTopic.text || 'No topic set' : 'Topic unavailable';
+    topicValue.textContent = currentTopic.available ? currentTopic.text : '';
     topicValue.title = topicValue.textContent;
+    topicValue.hidden = !topicValue.textContent;
+    if (topicUnavailable) topicUnavailable.hidden = currentTopic.available;
     topicEdit.disabled = !currentTopic.available;
     if (!currentTopic.available) editRoomTopic(false);
 }
@@ -1638,7 +1717,7 @@ async function submitTopic(text) {
     }
 }
 
-topicEdit.addEventListener('click', () => editRoomTopic(true));
+topicEdit.addEventListener('click', () => editRoomTopic(topicEditor.hidden));
 document.getElementById('topic-cancel').addEventListener('click', () => {
     editRoomTopic(false);
     topicEdit.focus();
@@ -1853,6 +1932,7 @@ function focusIsIn(element) {
 
 document.addEventListener('keydown', e => {
     if (e.key !== 'Escape' || e.defaultPrevented || document.querySelector('dialog[open]')) return;
+    if (document.querySelector(':popover-open')) return;
     if (window.contextMenu?.isOpen()) {
         e.preventDefault();
         window.contextMenu.close(true);
@@ -1895,7 +1975,7 @@ document.addEventListener('keydown', e => {
         e.preventDefault();
         const returnFocus = focusIsIn(mapPanel);
         setMapOpen(false);
-        if (returnFocus) mapToggle.focus({ preventScroll: true });
+        if (returnFocus) document.getElementById('view-toggle')?.focus({ preventScroll: true });
     }
 });
 

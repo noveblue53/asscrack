@@ -106,6 +106,52 @@ test('a live file card and its Transfers row share one offer, actions and saved 
     assert.equal(room.el('message-input').value, 'draft');
 });
 
+test('the failed card and Transfers row retry once and show the verified result on the same rows', async () => {
+    const room = await loadRoomWindow();
+    const offer = { offerId: 'first', peerId: 'source', from: 'Sam', name: 'note.txt', size: 5 };
+    const attempts = [], accepted = [];
+    room.window.asscrack.retryFile = async id => { attempts.push(id); return true; };
+    room.window.asscrack.acceptFile = async id => { accepted.push(id); return true; };
+    room.handlers.onPeerJoined({ peerId: offer.peerId });
+    room.handlers.onFileOffer(offer);
+    const [card] = room.rows();
+    const [row] = room.el('transfers').children;
+    card.querySelector('[data-action="accept"]').click();
+    room.handlers.onFileProgress({ ...offer, direction: 'receive', bytes: 3 });
+    room.handlers.onPeerLeft({ peerId: offer.peerId });
+    room.handlers.onFileFailed({ ...offer, direction: 'receive', reason: 'peer left', retryable: true });
+    assert.equal(card.querySelector('[data-action="retry"]').textContent, 'Sender offline');
+    assert.equal(card.querySelector('[data-action="retry"]').disabled, true);
+    assert.equal(await room.window.roomActions.run('retry', row), false);
+
+    room.handlers.onPeerJoined({ peerId: 'different-peer' });
+    room.handlers.onPeerName({ peerId: 'different-peer', name: 'Sam' });
+    assert.equal(card.querySelector('[data-action="retry"]').disabled, true);
+    room.handlers.onPeerJoined({ peerId: offer.peerId });
+    const button = card.querySelector('[data-action="retry"]');
+    assert.equal(button.disabled, false);
+    assert.deepEqual([...room.window.menuCore.actionsFor(room.window.roomActions.rowInfo(row))], ['retry']);
+    button.click();
+    button.click();
+    assert.equal(await room.window.roomActions.run('retry', row), false);
+    assert.deepEqual(attempts, ['first']);
+    assert.equal(card.dataset.state, 'requesting');
+
+    const next = { ...offer, offerId: 'next', retryOf: 'first' };
+    room.handlers.onFileOffer(next);
+    room.handlers.onFileOffer(next);
+    assert.deepEqual(accepted, ['first', 'next']);
+    assert.equal(card.dataset.state, 'receiving');
+    assert.equal(card.querySelector('progress').value, 0);
+    assert.equal(row.querySelector('[data-action="reveal"]'), null);
+    room.handlers.onFileDone({ ...next, direction: 'receive', path: 'C:\\Downloads\\note.txt' });
+    await settle();
+    assert.equal(card.querySelector('.state-text').textContent, 'Saved as note.txt');
+    assert.ok(row.querySelector('[data-action="reveal"]'));
+    assert.deepEqual(room.rows(), [card]);
+    assert.deepEqual(room.el('transfers').children, [row]);
+});
+
 test('room offer groups list every recipient and distinguish delivery, legacy sends, decline and failure', async () => {
     const room = await loadRoomWindow();
     const recipients = ['one', 'two', 'three', 'four'];
@@ -273,7 +319,7 @@ test('the row buttons and the menus call the same action functions', async () =>
 
 test('nodemap.js highlights a node by peer ID with a data attribute', async () => {
     const source = await read('nodemap.js');
-    assert.ok(source.includes('window.nodeMap = { update, highlight }'));
+    assert.ok(source.includes('window.nodeMap = { update, highlight, select }'));
     assert.ok(source.includes("node.group.setAttribute('data-highlight', 'true')"));
     assert.ok(source.includes('highlight() { return false; }'));
 });

@@ -152,7 +152,9 @@ export function createElection({
         },
         sessionClosed(peerId) {
             if (stopped) return
-            if (!isHost() && openPeers().length === 0) {
+            // A restricted member may have been elected while the last circuit was tearing down.
+            // Without an open session, even that temporary incumbent must wait for a live host.
+            if (openPeers().length === 0) {
                 clearTimeout(delayTimer)
                 delayTimer = null
                 firstSessionTime = null

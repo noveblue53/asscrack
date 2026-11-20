@@ -11,7 +11,9 @@
     let timer;
     let generation = 0;
     let peerId = null;
-    let opener = button;
+    const roomOptions = document.getElementById('room-options');
+    const roomOptionsToggle = document.getElementById('room-options-toggle');
+    let opener = roomOptionsToggle;
 
     // Pull the bounded main-process snapshot only while visible and following live.
     async function refresh(version) {
@@ -54,7 +56,10 @@
         resetFilter();
     }
     window.roomActivity = { openPeer: open };
-    button.addEventListener('click', () => open(null, '', button));
+    button.addEventListener('click', () => {
+        roomOptions.hidePopover();
+        open(null, '', roomOptionsToggle);
+    });
     transfers.addEventListener('change', resetFilter);
     all.addEventListener('click', () => {
         peerId = null;
@@ -81,6 +86,6 @@
     dialog.addEventListener('close', () => {
         clearTimeout(timer);
         generation++;
-        (opener.isConnected && !opener.hidden ? opener : button).focus();
+        (opener.isConnected && opener.getClientRects().length > 0 ? opener : roomOptionsToggle).focus({ preventScroll: true });
     });
 })();

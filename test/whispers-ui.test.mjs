@@ -7,8 +7,10 @@ import { createDom } from './helpers/fake-dom.mjs'
 import { loadRoomWindow, settle } from './helpers/renderer-fixture.mjs'
 
 test('private composer binds drafts, acknowledgements and notification clicks to the selected peer ID', async () => {
-    const { document, window, Event } = createDom(['pane', 'title', 'picker', 'open', 'close', 'peer', 'draft', 'lines', 'status', 'send']
-        .map(name => ({ id: 'whisper-' + name, hidden: name === 'pane' })))
+    const ids = ['pane', 'title', 'picker', 'open', 'close', 'peer', 'draft', 'lines', 'status', 'send']
+        .map(name => ({ id: 'whisper-' + name, hidden: name === 'pane' }))
+    const { document, window, Event } = createDom([...ids, { id: 'channel-select' }])
+    document.getElementById('channel-select').selectedOptions = [{ textContent: '#Paddock' }]
     const el = name => document.getElementById('whisper-' + name)
     const events = {}, privateSends = [], attention = []
     let complete
@@ -37,6 +39,7 @@ test('private composer binds drafts, acknowledgements and notification clicks to
     join('identity-b')
     join('identity-c')
     window.whispers.open('identity-b')
+    assert.equal(el('close').textContent, '← #Paddock')
     edit('only for B')
     el('send').click()
     events.PeerLeft({ peerId: 'identity-b' })

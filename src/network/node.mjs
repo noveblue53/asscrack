@@ -1,6 +1,7 @@
 import { createLibp2p } from 'libp2p'
 import { tcp } from '@libp2p/tcp'
 import { createAttachments, PREVIEW_PROTOCOL } from './attachment.mjs'
+import { createSharedShelf } from './shared-shelf.mjs'
 import { createWhispers } from './whispers.mjs'
 import { createTyping } from './typing.mjs'
 import { mdns } from '@libp2p/mdns'
@@ -416,6 +417,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         downloadDir, fileAckTimeout
     })
 
+    const shelf = createSharedShelf({ self: selfId, name: senderName, peerName: peer => names.get(peer), sessions, files, events })
     const attachments = createAttachments({
         self: node.peerId.toString(), sessions, connections: () => node.getConnections(), files, events, previewProvider, sendRecord,
         canPost(channelId, peer) {
@@ -568,6 +570,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                         events.emit('live', record)
                     }
                     else if (control.type === 'attachment' && sessions.get(peerId) === session) attachments.handle(peerId, control).catch(() => {})
+                    else if (control.type === 'shelf' && sessions.get(peerId) === session) shelf.handle(peerId, session, control).catch(() => {})
                     else if (control.type === 'whisper') whispers.handle(peerId, session, control)
                     else if (control.type === 'topic' && sessions.get(peerId) === session) topic.handle(peerId, control)
                     else if (control.type === 'history' && sessions.get(peerId) === session) handleHistory(peerId, control)
@@ -608,7 +611,12 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                     else if (control.type === 'signal') {
                         if (control.data !== null && typeof control.data === 'object') events.emit('signal', { peerId, data: control.data })
                     } else if (typeof control.type === 'string' && control.type.startsWith('file-')) {
-                        if (sessions.get(peerId) === session) files.handleControl(peerId, control)
+                        if (sessions.get(peerId) === session) {
+                            const kind = control.type === 'file-offer' ? shelf.classifyOffer(peerId, control) : 'ordinary'
+                            if (kind !== 'reject' && files.handleControl(peerId, control) && kind === 'requested') {
+                                shelf.startOffer(peerId, control.offerId)
+                            }
+                        }
                     } else if (control.type === 'voice') {
                         if (control.inVoice === true) peerVoice.set(peerId, true)
                         else peerVoice.delete(peerId)
@@ -683,6 +691,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         if (sendHello) session.send(JSON.stringify({ type: 'hello', name: senderName }))
         channels.opened(peerId)
         attachments.opened(peerId)
+        shelf.opened(peerId)
         whispers.opened(peerId, session)
         session.send(nodeLine())
         // Always send the own presence, also when it is 'available'.
@@ -741,6 +750,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 topic.sessionClosed(peerId)
                 channels.closed(peerId)
                 attachments.closed(peerId)
+                shelf.closed(peerId)
                 files.peerLeft(peerId)
                 links.delete(peerId)
                 broadcastLinks()
@@ -1458,6 +1468,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         whisperPeers: whispers.peers,
         sendWhisper: whispers.send,
         channels: channels.view, createChannel: channels.create,
+        shelf: shelf.view, refreshShelf: shelf.refresh, publishShelfFile: shelf.publish,
+        removeShelfFile: shelf.remove, downloadShelfFile: shelf.download, shelfTransfer: shelf.transferId,
         postAttachment: attachments.post, requestOriginal: attachments.requestOriginal, requestPreviewById: attachments.requestPreviewById,
         attachmentAvailable: attachments.available, attachmentDescriptor: attachments.descriptor,
         sendRecord,
@@ -1536,6 +1548,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         pauseHeartbeats: paused => election.pauseHeartbeats(paused),
         offerFile: files.offerFile,
         acceptFile: offerId => files.acceptFile(offerId),
+        retryFile: files.retryFile,
         refuseFile: offerId => files.refuseFile(offerId),
         cancelFile: (offerId, peerId) => files.cancelFile(offerId, peerId),
         async stop() {
@@ -1549,6 +1562,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             if (relayDialTimer) clearTimeout(relayDialTimer)
             if (settleTimer) clearTimeout(settleTimer)
             attachments.stop()
+            shelf.stop()
             await files.stop()
             election.stop()
             voiceRelay.stop()
