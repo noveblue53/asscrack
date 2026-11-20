@@ -1,0 +1,47 @@
+name: Package the Windows friend pilot
+
+on:
+  push:
+    branches: [codex/friend-pilot-delivery]
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.1
+      - run: npm ci
+      - name: Build the unsigned portable candidate
+        env:
+          ELECTRON_BUILDER_COMPRESSION_LEVEL: 5
+        run: |
+          npm run dist -- --x64 --publish never --config.portable.artifactName=ASSCRACK-0.7.0-friend-pilot-rc1-42cf3c6-windows-runner-x64.exe
+      - name: Verify the native launcher and prepare the handoff
+        run: |
+          $name = 'ASSCRACK-0.7.0-friend-pilot-rc1-42cf3c6-windows-runner-x64.exe'
+          $exe = (Resolve-Path "dist/$name").Path
+          node tools/second-start-check.mjs --first $exe --temp "${{ runner.temp }}/asscrack-launch" --out handoff/windows-launch.json
+          if ($LASTEXITCODE -ne 0) { throw 'Native Windows launcher verification failed' }
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $exe).Hash.ToLowerInvariant()
+          "$hash  $name" | Set-Content -Encoding ascii -LiteralPath "handoff/$name.sha256"
+          $card = Get-Content -Raw docs/FRIEND_PILOT.md
+          $card.Replace('ASSCRACK-0.7.0-friend-pilot-rc1-42cf3c6-win-x64.exe', $name).Replace('d3241c136d43353b8c2c185a72e906f77718ae8fc47d3bcae2177722d49a4da3', $hash).Replace('../src/', 'https://github.com/noveblue53/asscrack/blob/codex/friend-pilot/src/').Replace('(WORK_PLAN_1.0.md', '(https://github.com/noveblue53/asscrack/blob/codex/friend-pilot/docs/WORK_PLAN_1.0.md') | Set-Content -Encoding utf8 -LiteralPath handoff/ASSCRACK-Friend-Pilot-Field-Card.md
+          Copy-Item -LiteralPath $exe -Destination handoff
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ASSCRACK Windows friend-pilot RC 1
+          path: handoff/
+          if-no-files-found: error
+      - name: Attach verified files to the existing draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $release = gh release view v0.7.0-friend-pilot-rc1 --json isDraft,targetCommitish | ConvertFrom-Json
+          if (!$release.isDraft -or $release.targetCommitish -ne '42cf3c64dc17e6bc86df21e8e66c16301e151ea6') { throw 'Unexpected RC1 destination' }
+          gh release upload v0.7.0-friend-pilot-rc1 (Get-ChildItem handoff -File | ForEach-Object FullName)
