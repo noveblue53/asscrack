@@ -13,13 +13,10 @@ members elect a new host with no user action.
 
 | Item | State (2026-11-20) |
 |---|---|
-| Latest build | **0.7.0**, a portable Windows `.exe`, built on Windows on 2026-11-20. The SHA-256 is in `CHANGELOG.md`, entry 0.7.0. Three Windows peers used this build in the November 20 internet test. See the Unreleased changelog entry for the faults they saw. There is no public download yet. |
-| `main` | The November 20 field baseline is 0.7.0 at `de54371`. The review branch `work/0.7-field-recovery` combines the isolated-host, UPnP lease and file-receipt fixes with duplicate-session prevention. |
-| Desktop follow-on | The separate `work/room-desktop` branch adds six themes, a themed title bar, manual tray Idle Peer, a detachable voice panel, public channels, online whispers, local media previews and notification preferences. Its Windows x64 review executable and single-computer evidence are listed in the [desktop report](docs/DESKTOP_REVIEW.md). |
-| Field review build | The branch adds cold saved-room recovery, targeted file offers, live room topics, typing, highlights, per-buddy listening controls and local connection diagnostics. See the Unreleased changelog for the candidate source, binary hash and 127.0.0.1 results. |
-| Open field checks | Card 9 covers reconnecting the isolated Laptop, a fresh inbound connection after the first lease, interrupted file delivery and alternate-relay failover. Card 8 and the work plan track Windows archive upgrades and device checks. The operator schedules all multi-computer testing. |
-| Current phase | Phase 8 internet reliability and Phase 7 desktop work. The next release decision depends on a qualifying Windows game night. The session-scoped Shared shelf follows that observation. |
-| Plan | [`docs/WORK_PLAN_1.0.md`](docs/WORK_PLAN_1.0.md) gives the release order, the scope and the exit checks of 1.0. |
+| Friend pilot | Windows x64 portable RC1 uses the 0.7.0 app version. The changelog records the exact executable SHA-256 and frozen source. [Build and verification](CHANGELOG.md#unreleased--windows-friend-pilot-release-candidate) · [Field card](docs/FRIEND_PILOT.md) |
+| Prior 0.7.0 field build | Three Windows peers used the build from `8dacddd` in the November 20 internet test. Its SHA-256 and observed faults are in the [changelog](CHANGELOG.md). |
+| Earlier review builds | The [field recovery report](docs/FIELD_RECOVERY_REPORT.md) and [desktop review](docs/DESKTOP_REVIEW.md) list the earlier x64 executable identities and single-computer results. |
+| Field acceptance | The friend pilot covers the open router-lease, reconnect, interrupted-file, alternate-relay and Windows profile checks. The 1.0 decision also depends on the qualifying game nights. [Release plan](docs/WORK_PLAN_1.0.md) |
 
 ### How to read the results
 
@@ -155,9 +152,9 @@ The network code is in `src/network/`. The Electron app is in `src/application/`
 | 2. Host election and failover | Done. LAN tested on 2 computers. |
 | 3. Mumble server | Not planned. Voice uses Opus on libp2p streams. |
 | 4. Voice with reconnect | Done. LAN tested (WebRTC, 0.2.0 and 0.3.1). Voice on libp2p streams internet tested (0.5.0). Echo and noise suppression, voice activity and push-to-talk (5C) are on `main` with 127.0.0.1 results. Next: the 5C test on 2 computers. |
-| 5. Chat | Done: chat and history after a restart (LAN). Quote and Find (127.0.0.1). Manual status (127.0.0.1). Saved rooms with encrypted local history (milestone 6 part 1 and part 2, 127.0.0.1). Next: a room topic and unread highlights. |
-| 6. File sharing | Done. LAN tested (0.3.1), internet tested (0.5.0). Next: a Shared shelf for the room. |
-| 7. Desktop experience | In progress. The new look and the map (0.4.0), room window milestone 1 and Quote and Find have 127.0.0.1 results only. |
+| 5. Chat | Chat and history after a restart passed on LAN. Quote/Find, availability, saved rooms, topics, highlights, channels and online whispers have single-computer coverage. |
+| 6. File sharing | Ordinary transfers passed on LAN (0.3.1) and the internet (0.5.0). Recipient-level delivery, inline media, fresh retry and the Shared shelf are part of the friend-pilot checks. |
+| 7. Desktop experience | The room, themes, map, tray and detachable voice panel have single-computer evidence. Windows shell and device checks are open. |
 | 8. Internet rooms | In progress. Invite codes and rejoin are internet tested. UPnP join, relays and failover on the internet are open. |
 
 Release 1.0 is a portable messenger for a game night. A friend joins from a different network. The group can continue to
@@ -165,9 +162,10 @@ talk when a host closes. People reopen the same room the next day. See [`docs/WO
 
 ## Documents
 
-- [`CHANGELOG.md`](CHANGELOG.md): each release and each unreleased change, with its results and labels.
-- [`src/network/chatreadme.md`](src/network/chatreadme.md): the LAN and internet test cards.
-- [`docs/WORK_PLAN_1.0.md`](docs/WORK_PLAN_1.0.md): the 1.0 release plan.
+- Follow the short Windows rehearsal and game-night checks. [Friend-pilot field card](docs/FRIEND_PILOT.md)
+- Find releases and unreleased changes with their evidence labels. [Changelog](CHANGELOG.md)
+- Find the detailed LAN and internet test cards. [Network test cards](src/network/chatreadme.md)
+- Follow the milestone acceptance criteria and 1.0 ship decision. [Release plan](docs/WORK_PLAN_1.0.md)
 
 ## License
 

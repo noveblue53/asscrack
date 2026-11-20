@@ -1,50 +1,49 @@
 # Asscrack 1.0 release work plan
 
-**Start here, Claude.** Deliver a portable Windows messenger a small group can rely on for game night. A friend can join from another network, keep talking when a host drops and another route exists, reopen the same room tomorrow, read opted-in history offline, and collect a file shared before they arrived. Work in [noveblue53/asscrack](https://github.com/noveblue53/asscrack). Follow the release order below. The numbered feature sections retain the identifiers used in earlier branches and handoffs.
+The portable Windows app is ready for its first game night when friends have an identified candidate they can download and try. The 1.0 ship decision follows the Windows checks and three qualifying game nights below. The numbered feature sections preserve the acceptance criteria used in earlier branches and handoffs.
 
-**Pickup after the November 20 internet test.** The three-PC field evidence belongs to the Windows 0.7.0 executable built from `8dacddd`. The recorded `main` baseline for the fixes is `de54371`. The room layout (1), Quote/Find (2), manual availability (3), voice processing (5C), and saved rooms/archive parts 6.1–6.2 are in that build. Keep their existing tests and finish the outstanding packaged checks. The isolated Laptop election and false sender completion were observed in the field. The UPnP log establishes an initial mapping only. Its lifetime on that router was never measured.
+## Friend-pilot closeout
 
-**Review branch.** `work/0.7-field-recovery` integrates `fix/0.7.0-internet-faults` (`f1f267a`), the connect/discovery deduplication change (`710a930`) and the desktop planning branch (`95d852d`). The desktop planning commits describe proposed features. The operator reviews and merges code. At pickup run `git fetch origin`, record branch and SHA, and compare with current main before starting a slice. The Unreleased changelog records code and test evidence by revision. Tests on 127.0.0.1, original-build internet evidence, and field acceptance of a candidate have separate results.
+The pilot builds on `09ee774`. Its ancestry includes `main` at `de54371`, field recovery at `7ada7bb`, room desktop at `fb78864`, and both PR heads. [PR #1 planning](https://github.com/noveblue53/asscrack/pull/1) · [PR #2 center-pane whispers](https://github.com/noveblue53/asscrack/pull/2)
 
-### Pickup on the field-recovery branch
+The frozen friend-pilot runtime is `42cf3c64dc17e6bc86df21e8e66c16301e151ea6`. It uses app version 0.7.0. Record both the executable filename and its SHA-256 for field results.
 
-Review `work/0.7-field-recovery` against `de54371`. The changelog identifies the source and exact Windows executable used for the next test. Card 9 contains the three-PC incident conditions and the separate four-peer failover case.
+The original three-PC internet observation belongs to the 0.7.0 Windows executable built from `8dacddd`. Its log confirms an initial UPnP mapping. Lease renewal on that router still needs a field check. [Earlier field binary and evidence](FIELD_RECOVERY_REPORT.md) · [Earlier desktop binary and evidence](DESKTOP_REVIEW.md)
 
-| Work | What is ready for review | What still determines acceptance |
+| Work | Implementation and evidence | Open acceptance |
 | --- | --- | --- |
-| Steps 3 and 4 | The three field fixes, session deduplication, returning endpoint retries, bounded cold history and recipient-specific offers have 127.0.0.1 coverage. | Run the identified portable on Windows 10. Check the real router lease, saved 0.7.0 profile, interrupted file and route change. |
-| Everyday room before the shelf | The file composer, highlights, topics, typing, listener volume, route inspection and local activity feed are available to try. | Use the Windows window at ordinary size with real devices, friends and their usual network paths. See the changelog for the local checks and remaining parts. |
-| Next release gate | Night 1 uses this build before adding the Shared shelf. Record what happened and the time to fresh two-way chat and understandable speech. | Repair any failed supported route first. Then implement 4C, durable public channels, online whispers, portable Idle Peer and notification behavior in release order. |
+| Field recovery and targeting | Isolated-member election, UPnP renewal, single-session dialing, receiver-verified delivery, returning endpoints, bounded replay and recipient-specific offers have loopback coverage. The pilot fixes a stale host term after the last circuit closes and has a focused regression for that order of events. | Repeat [card 9](../src/network/chatreadme.md#internet-test-card-9--070-field-retest) with the chosen Windows candidate and record the router, transfer and route outcomes. |
+| Room and conversations (1–3, 7, 7A) | Layout, Quote/Find, highlights, availability, topic and typing are implemented. `/w` and the buddy menu open the same private pane. Two running Electron profiles verified typing, private draft isolation, unread state, Linux notification activation and Do Not Disturb. | Have a friend join unaided on Windows. Confirm the intended conversation and recipient, catch-up, notifications, file and mute actions. |
+| Files (4A–D) | The desktop review records inline screenshots, GIFs, video, byte verification, bounded buffering and mixed versions. Running Electron verified the pilot's receiver retry on direct TCP and circuit paths, and a late arrival's download from the explicit session-scoped Shared shelf. | Test the Windows clipboard, playback, interruption and retry, Explorer reveal, two independent recipients and shelf retrieval after late join. |
+| Voice, telemetry and desktop (5–5G) | The desktop review records per-buddy listening, six themes, the detached voice panel and manual Idle Peer. The independent visual rerender verified persistent buddy selection, observed routes, recent events and the compact keyboard path at 800 × 600. | Check real voice quality and recovery, Windows window controls and scaling, the tray, wake and native notifications. |
+| Saved rooms (6) | The field and desktop reports record offline reopen, replay and upgrades using Linux Electron and encrypted local storage. | Rehearse both archived upgrades on Windows with closed-profile copies and verify account protection and missing-key recovery. |
+| Portable RC1 | Frozen-source suite passed 384/384. The NSIS payload and all 90 application and network files passed integrity and source checks. The extracted x64 payload passed keyed chat, second launch, quit and offline archive reopen under Wine. | Start the outer portable on Windows and repeat the shell, security and device checks. The Wine environment also failed to start a separate 32-bit control executable. |
 
-### Desktop follow-on for review
+The friend pilot brings the Shared shelf (4C) forward. The change and test evidence are in the [changelog](../CHANGELOG.md). Use the qualifying nights to check joining, route recovery, one-off transfers and late retrieval of an explicitly published file while the source is reachable. [Friend-pilot field card](FRIEND_PILOT.md)
 
-The Night 1 binary and field procedure remain pinned on `work/0.7-field-recovery`. The operator requested continued development while the meeting with friends is deferred. Review the independent desktop changes on `work/room-desktop`. The [desktop implementation and verification report](DESKTOP_REVIEW.md) identifies its portable file, source, tests and remaining Windows checks. Use the build identifier when recording a result. A passing loopback test does not complete a multi-computer exit.
+Optional follow-ups retain their own prerequisites. Byte-offset resume (8) depends on measured interruption cost, the per-user installer and sign-in start depend on an installed distribution, and production screenshare follows a Windows source-picker and real uplink trial. The ready check (9) follows interest from the group. [Generated-source screenshare experiment](SCREENSHARE_FEASIBILITY.md)
 
-The Shared shelf follows Night 1. The [screenshare experiment](SCREENSHARE_FEASIBILITY.md) uses a generated source and a single viewer. A Windows source-picker trial and field uplink measurements precede a product decision. Installer sign-in startup, resumable originals and the optional ready check retain their individual prerequisites.
+On the frozen 127.0.0.1 source, two restricted members recovered automatically after a 5.557 s outage. They waited without a host until a new full-node identity returned at the same endpoint. Fresh chat arrived in both directions about 4.08 s after the relay returned, and fresh synthetic audio began in both directions about 4.09 s after that return. The same exercise on the baseline established a circuit but failed to agree on a host within 20 s. Independent alternate-relay exercises observed fresh synthetic voice after 20–31 ms. These are single-computer protocol timings. Intelligible speech, real route recovery and router renewal remain on the field card.
 
 ## Release order
 
 | Step | Work in dependency order | Evidence or decision |
 | --- | --- | --- |
-| 1–2 · In the 0.7.0 baseline | Preserve room window, Quote/Find, manual availability, voice processing and saved archive behavior. | Keep outstanding Windows, mixed-version and audio checks open against the chosen executable. |
-| 3 · Recover from the field faults | Review isolated-member election, one owner for the UPnP lease, and per-recipient delivery receipts together with connection deduplication. Prepare a Windows candidate for card 9. | Run the same-computer regressions. The operator schedules the three-PC retest and the separate alternate-relay case. A failed supported route or incorrect delivery claim takes priority. |
-| 4 · Finish saved-room recovery and targeting | Complete 6.3 with changed peer IDs, refreshed endpoint hints, bounded replay and Clear/Forget; enforce explicit file recipients at the sender. Advance these independent slices while field access is deferred. | An original invite works through a surviving endpoint; stale-only hints wait. Eligible host records replay within count and byte bounds. A targeted offer discloses nothing to an unselected third peer. Run the archived 0.7.0 profile upgrade below. |
-| 5 · Build the everyday room | Complete 1A, 2A, 3A/B and the essential 5D diagnostics. Deliver the session-scoped shelf (4C) over fresh eligible offers. Introduce durable public text channels (7), then online, fail-closed whispers (7A). Deliver portable manual Idle Peer (5F) and usable sound/notifications (5G). | A friend can join, catch up, send in the intended conversation, fetch a file and reopen the room. Observe recipient isolation, late join and host change. Keep private activity out of public replay, shelf and telemetry. |
-| 6 · Verify the candidate | After operator integration, freeze the Windows executable and retain its source SHA, byte size and SHA-256. Run packaged upgrade, mixed-version, voice and tray checks. | Record card 9 results and the archive checks against the exact binary. Installer sign-in startup has its own gate if an installed distribution is offered. |
+| 1–4 · Baseline and field-fault work | The room window, Quote/Find, availability, voice processing, saved-room recovery and targeted-transfer work are integrated into the pilot baseline. | Keep the previously recorded loopback evidence and repeat the relevant Windows and network checks on the chosen binary. |
+| 5 · Everyday room and Night 1 | Try the pilot conversation, voice, diagnostics, one-off download and explicit Shared shelf workflows. | A friend joins, catches up, sends to the intended conversation and gets a file. Fix a failed supported route before advancing. Across the qualifying nights, test shelf discovery after late join and host change. |
+| 6 · Verify the candidate | Freeze the 1.0 Windows executable and record its source SHA, byte size and SHA-256. Run packaged upgrade, mixed-version, voice and tray checks. | Record card 9 and archive results against the exact binary. Any installed distribution has its own sign-in gate. |
 | 7 · Publish | Complete three qualifying game nights and the download check below. | The published artifact matches the candidate that passed the required field checks. |
 
-**Later work.** Schedule the six themes and custom frame (5E) after channels, whispers and manual tray behavior. Static/animated previews, video playback, detachable voice, transfer resume and ready checks have their own acceptance criteria. Use the screenshare experiment (7B) before committing to a media transport or making it a release dependency. A proposed installer adds opt-in Windows sign-in integration. The portable 1.0 can ship after its own gates pass.
-
-### Map to the README
+### Milestone coverage
 
 | README phase | Work-plan coverage and release documentation |
 | --- | --- |
 | 1–2 · Discovery and election | Retain LAN regression coverage and test election with a real surviving internet route. |
-| 3–4 · Mumble and voice | Document Mumble’s historical deferred status and the current Opus-over-libp2p implementation. Replace stale present-tense WebRTC wording. Record the build and topology verified for voice recovery. |
+| 3–4 · Mumble and voice | The app uses Opus over libp2p. Record the build and topology verified for voice recovery. |
 | 5 · Chat | Milestones 2, 2A, 3, 3A, 3B, 6, public channels (7) and online whispers (7A). Document archive, replay and recipient guarantees. |
-| 6 · Files | Existing streamed transfers, 4A attachment cards and 4C explicit shelf publishing. Track 4B/4D chat rendering and the milestone 8 resume experiment as independent follow-ups. |
-| 7 · Desktop experience | Milestones 1/1A, Quote/Find and the required pieces of 5. Track 5D for the inspector and events, 5F/G for manual tray and attention, then 5E for window controls and themes after the core messaging work. Retain evidence for packaged Windows and document any optional work still open. |
-| 8 · Internet rooms | Steps 3, 4 and 6. Document which routes support cold join, rejoin and host failover. Replace “instantly” and universal zero-configuration wording with the measured result and actual prerequisites. |
+| 6 · Files | Streamed originals, chat attachment cards and previews (4A/B/D), recipient retry and explicit shelf publishing (4C). The milestone 8 byte-offset experiment has a separate field gate. |
+| 7 · Desktop experience | Milestones 1/1A, Quote/Find, inspection and events (5D), window controls and themes (5E), and manual tray and attention (5F/G). Retain evidence for native Windows behavior. |
+| 8 · Internet rooms | Field recovery, saved-room recovery and candidate verification. Record which routes support cold join, rejoin and host failover, including the measured recovery and prerequisites. |
 
 ### Phase 8 field procedure
 
@@ -61,14 +60,11 @@ Use [internet test card 9](../src/network/chatreadme.md#internet-test-card-9--07
 
 ### Record results once
 
-Use the existing changelog and test cards. For each gate record status (open, pass, fail or waiting for field access), build SHA and binary hash when applicable, environment, topology, action, expected and observed result, and next action or owner. Claude handles code and reproducible checks. The operator and friends supply observations from physical Windows machines and real networks. Same-PC and LAN results keep their labels. Redact invite credentials and private chat before sharing evidence. A missing field result stays open while independent work proceeds.
+Record each gate in the changelog or field card with its status, source SHA and executable hash, environment, topology, action, expected and observed result, and next action or owner. The operator and friends supply observations from physical Windows machines and real networks. Same-PC and LAN results keep their labels. Redact invite credentials and private chat before sharing evidence. A missing field result stays open while independent work proceeds.
 
-## Establish the baseline once
+## Reproduce local verification
 
-- Record current branch, full SHA, Node and Electron versions. Diff from the verified pickup SHA if main has moved. Inspect `src/application/{index.html,styles.css,renderer.js,main.js,preload.cjs,nodemap.js}`, the relevant network modules, and focused tests before changing their paths.
-- From a clean checkout use `npm ci`, `npm test` and `npm start`. For independent dev profiles launch separate instances with `npm start -- --profile <dir>`, using a different directory per peer. Exercise the normal login, send and receive paths. Use `npm run dist` for the Windows portable target on a suitable builder. Record effective content viewport dimensions separately from the outer window size.
-- At the historical planning baseline (`82fc32f`), the review ran the eight source-wiring checks in `test/app-events.test.mjs` and two invite tests successfully. A local 250-message history probe confirmed the 200-entry cap, deduplication and field projection. The full suite and Electron main process hit an environment restriction in `os.networkInterfaces()`. The repository recorded 96/96 on one PC at that earlier baseline. Re-establish that baseline on a socket-capable host. A source test cannot exercise a popup or the Windows shell.
-- Preserve the recent no-peers status fix, history after early election, per-recipient cancellation and rejoin with a changed peer ID. Keep local work moving when hardware is unavailable. Record the exact unrun Windows, LAN or internet scenario and the version tested before calling it verified.
+Use Node 24 and the lockfile. Run `npm ci`, `npm test` and `npm start` from a clean checkout. Use `npm start -- --profile <dir>` with a separate profile per peer for login, send and receive checks. Record the source SHA, Node and Electron versions, network topology and viewport dimensions. Bind the Windows results to the exact executable hash. Use the numbered milestones below as acceptance references for changes and regressions.
 
 ## 1 · Make the room window usable every day
 
@@ -100,6 +96,8 @@ Make the room name the main heading with Invite beside it. Put the composer, pap
 Place availability and personal-note editing on the self orb. Keep Join/Mute/Unmute, a secondary Leave voice action, and device settings with the buddy list. Give room history its own room-menu preference and put the clear action with it. Reserve visible status text for changes that matter, such as **Reconnecting…**, or for a local-only send on its message. Put the archive fact **Saved on this device** in message details. A generic checkmark beside each bubble invites a false delivery inference. Make selection, menu access, file outcomes and room recovery understandable with tooltips closed.
 
 **Exit.** At the packaged app’s initial 800 × 600 window and at 1280 × 720, a friend can tell which room is open, attach a file, cancel a draft, send a message, mute without leaving voice, and reveal a completed download. Opening Transfers or inspecting a buddy preserves the current draft and reading position. Confirm a failed or declined transfer identifies the affected person. Check new message arrivals, and retain milestone 1’s keyboard, splitter and narrow-window tests.
+
+**Receiver retry.** Disconnect one recipient mid-download and verify they can retry from their existing card or Transfers row when the original source returns. Retry starts a new attempt at byte zero and reports success after final size and SHA-256 verification. Check source availability, repeated clicks, partial-file cleanup and another recipient’s independent transfer on direct and relayed paths.
 
 ## 2 · Reply to a line and find it again
 
@@ -339,6 +337,8 @@ After the core chat and voice paths work, prototype one consenting Windows share
 
 ## 8 · Resume large transfers only when real transfers justify it
 
+The friend pilot requires a receiver to restart a failed download without a sender repost. Retaining a partial and negotiating a byte offset depends on the field measurements below.
+
 **Gate.** Measure a representative original over a direct route and a relayed route; start with 1 GiB if disk and time allow. Record bytes, topology, elapsed time, interruption point and cost to restart. A same-PC rate cannot predict a friend's upstream. Proceed when real interruptions or restart times are a recurring burden.
 
 **Slice.** Add an opt-in retained partial, keyed by verified content hash and size, with a retention budget, visible expiry and discard. Version the file transfer protocol for offset negotiation, validate the partial and source, seek both ends, and verify SHA-256 across the complete output before finalizing. Treat cancellation as discard unless the user explicitly selects Pause. The current one-shot sender and eager partial cleanup require deliberate changes in `file-transfer.mjs`. A peer with only v1 gets a fresh full transfer and an explicit restart indication.
@@ -366,7 +366,7 @@ Run three ordinary game nights with at least three friends across at least two n
 
 | Night | Put the app in someone else’s hands | Required observation |
 | --- | --- | --- |
-| 1 · Join and keep talking | Before the shelf is built, give a friend the portable executable and an invite. Use the room normally. At a convenient point, remove the active host with a viable alternate. | A friend reaches voice without a walkthrough. The group finishes the session, with measured voice and chat continuity or recovery. Fix a failed route before further feature expansion. |
+| 1 · Join and keep talking | Give a friend the identified pilot executable and an invite. Use the room normally. At a convenient point, remove the active host with a viable alternate. | A friend reaches voice without a walkthrough. The group finishes the session, with measured voice and chat continuity or recovery. Fix a failed route before further feature expansion. |
 | 2 · Return tomorrow | Close all processes between nights. Someone other than the original host opens the saved room first. Verify their opted-in history offline, then reconnect from another network under the documented reachability conditions. | The same credential opens the same room. Locally saved lines appear once. A peer using a valid reachable invite can rejoin. Across nights 2 and 3, also show that a late friend can collect a shelf file while its publisher remains online. |
 | 3 · Use the final candidate | Have friends use the identified 1.0 executable for the whole session. Exercise mute, catch-up, status, topic, shelf and an actual host loss. Use the normal UI and distribution file. | People correctly identify mute and connection state, get the intended file and keep talking through the supported failover. Nobody needs the developer to repair the room or move the group to another app. |
 
