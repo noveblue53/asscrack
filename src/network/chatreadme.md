@@ -1,3 +1,41 @@
+## Internet test card 9 — 0.7.0 field retest
+
+**Open for the operator.** Use this card when Windows computers and their owners are available. The November 20 internet report covers the original 0.7.0 build. This card has no candidate field results. The historical cards below apply to their original binaries.
+
+### Identify each executable
+
+| Role | Source or identity | Windows portable binary |
+| --- | --- | --- |
+| Archived 0.7.0 reference | Windows build from `8dacddd`. Later main `de54371` records its release. | 107,264,323 bytes, SHA-256 `ffae5423607ef2271c89719059742147ae064007ca22fa71d00632efaeb02034` |
+| Legacy 0.6.0 | Use the archived release identified in the changelog. | 97,233,105 bytes, SHA-256 `2d6185dff99c6bc8a4a204d8524d4b97a412a88744976c4d276c47dcd5070216` |
+| Candidate | Use an operator-reviewed Windows build. Record full source SHA, build flags, architecture, Windows, Node and Electron versions. | Record filename, byte size and SHA-256 on the builder and each participating PC. Builds can share a display version. |
+
+In PowerShell assign `$exe` the path, then run `(Get-Item -LiteralPath $exe).Length` and `Get-FileHash -Algorithm SHA256 -LiteralPath $exe`. Match the file to the intended row. Keep the original executable and a closed-profile backup. Quit all old instances before the next launch. Use the same Windows account for the archive upgrade. Use a common timebase or measure elapsed time on one observer’s clock.
+
+### Three Windows PCs on the original topology
+
+Use a keyed room with PC (A) on its UPnP router, Brother (B) on another home network, and Laptop (C) on a phone hotspot. Establish PC as reachable/full and host, B/C as restricted, A–B and A–C as direct, and B–C as relayed via A. Verify the routes in the connection logs. A different topology can produce a separate result. Use the candidate on all three unless a row calls for a legacy version.
+
+| Case | Action | Record for a pass |
+| --- | --- | --- |
+| Isolated Laptop | Keep A and B connected. Take C completely offline, including its relayed session; wait past its configured election timeout. Restore connectivity and repeat. Exchange fresh lines after each rejoin. | A and B keep A as host. C reports no host alone and accepts A after each reconnect. Record disconnect, host and reconnect events on all three. Original event window: 02:18:17–02:19:01.688 UTC. |
+| UPnP renewal | Record A’s initial TCP ports, lease and router time if available. Leave A running through the 15-minute refresh and past its initial 30-minute requested lease. After that boundary make a fresh incoming TCP connection from outside the home network using the invite. Quit A and inspect the mapping again. | Record the fresh incoming connection on the same mapping, evidence of renewal (router lease reset or mapping request log), then removal on Quit. An existing session can survive expiry. If router telemetry is unavailable, mark renewal observation open and report the fresh dial separately. 0.7.0 logged port 55247 at 02:01:46 UTC; the field log gives no expiry time. |
+| File interrupted | Offer a disposable file large enough to interrupt A→C. Have C accept and interrupt its connection while receiving. Rejoin, make a fresh offer and finish. Compare final byte size and PowerShell SHA-256. Repeat via a verified relay if available. | For the interrupted offer A shows **Failed** and C produces no completed file. For the successful offer C sees its normal save result, and A shows **Delivered** for C after C verifies and saves it. Keep offer IDs, directions, UTC times, outcomes and hashes. For original offer `bee7169b…` the sender logged done at 02:18:12.509 and receiver failure at 02:18:17.631 UTC. |
+| One selected recipient | For a candidate with targeting, A offers B a uniquely named file while C stays online; repeat with B leaving before send. Try intentional room sharing separately. | Only B gets the targeted offer and eligible download. C’s window, control events and archive show no filename or offer. An absent B causes visible failure with zero broadcast. Room sharing still reaches eligible peers. |
+| Lose the sole relay | With B–C traffic depending on A, stop A. Observe B and C, restore A and exchange new chat and voice in both directions. | Record the outage and recovered route. A candidate with zero sessions waits. This case measures recovery when the only usable route returns. |
+
+**Four-peer alternate-relay check.** Add D, a second independently reachable full node on a usable alternate route. Verify B and C can use D and that traffic initially traverses A. Have B and C exchange new spoken phrases and messages, then stop A while D remains available. Verify both directions recover without manual redial or room restart. Record host, actual routes before/after, timestamps and audio gap. Direct audio continuity has its own result. When a fourth peer or observable alternate is unavailable, leave relay failover open. An elected replacement host alone cannot establish media recovery.
+
+### Archived binaries and saved rooms
+
+1. **0.7.0 archive upgrade.** In a disposable 0.7.0 profile save the room with history enabled. Exchange numbered lines and a quote. Quit and copy the complete profile including the database and wrapped key. Start the candidate offline with that profile and Windows account. Compare the saved room, lines, order, quote, counts, settings and waiting state. Restore a viable endpoint, rejoin and exchange fresh messages, then quit and reopen offline again. Record any duplicates, missing rows, storage errors or changed settings. Preserve the backup. Repeat with history off.
+2. **0.6.0 adoption and mixed rooms.** Retain a disposable 0.6.0 profile, original invite and known settings. Use the invite to create a saved room on the candidate. The old in-memory transcript is outside the archive-upgrade case. Pair the candidate separately with actual 0.6.0 and 0.7.0 peers. Rotate hosts, send chat and a file both ways, and reconnect an updated restricted member. A capable sender to an old receiver displays **Sent (delivery unconfirmed)** after transfer; verify the receiver’s file independently. An old sender uses its own completion semantics. An isolated old member can still announce a higher term. Record eventual agreement separately.
+3. **6.3 restart and replay.** On a candidate with this feature retain the byte-for-byte original invite. Restart the reachable node with its previous endpoint and changed peer ID; a clean remote profile should rejoin with that invite. Retire that endpoint and try a refreshed invite for the same room. Stale-only hints produce a waiting state. Exercise a late join and host change with 250 short numbered lines, a rich and a sparse archive, saving off, and Clear. Compare visible and persisted IDs. The eligible host window holds at most 200 records and must meet the encoded byte bound. Replay alone adds no local archive rows.
+
+Record **PASS / FAIL / OPEN** per case, build identities per computer, network types, full-node/host identity, actual sessions, action, observed result and UTC times. Label each result **internet**, **LAN** or **127.0.0.1**. Keep original developer-console and per-PC `%APPDATA%\asscrack\logs` evidence privately. Redact credentials, private text and identifying addresses in shared excerpts.
+
+---
+
 ## Internet test card 8 (0.7.0): saved rooms, Quote and Find, manual status and voice settings on 2 computers
 
 This test checks the 0.7.0 changes on two Windows computers. Each change in 0.7.0 has 127.0.0.1 results only. An internet room can now be saved on the computer, with an encrypted local history. A saved room opens again with no invite code and shows its old lines at once. Also new: the room window, Quote and Find, a manual status, and voice settings with noise suppression and push to talk.
