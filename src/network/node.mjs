@@ -383,12 +383,51 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
 
     // Streams of a keyed room that have no valid proof yet.
     const pendingChats = new Map()
+    // The initiator of the chat stream of each session and pending session: selfId for an outbound stream, the
+    // peer ID for an inbound stream.
+    const chatInitiator = new WeakMap()
+    // Open sessions whose chat stream ended. A new chat stream always replaces such a session.
+    const endedSessions = new WeakSet()
+    // Open sessions that a new chat stream replaced.
+    const replacedSessions = new WeakSet()
+    // For each pending session: a promise that settles when the session opens or fails.
+    const pendingSettled = new WeakMap()
 
-    function attachChat(stream, peerId, connection) {
+    // Cross race rule: two chat streams to one peer can exist when both peers open one at the same time. Both ends
+    // keep the stream that the lower peer ID opened. Returns true when the new stream replaces the old session.
+    function newStreamWins(old, initiator, peerId) {
+        if (endedSessions.has(old)) return true
+        const oldInitiator = chatInitiator.get(old)
+        const lower = selfId < peerId ? selfId : peerId
+        return oldInitiator !== undefined && initiator !== oldInitiator && initiator === lower
+    }
+
+    // A chat stream in negotiation or a pending session can still replace the ended session of a peer. Wait for it,
+    // so that a cross race does not close the session of the peer.
+    async function replacementSettled(peerId, session) {
+        let last = null
+        while (!stopped && sessions.get(peerId) === session) {
+            const wait = opening.get(peerId) ?? pendingSettled.get(pendingChats.get(peerId))
+            if (!wait || wait === last) return
+            last = wait
+            await wait.catch(() => {})
+        }
+    }
+
+    // initiator: selfId for an outbound stream, peerId for an inbound stream.
+    function attachChat(stream, peerId, connection, initiator) {
         connection ??= node.getConnections().find(c => c.streams.includes(stream))
-        if (sessions.has(peerId) || pendingChats.has(peerId)) {
+        const oldSession = sessions.get(peerId)
+        const oldPending = pendingChats.get(peerId)
+        if ((oldSession && !newStreamWins(oldSession, initiator, peerId)) ||
+            (oldPending && !newStreamWins(oldPending, initiator, peerId))) {
             stream.abort(new Error('Chat session already exists for this peer'))
             return
+        }
+        // The new stream wins. Remove a pending old stream from the map first, then close it.
+        if (oldPending) {
+            pendingChats.delete(peerId)
+            oldPending.close()
         }
         // A LAN room (no key) opens the session at once. A keyed room waits for a valid proof.
         let open = key === null
@@ -396,12 +435,14 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         let peerName = ''
         let proofSent = false
         let timer = null
+        let settle = () => {}
         function reject(cause) {
             if (open) return
             clearTimeout(timer)
             if (pendingChats.get(peerId) === session) pendingChats.delete(peerId)
             console.warn(`Room proof from ${peerId} failed: ${cause}`)
             stream.abort(new Error(`Room proof failed: ${cause}`))
+            settle()
         }
         function pendingLine(line) {
             const control = controlMessage(line)
@@ -427,13 +468,17 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                     return
                 }
                 clearTimeout(timer)
-                pendingChats.delete(peerId)
-                if (sessions.has(peerId)) {
+                if (pendingChats.get(peerId) === session) pendingChats.delete(peerId)
+                // An open session to the peer stays until this proof. Replace it if this stream still wins.
+                const old = sessions.get(peerId)
+                if (old && !newStreamWins(old, initiator, peerId)) {
                     stream.abort(new Error('Chat session already exists for this peer'))
+                    settle()
                     return
                 }
                 open = true
-                openSession(session, peerId, connection, false)
+                openSession(session, peerId, connection, false, old)
+                settle()
                 if (peerName) {
                     names.set(peerId, peerName)
                     events.emit('peer-name', { peerId, name: peerName })
@@ -517,27 +562,39 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 } else console.warn(`Ignored a message that is not valid from peer ${peerId}`)
             }
         })
+        chatInitiator.set(session, initiator)
         if (open) {
-            openSession(session, peerId, connection, true)
+            openSession(session, peerId, connection, true, oldSession)
             return
         }
+        pendingSettled.set(session, new Promise(resolve => { settle = resolve }))
         pendingChats.set(peerId, session)
         session.send(JSON.stringify({ type: 'hello', name: senderName, nonce }))
         timer = setTimeout(() => reject(`no valid proof in ${PROOF_TIMEOUT_MS} ms`), PROOF_TIMEOUT_MS)
         session.done.catch(() => {}).finally(() => {
             clearTimeout(timer)
             if (pendingChats.get(peerId) === session) pendingChats.delete(peerId)
+            settle()
         })
     }
 
-    function openSession(session, peerId, connection, sendHello) {
+    // replaced: the old open session that this session replaces (cross race), or undefined.
+    function openSession(session, peerId, connection, sendHello, replaced) {
+        // Set the new session before the old one ends: the end of the old session then does no cleanup.
         sessions.set(peerId, session)
+        // Rule 9: the connection of the new chat stream.
         if (connection) sessionConns.set(peerId, connection)
+        else if (replaced) sessionConns.delete(peerId)
+        if (replaced) {
+            replacedSessions.add(replaced)
+            replaced.close()
+        }
         if (sendHello) session.send(JSON.stringify({ type: 'hello', name: senderName }))
         session.send(nodeLine())
         // Always send the own presence, also when it is 'available'.
         session.send(presenceLine())
-        events.emit('peer-joined', { peerId })
+        // A replacement session gets no second peer-joined: the peer did not leave.
+        if (!replaced) events.emit('peer-joined', { peerId })
         const sessionConn = sessionConns.get(peerId) ?? connection
         const sessionStart = Date.now()
         const connAddr = sessionConn?.remoteAddr?.toString() ?? '?'
@@ -556,8 +613,15 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         broadcastLinks()
         emitTopology()
         checkFullNode(peerId)
-        session.done.catch(() => {}).finally(() => {
+        session.done.catch(() => {}).finally(async () => {
             const secs = Math.round((Date.now() - sessionStart) / 100) / 10
+            endedSessions.add(session)
+            await replacementSettled(peerId, session)
+            // A replaced session: the peer did not leave. No 'closed' event and no cleanup.
+            if (replacedSessions.has(session)) {
+                console.info(connText('conn replaced', { peer: peerId, type: connType, secs }))
+                return
+            }
             console.info(connText('conn closed', { peer: peerId, type: connType, secs }))
             events.emit('connection', { state: 'closed', peer: peerId, type: connType, secs })
             if (sessions.get(peerId) === session) {
@@ -589,7 +653,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
 
     // Both ends read and write the same stream; receiving never opens another one.
     await node.handle(CHAT_PROTOCOL, ({ stream, connection }) => {
-        attachChat(stream, connection.remotePeer.toString(), connection)
+        const peerId = connection.remotePeer.toString()
+        attachChat(stream, peerId, connection, peerId)
     }, { maxInboundStreams: 1, maxOutboundStreams: 1, runOnTransientConnection: true })
 
     // Voice only from a peer with an open session. In a keyed room, a wrong key gets no session.
@@ -732,10 +797,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 const target = a.includes('/p2p/') ? a : `${a}/p2p/${peerId}`
                 try {
                     const conn = await node.dial(multiaddr(target))
-                    if (!sessions.has(peerId) && !pendingChats.has(peerId)) {
-                        const stream = await conn.newStream(CHAT_PROTOCOL, { runOnTransientConnection: true })
-                        attachChat(stream, peerId, conn)
-                    }
+                    await openChat(conn, peerId)
                     return
                 } catch (err) {
                     dialFailed({ peer: peerId, addr: target, via: 'full-node', err })
@@ -753,10 +815,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                         await conn.close().catch(() => {})
                         continue
                     }
-                    if (!sessions.has(remoteId) && !pendingChats.has(remoteId)) {
-                        const stream = await conn.newStream(CHAT_PROTOCOL, { runOnTransientConnection: true })
-                        attachChat(stream, remoteId, conn)
-                    }
+                    await openChat(conn, remoteId)
                     return
                 } catch (err) {
                     dialFailed({ peer: '?', addr: bare, via: 'address', err })
@@ -861,7 +920,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         const now = Date.now()
         const holdNodes = [...new Set([...relays, ...knownFullNodes.keys()])].filter(p => p !== selfId)
         for (const target of wanted) {
-            if (dialing.has(target)) continue
+            if (chatBusy(target)) continue
             const tries = relayDialTries.get(target) ?? 0
             if (tries >= RELAY_DIAL_TRIES) continue
             if (!wantedSince.has(target)) wantedSince.set(target, now)
@@ -878,9 +937,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             relayDialVia.set(target, relay)
             const addr = `${addrOf(relay)}/p2p-circuit/p2p/${target}`
             node.dial(multiaddr(addr))
-                .then(conn => chatStreamOn(conn, target)
-                    .then(stream => {
-                        if (stream) attachChat(stream, target, conn)
+                .then(conn => openChat(conn, target)
+                    .then(() => {
                         relayDialTries.delete(target)
                         lastRelay.delete(target)
                         wantedSince.delete(target)
@@ -949,17 +1007,41 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
 
     const discovered = new Set()
     const dialing = new Set()
+    // The number of connect() calls in flight for each peer ID. A count, because two calls can overlap.
+    const connecting = new Map()
+    function markConnecting(peerId, step) {
+        const n = (connecting.get(peerId) ?? 0) + step
+        if (n > 0) connecting.set(peerId, n)
+        else connecting.delete(peerId)
+    }
     // True when the peer has a session, a session that waits for the room proof, or a dial in flight.
     function chatBusy(peerId) {
-        return sessions.has(peerId) || pendingChats.has(peerId) || dialing.has(peerId)
+        return sessions.has(peerId) || pendingChats.has(peerId) || dialing.has(peerId) || connecting.has(peerId)
     }
-    // Open the chat stream on a connection after a dial. node.dial() can give a connection that exists already, and
-    // the session can open on another path while the dial is in flight. Then a second chat stream gets the limit error
-    // (maxOutboundStreams 1) or an abort from the remote peer. Returns null when the chat stream is not necessary.
-    async function chatStreamOn(conn, peerId) {
-        if (sessions.has(peerId) || pendingChats.has(peerId)) return null
-        if (conn.streams.some(st => st.protocol === CHAT_PROTOCOL)) return null
-        return conn.newStream(CHAT_PROTOCOL, { runOnTransientConnection: true })
+    // The outbound chat stream in negotiation for each peer ID.
+    const opening = new Map()
+    // Each outbound chat stream opens here. node.dial() can give a connection that exists already, and the session
+    // can open on another path while the dial is in flight. A second chat stream on one connection gets the limit
+    // error (maxOutboundStreams 1). Thus open at most one outbound chat stream for each peer at a time.
+    function openChat(conn, peerId) {
+        if (sessions.has(peerId) || pendingChats.has(peerId)) return Promise.resolve()
+        const busy = opening.get(peerId)
+        if (busy) return busy
+        const task = (async () => {
+            let stream
+            try {
+                stream = await conn.newStream(CHAT_PROTOCOL, { runOnTransientConnection: true })
+            } catch (err) {
+                // The session opened on another path: that is not a failure.
+                if (sessions.has(peerId) || pendingChats.has(peerId)) return
+                throw err
+            }
+            attachChat(stream, peerId, conn, selfId)
+        })().finally(() => {
+            if (opening.get(peerId) === task) opening.delete(peerId)
+        })
+        opening.set(peerId, task)
+        return task
     }
     node.addEventListener('peer:discovery', ({ detail }) => {
         const remoteId = detail.id.toString()
@@ -1005,8 +1087,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         }
         dialing.add(remoteId)
         node.dial(id)
-            .then(conn => chatStreamOn(conn, remoteId)
-                .then(stream => { if (stream) attachChat(stream, remoteId, conn) }))
+            .then(conn => openChat(conn, remoteId))
             .catch(err => dialFailed({ peer: remoteId, addr: node.getConnections(id)[0]?.remoteAddr?.toString() ?? '?', via: 'discovery', err }))
             .finally(() => dialing.delete(remoteId))
     }
@@ -1151,23 +1232,29 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         events,
         libp2p: node,
         getMultiaddrs: () => node.getMultiaddrs().map(a => a.toString()),
+        // Resolves when the chat stream is open, or when a session (or a pending session) to the peer exists or
+        // opens on another path.
         async connect(address) {
-            let connection
+            const m = /\/p2p\/([^/]+)$/.exec(String(address))
+            const target = m ? m[1] : null
+            // Block discovery dials to this peer before the dial starts, until the chat stream is open.
+            const marked = []
+            const mark = peerId => { markConnecting(peerId, 1); marked.push(peerId) }
+            if (target) mark(target)
             try {
-                connection = await node.dial(multiaddr(address))
-            } catch (err) {
-                const m = /\/p2p\/([^/]+)$/.exec(String(address))
-                dialFailed({ peer: m ? m[1] : '?', addr: address, via: 'connect', err })
-                throw err
-            }
-            const remoteId = connection.remotePeer.toString()
-            // Block discovery dials to this peer while this stream opens.
-            dialing.add(remoteId)
-            try {
-                const stream = await connection.newStream(CHAT_PROTOCOL, { runOnTransientConnection: true })
-                attachChat(stream, remoteId, connection)
+                let connection
+                try {
+                    connection = await node.dial(multiaddr(address))
+                } catch (err) {
+                    dialFailed({ peer: target ?? '?', addr: address, via: 'connect', err })
+                    if (target && (sessions.has(target) || pendingChats.has(target))) return
+                    throw err
+                }
+                const remoteId = connection.remotePeer.toString()
+                if (remoteId !== target) mark(remoteId)
+                await openChat(connection, remoteId)
             } finally {
-                dialing.delete(remoteId)
+                for (const peerId of marked) markConnecting(peerId, -1)
             }
         },
         name: senderName,

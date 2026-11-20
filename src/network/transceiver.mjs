@@ -42,9 +42,14 @@ rl.on('line', line => {
 })
 
 if (target) {
-    await node.connect(target)
-    console.log('Connected to peer at', target)
-    console.log('Type messages below:')
+    // A failed connect does not stop the process: discovery can still open the session.
+    try {
+        await node.connect(target)
+        console.log('Connected to peer at', target)
+        console.log('Type messages below:')
+    } catch (err) {
+        console.error('Connect to', target, 'failed:', err?.message ?? err)
+    }
 } else {
     console.log('Waiting for incoming connection...')
 }
