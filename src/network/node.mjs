@@ -261,8 +261,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     // The host of the last onChange of the election.
     let lastHostId = null
     function sendHistoryTo(peerId, session) {
+        const replay = history.replayLines(election.isHost)
         session.sendReplay((function* () {
-            const count = yield* history.replayLines(election.isHost)
+            const count = yield* replay
             if (count !== undefined) console.info(`History sent to ${peerId}: ${count} messages`)
         })())
     }

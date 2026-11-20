@@ -125,14 +125,23 @@ test('a locally queued multi-frame replay rechecks deleted rows before the next 
         session.send('ordinary live traffic')
         const read = async () => (await outbound.next()).value.toString().trimEnd()
         assert.deepEqual(JSON.parse(await read()).messages.map(m => m.id), ['0'])
-        history.removeIds(new Set(['0', '1', '2']))
+        history.removeIds(new Set(['1']))
         history.add({ id: 'new', from: 'A', text: 'available after clearing', time: 5 })
-        assert.deepEqual(JSON.parse(await read()).messages.map(m => m.id), ['new'])
+        assert.deepEqual(JSON.parse(await read()).messages.map(m => m.id), ['2'])
         assert.equal(await read(), 'ordinary live traffic')
     } finally {
         sourceEnded.resolve()
         await session.done
     }
+})
+
+test('a queued history snapshot cannot overtake a subsequent live message', async () => {
+    const { createHistory } = await import('../src/network/history.mjs')
+    const history = createHistory()
+    history.add({ id: 'past', from: 'A', text: 'saved', time: 1 })
+    const queued = history.replayLines(() => true)
+    history.add({ id: 'live', from: 'A', text: 'Parker, next', time: 2 })
+    assert.deepEqual([...queued].flatMap(line => JSON.parse(line).messages.map(m => m.id)), ['past'])
 })
 
 test('a delayed duplicate of a seed pruned from disk before Clear cannot return to the archive', async t => {

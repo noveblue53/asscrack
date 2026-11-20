@@ -13,24 +13,35 @@ export function validHistoryItem(m) {
 
 // Keep the existing history wire type. Even 200 short records from an older host fit in one frame.
 // Count actual JSON bytes: escaping a control character can take six bytes on the wire.
-export function* historyLines(messages) {
+export function* historyLines(messages, eligible = () => true, isHost = () => true) {
     const prefix = '{"type":"history","messages":['
     const suffix = ']}'
     const emptyBytes = Buffer.byteLength(prefix + suffix)
-    let parts = []
+    let batch = []
     let size = emptyBytes
+    let count = 0
+    function frame() {
+        const parts = batch.filter(entry => eligible(entry.message)).map(entry => entry.json)
+        count += parts.length
+        return parts.length ? prefix + parts.join(',') + suffix : null
+    }
     for (const message of messages) {
-        const part = JSON.stringify(message)
-        const bytes = Buffer.byteLength(part)
-        if (parts.length && (parts.length === HISTORY_LIMIT || size + 1 + bytes > MAX_CHAT_FRAME_BYTES)) {
-            yield prefix + parts.join(',') + suffix
-            parts = []
+        const json = JSON.stringify(message)
+        const bytes = Buffer.byteLength(json)
+        if (batch.length && (batch.length === HISTORY_LIMIT || size + 1 + bytes > MAX_CHAT_FRAME_BYTES)) {
+            if (!isHost()) return
+            const line = frame()
+            if (line) yield line
+            batch = []
             size = emptyBytes
         }
-        size += bytes + (parts.length ? 1 : 0)
-        parts.push(part)
+        size += bytes + (batch.length ? 1 : 0)
+        batch.push({ message, json })
     }
-    yield prefix + parts.join(',') + suffix
+    if (!isHost()) return
+    const last = frame()
+    if (last || count === 0) yield last ?? prefix + suffix
+    return count
 }
 
 // Chat history buffer: the last `limit` messages, sorted by time, then by id.
@@ -62,20 +73,11 @@ export function createHistory(limit = HISTORY_LIMIT) {
             items = items.filter(item => !removed.has(item.id))
             for (const id of removed) ids.delete(id)
         },
-        // A slow session may still be waiting to write some of these frames when the user clears the
-        // archive. Rebuild from the current window at its next pull; already-written frames are remote.
-        *replayLines(isHost) {
-            let version
-            do {
-                version = clearVersion
-                const snapshot = items.slice()
-                for (const line of historyLines(snapshot)) {
-                    if (!isHost()) return
-                    if (version !== clearVersion) break
-                    yield line
-                }
-                if (version === clearVersion) return snapshot.length
-            } while (true)
+        // Snapshot membership at enqueue so subsequent live traffic keeps its place on the wire.
+        // Clear can revoke a record up to the moment the transport pulls its frame.
+        replayLines(isHost) {
+            const version = clearVersion
+            return historyLines(items.slice(), item => version === clearVersion || items.includes(item), isHost)
         },
         has: id => ids.has(id),
         list: () => items.map(m => ({ ...m }))
