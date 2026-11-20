@@ -1389,7 +1389,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         history: () => history.list(),
         removeHistory,
         pauseHeartbeats: paused => election.pauseHeartbeats(paused),
-        offerFile: filePath => files.offerFile(filePath),
+        offerFile: files.offerFile,
         acceptFile: offerId => files.acceptFile(offerId),
         refuseFile: offerId => files.refuseFile(offerId),
         cancelFile: (offerId, peerId) => files.cancelFile(offerId, peerId),

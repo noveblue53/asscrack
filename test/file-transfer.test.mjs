@@ -78,6 +78,59 @@ async function writeRandom(file, size) {
 const entries = dir => fsp.readdir(dir)
 const acceptOnOffer = node => node.events.on('file-offer', ({ offerId }) => node.acceptFile(offerId))
 
+async function fetchWithoutOffer(receiver, sender, offerId) {
+    const stream = await receiver.libp2p.dialProtocol(multiaddr(sender.getMultiaddrs()[0]), FILE_PROTOCOL)
+    const sent = stream.sink([Buffer.from(JSON.stringify({ offerId }) + '\n')]).catch(() => {})
+    let bytes = 0
+    // A refusal may close the stream cleanly or reset it. Count any bytes that arrived before either outcome.
+    try {
+        for await (const chunk of stream.source) bytes += chunk.length
+    } catch {}
+    await sent
+    return bytes
+}
+
+test('a file offered to one of two identically named peers stays with that peer (127.0.0.1)', { timeout: 30000 }, async () => {
+    const ctx = await setup(3, { name: 'Sam' })
+    const [a, b, c] = ctx.nodes
+    try {
+        const file = path.join(ctx.src, 'private-note.txt')
+        await fsp.writeFile(file, 'for B')
+        const offer = await a.offerFile(file, b.peerId)
+        assert.equal(offer.peers, 1)
+        await waitUntil(() => b.log.offer.length === 1, 5000)
+        assert.equal(c.acceptFile(offer.offerId), false)
+        assert.equal(await fetchWithoutOffer(c, a, offer.offerId), 0)
+        assert.equal(b.acceptFile(offer.offerId), true)
+        await waitUntil(() => a.log.done.length === 1 && b.log.done.length === 1, 5000)
+        assert.equal(await sha(b.log.done[0].path), offer.sha256)
+        assert.equal(a.log.done[0].peerId, b.peerId)
+        assert.equal(a.log.done[0].confirmed, true)
+
+        const next = await a.offerFile(file, b.peerId)
+        await waitUntil(() => b.log.offer.length === 2, 5000)
+        assert.equal(a.cancelFile(next.offerId, c.peerId), false)
+        assert.equal(a.cancelFile(next.offerId, b.peerId), true)
+        await waitUntil(() => b.log.cancelled.some(e => e.offerId === next.offerId), 5000)
+        assert.equal(b.acceptFile(next.offerId), false)
+
+        await b.stop()
+        await waitUntil(() => !a.peers().includes(b.peerId), 5000)
+        for (const invalid of [b.peerId, 'Sam', '', null, {}]) {
+            await assert.rejects(a.offerFile(file, invalid), /recipient/)
+        }
+        // This later message on the same chat stream also drains all earlier controls to C.
+        a.send('finished')
+        await waitUntil(() => c.history().some(m => m.text === 'finished'), 5000)
+        assert.deepEqual(c.history().map(m => m.text), ['finished'])
+        assert.deepEqual(c.log.offer, [])
+        assert.deepEqual(c.log.cancelled, [])
+        assert.deepEqual(await entries(c.dir), [])
+    } finally {
+        await cleanup(ctx)
+    }
+})
+
 test('a: a 50 MB file goes from A to B with the correct SHA-256', { timeout: 120000 }, async () => {
     const ctx = await setup(2)
     const [a, b] = ctx.nodes
@@ -280,12 +333,7 @@ test('j: a peer that did not get the offer receives no data', { timeout: 30000 }
         d.events.on('file-offer', e => dOffers.push(e))
         await d.connect(a.getMultiaddrs()[0])
         await waitUntil(() => a.peers().includes(d.peerId), 5000)
-        const stream = await d.libp2p.dialProtocol(multiaddr(a.getMultiaddrs()[0]), FILE_PROTOCOL)
-        stream.sink([Buffer.from(JSON.stringify({ offerId: offer.offerId }) + '\n')]).catch(() => {})
-        let bytes = 0
-        try {
-            for await (const chunk of stream.source) bytes += chunk.length
-        } catch {}
+        const bytes = await fetchWithoutOffer(d, a, offer.offerId)
         await delay(200)
         assert.equal(bytes, 0)
         assert.deepEqual(dOffers, [])

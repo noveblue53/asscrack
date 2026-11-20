@@ -135,7 +135,9 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
         abortStream(t.stream, reason)
     }
 
-    async function offerFile(filePath) {
+    async function offerFile(filePath, recipientId) {
+        const targeted = recipientId !== undefined
+        if (targeted && !openPeers().includes(recipientId)) throw new Error('The selected recipient is not connected')
         const stat = await fsp.stat(filePath)
         if (!stat.isFile()) throw new Error('The path is not a regular file')
         const hash = createHash('sha256')
@@ -147,8 +149,13 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
         const offer = { offerId, filePath, name, size, sha256, targets: new Set(), started: new Set() }
         ownOffers.set(offerId, offer)
         const line = { type: 'file-offer', offerId, name, size, sha256 }
-        for (const peerId of openPeers()) if (sendLine(peerId, line)) offer.targets.add(peerId)
-        return { offerId, name, size, sha256, peers: offer.targets.size }
+        const recipients = targeted ? [recipientId] : openPeers()
+        for (const peerId of recipients) if (sendLine(peerId, line)) offer.targets.add(peerId)
+        if (targeted && offer.targets.size === 0) {
+            ownOffers.delete(offerId)
+            throw new Error('The selected recipient disconnected before the file could be offered')
+        }
+        return { offerId, name, size, sha256, peers: offer.targets.size, recipients: [...offer.targets] }
     }
 
     // The sender side of one data stream.
@@ -348,12 +355,14 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
         if (own) {
             ownOffers.delete(offerId)
             for (const peerId of own.targets) {
+                const t = active.get(`send|${offerId}|${peerId}`)
+                if (own.started.has(peerId) && !t) continue
                 sendLine(peerId, { type: 'file-cancel', offerId })
-            }
-            for (const t of active.values()) {
-                if (t.offerId === offerId && t.direction === 'send') {
+                if (t) {
                     t.selfCancel = true
                     interruptTransfer(t, 'Transfer cancelled')
+                } else {
+                    events.emit('file-cancelled', { offerId, peerId, direction: 'send', by: 'self' })
                 }
             }
             return true
@@ -398,6 +407,7 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
             const own = ownOffers.get(offerId)
             if (own && own.targets.has(peerId) && !own.started.has(peerId)) {
                 own.targets.delete(peerId)
+                events.emit('file-cancelled', { offerId, peerId, direction: 'send', by: 'peer' })
                 return
             }
             const offer = received.get(offerId)
@@ -425,7 +435,11 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, peerName
                 events.emit('file-failed', { offerId: offer.offerId, peerId, direction: 'receive', reason: 'peer left' })
             }
         }
-        for (const own of ownOffers.values()) if (!own.started.has(peerId)) own.targets.delete(peerId)
+        for (const own of ownOffers.values()) {
+            if (!own.started.has(peerId) && own.targets.delete(peerId)) {
+                events.emit('file-failed', { offerId: own.offerId, peerId, direction: 'send', reason: 'peer left' })
+            }
+        }
     }
 
     function handleStream({ stream, connection }) {
