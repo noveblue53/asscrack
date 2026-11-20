@@ -188,3 +188,40 @@ test('rejoin: a fresh profile persists the authenticated invite endpoint for an 
     const record = reopened.sendRecord('reopened')
     await waitFor(() => a.history().some(line => line.id === record.id), 5000, 'fresh message at host')
 })
+
+test('rejoin: an isolated full node retries its saved hint when the endpoint returns', { timeout: 15000 }, async t => {
+    const room = 'full node opens first'
+    const key = newRoomKey()
+    const { addr, oldId } = await freeAddr(room, key)
+    const nodes = []
+    t.after(() => stopAll(nodes))
+    const first = await createAsscrackNode({ room, roomKey: key, listen: LOCAL, discovery: false,
+        fullNode: true, inviteNodes: [{ id: oldId, addrs: [addr] }], ...fast })
+    nodes.push(first)
+    await sleep(fast.redialInterval * 2)
+    assert.deepEqual(first.peers(), [])
+    assert.equal(first.host(), null)
+    const returning = await fullNodeAt(room, key, addr)
+    nodes.push(returning)
+    // The returning member has a new identity and has never heard of "first"; only first has a route.
+    await waitFor(() => first.peers().includes(returning.peerId), 5000, 'full node redial after endpoint returns')
+    assert.equal(first.sendRecord('back online').accepted, 1)
+    await waitFor(() => returning.history().some(m => m.text === 'back online'), 2000, 'chat after rejoin')
+})
+
+test('rejoin: a changed identity retains the working old endpoint when it advertises a different address', { timeout: 15000 }, async t => {
+    const room = 'migrate reached endpoint'
+    const key = newRoomKey()
+    const { addr, oldId } = await freeAddr(room, key)
+    const advertised = '/ip4/127.0.0.1/tcp/1'
+    const first = await createAsscrackNode({ room, roomKey: key, listen: [addr], announce: [advertised],
+        discovery: false, fullNode: true, ...fast })
+    const nodes = [first]
+    t.after(() => stopAll(nodes))
+    const joiner = await createAsscrackNode({ room, roomKey: key, listen: LOCAL, discovery: false, fullNode: false,
+        inviteNodes: [{ id: oldId, addrs: [addr] }], ...fast })
+    nodes.push(joiner)
+    await waitFor(() => joiner.knownFullNodes()[first.peerId], 5000, 'authenticated address update')
+    assert.deepEqual(joiner.knownFullNodes()[first.peerId], [addr, advertised])
+    assert.equal(joiner.knownFullNodes()[oldId], undefined)
+})

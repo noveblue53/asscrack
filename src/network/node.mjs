@@ -733,7 +733,11 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         const conn = sessionConns.get(peerId)
         const reached = conn?.direction === 'outbound' ? bare(conn.remoteAddr.toString()) : null
         // Prefer the advertised or previously known address that this connection actually reached.
-        const working = [...addrs, ...hintAddrs(peerId)].find(addr => bare(addr) === reached)
+        // The reached endpoint may still be filed under a previous identity. Preserve it
+        // under the authenticated ID before removing stale aliases. Never invent a hint
+        // from a connection address that nobody advertised or supplied to this room.
+        const wasHint = reached && [...hintIds()].some(id => hintAddrs(id).some(addr => bare(addr) === reached))
+        const working = addrs.find(addr => bare(addr) === reached) ?? (wasHint ? reached : null)
         if (working) addrs = [working, ...addrs.filter(addr => bare(addr) !== reached)].slice(0, MAX_ADDRS)
         const old = knownFullNodes.get(peerId)
         let changed = !old || old.length !== addrs.length || old.some((a, i) => a !== addrs[i])
@@ -810,8 +814,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         if (stopped || !addrs.length || dialing.has(peerId)) return
         const direct = node.getConnections().some(c => c.remotePeer.toString() === peerId && !c.remoteAddr.toString().includes('/p2p-circuit'))
         if (direct) return
-        // Two full nodes: only the lower peer ID dials (as in dialDiscovered).
-        if (!sessions.has(peerId) && selfFull && !(selfId < peerId)) return
+        // An isolated full node may be the only side with the saved endpoint. Once in the
+        // group, keep the usual peer-ID ordering for additional full-node links.
+        if (sessions.size && !sessions.has(peerId) && selfFull && !(selfId < peerId)) return
         dialing.add(peerId)
         ;(async () => {
             for (const a of addrs) {
@@ -1269,7 +1274,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         // A reservation can become usable without any link change. After the fast retries,
         // let a still-wanted, exhausted target try once per ordinary redial interval.
         if ([...relayDialTries.values()].includes(RELAY_DIAL_TRIES)) relayDials(true)
-        if (selfFull) return
+        if (selfFull && sessions.size) return
         if ([...sessions.keys()].some(id => peerFull.get(id) === true)) return
         for (const peerId of hintIds()) dialFullNode(peerId)
     }, redialInterval)
