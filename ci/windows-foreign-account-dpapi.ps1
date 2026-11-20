@@ -15,14 +15,12 @@ if (!$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
 $suffix = [Guid]::NewGuid().ToString('N')
-$userName = 'acpilot_' + $suffix.Substring(0, 10)
 $directory = Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) ('asscrack-pilot-' + $suffix)
 $fixtureNames = @('archive.db', 'archive.key', 'profile-key.dpapi')
-$account = $null
-$worker = $null
 $taskRegistered = $false
 $taskName = 'AsscrackPilotDpapi-' + $suffix
-$result = @{ outcome = 'unavailable'; stage = 'local-account'; temporaryProfileRemoved = $null; temporaryAccountRemoved = $null }
+$reader = [Security.Principal.SecurityIdentifier]::new('S-1-5-19')
+$result = @{ outcome = 'unavailable'; stage = 'fixture-directory'; accountKind = 'local-service' }
 
 function Get-ErrorFacts($record) {
     @{
@@ -67,30 +65,6 @@ try {
 '@
 
 try {
-    try {
-        $result.stage = 'credential-generation'
-        $random = [byte[]]::new(30)
-        $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
-        try { $rng.GetBytes($random) } finally { $rng.Dispose() }
-        $password = ConvertTo-SecureString ('A9!' + [Convert]::ToBase64String($random)) -AsPlainText -Force
-        [Array]::Clear($random, 0, $random.Length)
-        $result.stage = 'local-account'
-        $account = New-LocalUser -Name $userName -Password $password -Description 'Temporary ASSCRACK Windows verification'
-        $result.stage = 'standard-user-group'
-        $users = [Security.Principal.SecurityIdentifier]::new('S-1-5-32-545')
-        if (!(Get-LocalGroupMember -SID $users | Where-Object { $_.SID -eq $account.SID })) {
-            Add-LocalGroupMember -SID $users -Member $account
-        }
-        $reader = $account.SID
-        $result.accountKind = 'temporary-local-user'
-    } catch {
-        $result.localAccountFailure = Get-ErrorFacts $_
-        $result.localAccountFailure.stage = $result.stage
-        $reader = [Security.Principal.SecurityIdentifier]::new('S-1-5-19')
-        $result.accountKind = 'local-service'
-    }
-
-    $result.stage = 'fixture-directory'
     $null = New-Item -ItemType Directory -Path $directory
     $result.stage = 'fixture-permissions'
     $icacls = Join-Path $env:SystemRoot 'System32\icacls.exe'
@@ -123,38 +97,25 @@ try {
     $command = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($preamble + $workerCode))
     $powershell = Join-Path $PSHOME 'powershell.exe'
     $arguments = '-NoLogo -NoProfile -NonInteractive -EncodedCommand ' + $command
-    if ($result.accountKind -eq 'temporary-local-user') {
-        $credential = [PSCredential]::new("$env:COMPUTERNAME\$userName", $password)
-        $worker = Start-Process -FilePath $powershell -Credential $credential -LoadUserProfile `
-            -WorkingDirectory $directory -UseNewEnvironment -WindowStyle Hidden -PassThru -ArgumentList $arguments
-        if (!$worker.WaitForExit(35000)) {
-            $worker.Kill()
-            $null = $worker.WaitForExit(5000)
-            throw 'Alternate account check timed out'
-        }
-        $workerExit = $worker.ExitCode
-    } else {
-        $service = $reader.Translate([Security.Principal.NTAccount]).Value
-        $principal = New-ScheduledTaskPrincipal -UserId $service -LogonType ServiceAccount -RunLevel Limited
-        $action = New-ScheduledTaskAction -Execute $powershell -Argument $arguments -WorkingDirectory $directory
-        $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Seconds 45)
-        $null = Register-ScheduledTask -TaskName $taskName -Principal $principal -Action $action -Settings $settings
-        $taskRegistered = $true
-        $previousStart = (Get-ScheduledTaskInfo -TaskName $taskName).LastRunTime
-        Start-ScheduledTask -TaskName $taskName
-        $timer = [Diagnostics.Stopwatch]::StartNew()
-        do {
-            Start-Sleep -Milliseconds 250
-            $info = Get-ScheduledTaskInfo -TaskName $taskName
-            $state = (Get-ScheduledTask -TaskName $taskName).State
-            if ($info.LastRunTime -ne $previousStart -and $state -eq 'Ready') { break }
-        } while ($timer.ElapsedMilliseconds -lt 35000)
-        if ($info.LastRunTime -eq $previousStart -or $state -ne 'Ready') { throw 'Alternate account task timed out' }
-        $workerExit = $info.LastTaskResult
-    }
+    $service = $reader.Translate([Security.Principal.NTAccount]).Value
+    $principal = New-ScheduledTaskPrincipal -UserId $service -LogonType ServiceAccount -RunLevel Limited
+    $action = New-ScheduledTaskAction -Execute $powershell -Argument $arguments -WorkingDirectory $directory
+    $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Seconds 45)
+    $null = Register-ScheduledTask -TaskName $taskName -Principal $principal -Action $action -Settings $settings
+    $taskRegistered = $true
+    $previousStart = (Get-ScheduledTaskInfo -TaskName $taskName).LastRunTime
+    Start-ScheduledTask -TaskName $taskName
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    do {
+        Start-Sleep -Milliseconds 250
+        $info = Get-ScheduledTaskInfo -TaskName $taskName
+        $state = (Get-ScheduledTask -TaskName $taskName).State
+        if ($info.LastRunTime -ne $previousStart -and $state -eq 'Ready') { break }
+    } while ($timer.ElapsedMilliseconds -lt 35000)
+    if ($info.LastRunTime -eq $previousStart -or $state -ne 'Ready') { throw 'Alternate account task timed out' }
     $result.stage = 'foreign-account-read'
-    $result.workerExit = $workerExit
-    if ($workerExit -eq 0) {
+    $result.workerExit = $info.LastTaskResult
+    if ($result.workerExit -eq 0) {
         $result.outcome = 'passed'
         $result.differentUnprivilegedSid = $true
         $result.sameCiphertextReadable = $true
@@ -165,7 +126,6 @@ try {
     $result.failure = Get-ErrorFacts $_
     if ($result.stage.StartsWith('fixture-') -or $result.stage -eq 'foreign-account-read') { $result.outcome = 'failed' }
 } finally {
-    if ($worker) { $worker.Dispose() }
     if ($taskRegistered) {
         try {
             Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
@@ -177,18 +137,6 @@ try {
         try { Remove-Item -LiteralPath $directory -Recurse -Force }
         catch { $result.temporaryFixtureRemoved = $false }
     }
-    if ($account) {
-        try {
-            $profile = Get-CimInstance -ClassName Win32_UserProfile -Filter "SID='$($account.SID.Value)'"
-            if ($profile -and !$profile.Loaded) { $profile | Remove-CimInstance }
-            $result.temporaryProfileRemoved = !(Get-CimInstance -ClassName Win32_UserProfile -Filter "SID='$($account.SID.Value)'")
-        } catch { $result.temporaryProfileRemoved = $false }
-        try {
-            Remove-LocalUser -SID $account.SID
-            $result.temporaryAccountRemoved = $true
-        } catch { $result.temporaryAccountRemoved = $false }
-    }
-    if ($password) { $password.Dispose() }
 }
 
 $result | ConvertTo-Json -Compress
