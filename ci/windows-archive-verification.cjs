@@ -45,6 +45,19 @@ function verifyCurrentUserDpapi(localState) {
     assert.equal(result.status, 0, 'Windows CurrentUser DPAPI must unwrap the Chromium profile key');
 }
 
+function verifyDifferentUserDpapi(files) {
+    const script = path.join(__dirname, 'windows-foreign-account-dpapi.ps1');
+    const result = spawnSync('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-File', script,
+        '-LocalState', files.localState, '-Database', files.database, '-Wrapper', files.wrapper], {
+        windowsHide: true, encoding: 'utf8', timeout: 90_000
+    });
+    assert.equal(result.status, 0, 'alternate account DPAPI verification did not complete');
+    const evidence = JSON.parse(result.stdout);
+    assert.ok(evidence.outcome === 'passed' || evidence.outcome === 'unavailable',
+        `alternate account DPAPI verification failed at ${evidence.stage} (worker exit ${evidence.workerExit ?? 'not started'})`);
+    return evidence;
+}
+
 async function verifyProtectedBytes(files, logDirectory, markers) {
     const envelope = JSON.parse(await fs.readFile(files.wrapper, 'utf8'));
     assert.equal(envelope.v, 1, 'archive key wrapper format');
@@ -99,6 +112,12 @@ async function verifyArchive(options) {
     const fixtures = [invite, roomKey, publicReceived, publicSent, privateText];
     assert.ok(fixtures.every(marker => typeof marker === 'string' && marker.length > 0));
     const scannedFiles = await verifyProtectedBytes(source, guest.appLogs, fixtures);
+    const protectedFiles = [source.database, source.wrapper, source.localState];
+    const originalDigests = await Promise.all(protectedFiles.map(digest));
+    const differentWindowsAccount = verifyDifferentUserDpapi(source);
+    const afterForeignCheck = await Promise.all(protectedFiles.map(digest));
+    assert.ok(afterForeignCheck.every((hash, index) => hash === originalDigests[index]),
+        'alternate-account verification must leave the original encrypted profile unchanged');
 
     const cold = await launch(guest.label, ['--full-node', 'off']);
     let initialIds;
@@ -141,6 +160,7 @@ async function verifyArchive(options) {
 
     const evidence = {
         windowsCurrentUserDpapi: true,
+        differentWindowsAccount,
         unkeyedReadOnlySqliteRejected: true,
         filesScannedForPlaintextFixtures: scannedFiles,
         coldReopenWithOtherPeersStopped: true,

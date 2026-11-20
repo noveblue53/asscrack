@@ -10,6 +10,7 @@ const path = require('node:path');
 const { setTimeout: delay } = require('node:timers/promises');
 const { chromium } = require('playwright-core');
 const { verifyArchive } = require('./windows-archive-verification.cjs');
+const { verifyRetry } = require('./windows-retry-verification.cjs');
 
 const [executable, sandbox, evidencePath] = process.argv.slice(2);
 assert.equal(process.platform, 'win32');
@@ -23,7 +24,7 @@ const report = {
     platform: process.platform,
     architecture: process.arch,
     windowsRelease: os.release(),
-    scope: 'Native Windows, packaged app, two separate disposable profiles, keyed loopback, synthetic audio input',
+    scope: 'Native Windows, packaged app, disposable profiles, keyed loopback, synthetic audio input',
     checks: {},
     rendererErrors
 };
@@ -59,7 +60,7 @@ async function unusedLoopbackPort() {
     return port;
 }
 
-async function launch(label, extraArgs = [], profileOverride) {
+async function launch(label, extraArgs = [], profileOverride, executableOverride = executable, legacyAppDirectory) {
     const home = path.join(sandbox, label);
     const profile = profileOverride ?? path.join(home, 'profile');
     const downloads = path.join(home, 'downloads');
@@ -71,12 +72,13 @@ async function launch(label, extraArgs = [], profileOverride) {
     let child;
     let spawnError;
     try {
-        child = spawn(executable, [
+        child = spawn(executableOverride, [
+            ...(legacyAppDirectory ? [legacyAppDirectory] : []),
             `--remote-debugging-port=${debugPort}`, '--remote-debugging-address=127.0.0.1',
             '--disable-gpu', '--force-device-scale-factor=1', '--use-fake-device-for-media-stream',
             '--use-fake-ui-for-media-stream', '--profile', profile, '--downloads', downloads,
             '--log-dir', appLogs, ...extraArgs
-        ], { cwd: path.dirname(executable), windowsHide: true, stdio: ['ignore', output.fd, output.fd] });
+        ], { cwd: path.dirname(executableOverride), windowsHide: true, stdio: ['ignore', output.fd, output.fd] });
         child.once('error', error => { spawnError = error; });
     } finally {
         await output.close();
@@ -91,8 +93,11 @@ async function launch(label, extraArgs = [], profileOverride) {
     // Electron's file chooser must receive local paths. In remote CDP mode,
     // Playwright substitutes in-memory File objects without a native path.
     client.browser = await chromium.connectOverCDP(endpoint, { isLocal: true, timeout: 20_000 });
+    const applicationUrl = legacyAppDirectory ? /\/src\/application\/index\.html$/i
+        : executableOverride !== executable ? /\/(?:app\.asar|resources\/app)\/src\/application\/index\.html$/i
+            : /\/app\.asar\/src\/application\/index\.html$/i;
     client.page = await until(() => client.browser.contexts().flatMap(context => context.pages())
-        .find(page => /\/app\.asar\/src\/application\/index\.html$/i.test(page.url())), `${label} application window`);
+        .find(page => applicationUrl.test(page.url())), `${label} application window`);
     client.page.setDefaultTimeout(20_000);
     client.page.on('pageerror', error => rendererErrors.push(`${label}: ${error.message}`));
     await client.page.locator('#login').waitFor();
@@ -101,7 +106,9 @@ async function launch(label, extraArgs = [], profileOverride) {
 
 async function quit(client) {
     if (!exited(client.child)) {
-        await client.page.evaluate(() => window.asscrack.quit()).catch(() => {});
+        const supportsQuit = await client.page.evaluate(() => typeof window.asscrack?.quit === 'function').catch(() => true);
+        if (supportsQuit) await client.page.evaluate(() => window.asscrack.quit()).catch(() => {});
+        else await client.page.close({ runBeforeUnload: true });
         await until(() => exited(client.child), `${client.label} clean exit`);
     }
     assert.equal(client.child.exitCode, 0, `${client.label} exit`);
@@ -300,6 +307,17 @@ async function run() {
         launch, quit, selectChannel, waitForMessage, guest, roomName, channelName, publicReceived, publicSent,
         privateText, privateReply, mediaName, mediaCaption, invite, evidenceDir
     });
+    begin('interrupted original and recipient retry');
+    report.checks.retry = await verifyRetry({ launch, quit, login, showInvite, unusedLoopbackPort, until, attach, confirmOffer, sandbox, evidenceDir });
+    if (process.env.PILOT_LEGACY_EXE) {
+        begin('same-account upgrade from 0.7.0');
+        const { verifyLegacyUpgrade } = require('./windows-legacy-upgrade.cjs');
+        report.checks.legacyUpgrade = await verifyLegacyUpgrade({
+            launch, quit, login, showInvite, waitForMessage, unusedLoopbackPort, evidenceDir,
+            legacyExecutable: process.env.PILOT_LEGACY_EXE,
+            legacyAppDirectory: process.env.PILOT_LEGACY_APP
+        });
+    }
     assert.deepEqual(rendererErrors, []);
     if (report.checks.voice.outcome !== 'passed') throw new Error('The synthetic voice check failed. Other completed checks are recorded.');
     report.outcome = 'passed';
