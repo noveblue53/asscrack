@@ -1,4 +1,4 @@
-import { createLibp2p } from 'libp2p'
+import { createStreamCompatibleLibp2p } from './libp2p-streams.mjs'
 import { tcp } from '@libp2p/tcp'
 import { yamux } from '@chainsafe/libp2p-yamux'
 import { noise } from '@chainsafe/libp2p-noise'
@@ -6,7 +6,7 @@ import { pipe } from 'it-pipe'
 import { toString as uint8ArrayToString } from 'uint8arrays/to-string'
 import * as readline from 'readline'
 
-const node = await createLibp2p({
+const node = await createStreamCompatibleLibp2p({
   addresses: {
     listen: ['/ip4/127.0.0.1/tcp/0']
   },
@@ -16,7 +16,7 @@ const node = await createLibp2p({
   streamMuxers: [
     yamux()
   ],
-  connectionEncryption: [
+  connectionEncrypters: [
     noise()
   ]
 })

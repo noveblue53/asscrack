@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { validPeerId } from './invite.mjs'
 import { safeFileName } from './file-transfer.mjs'
+import { roomRateLimit } from './room-rate-limit.mjs'
 
 export const PREVIEW_PROTOCOL = '/asscrack/preview/1.0.0'
 export const MAX_PREVIEW_BYTES = 512 * 1024
@@ -9,6 +10,7 @@ export const ATTACHMENT_LIFETIME = 30 * 60 * 1000
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const SHA = /^[0-9a-f]{64}$/
 const MAX_SOURCES = 200
+const MAX_PUBLISHER_CACHE_BYTES = 8 * 1024 * 1024
 
 export function mediaKind(name) {
     const ext = path.extname(name).toLowerCase()
@@ -55,6 +57,10 @@ export function createAttachments({ self, sessions, connections, files, events, 
     const known = new Map()
     const capable = new Set()
     const previewStreams = new Set()
+    const publisherPreviews = new Map()
+    const allowAttachmentControl = roomRateLimit(300, 1200)
+    const allowPreview = roomRateLimit(24, 96)
+    let publisherCacheBytes = 0
     const activeReads = new Set()
     const availability = new Map()
     let serving = 0
@@ -90,6 +96,7 @@ export function createAttachments({ self, sessions, connections, files, events, 
         if (!source) return
         sources.delete(id)
         clearTimeout(source.timer)
+        dropPublisherPreview(id)
         files.expireAttachment(id)
         events.emit('attachment-expired', { id })
     }
@@ -112,7 +119,7 @@ export function createAttachments({ self, sessions, connections, files, events, 
             return
         }
         const { op, id } = control
-        if (!capable.has(peer) || typeof id !== 'string' || !UUID.test(id)) return
+        if (!capable.has(peer) || typeof id !== 'string' || !UUID.test(id) || !allowAttachmentControl(peer)) return
         if (op === 'status') {
             const descriptor = known.get(id)
             if (descriptor?.source === peer) {
@@ -166,9 +173,36 @@ export function createAttachments({ self, sessions, connections, files, events, 
         previewStreams.add(stream)
         return () => { clearTimeout(timer); previewStreams.delete(stream) }
     }
+
+    function dropPublisherPreview(id) {
+        const bytes = publisherPreviews.get(id)
+        if (bytes) publisherCacheBytes -= bytes.length
+        publisherPreviews.delete(id)
+    }
+
+    async function publisherPreview(source) {
+        const id = source.descriptor.id
+        const cached = publisherPreviews.get(id)
+        if (cached) {
+            publisherPreviews.delete(id)
+            publisherPreviews.set(id, cached)
+            return cached
+        }
+        source.preview ??= Promise.resolve(previewProvider(source.descriptor, source.prepared.filePath)).then(bytes => {
+            if (!bytes?.length || bytes.length > MAX_PREVIEW_BYTES || stopped || sources.get(id) !== source) return null
+            while (publisherCacheBytes + bytes.length > MAX_PUBLISHER_CACHE_BYTES) {
+                dropPublisherPreview(publisherPreviews.keys().next().value)
+            }
+            publisherPreviews.set(id, bytes)
+            publisherCacheBytes += bytes.length
+            return bytes
+        }).finally(() => { source.preview = null })
+        return source.preview
+    }
+
     async function handlePreview({ stream, connection }) {
         const peer = connection.remotePeer.toString()
-        if (stopped || serving >= 2 || !sessions.has(peer) || !capable.has(peer) || !previewProvider) {
+        if (stopped || serving >= 2 || !sessions.has(peer) || !capable.has(peer) || !previewProvider || !allowPreview(peer)) {
             stream.abort(new Error('Preview unavailable')); return
         }
         serving++
@@ -177,7 +211,7 @@ export function createAttachments({ self, sessions, connections, files, events, 
             const id = (await readBounded(stream, 36)).toString('ascii')
             const source = sources.get(id)
             if (!source || source.descriptor.expires <= Date.now() || !await files.unchanged(source.prepared)) throw new Error('Original unavailable')
-            const bytes = await previewProvider(source.descriptor, source.prepared.filePath)
+            const bytes = await publisherPreview(source)
             if (!bytes?.length || bytes.length > MAX_PREVIEW_BYTES || !sessions.has(peer) || stopped) throw new Error('Preview unavailable')
             if (sources.get(id) !== source || !await files.unchanged(source.prepared)) throw new Error('Original changed')
             await stream.sink([descriptorHash(source.descriptor), createHash('sha256').update(bytes).digest(), bytes])

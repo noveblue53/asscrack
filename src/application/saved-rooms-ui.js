@@ -46,12 +46,8 @@
         }
     }
 
-    function keyedType() {
-        return roomTypeSelect.value !== 'lan';
-    }
-
     function showSaveFields() {
-        saveFields.hidden = !keyedType();
+        saveFields.hidden = false;
         saveRoomBox.disabled = !archiveOpen;
         if (!archiveOpen) saveRoomBox.checked = false;
     }
@@ -79,12 +75,31 @@
             const button = document.createElement('button');
             button.type = 'button';
             button.className = 'reopen-room';
-            button.textContent = 'Reopen room';
-            button.addEventListener('click', () => reopen(room));
-            item.append(name, user, button, ...forgetControls(room, item));
+            button.textContent = room.protected ? 'Reopen room' : 'Reopen legacy room';
+            if (room.protected) button.addEventListener('click', () => reopen(room));
+            item.append(name, user, button, ...(room.protected ? [] : legacyControls(room, button)), ...forgetControls(room, item));
             savedList.appendChild(item);
         }
         savedSection.hidden = rooms.length === 0;
+    }
+
+    function legacyControls(room, button) {
+        const row = document.createElement('div');
+        row.className = 'forget-confirm legacy-reopen';
+        row.hidden = true;
+        const text = document.createElement('p');
+        text.textContent = 'Anyone who has this legacy room code can join. Continue only if you trust everyone with the code.';
+        const yes = document.createElement('button');
+        yes.type = 'button';
+        yes.textContent = 'Continue to legacy room';
+        const no = document.createElement('button');
+        no.type = 'button';
+        no.textContent = 'Cancel';
+        row.append(text, yes, no);
+        button.addEventListener('click', () => { row.hidden = false; no.focus(); });
+        no.addEventListener('click', () => { row.hidden = true; button.focus(); });
+        yes.addEventListener('click', () => { row.hidden = true; void reopen(room, true); });
+        return [row];
     }
 
     // Forget (decision P7): only on the login screen, with a confirmation.
@@ -308,45 +323,46 @@
     api.onLineSaved(data => noteSaved(data?.id));
     api.onSaveFailed(data => saveFailed(data));
 
-    // Reopen: show the chat screen at once with the saved lines, then start the node.
-    async function reopen(room) {
+    async function reopen(room, allowLegacy = false) {
         if (reopenBusy) return;
         reopenBusy = true;
         loginButton.disabled = true;
         for (const b of savedList.querySelectorAll('.reopen-room')) b.disabled = true;
-        const lines = await readLines(room.roomId);
-        if (!lines && archiveChanges.get(room.roomId)?.pending) {
-            reopenBusy = false;
-            loginButton.disabled = false;
-            for (const b of savedList.querySelectorAll('.reopen-room')) b.disabled = false;
-            return;
-        }
-        internetRoom = true;
-        showChat(String(room.userName ?? ''), String(room.name ?? ''));
-        for (const line of lines ?? []) {
-            if (line.id) savedMessageIds.add(String(line.id));
-            addMessage(line.from, line.text, line.time, line.own === true, line.id, line.peerId ?? null, line.channelId, line.attachment);
-        }
-        if (lines) {
-            linesLoadedFor = String(room.roomId);
-            loadedPages.add(linesLoadedFor + '/general');
-        }
-        setOlder((lines?.length ?? 0) >= FIRST_PAGE ? 'more' : 'none');
-        window.reading.followLatest();
+        let started = false;
         try {
-            const result = await api.reopenRoom(room.roomId);
+            const lines = await readLines(room.roomId);
+            if (!lines && archiveChanges.get(room.roomId)?.pending) return;
+            const result = await api.reopenRoom(room.roomId, allowLegacy);
+            started = true;
+            internetRoom = result?.internet === true;
+            showChat(String(room.userName ?? ''), String(room.name ?? ''));
+            for (const line of lines ?? []) {
+                if (line.id) savedMessageIds.add(String(line.id));
+                addMessage(line.from, line.text, line.time, line.own === true, line.id, line.peerId ?? null, line.channelId, line.attachment);
+            }
+            if (lines) {
+                linesLoadedFor = String(room.roomId);
+                loadedPages.add(linesLoadedFor + '/general');
+            }
+            setOlder((lines?.length ?? 0) >= FIRST_PAGE ? 'more' : 'none');
+            window.reading.followLatest();
             roomStarted(result);
             window.chatAttachments?.restoreSaved(lines);
         } catch (err) {
             status.textContent = `Error: the room did not start: ${err?.message ?? err}`;
+        } finally {
+            if (!started) {
+                reopenBusy = false;
+                loginButton.disabled = false;
+                for (const b of savedList.querySelectorAll('.reopen-room')) b.disabled = false;
+            }
         }
     }
 
     window.savedRoomsUi = {
         channelOpened(id) { if (openRoomId) void loadAfterLogin(openRoomId, id); },
         // The login fields of the save choice. Only a keyed room sends them.
-        loginOptions(type) {
-            if (type === 'lan') return {};
+        loginOptions() {
             return { save: saveRoomBox.checked && !saveRoomBox.disabled, keepHistory: keepHistoryBox.checked };
         },
         roomStarted(result) {

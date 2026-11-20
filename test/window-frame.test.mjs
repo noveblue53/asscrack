@@ -6,12 +6,15 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createWindowFrame } from '../src/application/window-frame.mjs';
 
+const PAGE = 'file:///asscrack/index.html';
+
 function attach(frame) {
     const calls = [], handlers = new Map();
     const win = new EventEmitter();
     let maximized = false;
     Object.assign(win, {
-        webContents: { mainFrame: {}, send: (_channel, data) => calls.push(data.maximized) },
+        webContents: { mainFrame: { url: PAGE }, isDestroyed: () => false, send: (_channel, data) => calls.push(data.maximized) },
+        isDestroyed: () => false,
         isMaximized: () => maximized,
         maximize() { maximized = true; win.emit('maximize'); },
         unmaximize() { maximized = false; win.emit('unmaximize'); },
@@ -22,7 +25,7 @@ function attach(frame) {
     frame.attach(win, {
         handle(name, fn) { handlers.set(name, fn); },
         removeHandler(name) { handlers.delete(name); }
-    });
+    }, PAGE);
     return {
         calls, handlers, win,
         action(name, ...args) {

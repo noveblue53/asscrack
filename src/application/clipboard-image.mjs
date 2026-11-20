@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { lstatSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync, rmSync } from 'node:fs'
 import path from 'node:path'
 import { inspectImage, IMAGE_INPUT_LIMIT } from './media-formats.mjs'
 import { ATTACHMENT_LIFETIME } from '../network/attachment.mjs'
@@ -9,6 +9,16 @@ const PNG = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
 export function createClipboardStaging(tempDirectory) {
     const entries = new Map()
     let stagedBytes = 0
+    try {
+        for (const entry of readdirSync(tempDirectory, { withFileTypes: true })) {
+            if (!entry.isDirectory() || !/^ac-img-[A-Za-z0-9]{6}$/.test(entry.name)) continue
+            const dir = path.join(tempDirectory, entry.name)
+            if (Date.now() - lstatSync(dir).mtimeMs < ATTACHMENT_LIFETIME * 2) continue
+            const files = readdirSync(dir, { withFileTypes: true })
+            if (files.length === 1 && files[0].name === 'Screenshot.png' && files[0].isFile())
+                rmSync(dir, { recursive: true, force: true })
+        }
+    } catch { /* Clipboard works if the staging folder has not been created yet. */ }
     function schedule(file, delay) {
         const entry = entries.get(file)
         clearTimeout(entry.timer)
@@ -29,6 +39,7 @@ export function createClipboardStaging(tempDirectory) {
             stagedBytes + input.length > 32 * 1024 * 1024 || entries.size >= 16) throw new Error('Clipboard image exceeds staging capacity')
         const bytes = Buffer.from(input.buffer, input.byteOffset, input.byteLength)
         if (!bytes.subarray(0, 8).equals(PNG) || !inspectImage(bytes)) throw new Error('Invalid or oversized clipboard PNG')
+        mkdirSync(tempDirectory, { recursive: true, mode: 0o700 })
         const dir = mkdtempSync(path.join(tempDirectory, 'ac-img-'))
         const file = path.join(dir, 'Screenshot.png')
         try { writeFileSync(file, bytes, { mode: 0o600, flag: 'wx' }) }

@@ -29,8 +29,8 @@ contextBridge.exposeInMainWorld('asscrack', {
     enterIdlePeer: () => ipcRenderer.invoke('asscrack:enter-idle-peer'),
     setCloseToTray: enabled => ipcRenderer.invoke('asscrack:close-to-tray', enabled),
     quit: () => ipcRenderer.send('asscrack:quit'),
-    login: ({ name, room, invite, internet, publicAddress, save, keepHistory } = {}) =>
-        ipcRenderer.invoke('asscrack:login', { name, room, invite, internet, publicAddress, save, keepHistory }),
+    login: ({ name, room, type, invite, publicAddress, allowUpnp, allowLegacy, save, keepHistory } = {}) =>
+        ipcRenderer.invoke('asscrack:login', { name, room, type, invite, publicAddress, allowUpnp, allowLegacy, save, keepHistory }),
     // Saved rooms (milestone 6). The window gets no key, no invite and no file path.
     listSavedRooms: () => ipcRenderer.invoke('asscrack:saved-rooms'),
     unlockArchive: () => ipcRenderer.invoke('asscrack:unlock-archive'),
@@ -45,8 +45,12 @@ contextBridge.exposeInMainWorld('asscrack', {
     forgetRoom: roomId => ipcRenderer.invoke('asscrack:forget-room', String(roomId)),
     onLineSaved: listen('asscrack:line-saved'),
     onSaveFailed: listen('asscrack:save-failed'),
-    reopenRoom: roomId => ipcRenderer.invoke('asscrack:reopen-room', String(roomId)),
+    reopenRoom: (roomId, allowLegacy) => ipcRenderer.invoke('asscrack:reopen-room', String(roomId), allowLegacy === true),
     getInvite: () => ipcRenderer.invoke('asscrack:invite'),
+    getDeviceId: () => ipcRenderer.invoke('asscrack:device-id'),
+    createMemberInvite: (deviceId, canHost) => ipcRenderer.invoke('asscrack:member-invite', deviceId, canHost === true),
+    revokeMember: deviceId => ipcRenderer.invoke('asscrack:member-revoke', deviceId),
+    onMembership: listen('asscrack:membership'),
     getFullNode: () => ipcRenderer.invoke('asscrack:full-node'),
     onFullNode: listen('asscrack:full-node'),
     onFullNodeAddrs: listen('asscrack:full-node-addrs'),

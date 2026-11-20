@@ -355,14 +355,38 @@ const inviteField = document.getElementById('invite-field');
 const inviteInput = document.getElementById('invite-input');
 const publicAddressField = document.getElementById('public-address-field');
 const publicAddressInput = document.getElementById('public-address');
+const upnpField = document.getElementById('upnp-field');
+const allowUpnp = document.getElementById('allow-upnp');
+const legacyConsent = document.getElementById('legacy-consent');
+const allowLegacy = document.getElementById('allow-legacy');
+
+function legacyInvite() {
+    return roomTypeSelect.value === 'join' && inviteInput.value.replace(/\s+/g, '').startsWith('asscrack1:');
+}
+
+function showLegacyConsent() {
+    if (!legacyConsent) return;
+    legacyConsent.hidden = !legacyInvite();
+    allowLegacy.checked = false;
+}
+
+function showUpnpChoice() {
+    if (!upnpField) return;
+    upnpField.hidden = roomTypeSelect.value !== 'new';
+    allowUpnp.disabled = publicAddressInput.value.trim() !== '';
+}
 
 function showRoomType() {
     const type = roomTypeSelect.value;
     roomField.hidden = type === 'join';
     inviteField.hidden = type !== 'join';
     publicAddressField.hidden = type === 'lan';
+    showUpnpChoice();
+    showLegacyConsent();
 }
 roomTypeSelect.addEventListener('change', showRoomType);
+publicAddressInput.addEventListener('input', showUpnpChoice);
+inviteInput.addEventListener('input', showLegacyConsent);
 showRoomType();
 
 let internetRoom = false;
@@ -381,18 +405,26 @@ async function login() {
         status.textContent = 'Error: enter a username and an invite code.';
         return;
     }
-    const options = { name, room };
-    if (type === 'join') options.invite = invite;
+    if (legacyInvite() && allowLegacy?.checked !== true) {
+        status.textContent = 'Confirm that everyone with this legacy room code is trusted.';
+        allowLegacy?.focus();
+        return;
+    }
+    const options = { name, room, type };
+    if (type === 'join') {
+        options.invite = invite;
+        options.allowLegacy = legacyInvite() && allowLegacy?.checked === true;
+    }
     if (type !== 'lan') {
-        options.internet = true;
         if (publicAddress) options.publicAddress = publicAddress;
+        if (type === 'new') options.allowUpnp = !publicAddress && allowUpnp?.checked === true;
     }
     // Saved rooms (milestone 6): the save choice of a keyed room.
     if (window.savedRoomsUi) Object.assign(options, window.savedRoomsUi.loginOptions(type));
     loginButton.disabled = true;
     try {
         const result = await window.asscrack.login(options);
-        internetRoom = result?.internet === true || type !== 'lan';
+        internetRoom = result?.internet === true;
         if (typeof result?.room === 'string' && result.room) room = result.room;
         showChat(name, room);
         roomStarted(result);
@@ -426,6 +458,8 @@ function showChat(name, room) {
 
 // After the node started: get the room state from the main process.
 function roomStarted(result) {
+    window.roomMembership?.start(result?.membership);
+    if (result?.membership?.protected === false && internetRoom) statusBar.querySelector('.net-note').textContent = 'Legacy shared-code room';
     void window.roomChannels?.start();
     window.whispers?.refresh();
     refreshRoomTopic();
@@ -769,6 +803,7 @@ let pendingFile = null;
 let offeringFile = false;
 
 const RESULT_STATES = new Set(['done', 'failed', 'refused', 'cancelled']);
+const MAX_TRANSFER_ROWS = 768;
 const transfers = new Map(); // One entry per offer/peer, shared by the Transfers row and any incoming chat card.
 
 function recipientLabel(peerId) {
@@ -1177,6 +1212,23 @@ function getTransfer(offerId, peerId, direction, info = {}) {
     const key = `${offerId}|${peerId}`;
     let entry = transfers.get(key);
     if (entry) return entry;
+    for (const [previousKey, previous] of transfers) {
+        if (transfers.size < MAX_TRANSFER_ROWS) break;
+        if (!RESULT_STATES.has(previous.state) || previous.retryable ||
+            previous.item.contains(document.activeElement) || previous.card?.contains(document.activeElement)) continue;
+        previous.item.remove();
+        if (previous.card) window.reading.keepPosition(() => previous.card.remove());
+        if (previous.richOffer) window.chatAttachments?.forgetOffer?.(previous.richOffer, previous);
+        transfers.delete(previousKey);
+        const previousOffer = previous.item.dataset.offerId;
+        const head = offerHeads.get(previousOffer);
+        if (head) {
+            const index = head.rows.indexOf(previous);
+            if (index !== -1) head.rows.splice(index, 1);
+            if (head.rows.length) updateOfferSummary(previousOffer);
+            else { head.item.remove(); offerHeads.delete(previousOffer); }
+        }
+    }
     const item = makeTransferRow(offerId, peerId, direction, info, 'transfer');
     transferList.appendChild(item);
     transferList.scrollTop = transferList.scrollHeight;
@@ -1281,8 +1333,8 @@ window.asscrack.onFileDone(data => {
         showProgress(progress);
     }
     if (data.direction === 'receive') {
-        const fileName = String(data.path ?? '').split(/[\\/]/).pop();
-        entry.revealable = typeof data.path === 'string' && Boolean(data.path);
+        const fileName = typeof data.savedName === 'string' ? data.savedName : '';
+        entry.revealable = Boolean(fileName);
         setTransferResult(entry, 'done', `Saved as ${fileName}`);
     } else {
         entry.confirmed = data.confirmed === true;
@@ -1552,7 +1604,7 @@ const inviteNote = document.getElementById('invite-note');
 const fullNodeState = document.getElementById('full-node-state');
 
 const NO_FULL_NODE_TEXT = 'No invite code: this room has no address that the internet can reach. '
-    + 'Log in again and type the public address of a forwarded TCP port, or turn on UPnP on the router.';
+    + 'Use an explicit public address or opt in to UPnP when starting a room.';
 const UPNP_WAIT_TEXT = 'Asking the router to open a port. This can take up to 70 seconds. The code shows here when it is ready.';
 
 function hasApi(name) {
@@ -1606,6 +1658,10 @@ async function refreshInvite() {
     }
     try {
         const info = await window.asscrack.getInvite();
+        if (info?.membership?.protected) {
+            window.roomMembership?.update(info.membership);
+            return;
+        }
         if (info?.reason === 'lan') {
             inviteToggle.hidden = true;
             setInvitePanelOpen(false);

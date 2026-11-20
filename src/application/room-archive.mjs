@@ -74,7 +74,11 @@ function openDb(file, profileKey) {
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS rooms(room_id TEXT PRIMARY KEY, name TEXT NOT NULL, room_key TEXT NOT NULL, invite TEXT,
-  user_name TEXT, keep_history INTEGER NOT NULL, saved_at INTEGER NOT NULL, opened_at INTEGER);
+  user_name TEXT, keep_history INTEGER NOT NULL, saved_at INTEGER NOT NULL, opened_at INTEGER,
+  admission TEXT NOT NULL DEFAULT 'legacy');
+CREATE TABLE IF NOT EXISTS protected_room_memberships(room_id TEXT PRIMARY KEY REFERENCES rooms(room_id) ON DELETE CASCADE,
+  snapshot TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS device_identity(slot INTEGER PRIMARY KEY CHECK(slot=1), identity TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS messages(room_id TEXT NOT NULL REFERENCES rooms(room_id) ON DELETE CASCADE,
   msg_id TEXT NOT NULL, sender TEXT, body TEXT NOT NULL, time INTEGER NOT NULL, own INTEGER NOT NULL,
   source TEXT NOT NULL, peer_id TEXT, PRIMARY KEY(room_id, msg_id));
@@ -186,6 +190,10 @@ export function openRoomArchive({ dir, protector, limits = null }) {
       if (version > 3) throw new Error('Archive written by a newer version');
       handle.transaction(() => {
         handle.exec(SCHEMA);
+        const roomColumns = handle.pragma('table_info(rooms)');
+        if (!roomColumns.some(column => column.name === 'admission')) {
+          handle.exec("ALTER TABLE rooms ADD COLUMN admission TEXT NOT NULL DEFAULT 'legacy'");
+        }
         handle.pragma('user_version=3');
       })();
     } catch {
@@ -209,30 +217,60 @@ export function openRoomArchive({ dir, protector, limits = null }) {
       if (st.state !== 'open') openSequence();
       return { ...st };
     },
-    saveRoom({ name, roomKey, invite = null, userName = null, keepHistory = true }) {
+    saveRoom({ name, roomKey, invite = null, userName = null, keepHistory = true, membership = null }) {
       const d = need();
       const roomId = roomFingerprint(name, roomKey);
       const keyText = keyBytes(roomKey).toString('base64url');
-      d.prepare(`INSERT INTO rooms(room_id, name, room_key, invite, user_name, keep_history, saved_at, opened_at)
+      d.transaction(() => {
+        d.prepare(`INSERT INTO rooms(room_id, name, room_key, invite, user_name, keep_history, saved_at, opened_at)
         VALUES(?, ?, ?, ?, ?, ?, ?, NULL)
         ON CONFLICT(room_id) DO UPDATE SET name=excluded.name, room_key=excluded.room_key, invite=excluded.invite,
           user_name=excluded.user_name, keep_history=excluded.keep_history`)
-        .run(roomId, name, keyText, invite ?? null, userName ?? null, keepHistory ? 1 : 0, Date.now());
+          .run(roomId, name, keyText, invite ?? null, userName ?? null, keepHistory ? 1 : 0, Date.now());
+        if (membership !== null) {
+          d.prepare("UPDATE rooms SET admission='protected' WHERE room_id=?").run(roomId);
+          d.prepare(`INSERT INTO protected_room_memberships(room_id,snapshot) VALUES(?,?)
+            ON CONFLICT(room_id) DO UPDATE SET snapshot=excluded.snapshot`).run(roomId, JSON.stringify(membership));
+        }
+      })();
       return { roomId };
     },
+    getDeviceIdentity() {
+      return need().prepare('SELECT identity FROM device_identity WHERE slot=1').get()?.identity ?? null;
+    },
+    hasProtectedRooms() {
+      return Boolean(need().prepare("SELECT 1 FROM rooms WHERE admission<>'legacy' LIMIT 1").get());
+    },
+    rememberDeviceIdentity(value) {
+      const d = need();
+      d.prepare('INSERT INTO device_identity(slot,identity) VALUES(1,?) ON CONFLICT(slot) DO NOTHING').run(value);
+      return d.prepare('SELECT identity FROM device_identity WHERE slot=1').get().identity;
+    },
+    updateMembership(roomId, membership) {
+      const d = need();
+      return d.transaction(() => {
+        if (d.prepare("UPDATE rooms SET admission='protected' WHERE room_id=?").run(roomId).changes !== 1) return false;
+        d.prepare(`INSERT INTO protected_room_memberships(room_id,snapshot) VALUES(?,?)
+          ON CONFLICT(room_id) DO UPDATE SET snapshot=excluded.snapshot`).run(roomId, JSON.stringify(membership));
+        return true;
+      })();
+    },
     getRoom(roomId) {
-      const r = need().prepare('SELECT * FROM rooms WHERE room_id = ?').get(roomId);
+      const r = need().prepare(`SELECT rooms.*, protected_room_memberships.snapshot FROM rooms
+        LEFT JOIN protected_room_memberships USING(room_id) WHERE room_id = ?`).get(roomId);
       if (!r) return null;
       return {
         roomId: r.room_id, name: r.name, roomKey: r.room_key, invite: r.invite, userName: r.user_name,
         keepHistory: r.keep_history === 1, savedAt: r.saved_at, openedAt: r.opened_at,
+        ...(r.admission === 'legacy' ? {} : { protected: true, membership: r.snapshot ?? null }),
       };
     },
     listRooms() {
-      return need().prepare(`SELECT room_id, name, user_name, keep_history, saved_at, opened_at FROM rooms
+      return need().prepare(`SELECT room_id, name, user_name, keep_history, saved_at, opened_at, admission FROM rooms
         ORDER BY opened_at IS NULL, opened_at DESC, saved_at DESC`).all().map((r) => ({
         roomId: r.room_id, name: r.name, userName: r.user_name, keepHistory: r.keep_history === 1,
         savedAt: r.saved_at, openedAt: r.opened_at,
+        ...(r.admission === 'legacy' ? {} : { protected: true }),
       }));
     },
     setInvite(roomId, invite) {

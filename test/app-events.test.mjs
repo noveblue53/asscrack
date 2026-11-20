@@ -24,10 +24,12 @@ test('renderer.js listens for history', async () => {
     assert.ok(source.includes('window.asscrack.onHistory('));
 });
 
-test('main.js writes a log file with the window console', async () => {
+test('only an explicit local debug run writes raw console logs', async () => {
     const source = await read('main.js');
     assert.ok(source.includes("'console-message'"));
-    assert.ok(source.includes("app.getPath('logs')"));
+    assert.match(source, /indexOf\('--log-dir'\)[\s\S]+if \(index === -1/);
+    assert.match(source, /if \(logFile\) mainWindow\.webContents\.on\('console-message'/);
+    assert.match(source, /logBytes \+ bytes > MAX_DEBUG_LOG_BYTES/);
 });
 
 test('main.js forwards the topology event', async () => {
@@ -35,7 +37,7 @@ test('main.js forwards the topology event', async () => {
     const match = source.match(/const EVENTS = \[([^\]]*)\]/);
     assert.ok(match, 'EVENTS not found in main.js');
     assert.match(match[1], /'topology'/);
-    assert.ok(source.includes("ipcMain.handle('asscrack:topology'"));
+    assert.ok(source.includes("handleRoomIpc('asscrack:topology'"));
 });
 
 test('preload.cjs exposes onTopology and getTopology', async () => {
@@ -64,7 +66,7 @@ test('the transfer window labels confirmed delivery, legacy sends, failure and t
     room.handlers.onFileDone({ ...send, confirmed: true });
     room.handlers.onFileDone({ ...send, offerId: 'second', confirmed: false });
     room.handlers.onFileFailed({ ...send, offerId: 'third', reason: 'peer left' });
-    room.handlers.onFileDone({ ...send, offerId: 'fourth', direction: 'receive', path: 'C:\\Downloads\\note.txt' });
+    room.handlers.onFileDone({ ...send, offerId: 'fourth', direction: 'receive', savedName: 'note.txt' });
     const labels = room.el('transfers').children.map(row => row.querySelector('.state-text').textContent);
     assert.deepEqual(labels, ['Delivered', 'Sent (delivery unconfirmed)', 'Failed: peer left', 'Saved as note.txt']);
 });
@@ -95,7 +97,7 @@ test('a live file card and its Transfers row share one offer, actions and saved 
     assert.ok(card.querySelector('[data-action="cancel-receive"]'));
     room.handlers.onFileProgress({ ...offer, direction: 'receive', bytes: 3 });
     assert.equal(card.querySelector('progress').value, 3);
-    room.handlers.onFileDone({ ...offer, direction: 'receive', path: 'C:\\Downloads\\note (1).txt' });
+    room.handlers.onFileDone({ ...offer, direction: 'receive', savedName: 'note (1).txt' });
     room.handlers.onFileOffer(offer);
     assert.deepEqual([row, card].map(el => el.querySelector('.state-text').textContent), ['Saved as note (1).txt', 'Saved as note (1).txt']);
     card.querySelector('[data-action="reveal"]').click();
@@ -144,7 +146,7 @@ test('the failed card and Transfers row retry once and show the verified result 
     assert.equal(card.dataset.state, 'receiving');
     assert.equal(card.querySelector('progress').value, 0);
     assert.equal(row.querySelector('[data-action="reveal"]'), null);
-    room.handlers.onFileDone({ ...next, direction: 'receive', path: 'C:\\Downloads\\note.txt' });
+    room.handlers.onFileDone({ ...next, direction: 'receive', savedName: 'note.txt' });
     await settle();
     assert.equal(card.querySelector('.state-text').textContent, 'Saved as note.txt');
     assert.ok(row.querySelector('[data-action="reveal"]'));
@@ -277,8 +279,8 @@ test('main.js records the receive path of file-done by offerId|peerId and checks
     assert.ok(source.includes("node.events.on('file-done'"));
     assert.ok(source.includes("data?.direction !== 'receive'"));
     assert.ok(source.includes('receivedFiles.set(`${data.offerId}|${data.peerId}`, data.path)'));
-    assert.ok(source.includes("ipcMain.handle('asscrack:reveal-file'"));
-    const handler = source.slice(source.indexOf("ipcMain.handle('asscrack:reveal-file'"));
+    assert.ok(source.includes("handleRoomIpc('asscrack:reveal-file'"));
+    const handler = source.slice(source.indexOf("handleRoomIpc('asscrack:reveal-file'"));
     const existsAt = handler.indexOf('existsSync(filePath)');
     const revealAt = handler.indexOf('shell.showItemInFolder(filePath)');
     assert.ok(existsAt > 0 && revealAt > existsAt, 'existsSync must come before showItemInFolder');
@@ -286,6 +288,7 @@ test('main.js records the receive path of file-done by offerId|peerId and checks
     assert.ok(handler.includes("reason: 'unknown'"));
     // The handler takes the key only. The path comes from the map of main.js.
     assert.ok(handler.includes('const filePath = receivedFiles.get(key)'));
+    assert.match(source, /const \{ path: localPath, \.\.\.event \} = data;[\s\S]+sendToWindow\('asscrack:file-done', \{ \.\.\.event, savedName \}\)/);
 });
 
 test('renderer.js has one Escape dispatcher in the sequence menu, layout, invite panel, map', async () => {

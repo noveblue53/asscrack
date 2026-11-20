@@ -23,7 +23,7 @@ function layout() {
         { id: 'topic-editor', hidden: true, children: [
             { id: 'topic-input', tag: 'input' }, { id: 'topic-save', tag: 'button' }, { id: 'topic-cancel', tag: 'button' }
         ] },
-        { id: 'room-type', tag: 'select', value: 'lan' },
+        { id: 'room-type', tag: 'select', value: 'new' },
         { id: 'availability-dialog', tag: 'dialog', children: [{ id: 'presence-fields' }] },
         { id: 'message-details', tag: 'dialog', children: [
             { id: 'message-detail-author' }, { id: 'message-detail-time' }, { id: 'message-detail-archive' }

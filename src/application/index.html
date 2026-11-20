@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' room-media:; media-src room-media:; connect-src 'self' room-media:">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' room-media:; media-src room-media:; connect-src 'self' room-media:; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="styles.css">
@@ -40,27 +40,37 @@
 
       <div class="field">
         <label for="username">Username</label>
-        <input type="text" id="username" placeholder="Enter your username" autocomplete="off" spellcheck="false">
+        <input type="text" id="username" maxlength="64" placeholder="Enter your username" autocomplete="off" spellcheck="false">
       </div>
       <div class="field">
         <label for="room-type">Room type</label>
         <select id="room-type">
-          <option value="lan" selected>LAN room</option>
-          <option value="new">New internet room</option>
+          <option value="new" selected>Create protected internet room</option>
           <option value="join">Join with invite code</option>
+          <option value="lan">Create protected LAN room</option>
         </select>
       </div>
       <div class="field" id="room-field">
         <label for="room">Room</label>
-        <input type="text" id="room" placeholder="Enter the room" autocomplete="off" spellcheck="false">
+        <input type="text" id="room" maxlength="64" placeholder="Enter the room" autocomplete="off" spellcheck="false">
       </div>
       <div class="field" id="invite-field" hidden>
         <label for="invite-input">Invite code</label>
-        <textarea id="invite-input" rows="3" placeholder="Paste the invite code" spellcheck="false"></textarea>
+        <textarea id="invite-input" rows="3" maxlength="131082" placeholder="Paste the invite code" spellcheck="false"></textarea>
+        <div class="device-enrollment">
+          <button type="button" id="copy-device-id">Copy my device ID</button>
+          <span id="device-id-note" role="status">Send your device ID to the owner to get your invite.</span>
+        </div>
+        <label class="admission-check" id="legacy-consent" hidden>
+          <input type="checkbox" id="allow-legacy"> I trust everyone who has this legacy shared code.
+        </label>
       </div>
-      <div class="field" id="public-address-field" hidden>
-        <label for="public-address">Public address (needed to host the room)</label>
+      <div class="field" id="public-address-field">
+        <label for="public-address">Public address (optional)</label>
         <input type="text" id="public-address" placeholder="Public IP:port, for the computer with the forwarded port" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="field" id="upnp-field">
+        <label class="admission-check"><input type="checkbox" id="allow-upnp"> Ask my router to open a TCP port with UPnP, including on saved reopen</label>
       </div>
 
       <!-- Saved rooms (milestone 6): only for a keyed room. saved-rooms-ui.js shows and fills these. -->
@@ -240,12 +250,24 @@
           </label>
         </section>
         <div id="invite-panel" hidden>
-          <label for="invite-code">Invite code of this room</label>
+          <p id="room-access-status" role="status" hidden></p>
+          <form id="member-invite-form" hidden>
+            <label for="member-device-id">Friend’s device ID</label>
+            <input id="member-device-id" maxlength="128" required autocomplete="off" spellcheck="false">
+            <label class="admission-check"><input type="checkbox" id="member-can-host"> Let this device host and relay</label>
+            <button type="submit" id="member-invite-create">Create device invite</button>
+            <p>Stay connected for their first join.</p>
+          </form>
+          <label id="invite-code-label" for="invite-code">Invite code of this room</label>
           <textarea id="invite-code" rows="3" readonly spellcheck="false"></textarea>
           <div class="invite-buttons">
             <button id="copy-invite" type="button">Copy</button>
             <span id="invite-note" role="status"></span>
           </div>
+          <section id="room-members-section" aria-label="Room devices" hidden>
+            <h2>Room devices</h2>
+            <ul id="room-members"></ul>
+          </section>
         </div>
         <dialog id="channel-dialog" aria-labelledby="channel-title"><form id="channel-create-form">
           <h2 id="channel-title">Create public channel</h2><label>Channel name <input id="channel-name" required maxlength="80"></label>
@@ -474,6 +496,7 @@
   <script src="chat-media.js"></script>
   <script src="chat-attachments.js"></script>
   <script src="renderer.js"></script>
+  <script src="room-membership-ui.js"></script>
   <script src="channels-ui.js"></script>
   <script src="typing.js"></script>
   <script src="whispers.js"></script>

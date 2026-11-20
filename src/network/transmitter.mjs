@@ -1,4 +1,4 @@
-import { createLibp2p } from 'libp2p'
+import { createStreamCompatibleLibp2p } from './libp2p-streams.mjs'
 import { tcp } from '@libp2p/tcp'
 import { yamux } from '@chainsafe/libp2p-yamux'
 import { noise } from '@chainsafe/libp2p-noise'
@@ -7,13 +7,13 @@ import { fromString as uint8ArrayFromString } from 'uint8arrays/from-string'
 import { multiaddr } from '@multiformats/multiaddr'
 import * as readline from 'readline'
 
-const node = await createLibp2p({
+const node = await createStreamCompatibleLibp2p({
   addresses: {
     listen: ['/ip4/127.0.0.1/tcp/0']
   },
   transports: [tcp()],
   streamMuxers: [yamux()],
-  connectionEncryption: [noise()]
+  connectionEncrypters: [noise()]
 })
 
 await node.start()

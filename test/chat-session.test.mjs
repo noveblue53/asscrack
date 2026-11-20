@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { setTimeout as delay } from 'node:timers/promises'
-import { createLibp2p } from 'libp2p'
+import { createStreamCompatibleLibp2p } from '../src/network/libp2p-streams.mjs'
 import { pushable } from 'it-pushable'
 import { tcp } from '@libp2p/tcp'
 import { yamux } from '@chainsafe/libp2p-yamux'
@@ -29,10 +29,10 @@ test('one duplex stream carries chat both ways and cleans up on disconnect', { t
     }
     try {
         for (let index = 0; index < 2; index++) {
-            const node = await createLibp2p({
+            const node = await createStreamCompatibleLibp2p({
                 addresses: { listen: ['/ip4/127.0.0.1/tcp/0'] },
                 transports: [tcp()], streamMuxers: [yamux()],
-                connectionEncryption: [noise()],
+                connectionEncrypters: [noise()],
                 connectionManager: { minConnections: 0 }
             })
             nodes.push(node)
@@ -106,4 +106,22 @@ test('frame bounds count UTF-8 bytes before decoding and discard only the oversi
     await session.done
     assert.deepEqual(received, [exact, 'next', '', 'final'])
     assert.deepEqual(sent, [Buffer.from(exact + '\n')])
+})
+
+test('a stalled chat sink refuses messages once the ordered send queue reaches its byte budget', async () => {
+    const source = pushable()
+    const release = Promise.withResolvers()
+    const session = createChatSession({
+        source,
+        async sink() { await release.promise },
+        abort(error) { source.end(error) }
+    }, { onMessage() {} })
+    const finished = session.done.catch(error => error)
+    const frame = 'a'.repeat(MAX_CHAT_FRAME_BYTES)
+    try {
+        for (let i = 0; i < 15; i++) assert.equal(session.send(frame), true)
+        assert.equal(session.send(frame), false)
+        assert.equal(session.send('a later message'), false)
+        assert.match((await finished).message, /send queue exceeded/)
+    } finally { release.resolve() }
 })

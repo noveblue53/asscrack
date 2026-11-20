@@ -4,7 +4,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import * as fsp from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { createLibp2p } from 'libp2p'
+import { createStreamCompatibleLibp2p } from '../src/network/libp2p-streams.mjs'
 import { tcp } from '@libp2p/tcp'
 import { yamux } from '@chainsafe/libp2p-yamux'
 import { noise } from '@chainsafe/libp2p-noise'
@@ -153,13 +153,13 @@ test('gater: a peer with no session gets no reservation on R; A has one', { time
     let X
     try {
         const { R, A } = await relayRoom(nodes)
-        X = await createLibp2p({
+        X = await createStreamCompatibleLibp2p({
             addresses: { listen: [] },
             transports: [tcp(), circuitRelayTransport()],
             services: { identify: identify() },
             connectionManager: { minConnections: 0 },
             streamMuxers: [yamux()],
-            connectionEncryption: [noise()]
+            connectionEncrypters: [noise()]
         })
         await X.start()
         await X.dial(multiaddr(localAddr(R)))

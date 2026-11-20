@@ -1,6 +1,7 @@
 // BrowserWindow reads native-overlay options at construction. Persist the next-launch choice separately from theme.
 import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 import path from 'node:path';
+import { isDesktopFrame } from './desktop-boundary.mjs';
 
 function overlayColor(value) {
     if (typeof value !== 'string') return null;
@@ -20,7 +21,7 @@ export function createWindowFrame(profile, platform = process.platform) {
         ? { titleBarStyle: 'hidden', titleBarOverlay: { color: '#205a45', symbolColor: '#ffffff', height: 36 } }
         : mode === 'mac' ? { titleBarStyle: 'hiddenInset' } : { frame: false };
 
-    function attach(win, ipc) {
+    function attach(win, ipc, page) {
         const state = () => ({ mode, maximized: win.isMaximized(), canChooseSystemButtons: platform === 'win32', systemButtons });
         const handlers = {
             state,
@@ -51,7 +52,7 @@ export function createWindowFrame(profile, platform = process.platform) {
         };
         for (const [key, handle] of Object.entries(handlers)) {
             ipc.handle('asscrack:frame-' + key, (event, ...args) => {
-                if (event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame) throw new Error('Unknown window');
+                if (!isDesktopFrame(win, event.sender, event.senderFrame, page)) throw new Error('Unknown window');
                 return handle(...args);
             });
         }

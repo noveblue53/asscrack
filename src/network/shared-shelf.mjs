@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { safeFileName } from './file-transfer.mjs'
+import { roomRateLimit } from './room-rate-limit.mjs'
 
 const MAX_FILES = 32
 const MAX_PUBLISHERS = 32
@@ -27,9 +28,11 @@ export function createSharedShelf({ self, name, peerName, sessions, files, event
     const downloads = new Map()
     const granted = new Map()
     const uploads = new Map()
+    const allowShelfControl = roomRateLimit(32, 128)
     let preparing = false
     let stopped = false
     let revision = 0
+    let emitQueued = false
 
     function send(peer, op, data = {}) {
         return sessions.get(peer)?.send(JSON.stringify({ type: 'shelf', v: 1, op, ...data })) === true
@@ -52,7 +55,12 @@ export function createSharedShelf({ self, name, peerName, sessions, files, event
 
     function changed() {
         revision++
-        events.emit('shelf', view())
+        if (emitQueued) return
+        emitQueued = true
+        queueMicrotask(() => {
+            emitQueued = false
+            if (!stopped) events.emit('shelf', view())
+        })
     }
 
     function sendList(peer) {
@@ -119,24 +127,27 @@ export function createSharedShelf({ self, name, peerName, sessions, files, event
             publishers.set(peer, publisher)
         }
         const next = new Map()
+        let listChanged = false
         for (const item of items) {
             const descriptor = fileDescriptor(item)
             if (!descriptor || next.has(descriptor.id)) continue
             const prior = publisher.rows.get(descriptor.id)
             if (prior && !sameFile(prior.descriptor, descriptor)) continue
             const row = prior ?? { descriptor }
+            if (!prior || row.available !== (item.available === true)) listChanged = true
             row.available = item.available === true
             next.set(descriptor.id, row)
         }
         for (const [id, row] of publisher.rows) {
             if (next.has(id)) continue
+            listChanged = true
             row.available = false
             if (row.state === 'requesting') finishDownload(row.token, 'failed', 'The file was removed.')
             // Keep in-progress actions until they finish. Saved files remain available in Transfers.
             if (row.state === 'receiving') next.set(id, row)
         }
         publisher.rows = next
-        changed()
+        if (listChanged) changed()
     }
 
     function finishDownload(token, state, reason) {
@@ -167,7 +178,8 @@ export function createSharedShelf({ self, name, peerName, sessions, files, event
         if (!uuid(id) || !uuid(token)) return
         const source = own.get(id)
         const key = peer + '|' + id
-        if (!source || source.descriptor.sha256 !== sha256 || uploads.has(key)) {
+        if (!source || source.descriptor.sha256 !== sha256 || uploads.has(key) || uploads.size >= 8 ||
+            [...uploads.values()].filter(transfer => transfer.peer === peer).length >= 2) {
             send(peer, 'unavailable', { token })
             return
         }
@@ -188,6 +200,8 @@ export function createSharedShelf({ self, name, peerName, sessions, files, event
                 }
             }
             send(peer, 'unavailable', { token })
+        } catch {
+            if (!stopped && sessions.get(peer) === session) send(peer, 'unavailable', { token })
         } finally {
             if (!upload.timer && uploads.get(key) === upload) uploads.delete(key)
         }
@@ -217,6 +231,7 @@ export function createSharedShelf({ self, name, peerName, sessions, files, event
             return
         }
         if (!capable.has(peer)) return
+        if (['query', 'list', 'download'].includes(control.op) && !allowShelfControl(peer)) return
         if (control.op === 'query') {
             await Promise.all([...own.values()].map(checkFile))
             if (!stopped && sessions.get(peer) === session) sendList(peer)

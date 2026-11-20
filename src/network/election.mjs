@@ -16,6 +16,7 @@ export function createElection({
     openPeers,
     onChange = () => {},
     isFullNode = () => false,
+    hostAllowed = null,
     heartbeatInterval = 1000,
     hostTimeout = 5000,
     electionDelay = 3000,
@@ -58,6 +59,7 @@ export function createElection({
         let best = null
         let bestFull = false
         for (const id of ids) {
+            if (hostAllowed && !hostAllowed(id)) continue
             const full = Boolean(isFullNode(id))
             if (best === null || (full && !bestFull) || (full === bestFull && id < best)) {
                 best = id
@@ -97,6 +99,10 @@ export function createElection({
 
     function tick() {
         if (stopped) return
+        if (hostAllowed && host !== null && !hostAllowed(host)) {
+            if (isHost()) setHost(null, term)
+            else hostLost()
+        }
         if (isHost()) {
             // Rule 2.
             if (!paused) broadcast(announcement())
@@ -124,6 +130,7 @@ export function createElection({
             if (stopped) return
             const { host: h, term: t } = message
             if (typeof h !== 'string' || !Number.isInteger(t)) return
+            if (hostAllowed && (h !== fromPeerId || !hostAllowed(h) || !Number.isSafeInteger(t) || t < 1 || t >= Number.MAX_SAFE_INTEGER)) return
             // Rule 7.
             suspected.delete(fromPeerId)
             suspected.delete(h)
@@ -141,7 +148,7 @@ export function createElection({
             suspected.delete(peerId) // rule 7
             // Rule 3, extended: each member that knows a live host sends the
             // announcement of that host on the new session.
-            if (host !== null && !lost) sendTo(peerId, announcement())
+            if (host !== null && !lost && (!hostAllowed || isHost())) sendTo(peerId, announcement())
             if (firstSessionTime === null) {
                 firstSessionTime = now()
                 delayTimer = setTimeout(() => {

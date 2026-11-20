@@ -1,6 +1,8 @@
 # ASSCRACK Windows friend-pilot field card
 
-Use `ASSCRACK-0.7.0-friend-pilot-rc1-42cf3c6-windows-runner-x64.exe` on every computer. Its SHA-256 is `567507aafaf63c209732b8144abd65a396d4570a339dab616b66e3d2b815048d`. Verify it with `Get-FileHash -Algorithm SHA256 -LiteralPath .\ASSCRACK-0.7.0-friend-pilot-rc1-42cf3c6-windows-runner-x64.exe` in PowerShell. Quit older copies from the tray. Use fresh profiles and keep closed-profile backups for upgrades.
+Use the **same hardening candidate** on every computer. Match the SHA-256 in the candidate handoff with `Get-FileHash -Algorithm SHA256 -LiteralPath <path-to-exe>`. Quit older copies from the tray. Use fresh profiles for initial pairing and back up closed profiles for upgrade checks. The earlier RC1 used source `42cf3c6` and shared bearer invites.
+
+For a new protected room, each friend selects **Join with invite code**, copies their device ID and gives it to the owner. In **Invite**, the owner issues a code for that device. Keep the owner online for first admission. Give the backup host the hosting permission before testing failover. The host can hear forwarded voice. For the router-mapping check, explicitly select **Ask my router to open a TCP port (UPnP)**.
 
 ## Three Windows PCs, separate networks
 

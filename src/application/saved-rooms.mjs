@@ -70,7 +70,7 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
                 // listRooms() gives no key and no invite.
                 rooms = a.listRooms().map(r => ({
                     roomId: r.roomId, name: r.name, userName: r.userName, keepHistory: r.keepHistory,
-                    savedAt: r.savedAt, openedAt: r.openedAt
+                    savedAt: r.savedAt, openedAt: r.openedAt, ...(r.protected ? { protected: true } : {})
                 }));
             } catch (err) {
                 log('WARN', `Saved rooms not listed: ${errText(err)}`);
@@ -102,6 +102,22 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
         const a = ensure();
         if (!a || a.state().state !== 'open' || typeof roomId !== 'string') return null;
         return a.getRoom(roomId);
+    }
+
+    function deviceIdentity(make) {
+        const a = ensure();
+        if (a?.state().state !== 'open') throw new Error('Unlock protected storage to use this device’s admission identity.');
+        const existing = a.getDeviceIdentity();
+        if (existing !== null) return existing;
+        if (a.hasProtectedRooms()) throw new Error('The protected device identity is missing. Restore it from your profile backup.');
+        return a.rememberDeviceIdentity(make());
+    }
+
+    const isProtectedRoom = (room, roomKey) => getRoom(roomFingerprint(room, roomKey))?.protected === true;
+
+    function persistMembership(membership) {
+        if (!active) return true;
+        return archive.updateMembership(active.roomId, membership);
     }
 
     // Called synchronously before network start, including the retry on another port.
@@ -147,7 +163,7 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
     }
 
     // After the node of a keyed room starts. Returns { roomId, saved, saveError }. A save failure does not throw.
-    function afterLogin({ room, roomKey, invite = null, userName, save = false, keepHistory = true }) {
+    function afterLogin({ room, roomKey, invite = null, userName, save = false, keepHistory = true, membership = null }) {
         active = null;
         if (!roomKey) return { roomId: null, saved: false, saveError: null, savedRoom: false, keepHistory: null };
         const roomId = roomFingerprint(room, roomKey);
@@ -160,7 +176,7 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
                 saveError = a ? a.state().reason : 'open-failed';
             } else {
                 try {
-                    a.saveRoom({ name: room, roomKey, invite: invite || null, userName, keepHistory: keepHistory !== false });
+                    a.saveRoom({ name: room, roomKey, invite: invite || null, userName, keepHistory: keepHistory !== false, membership });
                     saved = true;
                 } catch (err) {
                     saveError = errText(err);
@@ -174,6 +190,14 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
                 if (row) {
                     a.markOpened(roomId);
                     active = { roomId, keepHistory: row.keepHistory };
+                    if (!saved && membership !== null) {
+                        try {
+                            if (!a.updateMembership(roomId, membership)) throw new Error('Room access was not saved');
+                        } catch (err) {
+                            saveError = errText(err);
+                            log('WARN', 'Room access was not saved');
+                        }
+                    }
                     log('INFO', `Saved room active, keep history ${row.keepHistory ? 'on' : 'off'}`);
                     // A refreshed invite for an existing room only updates its connection hints.
                     if (!save && invite && invite !== row.invite) {
@@ -260,7 +284,11 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
         if (typeof roomId !== 'string') throw new Error('bad room ID');
         const row = a.getRoom(roomId);
         if (row && forgetHints) {
-            try { forgetHints(row); } catch (err) { log('WARN', `Room hints not deleted: ${errText(err)}`); }
+            try { forgetHints(row); }
+            catch (err) {
+                log('WARN', `Room hints not deleted: ${errText(err)}`);
+                throw new Error('Could not remove saved room connection hints. Try Forget again.');
+            }
         }
         a.removeRoom(roomId);
         invalidateReplay(roomId, new Set());
@@ -296,6 +324,6 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
 
     return {
         rememberDownload, getDownload, status, unlock, lines, getRoom, loadChannels, persistChannels, prepareReplay, releaseReplay, afterLogin, recordSend, attachNode, setKeepHistory, clear, forget, activeInfo,
-        close, active: () => active
+        deviceIdentity, isProtectedRoom, persistMembership, close, active: () => active
     };
 }

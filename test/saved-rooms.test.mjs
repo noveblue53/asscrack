@@ -90,6 +90,37 @@ test('a room with keepHistory off adds no row', t => {
     assert.equal(rooms.lines(roomId).length, 0);
 });
 
+test('the encrypted archive preserves exact device identity and protected state across close and reopen', t => {
+    const { rooms, dir } = setup(t);
+    const identity = 'private-device-fixture';
+    assert.equal(rooms.deviceIdentity(() => identity), identity);
+    const { roomId } = rooms.afterLogin({ room: 'access', roomKey: KEY_A, save: true, membership: { role: 'owner' } });
+    const signedState = { role: 'owner', revoked: 'signed-revocation-fixture' };
+    assert.equal(rooms.persistMembership(signedState), true);
+    rooms.close();
+    const archiveDir = path.join(dir, 'saved-rooms');
+    const reopened = createSavedRooms({ dir: archiveDir, protector: fakeProtector });
+    try {
+        assert.equal(reopened.deviceIdentity(() => assert.fail('The original identity must be reused')), identity);
+        assert.equal(reopened.isProtectedRoom('access', KEY_A), true);
+        assert.deepEqual(JSON.parse(reopened.getRoom(roomId).membership), signedState);
+        const [publicRow] = reopened.status().rooms;
+        assert.equal(publicRow.protected, true);
+        assert.equal('membership' in publicRow, false);
+        assert.equal('roomKey' in publicRow, false);
+    } finally { reopened.close(); }
+    const ciphertext = fs.readFileSync(path.join(archiveDir, 'archive.db'));
+    assert.equal(ciphertext.includes(Buffer.from(identity)), false);
+    assert.equal(ciphertext.includes(Buffer.from(signedState.revoked)), false);
+});
+
+test('a profile with saved protected rooms does not replace a missing device identity', t => {
+    const { rooms } = setup(t);
+    const { saved } = rooms.afterLogin({ room: 'access', roomKey: KEY_A, save: true, membership: { role: 'owner' } });
+    assert.equal(saved, true);
+    assert.throws(() => rooms.deviceIdentity(() => assert.fail('Do not generate a replacement identity')), /identity is missing/);
+});
+
 test('two rooms with the same user name and different keys keep separate rows', t => {
     const { rooms } = setup(t);
     const nodeA = fakeNode(1);
@@ -214,14 +245,18 @@ test('forget calls forgetHints, deletes the rows, and fails for the open room', 
     assert.equal(rooms.status().rooms.length, 1);
 });
 
-test('forget continues when forgetHints throws', t => {
-    const { rooms, logs } = setup(t, { forgetHints: () => { throw new Error('hint error'); } });
+test('forget remains retryable if saved route hints cannot be removed', t => {
+    let blocked = true;
+    const { rooms, logs } = setup(t, { forgetHints: () => { if (blocked) throw new Error('hint error'); } });
     const node = fakeNode(1);
     const idA = start(rooms, node, { key: KEY_A });
     start(rooms, fakeNode(1), { key: KEY_B });
+    assert.throws(() => rooms.forget(idA), /Try Forget again/);
+    assert.ok(rooms.getRoom(idA));
+    assert.ok(logs.some(([l, x]) => l === 'WARN' && /hint error/.test(x)));
+    blocked = false;
     assert.deepEqual(rooms.forget(idA), { forgotten: true });
     assert.equal(rooms.getRoom(idA), null);
-    assert.ok(logs.some(([l, x]) => l === 'WARN' && /hint error/.test(x)));
 });
 
 

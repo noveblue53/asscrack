@@ -1,5 +1,7 @@
 import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { isDesktopFrame, lockDesktopNavigation } from './desktop-boundary.mjs';
 
 const coordinate = n => Number.isInteger(n) && n >= -2147483648 && n <= 2147483647;
 
@@ -14,17 +16,21 @@ export function fitVoiceBounds(saved, area) {
     return { x: clamp(x, area.x, area.x + area.width - width), y: clamp(y, area.y, area.y + area.height - height), width, height };
 }
 
-export function attachVoiceMonitor({ room, ipc, BrowserWindow, screen, profile, assets, participating, restoreRoom, warn }) {
+export function attachVoiceMonitor({ room, roomPage, ipc, BrowserWindow, screen, profile, assets, participating, restoreRoom, warn }) {
     const file = path.join(profile, 'voice-window.json');
+    const monitorFile = path.join(assets, 'voice-monitor.html');
+    const monitorPage = pathToFileURL(monitorFile).href;
     let monitor = null;
     let ready = false;
     let returnToRoom = false;
-    const from = (event, win) => win && !win.isDestroyed() && event.sender === win.webContents && event.senderFrame === win.webContents.mainFrame;
+    const from = (event, win, page) => isDesktopFrame(win, event.sender, event.senderFrame, page);
     function roomMessage(channel, data) {
-        if (!room.isDestroyed() && !room.webContents.isDestroyed()) room.webContents.send(channel, data);
+        if (room.isDestroyed() || room.webContents.isDestroyed()) return;
+        const contents = room.webContents;
+        if (isDesktopFrame(room, contents, contents.mainFrame, roomPage)) contents.send(channel, data);
     }
     function open(event) {
-        if (!from(event, room) || !participating()) return;
+        if (!from(event, room, roomPage) || !participating()) return;
         if (monitor) { monitor.show(); monitor.focus(); return; }
         let saved;
         try { saved = JSON.parse(readFileSync(file, 'utf8')); } catch { /* New profile or invalid saved bounds. */ }
@@ -35,6 +41,7 @@ export function attachVoiceMonitor({ room, ipc, BrowserWindow, screen, profile, 
             alwaysOnTop: true, skipTaskbar: true, maximizable: false, minimizable: false, fullscreenable: false, show: false,
             webPreferences: { preload: path.join(assets, 'voice-monitor-preload.cjs'), nodeIntegration: false, sandbox: true, contextIsolation: true }
         });
+        lockDesktopNavigation(win.webContents);
         monitor = win;
         returnToRoom = true;
         ready = false;
@@ -58,18 +65,18 @@ export function attachVoiceMonitor({ room, ipc, BrowserWindow, screen, profile, 
             roomMessage('asscrack:voice-monitor-active', false);
             if (returnToRoom && participating()) restoreRoom();
         });
-        win.loadFile(path.join(assets, 'voice-monitor.html')).catch(err => {
+        win.loadFile(monitorFile).catch(err => {
             if (!win.isDestroyed()) { warn('Voice window could not open: ' + err.message); win.close(); }
         });
     }
     function update(event, view) {
-        if (ready && from(event, room)) monitor.webContents.send('asscrack:voice-monitor-state', view);
+        if (ready && from(event, room, roomPage)) monitor.webContents.send('asscrack:voice-monitor-state', view);
     }
     function mute(event, value) {
-        if (from(event, monitor) && participating() && typeof value === 'boolean') roomMessage('asscrack:voice-monitor-mute', value);
+        if (from(event, monitor, monitorPage) && participating() && typeof value === 'boolean') roomMessage('asscrack:voice-monitor-mute', value);
     }
     function close(event) {
-        if (from(event, monitor)) monitor.close();
+        if (from(event, monitor, monitorPage)) monitor.close();
     }
     function dismiss() {
         returnToRoom = false;

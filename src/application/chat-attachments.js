@@ -46,7 +46,7 @@
         const entry = offers.get(key(d.source, d.id));
         const match = entry?.data.sha256 === d.sha256 && entry.data.size === d.size && entry.data.name === d.name;
         const state = match ? entry.transfer.state : null;
-        const saved = card.local || (state === 'done' && entry.transfer.revealable);
+        const saved = card.local || card.revealKey || (state === 'done' && entry.transfer.revealable);
         button.hidden = card.own;
         button.disabled = !saved && (Boolean(card.waiting) || d.expires <= Date.now() || !(state === 'offered' || card.available) || state === 'receiving');
         button.textContent = saved ? 'Show saved original' : state === 'receiving' ? 'Receiving original…' :
@@ -91,6 +91,11 @@
                 }
                 return;
             }
+            if (card.revealKey) {
+                const result = await api.revealFile(card.revealKey).catch(() => null);
+                if (!result?.ok) { card.revealKey = null; render(card); }
+                return;
+            }
             const entry = offers.get(k);
             if (entry && entry.data.sha256 === descriptor.sha256 && entry.data.size === descriptor.size && entry.data.name === descriptor.name) {
                 const t = entry.transfer;
@@ -127,6 +132,16 @@
     });
     window.chatAttachments = {
         decorate, offer, restoreSaved,
+        forgetOffer(data, transfer) {
+            const k = key(data.peerId, data.attachmentId);
+            if (offers.get(k)?.transfer !== transfer) return;
+            offers.delete(k);
+            const card = cards.get(k);
+            if (card) {
+                if (transfer.state === 'done' && transfer.revealable) card.revealKey = key(data.offerId, data.peerId);
+                render(card);
+            }
+        },
         clearedSaved() {
             savedRevision++;
             observer?.disconnect();

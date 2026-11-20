@@ -186,8 +186,10 @@ test('127.0.0.1: an isolated member rejoins the full host without changing its t
     // Block automatic dials while the interface is down, then cut both C's TCP and relay connections.
     let isolated = true
     const gater = c.libp2p.components.connectionGater
-    t.mock.method(gater, 'denyDialMultiaddr', () => isolated)
-    t.mock.method(gater, 'denyInboundConnection', () => isolated)
+    const { denyDialMultiaddr, denyInboundConnection } = gater
+    gater.denyDialMultiaddr = () => isolated
+    gater.denyInboundConnection = () => isolated
+    t.after(() => Object.assign(gater, { denyDialMultiaddr, denyInboundConnection }))
     for (const conn of c.libp2p.getConnections()) conn.abort(new Error('simulated network loss'))
     await waitUntil(() => c.peers().length === 0 && !a.peers().includes(c.peerId) && !b.peers().includes(c.peerId), 5000)
     await delay(timing.hostTimeout + timing.heartbeatInterval)
@@ -259,6 +261,22 @@ test('a member briefly elected during relay loss waits after the last circuit cl
     assert.equal(sent.length, priorAnnouncements, 'the isolated member cannot announce itself as the incumbent')
     e.handleAnnouncement('r', { host: 'r', term: 1 })
     assert.deepEqual(e.host(), { peerId: 'r', term: 1 })
+})
+
+test('protected election accepts only live authorized peers announcing their own host authority', t => {
+    const announced = []
+    const election = createElection({ selfId: 'a', sendTo: (_peer, line) => announced.push(line), broadcast: () => {},
+        openPeers: () => ['b', 'h'], hostAllowed: id => id === 'h' })
+    t.after(() => election.stop())
+    election.handleAnnouncement('b', { host: 'b', term: 1 })
+    election.handleAnnouncement('b', { host: 'h', term: 1 })
+    assert.equal(election.host(), null)
+    election.handleAnnouncement('h', { host: 'h', term: Number.MAX_SAFE_INTEGER })
+    assert.equal(election.host(), null)
+    election.handleAnnouncement('h', { host: 'h', term: 1 })
+    assert.deepEqual(election.host(), { peerId: 'h', term: 1 })
+    election.sessionOpened('b')
+    assert.deepEqual(announced, [])
 })
 
 test('rank: the only full node (highest ID) becomes host in the first election', () => {

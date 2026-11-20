@@ -9,7 +9,7 @@ const read = name => readFile(new URL(`../src/application/${name}`, import.meta.
 test('main.js has the IPC handlers of part 2 with a roomId check', async () => {
     const source = await read('main.js');
     for (const name of ['saved-room-lines', 'set-keep-history', 'clear-history', 'forget-room']) {
-        assert.ok(source.includes(`ipcMain.handle('asscrack:${name}'`), name);
+        assert.ok(source.includes(`handleRoomIpc('asscrack:${name}'`), name);
     }
     assert.ok(source.includes("roomId.length <= 128"));
 });

@@ -1,15 +1,36 @@
 import { pushable } from 'it-pushable'
 // Maximum encoded UTF-8 bytes in one line, excluding the LF delimiter.
 export const MAX_CHAT_FRAME_BYTES = 512 * 1024
+const MAX_QUEUED_BYTES = 8 * 1024 * 1024
+const MAX_QUEUED_ITEMS = 512
+const MAX_QUEUED_REPLAYS = 2
 
 // A libp2p stream is duplex. Newlines preserve terminal message boundaries even
 // when transport chunks split a message or combine several messages.
 export function createChatSession(stream, { onMessage }) {
     let closed = false
+    let queuedBytes = 0
+    let queuedItems = 0
+    let queuedReplays = 0
     const outgoing = pushable({ objectMode: true })
     function end() {
         closed = true
         outgoing.end()
+    }
+
+    function enqueue(value, bytes, replay = false) {
+        if (closed) return false
+        if (queuedBytes + bytes > MAX_QUEUED_BYTES || queuedItems >= MAX_QUEUED_ITEMS ||
+            (replay && queuedReplays >= MAX_QUEUED_REPLAYS)) {
+            end()
+            stream.abort(new Error('Chat send queue exceeded its budget'))
+            return false
+        }
+        queuedBytes += bytes
+        queuedItems++
+        if (replay) queuedReplays++
+        outgoing.push({ value, bytes, replay })
+        return true
     }
 
     async function receive() {
@@ -62,9 +83,19 @@ export function createChatSession(stream, { onMessage }) {
     // Keep a replay iterable in the same ordered queue as chat/control lines. Pull one frame
     // only when the transport is ready so local archive invalidation can take effect.
     async function* frames() {
-        for await (const item of outgoing) {
-            if (typeof item === 'string') yield Buffer.from(item + '\n')
-            else for (const line of item) yield Buffer.from(line + '\n')
+        for await (const { value, bytes, replay } of outgoing) {
+            if (closed) break
+            try {
+                if (!replay) yield Buffer.from(value + '\n')
+                else for (const line of value) {
+                    if (closed) break
+                    yield Buffer.from(line + '\n')
+                }
+            } finally {
+                queuedBytes -= bytes
+                queuedItems--
+                if (replay) queuedReplays--
+            }
         }
     }
 
@@ -88,12 +119,11 @@ export function createChatSession(stream, { onMessage }) {
             stream.abort(new Error('Chat connection closed'))
         },
         send(message) {
-            if (closed || Buffer.byteLength(message) > MAX_CHAT_FRAME_BYTES) return false
-            outgoing.push(message)
-            return true
+            const bytes = Buffer.byteLength(message)
+            return bytes <= MAX_CHAT_FRAME_BYTES && enqueue(message, bytes + 1)
         },
         sendReplay(lines) {
-            if (!closed) outgoing.push(lines)
+            return enqueue(lines, 0, true)
         }
     }
 }

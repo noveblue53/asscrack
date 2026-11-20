@@ -8,6 +8,7 @@ import { Readable } from 'node:stream';
 import { IMAGE_INPUT_LIMIT, PREVIEW_LIMIT, inspectGif, inspectImage, videoMime } from './media-formats.mjs';
 
 const CACHE_LIMIT = 32 * 1024 * 1024;
+const MAX_OPEN_ORIGINALS = 12;
 const stamp = s => [s.dev, s.ino, s.size, s.mtimeNs, s.ctimeNs].join(',');
 const failed = (status, headers) => new Response(null, { status, headers });
 
@@ -52,7 +53,7 @@ export function mediaBody(stream) {
 
 export function createRoomMedia({ nativeImage, changed = () => {} }) {
     const entries = new Map(), routes = new Map(), cache = new Map(), streams = new Set();
-    let bytesUsed = 0, decoding = 0, epoch = 0, thumbnailEpoch = 0;
+    let bytesUsed = 0, decoding = 0, epoch = 0, thumbnailEpoch = 0, openingOriginals = 0;
     const hashWaiters = [];
     let hashing = 0, hashController = new AbortController();
 
@@ -210,6 +211,8 @@ export function createRoomMedia({ nativeImage, changed = () => {} }) {
         }
         const original = entry.original;
         if (!original) return failed(404);
+        if (openingOriginals + streams.size >= MAX_OPEN_ORIGINALS) return failed(503, { 'Retry-After': '1' });
+        openingOriginals++;
         let fh;
         try {
             fh = await openRegular(original.file);
@@ -232,7 +235,7 @@ export function createRoomMedia({ nativeImage, changed = () => {} }) {
             stream.once('close', () => streams.delete(stream));
             return new Response(mediaBody(stream), { status, headers });
         } catch { return failed(410); }
-        finally { await fh?.close(); }
+        finally { try { await fh?.close(); } finally { openingOriginals--; } }
     }
 
     async function canReveal(d, file) {

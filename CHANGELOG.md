@@ -7,6 +7,14 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased — protected-room Windows candidate
+
+- New internet and LAN rooms use owner-signed device invitations. The first admission requires a live owner. The owner grants hosting separately and can revoke a device. An isolated peer enforces an update when it receives the signed revocation.
+- Legacy shared-code rooms require explicit consent. New internet rooms ask the router to forward a port only when the owner selects UPnP.
+- Relay reservations and connections require room admission. Chat queues, inbound file requests, transfers and media previews have bounded resource use. The app restricts native desktop actions to the packaged main frame and grants microphone access to the room.
+- Upgraded to Electron 45.4.1 and libp2p 3.5.1. The Windows release tools verify the embedded application and provide a separate timestamped signing path.
+- **127.0.0.1** — Two independent desktop profiles completed device enrollment, chat and revocation in both internet and LAN modes. A four-peer circuit workload delivered 360 expected public copies and 60 addressed whispers. A legacy RC1 peer exchanged messages with the updated stack.
+
 ## Unreleased — Windows friend-pilot release candidate
 
 The friend pilot integrates the field recovery, desktop review and center-pane whisper branches at `09ee774`. The frozen runtime source is `42cf3c64dc17e6bc86df21e8e66c16301e151ea6`. It keeps the 0.7.0 app version. Use the executable name and SHA-256 in the handoff to identify the portable. [Work-plan closeout](docs/WORK_PLAN_1.0.md#friend-pilot-closeout) · [Windows field card](docs/FRIEND_PILOT.md)

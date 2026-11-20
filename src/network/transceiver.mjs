@@ -5,17 +5,22 @@ const args = process.argv.slice(2)
 let room = 'default'
 let target
 let name
+let trustedLan = false
 for (let i = 0; i < args.length; i++) {
     if (args[i] === '--room') room = args[++i]
     else if (args[i] === '--name') name = args[++i]
+    else if (args[i] === '--trusted-lan') trustedLan = true
     else target = args[i]
 }
 if (!room || name === '') {
-    console.error('Usage: node src/network/transceiver.mjs [--room <name>] [--name <name>] [<multiaddr>]')
+    console.error('Usage: node src/network/transceiver.mjs [--room <name>] [--name <name>] [--trusted-lan] [<multiaddr>]')
     process.exit(1)
 }
 
-const node = await createAsscrackNode({ room, name })
+// The legacy terminal demo has no device admission. Keep its default listener local.
+const node = await createAsscrackNode({
+    room, name, discovery: trustedLan, listen: [trustedLan ? '/ip4/0.0.0.0/tcp/0' : '/ip4/127.0.0.1/tcp/0']
+})
 console.log('Transceiver started with peer id:', node.peerId, 'room:', room)
 console.log('Listening on:')
 node.getMultiaddrs().forEach(addr => console.log(addr))

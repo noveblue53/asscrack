@@ -80,7 +80,7 @@ const entries = dir => fsp.readdir(dir)
 const acceptOnOffer = node => node.events.on('file-offer', ({ offerId }) => node.acceptFile(offerId))
 
 async function fetchWithoutOffer(receiver, sender, offerId) {
-    const stream = await receiver.libp2p.dialProtocol(multiaddr(sender.getMultiaddrs()[0]), FILE_PROTOCOL)
+    const stream = await receiver.libp2p.dialProtocol(multiaddr(sender.getMultiaddrs()[0]), FILE_PROTOCOL, { runOnTransientConnection: true })
     const sent = stream.sink([Buffer.from(JSON.stringify({ offerId }) + '\n')]).catch(() => {})
     let bytes = 0
     // A refusal may close the stream cleanly or reset it. Count any bytes that arrived before either outcome.
@@ -659,7 +659,7 @@ test('n: losing the receiver while its file is still buffered fails the sender',
 
         // The sender's FIN has reached B, but B has yet to consume or save any data.
         // Cutting the real TCP connection here reproduces a clean local write and a lost receipt.
-        await waitUntil(() => stream.readStatus === 'closing' || stream.readStatus === 'closed', 5000)
+        await waitUntil(() => stream.remoteWriteStatus === 'closed' && stream.readBufferLength === 96 * 1024, 5000)
         connection.abort(new Error('Receiver disconnected before saving the file'))
         await waitUntil(() => a.log.done.length + a.log.failed.length > 0, 5000)
         assert.deepEqual(a.log.done, [])

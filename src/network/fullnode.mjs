@@ -35,14 +35,19 @@ export function isPrivateIp(ip) {
 }
 
 async function readLine(source) {
-    let text = ''
+    const buf = Buffer.alloc(MAX_LINE)
+    let length = 0
     for await (const chunk of source) {
-        text += Buffer.from(chunk.subarray ? chunk.subarray() : chunk).toString('utf8')
-        const i = text.indexOf('\n')
-        if (i !== -1) return text.slice(0, i)
-        if (text.length > MAX_LINE) return null
+        // Coalescing a whole transport chunk here would defeat the message size limit.
+        const prefix = chunk.subarray(0, Math.min(chunk.byteLength, MAX_LINE - length + 1))
+        const newline = prefix.indexOf(10)
+        const count = newline === -1 ? prefix.length : newline
+        if (length + count > MAX_LINE) throw new Error('Dial-back header too long')
+        buf.set(prefix.subarray(0, count), length)
+        length += count
+        if (newline !== -1) break
     }
-    return text || null
+    return length ? buf.toString('utf8', 0, length) : null
 }
 
 function tryTcp(host, port, timeoutMs) {
@@ -57,7 +62,9 @@ function tryTcp(host, port, timeoutMs) {
 
 // The peer side: answer a dial-back request.
 export function handleDialback({ stream, connection }) {
-    (async () => {
+    const timeout = setTimeout(() => stream.abort(new Error('Dial-back request timed out')), DIALBACK_TIMEOUT_MS * 2)
+    timeout.unref()
+    return (async () => {
         let answer = { ok: false }
         try {
             const line = await readLine(stream.source)
@@ -69,18 +76,21 @@ export function handleDialback({ stream, connection }) {
             }
         } catch { /* answer failed */ }
         await stream.sink([enc.encode(JSON.stringify(answer) + '\n')])
-    })().catch(() => stream.abort?.(new Error('dial-back failed')))
+    })().catch(() => stream.abort?.(new Error('dial-back failed'))).finally(() => clearTimeout(timeout))
 }
 
 // The node side: ask the peer on this connection to dial back to port. Returns { ok, ip }.
 export async function requestDialback(connection, port) {
-    const stream = await connection.newStream(DIALBACK_PROTOCOL, { runOnTransientConnection: true })
+    const stream = await connection.newStream(DIALBACK_PROTOCOL, { runOnTransientConnection: true, signal: AbortSignal.timeout(DIALBACK_TIMEOUT_MS) })
+    const timeout = setTimeout(() => stream.abort(new Error('Dial-back reply timed out')), DIALBACK_TIMEOUT_MS * 2)
+    timeout.unref()
     try {
         await stream.sink([enc.encode(JSON.stringify({ port }) + '\n')])
         const line = await readLine(stream.source)
         const answer = line ? JSON.parse(line) : null
         return { ok: answer?.ok === true, ip: typeof answer?.ip === 'string' ? answer.ip : null }
     } finally {
+        clearTimeout(timeout)
         stream.close().catch(() => {})
     }
 }
