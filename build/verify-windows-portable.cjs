@@ -75,7 +75,7 @@ function verifyRuntimePackages(archive, packed, lock) {
         return [name, { version: expected, copies: 0 }];
     }));
     for (const file of packed.filter(entry => entry.startsWith('node_modules/') && entry.endsWith('/package.json'))) {
-        const pkg = JSON.parse(asar.extractFile(archive, file).toString('utf8'));
+        const pkg = JSON.parse(asar.extractFile(archive, path.normalize(file)).toString('utf8'));
         assert.notEqual(pkg.name, 'node-forge', `Unexpected Forge dependency in embedded package at ${file}`);
         if (!Object.hasOwn(productionVersions, pkg.name)) continue;
         const expected = productionVersions[pkg.name];
@@ -188,12 +188,13 @@ async function verify() {
     const applicationRoots = ['src/application', 'src/network'];
     const packed = asar.listPackage(archive).map(file => file.replaceAll('\\', '/').replace(/^\//, ''));
     const packedPaths = packed.filter(file => applicationRoots.some(root => file.startsWith(`${root}/`)));
-    const packedFiles = packedPaths.filter(file => !asar.statFile(archive, file).files);
+    // The ASAR reader traverses nested entries using the host's path separator.
+    const packedFiles = packedPaths.filter(file => !asar.statFile(archive, path.normalize(file)).files);
     const expectedPaths = applicationRoots.flatMap(root => files(project, root)).filter(file =>
         !file.split('/').some(segment => segment.startsWith('.')) && /\.(?:cjs|css|html|js|mjs|png|svg)$/i.test(file));
     assert.ok(expectedPaths.length > 0, 'Expected runtime sources');
     for (const file of expectedPaths) assert.ok(packedFiles.includes(file), `Missing packaged runtime file ${file}`);
-    for (const file of packedFiles) compare(asar.extractFile(archive, file), readFileSync(path.join(project, file)), file);
+    for (const file of packedFiles) compare(asar.extractFile(archive, path.normalize(file)), readFileSync(path.join(project, file)), file);
     const runtimePackages = verifyRuntimePackages(archive, packed, lock);
     verifyNetworkImports(archive, scratch);
 
