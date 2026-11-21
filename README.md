@@ -160,7 +160,7 @@ The network code is in `src/network/`. The Electron app is in `src/application/`
 | 2. Host election and failover | Done. LAN tested on 2 computers. |
 | 3. Mumble server | Not planned. Voice uses Opus on libp2p streams. |
 | 4. Voice with reconnect | Done. LAN tested (WebRTC, 0.2.0 and 0.3.1). Voice on libp2p streams internet tested (0.5.0). Echo and noise suppression, voice activity and push-to-talk (5C) are on `main` with 127.0.0.1 results. Next: the 5C test on 2 computers. |
-| 5. Chat | Chat and history after a restart passed on LAN. Quote/Find, availability, saved rooms, topics, highlights, channels and online whispers have single-computer coverage. |
+| 5. Chat | Chat and history after a restart passed on LAN. Quote/Find, availability, saved rooms, topics, highlights, channels and online whispers have single-computer coverage. Find keeps the reading position and the unread marker when a line comes while it is open (127.0.0.1). |
 | 6. File sharing | Ordinary transfers passed on LAN (0.3.1) and the internet (0.5.0). Recipient-level delivery, inline media, fresh retry and the Shared shelf are part of the friend-pilot checks. |
 | 7. Desktop experience | The room, themes, map, tray and detachable voice panel have single-computer evidence. A polish pass (2026-11-21) repaired 27 visual and keyboard faults of the room window (127.0.0.1). The app has its own icon in the .exe, the window, the taskbar and the tray (this PC). Windows shell and device checks are open. |
 | 8. Internet rooms | In progress. Invite codes and rejoin are internet tested. Device admission and the compact `asscrack3:` invite (0.8.0) have 127.0.0.1 results. UPnP join, relays and failover on the internet are open. |
