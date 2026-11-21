@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { loadRoomWindow, settle } from './helpers/renderer-fixture.mjs';
 
-const TEXT = 'People with ASSCRACK 0.7.0 or older cannot join this room. Ask them to update to 0.8.0.';
+const TEXT = 'People with ASSCRACK 0.7.0 or older cannot join this room. Ask them to get the newest ASSCRACK.';
 
 test('index.html has the update text in the invite panel', async () => {
     const html = await readFile(new URL('../src/application/index.html', import.meta.url), 'utf8');
