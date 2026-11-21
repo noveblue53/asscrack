@@ -48,7 +48,11 @@ Results:
   | LAN room, same name, 0.7.0 first | no | no | "Waiting for a peer" | "Waiting for a peer", update text |
   | LAN room, same name, 0.8.0 first | no | no | "Waiting for a peer" | "Waiting for a peer", update text |
 
-  The 0.8.0 copies wrote no ERROR line. The 0.7.0 copy wrote one ERROR line for the refused code.
+  The 0.8.0 room copies wrote no ERROR line. The 0.7.0 copy wrote one ERROR line for the refused code. In the
+  protected internet case, a third 0.8.0 copy only gave its device ID and quit about 1 second after its start. Its
+  terminal has 2 Chromium lines "GPU state invalid after WaitForGetOffsetInRange" at that quit. The same quick quit
+  gave 0 such lines in 3 runs of `de9baa0` and 0 lines in 3 runs of 0.8.0. Thus the cause is not known, and this
+  change did not cause the lines.
 - **127.0.0.1, build check (2026-11-21):** `npm test` 425 of 425 pass on `5127a48`. The source app and the built .exe started one
   time each, with a temporary `--profile` and `--log-dir`. Each start gave no ERROR line and no console error. Each
   log has "Saved rooms archive opened: state open".
