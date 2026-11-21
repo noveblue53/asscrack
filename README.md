@@ -18,7 +18,7 @@ The room owner invites individual devices and chooses which ones may take over a
 | Prior 0.7.0 field build | Three Windows peers used the build from `8dacddd` in the November 20 internet test. Its SHA-256 and observed faults are in the [changelog](CHANGELOG.md). |
 | Earlier review builds | The [field recovery report](docs/FIELD_RECOVERY_REPORT.md) and [desktop review](docs/DESKTOP_REVIEW.md) list the earlier x64 executable identities and single-computer results. |
 | Field acceptance | The friend pilot covers the open router-lease, reconnect, interrupted-file, alternate-relay and Windows profile checks. These checks and the game nights come after the 1.0 release (operator, 2026-11-21). [Release plan](docs/WORK_PLAN_1.0.md) |
-| Phase | The 1.0 features. 1.0 is a full-featured release before the friends get it (operator, 2026-11-21). Next: screenshare, resume of large transfers, a ready check and an installer with start at sign-in. Then a security audit and the 1.0.0 build. The field checks with other users come after 1.0. See the roadmap below. |
+| Phase | The 1.0 features. 1.0 is a full-featured release before the friends get it (operator, 2026-11-21). Next: screenshare, resume of large transfers, a ready check and an installer with start at sign-in. Then a security audit and the 1.0.0 build. The field checks with other users come after 1.0. Goal G1 of the 1.0 gap list (room reach and login texts) is on `main` with 127.0.0.1 results. See the roadmap below. |
 
 ### How to read the results
 
@@ -163,7 +163,7 @@ The network code is in `src/network/`. The Electron app is in `src/application/`
 | 5. Chat | Chat and history after a restart passed on LAN. Quote/Find, availability, saved rooms, topics, highlights, channels and online whispers have single-computer coverage. |
 | 6. File sharing | Ordinary transfers passed on LAN (0.3.1) and the internet (0.5.0). Recipient-level delivery, inline media, fresh retry and the Shared shelf are part of the friend-pilot checks. |
 | 7. Desktop experience | The room, themes, map, tray and detachable voice panel have single-computer evidence. A polish pass (2026-11-21) repaired 27 visual and keyboard faults of the room window (127.0.0.1). The app has its own icon in the .exe, the window, the taskbar and the tray (this PC). Windows shell and device checks are open. |
-| 8. Internet rooms | In progress. Invite codes and rejoin are internet tested. Device admission and the compact `asscrack3:` invite (0.8.0) have 127.0.0.1 results. UPnP join, relays and failover on the internet are open. |
+| 8. Internet rooms | In progress. Invite codes and rejoin are internet tested. Device admission and the compact `asscrack3:` invite (0.8.0) have 127.0.0.1 results. The owner sees the reach of the room and can turn on UPnP in a running room (goal G1, 127.0.0.1 with a fake router). UPnP join, relays and failover on the internet are open. |
 
 Release 1.0 is the full-featured release. It adds screenshare, resume of large transfers, the ready check and an
 installer with start at sign-in. After the features come the security audit and the 1.0.0 build. The game nights with
