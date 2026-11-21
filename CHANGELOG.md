@@ -49,6 +49,12 @@ Results:
   | LAN room, same name, 0.8.0 first | no | no | "Waiting for a peer" | "Waiting for a peer", update text |
 
   The 0.8.0 copies wrote no ERROR line. The 0.7.0 copy wrote one ERROR line for the refused code.
+- **127.0.0.1, build check (2026-11-21):** `npm test` 425 of 425 pass on `5127a48`. The source app and the built .exe started one
+  time each, with a temporary `--profile` and `--log-dir`. Each start gave no ERROR line and no console error. Each
+  log has "Saved rooms archive opened: state open".
+- **Build:** `dist/ASSCRACK-0.8.0-portable.exe`, 123321365 bytes, SHA-256
+  `1a964f4c210a9f9b080afcc3d42fea2f74ae0dd20e90740837aa1309dbc7e78c`, made by `npm run dist` from `5127a48`. The
+  build has no code signature.
 - No LAN or internet test of 0.8.0 occurred. The operator deferred the tests with other users (2026-11-20).
 
 ## Unreleased — protected-room Windows candidate
