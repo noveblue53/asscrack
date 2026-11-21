@@ -48,10 +48,21 @@
         }
     }
 
+    // "Save room on this device" is on by default for the two Create types and off for Join (operator decision
+    // 2026-11-21). The default applies when the kind of type changes or the archive opens, so a list refresh does
+    // not tick a box again that the user unticked.
+    let saveDefaultFor = null;
     function showSaveFields() {
         saveFields.hidden = false;
         saveRoomBox.disabled = !archiveOpen;
-        if (!archiveOpen) saveRoomBox.checked = false;
+        const kind = roomTypeSelect.value === 'join' ? 'join' : 'create';
+        if (!archiveOpen) {
+            saveRoomBox.checked = false;
+            saveDefaultFor = null;
+        } else if (saveDefaultFor !== kind) {
+            saveRoomBox.checked = kind === 'create';
+            saveDefaultFor = kind;
+        }
     }
     roomTypeSelect.addEventListener('change', showSaveFields);
 
