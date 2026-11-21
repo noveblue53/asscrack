@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
+import { loadRoomWindow, settle } from './helpers/renderer-fixture.mjs';
 
 const read = name => readFile(new URL(`../src/application/${name}`, import.meta.url), 'utf8');
 
@@ -23,10 +24,12 @@ test('renderer.js listens for history', async () => {
     assert.ok(source.includes('window.asscrack.onHistory('));
 });
 
-test('main.js writes a log file with the window console', async () => {
+test('only an explicit local debug run writes raw console logs', async () => {
     const source = await read('main.js');
     assert.ok(source.includes("'console-message'"));
-    assert.ok(source.includes("app.getPath('logs')"));
+    assert.match(source, /indexOf\('--log-dir'\)[\s\S]+if \(index === -1/);
+    assert.match(source, /if \(logFile\) mainWindow\.webContents\.on\('console-message'/);
+    assert.match(source, /logBytes \+ bytes > MAX_DEBUG_LOG_BYTES/);
 });
 
 test('main.js forwards the topology event', async () => {
@@ -34,7 +37,7 @@ test('main.js forwards the topology event', async () => {
     const match = source.match(/const EVENTS = \[([^\]]*)\]/);
     assert.ok(match, 'EVENTS not found in main.js');
     assert.match(match[1], /'topology'/);
-    assert.ok(source.includes("ipcMain.handle('asscrack:topology'"));
+    assert.ok(source.includes("handleRoomIpc('asscrack:topology'"));
 });
 
 test('preload.cjs exposes onTopology and getTopology', async () => {
@@ -57,6 +60,211 @@ test('preload.cjs passes a peer ID in cancelFile', async () => {
     assert.ok(source.includes("cancelFile: (offerId, peerId) => ipcRenderer.invoke('asscrack:cancel-file', offerId, peerId)"));
 });
 
+test('the transfer window labels confirmed delivery, legacy sends, failure and the saved file', async () => {
+    const room = await loadRoomWindow();
+    const send = { offerId: 'first', peerId: 'peer', direction: 'send', name: 'note.txt', size: 5 };
+    room.handlers.onFileDone({ ...send, confirmed: true });
+    room.handlers.onFileDone({ ...send, offerId: 'second', confirmed: false });
+    room.handlers.onFileFailed({ ...send, offerId: 'third', reason: 'peer left' });
+    room.handlers.onFileDone({ ...send, offerId: 'fourth', direction: 'receive', savedName: 'note.txt' });
+    const labels = room.el('transfers').children.map(row => row.querySelector('.state-text').textContent);
+    assert.deepEqual(labels, ['Delivered', 'Sent (delivery unconfirmed)', 'Failed: peer left', 'Saved as note.txt']);
+});
+
+test('a live file card and its Transfers row share one offer, actions and saved path key', async () => {
+    const room = await loadRoomWindow();
+    const offer = { offerId: 'first', peerId: 'peer-00000001', from: 'Sam', name: 'note.txt', size: 5 };
+    const calls = [];
+    room.window.asscrack.acceptFile = async id => { calls.push(id); return true; };
+    room.window.asscrack.revealFile = async key => { calls.push(key); return { ok: true }; };
+    room.el('message-input').value = 'draft';
+    room.handlers.onFileOffer(offer);
+    room.handlers.onFileOffer(offer);
+    const [card] = room.rows();
+    const [row] = room.el('transfers').children;
+    assert.equal(room.rows().length, 1);
+    assert.equal(room.el('transfers').children.length, 1);
+    assert.equal(card.querySelector('.file-name').textContent, 'note.txt');
+    assert.equal(card.querySelector('.file-size').textContent, '5 B');
+    assert.match(card.querySelector('.peer-name').textContent, /Sam/);
+    assert.equal(card.dataset.id, undefined);
+    assert.deepEqual([...room.window.menuCore.actionsFor(room.window.roomActions.rowInfo(card))], ['accept', 'refuse']);
+    card.querySelector('[data-action="accept"]').click();
+    await settle();
+    assert.deepEqual(calls, ['first']);
+    assert.equal(row.dataset.state, 'receiving');
+    assert.equal(row.querySelector('[data-action="accept"]'), null);
+    assert.ok(card.querySelector('[data-action="cancel-receive"]'));
+    room.handlers.onFileProgress({ ...offer, direction: 'receive', bytes: 3 });
+    assert.equal(card.querySelector('progress').value, 3);
+    room.handlers.onFileDone({ ...offer, direction: 'receive', savedName: 'note (1).txt' });
+    room.handlers.onFileOffer(offer);
+    assert.deepEqual([row, card].map(el => el.querySelector('.state-text').textContent), ['Saved as note (1).txt', 'Saved as note (1).txt']);
+    card.querySelector('[data-action="reveal"]').click();
+    assert.deepEqual(calls, ['first', 'first|peer-00000001']);
+    room.receive({ from: 'Sam', peerId: offer.peerId, text: 'next message', id: 'msg' });
+    assert.equal(room.rows().length, 2);
+    assert.equal(room.rows()[1].classList.contains('cont'), false);
+    assert.equal(room.el('message-input').value, 'draft');
+});
+
+test('the failed card and Transfers row retry once and show the verified result on the same rows', async () => {
+    const room = await loadRoomWindow();
+    const offer = { offerId: 'first', peerId: 'source', from: 'Sam', name: 'note.txt', size: 5 };
+    const attempts = [], accepted = [];
+    room.window.asscrack.retryFile = async id => { attempts.push(id); return true; };
+    room.window.asscrack.acceptFile = async id => { accepted.push(id); return true; };
+    room.handlers.onPeerJoined({ peerId: offer.peerId });
+    room.handlers.onFileOffer(offer);
+    const [card] = room.rows();
+    const [row] = room.el('transfers').children;
+    card.querySelector('[data-action="accept"]').click();
+    room.handlers.onFileProgress({ ...offer, direction: 'receive', bytes: 3 });
+    room.handlers.onPeerLeft({ peerId: offer.peerId });
+    room.handlers.onFileFailed({ ...offer, direction: 'receive', reason: 'peer left', retryable: true });
+    assert.equal(card.querySelector('[data-action="retry"]').textContent, 'Sender offline');
+    assert.equal(card.querySelector('[data-action="retry"]').disabled, true);
+    assert.equal(await room.window.roomActions.run('retry', row), false);
+
+    room.handlers.onPeerJoined({ peerId: 'different-peer' });
+    room.handlers.onPeerName({ peerId: 'different-peer', name: 'Sam' });
+    assert.equal(card.querySelector('[data-action="retry"]').disabled, true);
+    room.handlers.onPeerJoined({ peerId: offer.peerId });
+    const button = card.querySelector('[data-action="retry"]');
+    assert.equal(button.disabled, false);
+    assert.deepEqual([...room.window.menuCore.actionsFor(room.window.roomActions.rowInfo(row))], ['retry']);
+    button.click();
+    button.click();
+    assert.equal(await room.window.roomActions.run('retry', row), false);
+    assert.deepEqual(attempts, ['first']);
+    assert.equal(card.dataset.state, 'requesting');
+
+    const next = { ...offer, offerId: 'next', retryOf: 'first' };
+    room.handlers.onFileOffer(next);
+    room.handlers.onFileOffer(next);
+    assert.deepEqual(accepted, ['first', 'next']);
+    assert.equal(card.dataset.state, 'receiving');
+    assert.equal(card.querySelector('progress').value, 0);
+    assert.equal(row.querySelector('[data-action="reveal"]'), null);
+    room.handlers.onFileDone({ ...next, direction: 'receive', savedName: 'note.txt' });
+    await settle();
+    assert.equal(card.querySelector('.state-text').textContent, 'Saved as note.txt');
+    assert.ok(row.querySelector('[data-action="reveal"]'));
+    assert.deepEqual(room.rows(), [card]);
+    assert.deepEqual(room.el('transfers').children, [row]);
+});
+
+test('room offer groups list every recipient and distinguish delivery, legacy sends, decline and failure', async () => {
+    const room = await loadRoomWindow();
+    const recipients = ['one', 'two', 'three', 'four'];
+    const offer = { offerId: 'group', name: 'plans.txt', size: 12, peers: 4, recipients };
+    room.window.asscrack.offerFile = async () => {
+        room.handlers.onFileRefused({ offerId: offer.offerId, peerId: 'two' });
+        return offer;
+    };
+    for (const peerId of recipients) {
+        room.handlers.onPeerJoined({ peerId });
+        room.handlers.onPeerName({ peerId, name: 'Sam' });
+    }
+    const picker = room.el('file-input');
+    picker.files = [{ name: 'plans.txt' }];
+    picker.dispatchEvent(new room.Event('change'));
+    room.el('send-file').click();
+    await settle();
+    const [head, ...rows] = room.el('transfers').children;
+    assert.deepEqual(rows.map(el => el.dataset.peerId), recipients);
+    assert.equal(rows[1].querySelector('.file-name').textContent, offer.name);
+    assert.match(head.querySelector('.offer-summary').textContent, /3 awaiting reply/);
+    const event = { direction: 'send', offerId: offer.offerId };
+    room.handlers.onFileDone({ ...event, peerId: 'one', confirmed: true });
+    room.handlers.onFileDone({ ...event, peerId: 'three', confirmed: false });
+    room.handlers.onFileFailed({ ...event, peerId: 'four', reason: 'peer left' });
+    assert.equal(head.querySelector('.offer-summary').textContent, '1 delivered · 1 declined · 1 sent (unconfirmed) · 1 failed');
+    assert.deepEqual(rows.map(el => el.querySelector('.peer-name').textContent), recipients.map(id => `to Sam (${id})`));
+    assert.equal(head.querySelector('[data-action="cancel-offer"]').hidden, true);
+    assert.equal(room.rows().length, 0);
+    const toggle = head.querySelector('.offer-toggle');
+    toggle.click();
+    assert.ok(rows.every(row => row.hidden));
+    toggle.click();
+    assert.ok(rows.every(row => !row.hidden));
+});
+
+test('the file picker keeps the selected buddy distinct from the room after a disconnect', async () => {
+    const room = await loadRoomWindow();
+    const sent = [];
+    room.window.asscrack.offerFile = async (file, recipientId) => {
+        sent.push(recipientId);
+        return { name: file.name, size: 12, peers: 1, recipients: [recipientId ?? 'peer-22222222'], offerId: String(sent.length) };
+    };
+    const selected = 'peer-11111111';
+    for (const peerId of [selected, 'peer-22222222']) {
+        room.handlers.onPeerJoined({ peerId });
+        room.handlers.onPeerName({ peerId, name: 'Sam' });
+    }
+    const recipient = room.el('file-recipient');
+    const buddies = recipient.children.slice(1);
+    assert.deepEqual(buddies.map(option => option.textContent), ['Sam (11111111)', 'Sam (22222222)']);
+    const send = async () => {
+        room.el('file-input').files = [{ name: 'plans.txt' }];
+        room.el('file-input').dispatchEvent(new room.Event('change'));
+        room.el('send-file').click();
+        await settle();
+    };
+    recipient.value = selected;
+    await send();
+    assert.deepEqual(sent, [selected]);
+    assert.match(room.el('transfers').firstElementChild.querySelector('.state-text').textContent, /Sam \(11111111\)/);
+    room.handlers.onPeerLeft({ peerId: selected });
+    assert.equal(recipient.value, selected);
+    await send();
+    assert.deepEqual(sent, [selected]);
+    assert.match(room.el('status').textContent, /disconnected/);
+    assert.equal(room.el('file-draft-name').textContent, 'plans.txt');
+    recipient.value = 'room';
+    await send();
+    assert.deepEqual(sent, [selected, undefined]);
+});
+
+test('a dropped file waits for Send file, survives offer failure, and can be removed independently of text', async () => {
+    const room = await loadRoomWindow();
+    const file = { name: 'game.cfg', size: 3 };
+    const drop = (where, files, types = ['Files']) => {
+        const event = new room.Event('drop', { dataTransfer: { files, types } });
+        room.el(where).dispatchEvent(event);
+        return event;
+    };
+    room.el('message-input').value = 'unsent room message';
+    assert.equal(drop('message-input', [], ['text/plain']).defaultPrevented, false);
+    assert.equal(drop('peers', [file]).defaultPrevented, true);
+    assert.equal(room.el('file-draft').hidden, true);
+    assert.equal(drop('messages', [file]).defaultPrevented, true);
+    assert.equal(room.el('file-draft-name').textContent, file.name);
+    drop('composer', [file, { name: 'extra.txt' }]);
+    assert.equal(room.el('file-draft-name').textContent, file.name);
+    assert.equal(room.el('file-draft').hidden, false);
+    assert.equal(room.el('transfers').children.length, 0);
+    const calls = [];
+    room.window.asscrack.offerFile = async f => {
+        calls.push(f);
+        if (calls.length === 1) throw new Error('File could not be read');
+        return { offerId: 'offer', peers: 0, name: f.name, size: f.size };
+    };
+    for (const message of [/could not be read/, /still attached/]) {
+        room.el('send-file').click();
+        room.el('send-file').click();
+        await settle();
+        assert.match(room.el('status').textContent, message);
+        assert.equal(room.el('file-draft').hidden, false);
+    }
+    assert.deepEqual(calls, [file, file]);
+    room.el('file-remove').click();
+    assert.equal(room.el('file-draft').hidden, true);
+    assert.equal(room.document.activeElement, room.el('attach-file'));
+    assert.equal(room.el('message-input').value, 'unsent room message');
+    assert.equal(room.el('transfers').children.length, 0);
+});
+
 // ---- Package C (room window): row actions, context menus, Escape, Show in Explorer ----
 
 test('preload.cjs exposes revealFile by key and no path API for the reveal', async () => {
@@ -71,8 +279,8 @@ test('main.js records the receive path of file-done by offerId|peerId and checks
     assert.ok(source.includes("node.events.on('file-done'"));
     assert.ok(source.includes("data?.direction !== 'receive'"));
     assert.ok(source.includes('receivedFiles.set(`${data.offerId}|${data.peerId}`, data.path)'));
-    assert.ok(source.includes("ipcMain.handle('asscrack:reveal-file'"));
-    const handler = source.slice(source.indexOf("ipcMain.handle('asscrack:reveal-file'"));
+    assert.ok(source.includes("handleRoomIpc('asscrack:reveal-file'"));
+    const handler = source.slice(source.indexOf("handleRoomIpc('asscrack:reveal-file'"));
     const existsAt = handler.indexOf('existsSync(filePath)');
     const revealAt = handler.indexOf('shell.showItemInFolder(filePath)');
     assert.ok(existsAt > 0 && revealAt > existsAt, 'existsSync must come before showItemInFolder');
@@ -80,6 +288,7 @@ test('main.js records the receive path of file-done by offerId|peerId and checks
     assert.ok(handler.includes("reason: 'unknown'"));
     // The handler takes the key only. The path comes from the map of main.js.
     assert.ok(handler.includes('const filePath = receivedFiles.get(key)'));
+    assert.match(source, /const \{ path: localPath, \.\.\.event \} = data;[\s\S]+sendToWindow\('asscrack:file-done', \{ \.\.\.event, savedName \}\)/);
 });
 
 test('renderer.js has one Escape dispatcher in the sequence menu, layout, invite panel, map', async () => {
@@ -113,7 +322,7 @@ test('the row buttons and the menus call the same action functions', async () =>
 
 test('nodemap.js highlights a node by peer ID with a data attribute', async () => {
     const source = await read('nodemap.js');
-    assert.ok(source.includes('window.nodeMap = { update, highlight }'));
+    assert.ok(source.includes('window.nodeMap = { update, highlight, select }'));
     assert.ok(source.includes("node.group.setAttribute('data-highlight', 'true')"));
     assert.ok(source.includes('highlight() { return false; }'));
 });
@@ -231,4 +440,50 @@ test('menuCore gives Quote for a quotable message line', async () => {
     assert.deepEqual([...actionsFor({ kind: 'message', quotable: false })], ['copy-message']);
     assert.equal(allowed('quote', { kind: 'message' }), false);
     assert.equal(label('quote'), 'Quote');
+});
+
+test('each progress bar reports its own percentage when another recipient cancels', async () => {
+    const room = await loadRoomWindow();
+    const offer = { offerId: 'shared', direction: 'send', name: 'plans.txt', size: 10 };
+    room.handlers.onFileProgress({ ...offer, peerId: 'a', bytes: 5 });
+    room.handlers.onFileProgress({ ...offer, peerId: 'b', bytes: 2 });
+    room.handlers.onFileCancelled({ ...offer, peerId: 'b' });
+    const rows = room.el('transfers').children;
+    assert.deepEqual(rows.map(row => [
+        row.querySelector('.progress-cell').dataset.pct,
+        row.querySelector('progress').getAttribute('aria-valuetext'),
+        row.querySelector('.state-text').textContent
+    ]), [['50%', '50%', 'Sending'], ['20%', '20%', 'Cancelled']]);
+});
+
+test('message details show the local archive fact for the selected message only', async () => {
+    const room = await loadRoomWindow({ send: async () => ({ saved: true, id: 'saved', time: 123, accepted: 1 }) });
+    await room.login('Me');
+    const dialog = room.el('message-details');
+    dialog.showModal = () => { dialog.open = true; };
+    room.el('message-input').value = 'saved text';
+    room.el('send').click();
+    await settle();
+    const saved = room.rows()[0];
+    const other = room.receive({ from: 'Sam', text: 'other', peerId: 'sam', id: 'other' });
+    for (const [row, fact] of [[saved, 'Saved on this device'], [other, 'No local archive copy recorded']]) {
+        const info = room.window.roomActions.rowInfo(row);
+        assert.ok(room.window.menuCore.actionsFor(info).includes('message-details'));
+        assert.equal(row.querySelector('.saved-mark'), null);
+        assert.equal(room.window.roomActions.run('message-details', row), true);
+        assert.equal(room.el('message-detail-archive').textContent, fact);
+        assert.equal(room.el('message-detail-author').textContent, row.querySelector('.from').textContent);
+        dialog.open = false;
+    }
+});
+
+test('the self orb opens availability editing and focuses the state selector', async () => {
+    const room = await loadRoomWindow();
+    await room.login('Me');
+    const dialog = room.el('availability-dialog');
+    dialog.showModal = () => { dialog.open = true; };
+    const row = room.el('peers').children.find(li => li.classList.contains('self'));
+    row.querySelector('button.avatar').click();
+    assert.equal(dialog.open, true);
+    assert.equal(room.document.activeElement, room.el('presence-state'));
 });

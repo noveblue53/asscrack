@@ -117,7 +117,7 @@ async function readFrames(source, onBody, onOversize) {
 // directListOf(peerId): the last valid 'direct' list of that peer, or null.
 // onDirectChanged(): called when the list of working direct streams of this node changes.
 export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectionFor, onFrame,
-    directCandidates = () => [], directListOf = () => null, onDirectChanged = () => {} }) {
+    directCandidates = () => [], directListOf = () => null, onDirectChanged = () => {}, protectedRoom = false }) {
     // Host side: peerId -> { stream, queue }. Member side: one entry to the host.
     const members = new Map()
     let upstream = null
@@ -457,6 +457,8 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
 
     // Opens or closes the stream to the host and the direct streams, after a change of host or of the voice state.
     function hostChanged() {
+        if (protectedRoom && !isHost()) for (const peerId of members.keys()) closeInboundVoice(peerId)
+        if (protectedRoom && !selfInVoice()) closeDirectIn()
         refreshDirect()
         const host = hostId()
         if ((upstream || upstreamPending) &&
@@ -494,19 +496,23 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
         return directOut.size > 0 || q !== undefined
     }
 
-    function peerLeft(peerId) {
+    function closeInboundVoice(peerId) {
         const entry = members.get(peerId)
         if (entry) {
             members.delete(peerId)
             closedDrops += entry.queue.drops
             closeEntry(entry)
         }
+        closeDirectIn(peerId)
+    }
+
+    function peerLeft(peerId) {
+        closeInboundVoice(peerId)
         if (peerId === hostId()) closeUpstream()
         directRefused.delete(peerId)
         clearDirectReopen(peerId)
         forgetForward(peerId)
         seen.delete(peerId)
-        closeDirectIn(peerId)
         if (closeDirect(peerId)) onDirectChanged()
     }
 
@@ -532,5 +538,5 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
         }
     }
 
-    return { handle, handleDirect, directList, sendFrame, hostChanged, peerLeft, stop, stats }
+    return { handle, handleDirect, directList, sendFrame, hostChanged, closeInboundVoice, peerLeft, stop, stats }
 }

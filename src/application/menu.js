@@ -23,13 +23,19 @@
     'use strict';
 
     const LABELS = Object.freeze({
+        whisper: 'Whisper',
         'copy-name': 'Copy name',
+        'inspect-peer': 'Peer details',
+        'listening': 'Listening volume…',
         'show-on-map': 'Show on map',
         'copy-message': 'Copy message',
         quote: 'Quote',
+        availability: 'Edit availability…',
+        'message-details': 'Message details…',
         accept: 'Accept',
         refuse: 'Refuse',
         'cancel-receive': 'Cancel',
+        retry: 'Retry',
         'cancel-receiver': 'Cancel for this user',
         'cancel-offer': 'Cancel for all users',
         reveal: 'Show in Explorer'
@@ -39,17 +45,24 @@
     function actionsFor(info) {
         if (!info || typeof info !== 'object') return [];
         switch (info.kind) {
-            case 'buddy':
-                return info.onMap ? ['copy-name', 'show-on-map'] : ['copy-name'];
+            case 'buddy': {
+                const actions = info.onMap ? ['copy-name', 'show-on-map'] : ['copy-name'];
+                if (info.self === false) actions.push('listening');
+                if (info.inspect) actions.push('inspect-peer');
+                if (info.whisper) actions.push('whisper');
+                if (info.availability) actions.push('availability');
+                return actions;
+            }
             case 'message':
                 // quotable: the window can take a quote now (renderer.js rowInfo).
-                return info.quotable ? ['quote', 'copy-message'] : ['copy-message'];
+                return [...(info.quotable ? ['quote', 'copy-message'] : ['copy-message']), ...(info.inspect ? ['inspect-peer'] : []), ...(info.details ? ['message-details'] : [])];
             case 'offer':
                 return info.active ? ['cancel-offer'] : [];
             case 'transfer':
                 if (info.direction === 'receive') {
                     if (info.state === 'offered') return ['accept', 'refuse'];
                     if (info.state === 'receiving') return info.cancelRequested ? [] : ['cancel-receive'];
+                    if (info.state === 'failed' && info.canRetry) return ['retry'];
                     if (info.state === 'done' && info.revealable) return ['reveal'];
                     return [];
                 }

@@ -30,6 +30,8 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
     let archive = null;
     // The active room: { roomId, keepHistory } or null.
     let active = null;
+    let replay = null;
+    let attachedNode = null;
     // Tombstones for the run of the app (DECISIONS.md P7): room ID -> Set of cleared message IDs.
     const tombstones = new Map();
 
@@ -68,7 +70,7 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
                 // listRooms() gives no key and no invite.
                 rooms = a.listRooms().map(r => ({
                     roomId: r.roomId, name: r.name, userName: r.userName, keepHistory: r.keepHistory,
-                    savedAt: r.savedAt, openedAt: r.openedAt
+                    savedAt: r.savedAt, openedAt: r.openedAt, ...(r.protected ? { protected: true } : {})
                 }));
             } catch (err) {
                 log('WARN', `Saved rooms not listed: ${errText(err)}`);
@@ -86,11 +88,12 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
         return status();
     }
 
-    function lines(roomId, { before = null, limit = 200 } = {}) {
+    function lines(roomId, { before = null, limit = 200, channelId = null } = {}) {
         const a = ensure();
         if (!a || a.state().state !== 'open' || typeof roomId !== 'string') return [];
-        return a.listMessages(roomId, { before, limit }).map(m => ({
-            id: m.id, from: m.from, text: m.text, time: m.time, own: m.own, peerId: m.peerId
+        return a.listMessages(roomId, { before, limit, channelId }).map(m => ({
+            id: m.id, from: m.from, text: m.text, time: m.time, own: m.own, peerId: m.peerId,
+            ...(m.channelId ? { channelId: m.channelId } : {}), ...(m.attachment ? { attachment: m.attachment } : {})
         }));
     }
 
@@ -101,8 +104,66 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
         return a.getRoom(roomId);
     }
 
+    function deviceIdentity(make) {
+        const a = ensure();
+        if (a?.state().state !== 'open') throw new Error('Unlock protected storage to use this device’s admission identity.');
+        const existing = a.getDeviceIdentity();
+        if (existing !== null) return existing;
+        if (a.hasProtectedRooms()) throw new Error('The protected device identity is missing. Restore it from your profile backup.');
+        return a.rememberDeviceIdentity(make());
+    }
+
+    const isProtectedRoom = (room, roomKey) => getRoom(roomFingerprint(room, roomKey))?.protected === true;
+
+    function persistMembership(membership) {
+        if (!active) return true;
+        return archive.updateMembership(active.roomId, membership);
+    }
+
+    // Called synchronously before network start, including the retry on another port.
+    function prepareReplay(room, roomKey, removeHistory) {
+        const roomId = roomFingerprint(room, roomKey);
+        replay = { roomId, removeHistory, seedIds: [] };
+        try {
+            const a = ensure();
+            if (!a || a.state().state !== 'open' || !a.getRoom(roomId)) return [];
+            const rows = a.replayMessages(roomId);
+            replay.seedIds = rows.map(m => m.id);
+            return rows;
+        } catch (err) {
+            log('WARN', `Saved replay unavailable: ${errText(err)}`);
+            return [];
+        }
+    }
+
+    function loadChannels(room, key) {
+        const a = ensure();
+        if (!a || a.state().state !== 'open') return [];
+        try { return a.channels(roomFingerprint(room, key)); }
+        catch (err) {
+            log('WARN', 'Saved channel catalog unavailable: ' + errText(err));
+            return [];
+        }
+    }
+    function persistChannels(rows) {
+        if (!active || !rows?.length) return;
+        try { archive.saveChannels(active.roomId, rows); }
+        catch (err) { log('WARN', 'Could not save the room channel catalog: ' + errText(err)); }
+    }
+    function releaseReplay() {
+        replay = null;
+    }
+
+    function invalidateReplay(roomId, removed) {
+        if (replay?.roomId !== roomId) return;
+        // A seed row may have been pruned from the archive while retained by the live node.
+        for (const id of replay.seedIds) removed.add(id);
+        replay.removeHistory(removed);
+        replay.seedIds = [];
+    }
+
     // After the node of a keyed room starts. Returns { roomId, saved, saveError }. A save failure does not throw.
-    function afterLogin({ room, roomKey, invite = null, userName, save = false, keepHistory = true }) {
+    function afterLogin({ room, roomKey, invite = null, userName, save = false, keepHistory = true, membership = null }) {
         active = null;
         if (!roomKey) return { roomId: null, saved: false, saveError: null, savedRoom: false, keepHistory: null };
         const roomId = roomFingerprint(room, roomKey);
@@ -115,7 +176,7 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
                 saveError = a ? a.state().reason : 'open-failed';
             } else {
                 try {
-                    a.saveRoom({ name: room, roomKey, invite: invite || null, userName, keepHistory: keepHistory !== false });
+                    a.saveRoom({ name: room, roomKey, invite: invite || null, userName, keepHistory: keepHistory !== false, membership });
                     saved = true;
                 } catch (err) {
                     saveError = errText(err);
@@ -129,7 +190,20 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
                 if (row) {
                     a.markOpened(roomId);
                     active = { roomId, keepHistory: row.keepHistory };
+                    if (!saved && membership !== null) {
+                        try {
+                            if (!a.updateMembership(roomId, membership)) throw new Error('Room access was not saved');
+                        } catch (err) {
+                            saveError = errText(err);
+                            log('WARN', 'Room access was not saved');
+                        }
+                    }
                     log('INFO', `Saved room active, keep history ${row.keepHistory ? 'on' : 'off'}`);
+                    // A refreshed invite for an existing room only updates its connection hints.
+                    if (!save && invite && invite !== row.invite) {
+                        try { a.setInvite(roomId, invite); }
+                        catch (err) { saveError = errText(err); log('WARN', `Refreshed invite not saved: ${saveError}`); }
+                    }
                 }
             } catch (err) {
                 log('WARN', `Saved room not marked: ${errText(err)}`);
@@ -158,7 +232,8 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
     // An own send: only a record that a session accepted.
     function recordSend(record) {
         if (!record || !(record.accepted >= 1)) return { saved: false, saveError: null };
-        return add({ id: record.id, from: record.from, text: record.text, time: record.time, own: true, source: 'send', peerId: null });
+        return add({ id: record.id, from: record.from, text: record.text, time: record.time, own: true,
+            source: 'send', peerId: null, channelId: record.channelId, attachment: record.attachment });
     }
 
     function emit(type, data) {
@@ -168,9 +243,11 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
 
     // Live lines only (event live, DECISIONS.md P4). The history event (host replay) is not saved.
     function attachNode(node) {
+        attachedNode = node;
         node.events.on('live', data => {
-            if (!data) return;
-            const r = add({ id: data.id, from: data.from, text: data.text, time: data.time, own: false, source: 'live', peerId: data.peerId ?? null });
+            if (!data || node !== attachedNode) return;
+            const r = add({ id: data.id, from: data.from, text: data.text, time: data.time, own: false,
+                source: 'live', peerId: data.peerId ?? null, channelId: data.channelId, attachment: data.attachment });
             if (r.saved) emit('line-saved', { id: data.id });
             else if (r.saveError) emit('save-failed', { id: data.id, reason: r.saveError });
         });
@@ -191,9 +268,11 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
         if (!a || a.state().state !== 'open') throw new Error('room archive is not open');
         if (typeof roomId !== 'string') throw new Error('bad room ID');
         const ids = a.clearMessages(roomId);
+        const removed = new Set(ids);
+        invalidateReplay(roomId, removed);
         let set = tombstones.get(roomId);
         if (!set) { set = new Set(); tombstones.set(roomId, set); }
-        for (const id of ids) set.add(String(id));
+        for (const id of removed) set.add(String(id));
         log('INFO', `Saved room history cleared: ${ids.length} rows`);
         return { cleared: ids.length };
     }
@@ -205,12 +284,31 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
         if (typeof roomId !== 'string') throw new Error('bad room ID');
         const row = a.getRoom(roomId);
         if (row && forgetHints) {
-            try { forgetHints(row); } catch (err) { log('WARN', `Room hints not deleted: ${errText(err)}`); }
+            try { forgetHints(row); }
+            catch (err) {
+                log('WARN', `Room hints not deleted: ${errText(err)}`);
+                throw new Error('Could not remove saved room connection hints. Try Forget again.');
+            }
         }
         a.removeRoom(roomId);
+        invalidateReplay(roomId, new Set());
         tombstones.delete(roomId);
         log('INFO', 'Saved room forgotten');
         return { forgotten: true };
+    }
+
+    // Local, user-accepted downloads only. The canonical card's presence in the
+    // encrypted archive determines whether a durable file association exists.
+    function rememberDownload(descriptor, file) {
+        if (!active?.keepHistory || !archive) return;
+        try { archive.rememberDownload(active.roomId, descriptor, file); }
+        catch { log('WARN', 'Local download association could not be saved'); }
+    }
+
+    function getDownload(messageId, descriptorId) {
+        if (!active || !archive) return null;
+        try { return archive.getDownload(active.roomId, messageId, descriptorId); }
+        catch { return null; }
     }
 
     function activeInfo() {
@@ -219,11 +317,13 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
 
     function close() {
         active = null;
+        attachedNode = null;
+        releaseReplay();
         if (archive) archive.close();
     }
 
     return {
-        status, unlock, lines, getRoom, afterLogin, recordSend, attachNode, setKeepHistory, clear, forget, activeInfo,
-        close, active: () => active
+        rememberDownload, getDownload, status, unlock, lines, getRoom, loadChannels, persistChannels, prepareReplay, releaseReplay, afterLogin, recordSend, attachNode, setKeepHistory, clear, forget, activeInfo,
+        deviceIdentity, isProtectedRoom, persistMembership, close, active: () => active
     };
 }

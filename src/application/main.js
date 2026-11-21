@@ -1,26 +1,45 @@
-import { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, safeStorage, session, shell } from 'electron';
+import { app, BrowserWindow, Menu, Notification, nativeImage, protocol, Tray, screen, powerMonitor, clipboard, dialog, ipcMain, safeStorage, session, shell } from 'electron';
+import { createRoomMedia } from './room-media.mjs';
+import { createClipboardStaging } from './clipboard-image.mjs';
+import { createDownloadScratch } from './download-scratch.mjs';
+import { clearLegacyDebugLogs } from './local-debug.mjs';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { createRequire } from 'module';
 import path from 'path';
-import { mkdirSync, appendFileSync, existsSync, readFileSync, writeFileSync, rmSync } from 'fs';
+import { mkdirSync, appendFileSync, existsSync, readFileSync, writeFileSync, renameSync, rmSync } from 'fs';
 import { format } from 'util';
 import { createAsscrackNode, keyedServiceTag } from '../network/node.mjs';
 import { newRoomKey, readInvite } from '../network/invite.mjs';
-import { installUpnpGuard } from '../network/upnp-guard.mjs';
+import { createDeviceIdentity, importDeviceIdentity, createRoomMembership } from '../network/room-membership.mjs';
+import { joinAdmission, restoreSavedAdmission } from './room-admission.mjs';
+import { observeRoomActivity } from './room-activity.mjs';
 // Saved rooms (milestone 6).
 import { createSavedRooms, makeProtector } from './saved-rooms.mjs';
+import { roomFingerprint } from './room-archive.mjs';
 import * as voiceSettings from './voice-settings.mjs';
+import { attentionSettings, createAttention, registerNotificationShortcut, WINDOWS_APP_ID, WINDOWS_TOAST_ID } from './attention.mjs';
 import { createPttHook } from './ptt-hook.mjs';
+import { createWindowFrame } from './window-frame.mjs';
+import { attachVoiceMonitor } from './voice-monitor.mjs';
+import { installRoomPermissions, isDesktopFrame, lockDesktopNavigation } from './desktop-boundary.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const require = createRequire(import.meta.url);
+const ROOM_PAGE = pathToFileURL(path.join(__dirname, 'index.html')).href;
 
 Menu.setApplicationMenu(null);
+protocol.registerSchemesAsPrivileged([{ scheme: 'room-media', privileges: {
+    standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true
+} }]);
+if (process.platform === 'win32') {
+    app.setAppUserModelId(WINDOWS_APP_ID);
+    app.setToastActivatorCLSID(WINDOWS_TOAST_ID);
+}
 
-const EVENTS = ['peer-discovered', 'peer-joined', 'peer-left', 'message', 'history', 'signal', 'voice-state', 'host-changed', 'peer-name',
-    'file-offer', 'file-progress', 'file-done', 'file-failed', 'file-refused', 'file-cancelled', 'topology', 'full-node', 'full-node-addrs',
-    'voice-frame', 'connection', 'dial-failed', 'upnp', 'presence'];
+const EVENTS = ['channels', 'peer-discovered', 'peer-joined', 'peer-left', 'message', 'history', 'signal', 'voice-state', 'host-changed', 'peer-name',
+    'file-offer', 'file-retried', 'file-progress', 'file-done', 'file-failed', 'file-refused', 'file-cancelled', 'topology', 'full-node', 'full-node-addrs',
+    'voice-frame', 'connection', 'dial-failed', 'upnp', 'presence', 'topic'];
 
 // Test option: --profile <dir> gives each instance its own user data folder.
 const profileIndex = process.argv.indexOf('--profile');
@@ -37,9 +56,11 @@ if (!isFirstInstance) {
     app.exit(0);
 }
 
-// Log file: one file for each start, in app.getPath('logs') or in the folder of --log-dir <dir>.
-// A failure to write the log must not stop the app.
+// Raw diagnostics can contain network addresses. Persist them only in an explicit
+// troubleshooting run; the room always offers the redacted activity copy.
+const MAX_DEBUG_LOG_BYTES = 4 * 1024 * 1024;
 let logFile = null;
+let logBytes = 0;
 
 function pad(n) {
     return String(n).padStart(2, '0');
@@ -47,32 +68,38 @@ function pad(n) {
 
 function writeLog(level, text) {
     if (!logFile) return;
+    const line = `${new Date().toISOString()} ${level} ${String(text).slice(0, 8192)}\n`;
+    const bytes = Buffer.byteLength(line);
+    if (logBytes + bytes > MAX_DEBUG_LOG_BYTES) return;
     try {
-        appendFileSync(logFile, `${new Date().toISOString()} ${level} ${text}
-`);
+        appendFileSync(logFile, line);
+        logBytes += bytes;
     } catch {
         // Ignore: the terminal output stays.
     }
 }
 
 function openLog() {
+    const index = process.argv.indexOf('--log-dir');
+    if (index === -1 || !process.argv[index + 1] || process.argv[index + 1].startsWith('--')) return;
     try {
-        const logDirIndex = process.argv.indexOf('--log-dir');
-        const dir = logDirIndex !== -1 && process.argv[logDirIndex + 1]
-            ? path.resolve(process.argv[logDirIndex + 1])
-            : app.getPath('logs');
+        const dir = path.resolve(process.argv[index + 1]);
         mkdirSync(dir, { recursive: true });
         const d = new Date();
         const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
-        logFile = path.join(dir, `asscrack-${stamp}.log`);
-        writeLog('INFO', `ASSCRACK ${app.getVersion()} Electron ${process.versions.electron} args ${JSON.stringify(process.argv)} log ${logFile}`);
+        const file = path.join(dir, `asscrack-${stamp}-${process.pid}.log`);
+        writeFileSync(file, '', { flag: 'wx', mode: 0o600 });
+        logFile = file;
+        writeLog('INFO', `ASSCRACK ${app.getVersion()} Electron ${process.versions.electron} (local debug capture)`);
     } catch (err) {
         logFile = null;
         console.error('Log file open failed:', err);
     }
 }
 
-for (const [method, level] of [['log', 'LOG'], ['info', 'INFO'], ['warn', 'WARN'], ['error', 'ERROR']]) {
+openLog();
+
+if (logFile) for (const [method, level] of [['log', 'LOG'], ['info', 'INFO'], ['warn', 'WARN'], ['error', 'ERROR']]) {
     const original = console[method].bind(console);
     console[method] = (...args) => {
         original(...args);
@@ -80,30 +107,14 @@ for (const [method, level] of [['log', 'LOG'], ['info', 'INFO'], ['warn', 'WARN'
     };
 }
 
-openLog();
 
-// The UPnP router HTTP error guard (src/network/upnp-guard.mjs). Each uncaughtException listener turns off the
-// default handler of Electron, which shows the dialog "A JavaScript error occurred in the main process" only when it
-// is the single listener (Electron 40.5.0, lib/browser/init.ts). The process does not exit. onOther keeps this
-// behavior for each other error, and also writes the error to the log.
-installUpnpGuard({
-    onOther: err => {
-        const stack = err?.stack ? err.stack : `${err?.name}: ${err?.message}`;
-        console.error('Uncaught exception in the main process:', stack);
-        try {
-            dialog.showErrorBox('A JavaScript error occurred in the main process', `Uncaught Exception:\n${stack}`);
-        } catch {
-            // Before app ready the dialog can fail. The log line stays.
-        }
-    }
-});
 
 // One log line for each node event. The chat text does not go into the log.
 // 'voice-frame' comes 50 times each second for each speaker.
 const UNLOGGED_EVENTS = new Set(['signal', 'file-progress', 'voice-frame']);
 
 function logEvent(type, data) {
-    if (UNLOGGED_EVENTS.has(type)) return;
+    if (!logFile || UNLOGGED_EVENTS.has(type)) return;
     const parts = [`event ${type}`];
     if (type === 'connection' || type === 'dial-failed' || type === 'upnp') {
         for (const [k, v] of Object.entries(data ?? {})) if (v !== undefined && v !== null) parts.push(`${k} ${JSON.stringify(v)}`);
@@ -118,6 +129,7 @@ function logEvent(type, data) {
         parts.push(`ids ${messages.map(m => m?.id).join(',')}`, `count ${messages.length}`);
     } else if (data?.offerId) {
         parts.push(`offer ${data.offerId}`);
+        if (data.retryOf) parts.push(`retry-of ${data.retryOf}`);
         // direction: the side of this node (send or receive).
         // by: the side whose user action caused the event (self or peer). A done or failed transfer has no such
         // action, so it gets "by none". An offer comes from the peer.
@@ -167,38 +179,183 @@ function parsePublicAddress(text) {
     return { ip: m[1], port };
 }
 
-function isAppPage(url) {
-    return typeof url === 'string' && url.startsWith('file://') && url.endsWith('/src/application/index.html');
-}
-
-function setPermissions() {
-    session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
-        const url = details?.requestingUrl ?? webContents?.getURL();
-        callback(permission === 'media' && isAppPage(url));
-    });
-    session.defaultSession.setPermissionCheckHandler((_webContents, permission, requestingOrigin, details) => {
-        const url = details?.requestingUrl ?? requestingOrigin;
-        return permission === 'media' && isAppPage(url);
-    });
-}
-
 let mainWindow = null;
+let voiceMonitor = null;
 let node = null;
+let readRoomActivity = () => [];
+
+function handleRoomIpc(channel, handler) {
+    ipcMain.handle(channel, (event, ...args) => {
+        if (!isDesktopFrame(mainWindow, event.sender, event.senderFrame, ROOM_PAGE)) throw new Error('Unknown room window');
+        return handler(event, ...args);
+    });
+}
+
+function onRoomIpc(channel, listener) {
+    ipcMain.on(channel, (event, ...args) => {
+        if (isDesktopFrame(mainWindow, event.sender, event.senderFrame, ROOM_PAGE)) listener(event, ...args);
+    });
+}
 // The files that this computer received: `${offerId}|${peerId}` -> the final path (after a rename for a name
 // collision). Only a file-done event with the direction receive adds a path. The window sends only the key.
+const clipboardImages = createClipboardStaging(path.join(app.getPath('userData'), 'clipboard-staging'));
+let downloadScratch = null;
 const receivedFiles = new Map();
+const restoringDownloads = new Map();
+const roomMedia = createRoomMedia({ nativeImage, changed: id => sendToWindow('asscrack:media-changed', id) });
+let mediaGeneration = 0;
+function clearRoomMedia() { mediaGeneration++; roomMedia.clear(); }
+function savedDownload(messageId, descriptorId) {
+    if (typeof messageId !== 'string' || !messageId || messageId.length > 128 ||
+        typeof descriptorId !== 'string' || descriptorId.length !== 36) return null;
+    return savedRooms?.getDownload(messageId, descriptorId);
+}
+
+handleRoomIpc('asscrack:saved-original-available', async (_event, messageId, descriptorId) => {
+    const download = savedDownload(messageId, descriptorId);
+    if (!download) return false;
+    const key = JSON.stringify([messageId, descriptorId]);
+    let pending = restoringDownloads.get(key);
+    if (!pending) {
+        const allowed = () => savedDownload(messageId, descriptorId)?.path === download.path;
+        pending = roomMedia.restore(download.descriptor, download.path, allowed)
+            .finally(() => restoringDownloads.delete(key));
+        restoringDownloads.set(key, pending);
+    }
+    return pending;
+});
+handleRoomIpc('asscrack:reveal-saved-original', async (_event, messageId, descriptorId) => {
+    const download = savedDownload(messageId, descriptorId);
+    if (!download || !await roomMedia.canReveal(download.descriptor, download.path) ||
+        savedDownload(messageId, descriptorId)?.path !== download.path) return { ok: false };
+    shell.showItemInFolder(download.path);
+    return { ok: true };
+});
+handleRoomIpc('asscrack:media-clear-previews', () => { mediaGeneration++; roomMedia.clearPreviews(); });
+handleRoomIpc('asscrack:media-info', (_event, ref) => node ? roomMedia.info(ref) : {});
+handleRoomIpc('asscrack:media-preview', async (_event, id) => {
+    if (!node?.attachmentDescriptor(id)) return {};
+    const version = mediaGeneration;
+    if (!roomMedia.info(id).thumbnailUrl) {
+        const result = await node.requestPreviewById(id);
+        if (version !== mediaGeneration) return {};
+        if (result) roomMedia.storePreview(result.descriptor, result.bytes);
+    }
+    return roomMedia.info(id);
+});
 const MAX_RECEIVED_KEY = 300;
 let loginStarted = false;
 let stopping = false;
 
 function sendToWindow(channel, data) {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send(channel, data);
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const sender = mainWindow.webContents;
+    if (!sender.isDestroyed() && isDesktopFrame(mainWindow, sender, sender.mainFrame, ROOM_PAGE)) sender.send(channel, data);
+}
+
+// Participation belongs to the room. Minimizing the window leaves voice and capture alone.
+let idlePeer = false;
+let tray = null;
+let quitting = false;
+const closePreference = path.join(app.getPath('userData'), 'close-to-idle.json');
+let closeToTray = true;
+try { closeToTray = JSON.parse(readFileSync(closePreference, 'utf8')) !== false; } catch { /* new profile */ }
+const idleState = () => ({ idle: idlePeer, closeToTray });
+
+const attentionPrefs = attentionSettings(path.join(app.getPath('userData'), 'attention.json'));
+const attention = createAttention({
+    settings: attentionPrefs.get,
+    room: () => node,
+    quiet: () => quitting || stopping || idlePeer || node?.presence().state === 'dnd',
+    allowed: target => target.kind === 'whisper'
+        ? node?.whisperPeers().includes(target.peerId)
+        : target.channelId === 'general' || node?.channels().channels.some(channel => channel.id === target.channelId),
+    notify: options => new Notification(options),
+    navigate: target => {
+        restoreRoomWindow();
+        sendToWindow('asscrack:attention-open', target);
+    }
+});
+
+function registerAlerts() {
+    if (!Notification.isSupported()) throw new Error('Desktop notifications are unavailable on this system.');
+    if (process.platform === 'win32' && app.isPackaged) {
+        registerNotificationShortcut({
+            appData: app.getPath('appData'),
+            executable: process.env.PORTABLE_EXECUTABLE_FILE || process.execPath, shell
+        });
     }
 }
 
+handleRoomIpc('asscrack:attention-settings', () => attentionPrefs.get());
+handleRoomIpc('asscrack:attention-set', (_event, patch) => {
+    if (patch?.alerts === true) registerAlerts();
+    const next = attentionPrefs.set(patch);
+    if (patch?.alerts === false || patch?.previews !== undefined || patch?.sound !== undefined) attention.clear();
+    return next;
+});
+onRoomIpc('asscrack:attention-add', (_event, target) => attention.add(target));
+onRoomIpc('asscrack:attention-read', (_event, target) => attention.read(target));
+
+function restoreRoomWindow() {
+    if (!mainWindow || mainWindow.isDestroyed() || quitting) return;
+    if (idlePeer) {
+        idlePeer = false;
+        node?.setIdle(false);
+        sendToWindow('asscrack:idle-peer', idleState());
+        node?.refreshRoutes();
+    }
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+}
+
+function enterIdlePeer() {
+    if (!node || !mainWindow || mainWindow.isDestroyed() || quitting) return false;
+    if (!tray) {
+        try {
+            tray = new Tray(path.join(__dirname, 'img', 'tray.png'));
+            tray.setToolTip('Asscrack');
+            tray.setContextMenu(Menu.buildFromTemplate([
+                { label: 'Open Asscrack', click: restoreRoomWindow },
+                { label: 'Quit Asscrack', click: () => app.quit() }
+            ]));
+            tray.on('click', restoreRoomWindow);
+        } catch (err) {
+            tray?.destroy();
+            tray = null;
+            writeLog('WARN', 'Cannot open the tray: ' + (err?.message ?? err));
+            return false;
+        }
+    }
+    if (!idlePeer) {
+        idlePeer = true;
+        voiceMonitor?.dismiss();
+        attention.clear();
+        node.setIdle(true);
+        updatePttHook(() => pttHook.setInVoice(false));
+        sendToWindow('asscrack:idle-peer', idleState());
+    }
+    mainWindow.hide();
+    return true;
+}
+
+handleRoomIpc('asscrack:idle-peer', idleState);
+handleRoomIpc('asscrack:enter-idle-peer', enterIdlePeer);
+handleRoomIpc('asscrack:close-to-tray', (_event, enabled) => {
+    if (typeof enabled !== 'boolean') throw new TypeError('Expected a close preference');
+    writeFileSync(closePreference + '.tmp', JSON.stringify(enabled));
+    renameSync(closePreference + '.tmp', closePreference);
+    closeToTray = enabled;
+    sendToWindow('asscrack:idle-peer', idleState());
+    return idleState();
+});
+onRoomIpc('asscrack:quit', () => app.quit());
+
 function createMainWindow() {
+    const frame = createWindowFrame(app.getPath('userData'));
     mainWindow = new BrowserWindow({
+        ...frame.options,
         title: 'AssCrack',
         width: 800,
         height: 600,
@@ -213,13 +370,25 @@ function createMainWindow() {
         }
     });
 
-    const startUrl = new URL(`file://${path.join(__dirname, 'index.html')}`).href;
+    lockDesktopNavigation(mainWindow.webContents);
+    frame.attach(mainWindow, ipcMain, ROOM_PAGE);
+    voiceMonitor = attachVoiceMonitor({
+        room: mainWindow, roomPage: ROOM_PAGE, ipc: ipcMain, BrowserWindow, screen, profile: app.getPath('userData'), assets: __dirname,
+        participating: () => !!node && !idlePeer && !quitting && !mainWindow.isDestroyed(),
+        restoreRoom: restoreRoomWindow, warn: message => writeLog('WARN', message)
+    });
 
-    mainWindow.webContents.on('console-message', details => {
+    if (logFile) mainWindow.webContents.on('console-message', details => {
         writeLog('WINDOW', `${details.level} ${details.message} (${details.sourceId}:${details.lineNumber})`);
     });
 
-    mainWindow.loadURL(startUrl);
+    mainWindow.on('close', event => {
+        if (!quitting && closeToTray && enterIdlePeer()) event.preventDefault();
+    });
+    // Windows shutdown may bypass before-quit. Do not hide or veto session termination.
+    mainWindow.on('session-end', () => { quitting = true; });
+
+    mainWindow.loadURL(ROOM_PAGE);
 
     if (process.argv.includes('--dev')) {
         mainWindow.webContents.openDevTools();
@@ -246,7 +415,9 @@ function readUpnpPort(file) {
 }
 function saveHostFields(file, fields) {
     try {
-        writeFileSync(file, JSON.stringify({ ...readHostFile(file), ...fields }));
+        const temp = `${file}.tmp`;
+        writeFileSync(temp, JSON.stringify({ ...readHostFile(file), ...fields }), { mode: 0o600 });
+        renameSync(temp, file);
     } catch (err) {
         writeLog('WARN', `Host data not saved to ${file}: ${err?.message ?? err}`);
     }
@@ -258,46 +429,62 @@ function isAddressInUse(err, depth = 0) {
     if (isAddressInUse(err.cause, depth + 1)) return true;
     return Array.isArray(err.errors) && err.errors.some(e => isAddressInUse(e, depth + 1));
 }
-function saveHostAddress(file, address) {
-    saveHostFields(file, { publicAddress: address });
-}
-
 // Start the node of a room. options: the node options (name, room, and for a keyed room roomKey and inviteNodes).
 // The login handler and the reopen of a saved room use this function. Returns the login result.
-async function startRoom(options, publicAddress) {
+let retainRoomHints = null;
+async function startRoom(options, { publicAddress = '', allowUpnp = false, reopen = false, lan = false } = {}) {
     if (loginStarted) throw new Error('Already logged in');
     loginStarted = true;
     try {
-        let hostFile = null;
+        try {
+            downloadScratch ??= createDownloadScratch(options.downloadDir, app.getPath('userData'));
+            options.scratchDir = downloadScratch.directory;
+        } catch {
+            writeLog('WARN', 'Private download staging unavailable');
+        }
+        let hints = null;
+        let alreadySaved = false;
         if (options.roomKey) {
-            const dir = path.join(app.getPath('userData'), 'rooms');
-            mkdirSync(dir, { recursive: true });
-            const tag = keyedServiceTag(options.room, options.roomKey);
-            options.storePath = path.join(dir, `${tag}.json`);
-            hostFile = path.join(dir, `${tag}.host.json`);
+            hints = roomHintFiles(options.room, options.roomKey);
+            const rooms = getSavedRooms();
+            alreadySaved = Boolean(rooms.getRoom(roomFingerprint(options.room, options.roomKey)));
+            if (alreadySaved) options.storePath = hints.peers;
+            else if (rooms.status().state === 'open') {
+                // Older versions wrote hints for rooms that users never saved.
+                try { deleteHintFiles(hints); } catch { writeLog('WARN', 'Could not remove old unsaved room hints'); }
+            }
+            options.seedChannels = rooms.loadChannels(options.room, options.roomKey);
+            options.seedHistory = removeHistory => rooms.prepareReplay(options.room, options.roomKey, removeHistory);
         }
-        // A host that rejoins its room with an empty Public address field uses the saved address again.
-        let address = publicAddress === undefined || publicAddress === null ? '' : String(publicAddress).trim();
-        if (address === '' && hostFile) {
-            address = readHostAddress(hostFile);
-            if (address !== '') writeLog('INFO', `Saved public address ${address} used for this room`);
-        }
+        const hostFile = alreadySaved ? hints.host : null;
+        // Older saved host data has no affirmative UPnP preference. Restoring an
+        // address and allowing the app to ask a router for a mapping are distinct.
+        const address = lan ? '' : reopen && hostFile ? readHostAddress(hostFile) : publicAddress;
+        const mapping = !lan && !address && (reopen && hostFile ? readHostFile(hostFile).allowUpnp === true : allowUpnp === true);
         if (address !== '') {
             const { ip, port } = parsePublicAddress(address);
             options.announce = [`/ip4/${ip}/tcp/${port}`];
             options.port = port;
-            if (hostFile) saveHostAddress(hostFile, address);
-        } else if (hostFile) {
-            // A keyed room with no typed or saved address: try UPnP. Rejoin (decision 56): use the port of the last
-            // mapping again, so that old invite codes stay valid. The IP comes again from the router at each start.
+        } else if (mapping) {
+            // Reuse an opted-in mapping's former port on a saved reopen.
             options.upnp = true;
-            const savedPort = readUpnpPort(hostFile);
+            const savedPort = reopen && hostFile ? readUpnpPort(hostFile) : null;
             if (savedPort !== null && options.port === undefined) {
                 options.port = savedPort;
                 options.savedUpnpPort = true;
                 writeLog('INFO', `Saved UPnP port ${savedPort} used for this room`);
             }
         }
+        if (lan) {
+            options.fullNode = false;
+            options.upnp = false;
+        }
+        options.previewProvider = (descriptor, filePath) => roomMedia.makePreview(filePath, descriptor);
+        options.receiveWhisper = message => {
+            if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isCrashed()) return false;
+            sendToWindow('asscrack:whisper', message);
+            return true;
+        };
         const fromSavedUpnpPort = options.savedUpnpPort === true;
         delete options.savedUpnpPort;
         try {
@@ -310,31 +497,67 @@ async function startRoom(options, publicAddress) {
             options.port = 0;
             node = await createAsscrackNode(options);
         }
-        if (options.upnp && hostFile) {
-            const file = hostFile;
-            node.events.on('upnp', data => {
-                if (data?.state === 'mapped' && Number.isInteger(data.port)) saveHostFields(file, { upnpPort: data.port });
+        if (hints) {
+            let persistence = false, mappedPort = null;
+            if (options.upnp) node.events.on('upnp', data => {
+                if (data?.state !== 'mapped' || !Number.isInteger(data.port)) return;
+                mappedPort = data.port;
+                if (persistence) saveHostFields(hints.host, { upnpPort: mappedPort });
             });
+            retainRoomHints = () => {
+                mkdirSync(path.dirname(hints.peers), { recursive: true, mode: 0o700 });
+                if (!alreadySaved) node.setAddressStore(hints.peers);
+                const fields = {};
+                if (!reopen && !lan && (address || mapping)) Object.assign(fields, { publicAddress: address, allowUpnp: mapping });
+                if (mappedPort !== null) fields.upnpPort = mappedPort;
+                if (Object.keys(fields).length > 0) saveHostFields(hints.host, fields);
+                persistence = true;
+            };
         }
     } catch (err) {
+        savedRooms?.releaseReplay();
         loginStarted = false;
         throw err;
     }
     // Record the path before the window gets the event, so that a Show in Explorer at once finds it.
+    node.events.on('attachment-status', data => sendToWindow('asscrack:attachment-status', data));
+    node.events.on('shelf', data => sendToWindow('asscrack:shelf', data));
+    node.events.on('shelf-offered', data => sendToWindow('asscrack:shelf-offered', data));
+    node.events.on('membership', () => sendToWindow('asscrack:membership', node.memberState()));
     node.events.on('file-done', data => {
         if (data?.direction !== 'receive' || typeof data.path !== 'string') return;
         receivedFiles.set(`${data.offerId}|${data.peerId}`, data.path);
+        if (receivedFiles.size > 2048) receivedFiles.delete(receivedFiles.keys().next().value);
+        const descriptor = node.attachmentDescriptor(data.attachmentId);
+        if (descriptor && descriptor.source === data.peerId && descriptor.sha256 === data.sha256 && descriptor.size === data.size) {
+            getSavedRooms().rememberDownload(descriptor, data.path);
+            Promise.resolve(roomMedia.verified(descriptor, data.path)).catch(err => writeLog('WARN', `Verified file preview unavailable: ${err.message}`));
+        }
     });
     // Saved rooms (milestone 6): the archive listener comes before the window listener.
     getSavedRooms().attachNode(node);
+    readRoomActivity = observeRoomActivity(node);
+    // Typing goes straight to the window; transient controls never enter diagnostics or the archive.
+    node.events.on('whisper-capability', data => sendToWindow('asscrack:whisper-capability', data));
+    node.events.on('typing', data => sendToWindow('asscrack:typing', data));
     for (const type of EVENTS) {
         node.events.on(type, data => {
+            if (type === 'channels') savedRooms?.persistChannels(data.added);
             logEvent(type, data);
-            sendToWindow(`asscrack:${type}`, data);
+            // The diagnostic window reads a redacted projection of these local events.
+            if (type === 'connection' || type === 'dial-failed' || (idlePeer && type === 'voice-frame')) return;
+            if (type === 'file-done' && data?.direction === 'receive') {
+                const { path: localPath, ...event } = data;
+                const savedName = typeof localPath === 'string' ? path.basename(localPath) : null;
+                sendToWindow('asscrack:file-done', { ...event, savedName });
+                return;
+            }
+            const shelfId = type === 'file-offer' ? node.shelfTransfer(data.peerId, data.offerId) : undefined;
+            sendToWindow(`asscrack:${type}`, shelfId ? { ...data, shelfId } : data);
         });
     }
     // The node dials the invite nodes at start and again with the redial timer (option inviteNodes).
-    return { peerId: node.peerId, room: options.room, internet: node.roomKey() !== null };
+    return { peerId: node.peerId, room: options.room, internet: !lan, membership: node.memberState() };
 }
 
 // Saved rooms (milestone 6). The archive opens at the first saved-rooms call or login, after app ready.
@@ -360,13 +583,20 @@ function getSavedRooms() {
 }
 
 // Saved rooms (milestone 6). Forget deletes the room hint files userData/rooms/<tag>.json and <tag>.host.json.
-function forgetHints(row) {
-    if (!row?.name || !row?.roomKey) return;
+function roomHintFiles(room, roomKey) {
     const dir = path.join(app.getPath('userData'), 'rooms');
-    const tag = keyedServiceTag(row.name, row.roomKey);
-    for (const file of [`${tag}.json`, `${tag}.host.json`]) {
-        rmSync(path.join(dir, file), { force: true });
+    const tag = keyedServiceTag(room, roomKey);
+    return { peers: path.join(dir, `${tag}.json`), host: path.join(dir, `${tag}.host.json`) };
+}
+
+function deleteHintFiles({ peers, host }) {
+    for (const file of [peers, host, `${peers}.tmp`, `${host}.tmp`]) {
+        rmSync(file, { force: true });
     }
+}
+
+function forgetHints(row) {
+    if (row?.name && row?.roomKey) deleteHintFiles(roomHintFiles(row.name, row.roomKey));
 }
 
 // Saved rooms (milestone 6). The check of a roomId from the window.
@@ -379,37 +609,69 @@ function afterRoomStart(result, { invite = null, userName, save = false, keepHis
     const roomKey = node?.roomKey() ?? null;
     let saveInfo = { roomId: null, saved: false, saveError: null, savedRoom: false, keepHistory: null };
     try {
-        saveInfo = getSavedRooms().afterLogin({ room: result.room, roomKey, invite, userName, save: save === true, keepHistory });
+        const membership = node.membershipSnapshot();
+        saveInfo = getSavedRooms().afterLogin({ room: result.room, roomKey, invite, userName, save: save === true, keepHistory, membership });
+        if (membership && saveInfo.savedRoom) node.setMembershipPersistence(snapshot => {
+            if (!getSavedRooms().persistMembership(snapshot)) throw new Error('Could not save protected room access.');
+        });
     } catch (err) {
         writeLog('WARN', `Saved rooms: ${err?.message ?? err}`);
         if (save === true) saveInfo.saveError = String(err?.message ?? err);
     }
+    try { if (saveInfo.savedRoom) retainRoomHints?.(); }
+    catch { writeLog('WARN', 'Saved room address hints could not be stored'); }
+    finally { retainRoomHints = null; }
+    getSavedRooms().persistChannels(node.channels().channels);
     return { ...result, ...saveInfo };
 }
 
-ipcMain.handle('asscrack:login', async (_event, { name, room, invite, internet, publicAddress, save, keepHistory } = {}) => {
+function getAdmissionIdentity() {
+    const serialized = getSavedRooms().deviceIdentity(() => createDeviceIdentity().exportPrivate());
+    return importDeviceIdentity(serialized);
+}
+
+handleRoomIpc('asscrack:device-id', () => getAdmissionIdentity().id);
+
+handleRoomIpc('asscrack:login', async (_event, { name, room, type, invite, publicAddress, allowUpnp, allowLegacy, save, keepHistory } = {}) => {
     if (loginStarted) throw new Error('Already logged in');
-    const options = { name, room, downloadDir: downloadDir ?? app.getPath('downloads'), ...nodeFlags };
+    if (typeof name !== 'string' || !name.trim() || name.length > 64) throw new Error('Enter a username of up to 64 characters.');
+    const options = { name: name.trim(), downloadDir: downloadDir ?? app.getPath('downloads'), ...nodeFlags };
+    let lan = false;
     let typedInvite = null;
-    if (typeof invite === 'string' && invite.trim() !== '') {
+    if (type === 'join') {
+        if (typeof invite !== 'string' || !invite.trim()) throw new Error('Enter an invite code.');
+        if (invite.length > 128 * 1024 + 10) throw new Error('The invite code is too large.');
         const code = readInvite(invite);
         options.room = code.room;
         options.roomKey = code.key;
         options.inviteNodes = code.nodes;
         typedInvite = invite.trim();
-    } else if (internet === true) {
+        if (code.membership) {
+            const saved = getSavedRooms().getRoom(roomFingerprint(code.room, code.key));
+            options.membership = joinAdmission(code, getAdmissionIdentity(), saved);
+            lan = options.membership.lan;
+        } else {
+            if (allowLegacy !== true) throw new Error('Confirm that everyone with this legacy room code is trusted.');
+            if (getSavedRooms().isProtectedRoom(code.room, code.key)) throw new Error('This saved room requires a protected device invite.');
+        }
+    } else if (type === 'new' || type === 'lan') {
+        if (typeof room !== 'string' || !room.trim() || room.length > 64) throw new Error('Enter a room name of up to 64 characters.');
+        options.room = room.trim();
         options.roomKey = newRoomKey();
-    }
-    const result = await startRoom(options, publicAddress);
-    return afterRoomStart(result, { invite: typedInvite, userName: name, save, keepHistory: keepHistory !== false });
+        lan = type === 'lan';
+        options.membership = createRoomMembership({ identity: getAdmissionIdentity(), room: options.room, roomKey: options.roomKey, lan });
+    } else throw new Error('Choose how to open the room.');
+    if (publicAddress !== undefined && (typeof publicAddress !== 'string' || publicAddress.length > 32)) throw new Error('Enter a valid public address.');
+    const result = await startRoom(options, { publicAddress: publicAddress?.trim(), allowUpnp: type === 'new' && allowUpnp === true, lan });
+    return afterRoomStart(result, { invite: typedInvite, userName: options.name, save, keepHistory: keepHistory !== false });
 });
 
 // Saved rooms (milestone 6). The window gets no key, no invite and no file path.
-ipcMain.handle('asscrack:saved-rooms', () => getSavedRooms().status());
+handleRoomIpc('asscrack:saved-rooms', () => getSavedRooms().status());
 
-ipcMain.handle('asscrack:unlock-archive', () => getSavedRooms().unlock());
+handleRoomIpc('asscrack:unlock-archive', () => getSavedRooms().unlock());
 
-ipcMain.handle('asscrack:saved-room-lines', (_event, roomId, opts) => {
+handleRoomIpc('asscrack:saved-room-lines', (_event, roomId, opts) => {
     if (!validRoomId(roomId)) return [];
     // Paging: before is { time, id } of the first shown line, or null.
     let before = null;
@@ -418,14 +680,15 @@ ipcMain.handle('asscrack:saved-room-lines', (_event, roomId, opts) => {
         before = { time: Number(b.time), id: b.id };
     }
     try {
-        return before ? getSavedRooms().lines(roomId, { before, limit: 100 }) : getSavedRooms().lines(roomId);
+        const channelId = typeof opts?.channelId === 'string' ? opts.channelId : 'general';
+        return getSavedRooms().lines(roomId, { before, limit: before ? 100 : 200, channelId });
     } catch (err) {
         writeLog('WARN', `Saved lines not read: ${err?.message ?? err}`);
-        return [];
+        throw new Error('Could not read this page from the saved room.');
     }
 });
 
-ipcMain.handle('asscrack:reopen-room', async (_event, roomId) => {
+handleRoomIpc('asscrack:reopen-room', async (_event, roomId, allowLegacy) => {
     if (loginStarted) throw new Error('Already logged in');
     if (typeof roomId !== 'string' || roomId.length > 128) throw new Error('Saved room not found');
     const row = getSavedRooms().getRoom(roomId);
@@ -434,6 +697,11 @@ ipcMain.handle('asscrack:reopen-room', async (_event, roomId) => {
         name: row.userName ?? '', room: row.name, roomKey: row.roomKey,
         downloadDir: downloadDir ?? app.getPath('downloads'), ...nodeFlags
     };
+    let lan = false;
+    if (row.protected) {
+        options.membership = restoreSavedAdmission(row, getAdmissionIdentity());
+        lan = options.membership.lan;
+    } else if (allowLegacy !== true) throw new Error('Confirm that everyone with this legacy room code is trusted.');
     if (row.invite) {
         try {
             options.inviteNodes = readInvite(row.invite).nodes;
@@ -442,32 +710,35 @@ ipcMain.handle('asscrack:reopen-room', async (_event, roomId) => {
         }
     }
     writeLog('INFO', 'Reopen of a saved room');
-    const result = await startRoom(options, null);
+    const result = await startRoom(options, { reopen: true, lan });
     return afterRoomStart(result, { invite: row.invite, userName: row.userName, save: false, keepHistory: row.keepHistory });
 });
 
 // Saved rooms (milestone 6): the room storage controls and Forget.
-ipcMain.handle('asscrack:set-keep-history', (_event, roomId, on) => {
+handleRoomIpc('asscrack:set-keep-history', (_event, roomId, on) => {
     if (!validRoomId(roomId)) throw new Error('Saved room not found');
     return getSavedRooms().setKeepHistory(roomId, on === true);
 });
 
-ipcMain.handle('asscrack:clear-history', (_event, roomId) => {
+handleRoomIpc('asscrack:clear-history', (_event, roomId) => {
     if (!validRoomId(roomId)) throw new Error('Saved room not found');
     const result = getSavedRooms().clear(roomId);
     writeLog('INFO', `Saved history cleared (${result?.cleared ?? 0} rows)`);
     return result;
 });
 
-ipcMain.handle('asscrack:forget-room', (_event, roomId) => {
+handleRoomIpc('asscrack:forget-room', (_event, roomId) => {
     if (!validRoomId(roomId)) throw new Error('Saved room not found');
+    const active = getSavedRooms().activeInfo()?.roomId === roomId;
     const result = getSavedRooms().forget(roomId);
+    if (active) clearRoomMedia();
     writeLog('INFO', 'Saved room forgotten');
     return result;
 });
 
-ipcMain.handle('asscrack:invite', () => {
+handleRoomIpc('asscrack:invite', () => {
     if (!node) throw new Error('Not logged in');
+    if (node.memberState().protected) return { membership: node.memberState() };
     if (node.roomKey() === null) return { code: null, reason: 'lan' };
     const code = node.invite();
     if (code) return { code };
@@ -475,21 +746,46 @@ ipcMain.handle('asscrack:invite', () => {
     return { code: null, reason: node.upnpPending() ? 'upnp-wait' : 'no-full-node' };
 });
 
+handleRoomIpc('asscrack:member-invite', (_event, deviceId, canHost) => {
+    if (!node?.memberState().owner) throw new Error('Only the room owner can invite devices.');
+    if (typeof deviceId !== 'string' || deviceId.length > 128) throw new Error('Enter the friend’s device ID.');
+    return node.createMemberInvite(deviceId.trim(), { canHost: canHost === true });
+});
+
+handleRoomIpc('asscrack:member-revoke', (_event, deviceId) => {
+    if (!node?.memberState().owner) throw new Error('Only the room owner can revoke access.');
+    if (typeof deviceId !== 'string' || deviceId.length > 128) throw new Error('Enter a device ID.');
+    return node.revokeMember(deviceId.trim());
+});
+
 // The window has no clipboard permission (setPermissions allows only the microphone). The main process copies.
-ipcMain.handle('asscrack:copy-text', (_event, text) => {
+handleRoomIpc('asscrack:room-activity', (_event, peerId, transfersOnly) => {
+    if (peerId != null && (typeof peerId !== 'string' || !peerId || peerId.length > 128)) return [];
+    return readRoomActivity({ peerId: peerId ?? null, transfersOnly: transfersOnly === true });
+});
+handleRoomIpc('asscrack:copy-text', (_event, text) => {
     if (typeof text !== 'string' || text.length > 10000) throw new Error('Text not copied');
     clipboard.writeText(text);
 });
 
-ipcMain.handle('asscrack:full-node', () => {
+handleRoomIpc('asscrack:full-node', () => {
     if (!node) throw new Error('Not logged in');
     return { self: node.fullNode(), peers: node.fullNodes() };
 });
 
-ipcMain.handle('asscrack:send', (_event, text) => {
+handleRoomIpc('asscrack:whisper-peers', () => node?.whisperPeers() ?? []);
+handleRoomIpc('asscrack:whisper-send', (_event, peerId, text, id) => node?.sendWhisper(peerId, text, id) ?? 'unavailable');
+
+handleRoomIpc('asscrack:channels', () => node?.channels());
+handleRoomIpc('asscrack:create-channel', (_event, name) => node.createChannel(name));
+handleRoomIpc('asscrack:send', (_event, text, channelId) => {
     if (!node) throw new Error('Not logged in');
     // Saved rooms (milestone 6): the window gets the record. An archive error does not stop the send.
-    const record = node.sendRecord(text);
+    const record = node.sendRecord(text, channelId);
+    return archiveSend(record);
+});
+
+function archiveSend(record) {
     let save = { saved: false, saveError: null };
     try {
         const result = savedRooms?.recordSend(record);
@@ -499,16 +795,16 @@ ipcMain.handle('asscrack:send', (_event, text) => {
         save = { saved: false, saveError: String(err?.message ?? err) };
     }
     return { ...record, ...save };
-});
+}
 
-ipcMain.handle('asscrack:signal', (_event, { peerId, data } = {}) => {
+handleRoomIpc('asscrack:signal', (_event, { peerId, data } = {}) => {
     if (!node) throw new Error('Not logged in');
     return node.sendTo(peerId, { type: 'signal', data });
 });
 
 // One Opus frame of the own microphone. An ipc send, not invoke: 50 frames each second.
-ipcMain.on('asscrack:voice-frame', (_event, bytes) => {
-    if (!node || !(bytes instanceof Uint8Array)) return;
+onRoomIpc('asscrack:voice-frame', (_event, bytes) => {
+    if (!node || idlePeer || !(bytes instanceof Uint8Array)) return;
     try {
         node.sendVoiceFrame(bytes);
     } catch (err) {
@@ -516,8 +812,9 @@ ipcMain.on('asscrack:voice-frame', (_event, bytes) => {
     }
 });
 
-ipcMain.handle('asscrack:set-voice', (_event, state) => {
+handleRoomIpc('asscrack:set-voice', (_event, state) => {
     if (!node) throw new Error('Not logged in');
+    if (idlePeer && state?.inVoice === true) throw new Error('Idle Peer has left voice');
     node.setVoice(state ?? {});
     updatePttHook(() => pttHook.setInVoice(state?.inVoice === true));
 });
@@ -545,18 +842,18 @@ function updatePttHook(change) {
     pttStatus = next;
     sendToWindow('asscrack:ptt-status', { status: next });
 }
-ipcMain.handle('asscrack:ptt-status', () => pttHook.status());
+handleRoomIpc('asscrack:ptt-status', () => pttHook.status());
 
 // RNNoise (@sapphi-red/web-noise-suppressor): the window gets the worklet URL and the WASM bytes from here.
 // The window cannot fetch file: URLs, and the main process reads only these two fixed files of the package.
-ipcMain.handle('asscrack:rnnoise', (_event, simd) => {
+handleRoomIpc('asscrack:rnnoise', (_event, simd) => {
     const wasm = require.resolve(`@sapphi-red/web-noise-suppressor/${simd === true ? 'rnnoise_simd.wasm' : 'rnnoise.wasm'}`);
     const worklet = require.resolve('@sapphi-red/web-noise-suppressor/rnnoiseWorklet.js');
     return { workletUrl: pathToFileURL(worklet).href, wasm: readFileSync(wasm) };
 });
 
-ipcMain.handle('asscrack:voice-settings', () => currentVoiceSettings());
-ipcMain.handle('asscrack:set-voice-settings', (_event, patch) => {
+handleRoomIpc('asscrack:voice-settings', () => currentVoiceSettings());
+handleRoomIpc('asscrack:set-voice-settings', (_event, patch) => {
     const next = voiceSettings.merge(currentVoiceSettings(), patch);
     voiceSettingsValue = next;
     updatePttHook(() => pttHook.configure(next));
@@ -573,46 +870,118 @@ ipcMain.handle('asscrack:set-voice-settings', (_event, patch) => {
     return next;
 });
 
-ipcMain.handle('asscrack:host', () => {
+handleRoomIpc('asscrack:topic', () => node?.topic() ?? null);
+
+handleRoomIpc('asscrack:set-topic', (_event, text) => {
+    if (!node) throw new Error('Not logged in');
+    node.setTopic(text);
+});
+
+handleRoomIpc('asscrack:host', () => {
     if (!node) throw new Error('Not logged in');
     return { host: node.host() ?? null, self: node.peerId };
 });
 
 // Manual status (milestone 3). state: 'available', 'away' or 'dnd'. The node cuts the note to 80 code points.
-ipcMain.handle('asscrack:set-presence', (_event, { state, note } = {}) => {
-    if (!node) throw new Error('Not logged in');
-    return node.setPresence({ state, note });
+// Store only the preference in the profile. A corrupt or inaccessible setting keeps sharing off.
+const typingPreference = path.join(app.getPath('userData'), 'share-typing.json');
+let shareTyping;
+try {
+    shareTyping = JSON.parse(readFileSync(typingPreference, 'utf8')) === true;
+} catch (err) {
+    shareTyping = err.code === 'ENOENT';
+}
+handleRoomIpc('asscrack:get-share-typing', () => shareTyping);
+handleRoomIpc('asscrack:set-share-typing', (_event, enabled) => {
+    if (typeof enabled !== 'boolean') throw new TypeError('Expected a sharing preference');
+    if (!enabled) node?.setTyping(false);
+    // Apply an opt-out immediately even if persistence fails.
+    if (!enabled) shareTyping = false;
+    writeFileSync(typingPreference + '.tmp', JSON.stringify(enabled));
+    renameSync(typingPreference + '.tmp', typingPreference);
+    shareTyping = enabled;
+    return shareTyping;
+});
+onRoomIpc('asscrack:typing-edit', (_event, active) => {
+    if (!idlePeer && shareTyping && typeof active === 'boolean') node?.setTyping(active);
 });
 
-ipcMain.handle('asscrack:presence', () => {
+handleRoomIpc('asscrack:set-presence', (_event, { state, note } = {}) => {
+    if (!node) throw new Error('Not logged in');
+    const updated = node.setPresence({ state, note });
+    if (node.presence().state === 'dnd') attention.clear();
+    return updated;
+});
+
+handleRoomIpc('asscrack:presence', () => {
     return node ? { self: node.presence(), peers: node.peerPresence() } : null;
 });
 
-ipcMain.handle('asscrack:topology', () => {
+handleRoomIpc('asscrack:topology', () => {
     return node ? node.topology() : null;
 });
 
-ipcMain.handle('asscrack:offer-file', (_event, filePath) => {
+handleRoomIpc('asscrack:refresh-shelf', () => node?.refreshShelf());
+handleRoomIpc('asscrack:share-file', (_event, filePath) => {
+    if (!node || typeof filePath !== 'string' || !path.isAbsolute(filePath)) throw new Error('Choose a local file to share');
+    return node.publishShelfFile(filePath);
+});
+handleRoomIpc('asscrack:remove-shared-file', (_event, id) => node?.removeShelfFile(id) === true);
+handleRoomIpc('asscrack:download-shared-file', (_event, peerId, id) => node?.downloadShelfFile(peerId, id) === true);
+
+handleRoomIpc('asscrack:offer-file', (_event, filePath, recipientId) => {
     if (!node) throw new Error('Not logged in');
     if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) throw new Error('The file path is not an absolute path');
-    const result = node.offerFile(filePath);
+    const result = node.offerFile(filePath, recipientId);
     Promise.resolve(result).then(offer => logAction('offer-file', offer?.offerId ?? ''), () => {});
     return result;
 });
 
-ipcMain.handle('asscrack:accept-file', (_event, offerId) => {
+// Clipboard IPC accepts bounded PNG bytes only. Path-backed originals use Electron's native File path.
+handleRoomIpc('asscrack:post-media', async (_event, input, caption, channelId, recipientId) => {
+    if (!node) throw new Error('Not logged in');
+    const staged = input instanceof Uint8Array;
+    const filePath = staged ? clipboardImages.stage(input) : input;
+    try {
+        if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) throw new Error('A local file is required');
+        if (recipientId !== undefined) {
+            const offer = await node.offerFile(filePath, recipientId);
+            return { offer };
+        }
+        const { message, offer } = await node.postAttachment(filePath, caption, channelId);
+        if (offer.peers) {
+            if (staged) clipboardImages.retain(filePath, message.attachment.expires);
+            Promise.resolve(roomMedia.verified(message.attachment, filePath)).catch(err => writeLog('WARN', `Original preview unavailable: ${err.message}`));
+        } else if (staged) clipboardImages.discard(filePath);
+        return { message: archiveSend(message), offer };
+    } catch (err) {
+        if (staged) clipboardImages.discard(filePath);
+        throw err;
+    }
+});
+
+handleRoomIpc('asscrack:attachment-available', (_event, id) => node?.attachmentAvailable(id) === true);
+handleRoomIpc('asscrack:request-original', (_event, id) => node?.requestOriginal(id) === true);
+
+handleRoomIpc('asscrack:accept-file', (_event, offerId) => {
     if (!node) throw new Error('Not logged in');
     logAction('accept-file', String(offerId));
     return node.acceptFile(String(offerId));
 });
 
-ipcMain.handle('asscrack:refuse-file', (_event, offerId) => {
+handleRoomIpc('asscrack:retry-file', (_event, offerId) => {
+    if (!node) throw new Error('Not logged in');
+    logAction('retry-file', String(offerId));
+    return node.retryFile(String(offerId));
+});
+
+handleRoomIpc('asscrack:refuse-file', (_event, offerId) => {
     if (!node) throw new Error('Not logged in');
     logAction('refuse-file', String(offerId));
     return node.refuseFile(String(offerId));
 });
 
-ipcMain.handle('asscrack:cancel-file', (_event, offerId, peerId) => {
+handleRoomIpc('asscrack:cancel-file', (_event, offerId, peerId) => {
     if (!node) throw new Error('Not logged in');
     if (peerId !== undefined && peerId !== null && (typeof peerId !== 'string' || peerId.length > 128)) {
         throw new Error('Invalid peer ID');
@@ -625,7 +994,7 @@ ipcMain.handle('asscrack:cancel-file', (_event, offerId, peerId) => {
 // Show in Explorer for a received file. The window sends the key `${offerId}|${peerId}` only, never a path.
 // Result: { ok: true }, or { ok: false, reason: 'unknown' } (no received file for the key) or
 // { ok: false, reason: 'missing' } (the file was moved or deleted).
-ipcMain.handle('asscrack:reveal-file', (_event, key) => {
+handleRoomIpc('asscrack:reveal-file', (_event, key) => {
     if (typeof key !== 'string' || key.length > MAX_RECEIVED_KEY || !receivedFiles.has(key)) {
         return { ok: false, reason: 'unknown' };
     }
@@ -640,12 +1009,23 @@ ipcMain.handle('asscrack:reveal-file', (_event, key) => {
 });
 
 app.on('before-quit', event => {
+    quitting = true;
+    voiceMonitor?.dismiss();
+    attention.clear();
+    clearRoomMedia();
+    tray?.destroy();
+    tray = null;
     pttHook.stop();
     // Saved rooms (milestone 6): close the archive.
     if (savedRooms) {
         try { savedRooms.close(); } catch (err) { writeLog('WARN', `Saved rooms archive not closed: ${err?.message ?? err}`); }
     }
-    if (!node || stopping) return;
+    if (stopping) return;
+    if (!node) {
+        clipboardImages.clear();
+        downloadScratch?.clear();
+        return;
+    }
     event.preventDefault();
     stopping = true;
     let timer;
@@ -660,6 +1040,8 @@ app.on('before-quit', event => {
         timeout
     ]).finally(() => {
         clearTimeout(timer);
+        clipboardImages.clear();
+        downloadScratch?.clear();
         node = null;
         app.exit(0);
     });
@@ -668,17 +1050,18 @@ app.on('before-quit', event => {
 app.on('window-all-closed', () => app.quit());
 
 if (singleInstance && isFirstInstance) {
-    app.on('second-instance', () => {
-        if (!mainWindow || mainWindow.isDestroyed()) return;
-        if (mainWindow.isMinimized()) mainWindow.restore();
-        mainWindow.show();
-        mainWindow.focus();
-    });
+    app.on('second-instance', restoreRoomWindow);
 }
 
 app.whenReady().then(() => {
     if (!isFirstInstance) return;
-    setPermissions();
+    if (profileIndex === -1) clearLegacyDebugLogs(app.getPath('logs'));
+    powerMonitor.on('resume', () => node?.refreshRoutes());
+    protocol.handle('room-media', request => roomMedia.serve(request));
+    installRoomPermissions(session.defaultSession, () => mainWindow, ROOM_PAGE, () => idlePeer);
     pttHook.configure(currentVoiceSettings());
+    if (attentionPrefs.get().alerts && process.platform === 'win32' && app.isPackaged) {
+        try { registerAlerts(); } catch { writeLog('WARN', 'Windows notification registration unavailable'); }
+    }
     createMainWindow();
 });

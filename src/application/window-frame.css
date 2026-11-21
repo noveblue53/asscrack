@@ -1,0 +1,104 @@
+:root {
+  --frame-height: 36px;
+  --frame-button-width: 32px;
+  --frame-close-width: 44px;
+}
+#titlebar {
+  position: absolute;
+  inset: 0 0 auto;
+  height: var(--frame-height);
+  z-index: 6;
+  user-select: none;
+  -webkit-app-region: drag;
+}
+#titlebar button, #titlebar [role="menu"], #window-controls {
+  -webkit-app-region: no-drag;
+}
+#login-screen, #chat-screen { top: var(--frame-height); }
+#login-screen .login-card { max-height: 100%; overflow-y: auto; }
+#chat-screen {
+  grid-template-rows: minmax(0, 1fr) minmax(0, auto) auto;
+}
+#window-brand {
+  flex: 1 1 auto;
+  min-width: 28px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 700 16px var(--font-title);
+  letter-spacing: .025em;
+}
+#window-controls { order: 2; }
+body:not(.chat) #titlebar > :is(button, [role="menu"]) { display: none; }
+
+html[data-frame="mac"] #titlebar { padding-left: 82px; }
+html[data-frame="overlay"] #titlebar {
+  padding-right: calc(100% - env(titlebar-area-width, calc(100% - 140px)) - env(titlebar-area-x, 0px) + 6px);
+}
+#window-controls {
+  flex: none;
+  display: inline-flex;
+  align-self: flex-start;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--frame-ink, #fff) 55%, transparent);
+  border-top: 0;
+  border-radius: 0 0 6px 6px;
+  box-shadow: 0 1px 3px #001d2c7a;
+}
+#window-controls button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--frame-button-width);
+  height: 25px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: var(--control-ink, #193e36);
+  background: linear-gradient(to bottom, var(--control-top, #e8fff8), var(--control-bottom, #a8daca));
+  box-shadow: inset 0 1px 0 #ffffff73;
+  text-shadow: none;
+}
+#window-controls button + button {
+  border-left: 1px solid color-mix(in srgb, var(--control-ink, #193e36) 35%, transparent);
+}
+#window-controls button:hover { filter: brightness(1.12); }
+#window-controls button:active { filter: brightness(.88); }
+#window-controls button:focus-visible { outline: 2px solid currentColor; outline-offset: -4px; }
+#window-controls #window-close {
+  width: var(--frame-close-width);
+  color: #fff;
+  background: linear-gradient(#dc6d5e, #ad352c 52%, #922a22 53%, #ad352c);
+}
+#window-controls span { position: relative; display: block; pointer-events: none; }
+#window-minimize span { width: 10px; height: 2px; background: currentColor; transform: translateY(3px); }
+#window-maximize span {
+  width: 10px;
+  height: 9px;
+  border: 1px solid currentColor;
+  border-top-width: 2px;
+}
+#window-maximize[data-maximized="true"] span {
+  width: 8px;
+  height: 7px;
+  transform: translate(-1px, 1px);
+}
+#window-maximize[data-maximized="true"] span::after {
+  content: '';
+  position: absolute;
+  inset: -5px -4px 2px 1px;
+  border-top: 2px solid currentColor;
+  border-right: 1px solid currentColor;
+}
+#window-close span, #window-close span::after {
+  width: 13px;
+  height: 2px;
+  background: currentColor;
+  transform: rotate(45deg);
+}
+#window-close span::after { content: ''; position: absolute; inset: 0; transform: rotate(90deg); }
+html[data-theme="amber-terminal"] #window-controls { border-radius: 0; }
+html[data-theme="amber-terminal"] #window-controls button:not(#window-close) { background: var(--control-bottom, #352817); }
+@media (max-width: 560px) {
+  :root { --frame-button-width: 27px; --frame-close-width: 35px; }
+}

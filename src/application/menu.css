@@ -96,3 +96,20 @@
     animation: none;
   }
 }
+
+#listening-dialog {
+  width: min(260px, calc(100vw - 48px));
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: 13px var(--font-ui);
+  color: var(--ink);
+  background: #f7fbff;
+}
+
+#listening-dialog h2 { margin: 0 0 12px; font-size: 16px; overflow-wrap: anywhere; }
+#listening-dialog label { display: block; margin: 10px 0 4px; }
+#listener-percent { float: right; }
+#listener-volume { width: 100%; }
+#listening-dialog form { margin-top: 12px; text-align: right; }
+#listening-dialog::backdrop { background: rgb(0 24 64 / 25%); }

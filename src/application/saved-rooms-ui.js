@@ -12,8 +12,8 @@
     const savedSection = document.getElementById('saved-rooms-section');
     const archiveState = document.getElementById('archive-state');
     const archiveUnlock = document.getElementById('archive-unlock');
-    const waitingPeer = document.getElementById('waiting-peer');
     const roomStorage = document.getElementById('room-storage');
+    const historyToggle = document.getElementById('history-toggle');
     const roomKeepHistory = document.getElementById('room-keep-history');
     const historyState = document.getElementById('history-state');
     const clearButton = document.getElementById('clear-history');
@@ -27,21 +27,27 @@
         + 'choice and the saved addresses of this room. Peers keep their copies. To join again, you need an invite.';
 
     let archiveOpen = false;
-    // True in a reopened room or a saved room: show "Waiting for a peer" while the room has no peer (S5).
-    let watchPeers = false;
     let reopenBusy = false;
     // The saved room that is open in the chat screen: its roomId, or null.
     let openRoomId = null;
     // The roomId whose saved lines are shown (reopen or login).
     let linesLoadedFor = null;
+    const loadedPages = new Set();
     let olderBusy = false;
+    const archiveChanges = new Map();
 
-    function keyedType() {
-        return roomTypeSelect.value !== 'lan';
+    async function deleteSavedData(roomId, action) {
+        const change = { pending: true };
+        archiveChanges.set(roomId, change);
+        try {
+            return await action(roomId);
+        } finally {
+            change.pending = false;
+        }
     }
 
     function showSaveFields() {
-        saveFields.hidden = !keyedType();
+        saveFields.hidden = false;
         saveRoomBox.disabled = !archiveOpen;
         if (!archiveOpen) saveRoomBox.checked = false;
     }
@@ -69,12 +75,31 @@
             const button = document.createElement('button');
             button.type = 'button';
             button.className = 'reopen-room';
-            button.textContent = 'Reopen room';
-            button.addEventListener('click', () => reopen(room));
-            item.append(name, user, button, ...forgetControls(room, item));
+            button.textContent = room.protected ? 'Reopen room' : 'Reopen legacy room';
+            if (room.protected) button.addEventListener('click', () => reopen(room));
+            item.append(name, user, button, ...(room.protected ? [] : legacyControls(room, button)), ...forgetControls(room, item));
             savedList.appendChild(item);
         }
         savedSection.hidden = rooms.length === 0;
+    }
+
+    function legacyControls(room, button) {
+        const row = document.createElement('div');
+        row.className = 'forget-confirm legacy-reopen';
+        row.hidden = true;
+        const text = document.createElement('p');
+        text.textContent = 'Anyone who has this legacy room code can join. Continue only if you trust everyone with the code.';
+        const yes = document.createElement('button');
+        yes.type = 'button';
+        yes.textContent = 'Continue to legacy room';
+        const no = document.createElement('button');
+        no.type = 'button';
+        no.textContent = 'Cancel';
+        row.append(text, yes, no);
+        button.addEventListener('click', () => { row.hidden = false; no.focus(); });
+        no.addEventListener('click', () => { row.hidden = true; button.focus(); });
+        yes.addEventListener('click', () => { row.hidden = true; void reopen(room, true); });
+        return [row];
     }
 
     // Forget (decision P7): only on the login screen, with a confirmation.
@@ -110,7 +135,7 @@
             yes.disabled = true;
             no.disabled = true;
             try {
-                await api.forgetRoom(room.roomId);
+                await deleteSavedData(room.roomId, api.forgetRoom);
                 item.remove();
                 await refresh(() => api.listSavedRooms());
             } catch (err) {
@@ -141,21 +166,17 @@
 
     archiveUnlock.addEventListener('click', () => refresh(() => api.unlockArchive()));
 
-    function updateWaiting() {
-        waitingPeer.hidden = !(watchPeers && peerItems.size === 0);
-    }
-    // renderer.js registers its peer listeners first: peerItems is current here.
-    api.onPeerJoined(() => updateWaiting());
-    api.onPeerLeft(() => updateWaiting());
-
-    // The saved lines of a room: the newest page, or the page before { time, id }. Returns an array.
-    async function readLines(roomId, before = null) {
+    // A concurrent Clear or Forget invalidates any page the main process already read.
+    async function readLines(roomId, before = null, channelId = 'general') {
+        const change = archiveChanges.get(roomId);
+        if (change?.pending) return null;
         try {
-            const lines = await api.savedRoomLines(roomId, before ? { before } : undefined);
+            const lines = await api.savedRoomLines(roomId, channelId === 'general' && !before ? undefined : { ...(before ? {before} : {}), ...(channelId !== 'general' ? {channelId} : {}) });
+            if (change !== archiveChanges.get(roomId)) return null;
             return Array.isArray(lines) ? lines : [];
         } catch (err) {
             console.warn(`Saved lines not read: ${err?.message ?? err}`);
-            return [];
+            return null;
         }
     }
 
@@ -164,9 +185,15 @@
     }
 
     // Saved lines after a login into a saved room. Lines with an ID that is shown do not come again.
-    async function loadAfterLogin(roomId) {
-        const lines = await readLines(roomId);
-        if (openRoomId !== roomId) return;
+    async function loadAfterLogin(roomId, channelId = 'general') {
+        const pageKey = roomId + '/' + channelId;
+        if (loadedPages.has(pageKey)) return;
+        loadedPages.add(pageKey);
+        const lines = await readLines(roomId, null, channelId);
+        if (!lines || openRoomId !== roomId) {
+            loadedPages.delete(pageKey);
+            return;
+        }
         linesLoadedFor = roomId;
         for (const line of lines) if (line.id) savedMessageIds.add(String(line.id));
         const fresh = window.readingCore.newHistoryLines(lines, id => {
@@ -175,11 +202,17 @@
             return true;
         });
         const empty = messageList.children.length === 0;
-        window.reading.keepPosition(() => {
-            for (const line of fresh) insertMessage(line.from, line.text, line.time, line.id, line.own === true);
-        });
-        if (empty) window.reading.followLatest();
-        setOlder(lines.length >= FIRST_PAGE ? 'more' : 'none');
+        const insertPage = () => {
+            for (const line of fresh) insertMessage(line.from, line.text, line.time, line.id, line.own === true, line.channelId, line.attachment);
+        };
+        const visible = !window.roomChannels || window.roomChannels.isViewing(channelId);
+        if (visible) window.reading.keepPosition(insertPage);
+        else insertPage();
+        window.chatAttachments?.restoreSaved(lines);
+        if (visible && empty) window.reading.followLatest();
+        const older = lines.length >= FIRST_PAGE ? 'more' : 'none';
+        if (window.roomChannels) window.roomChannels.setOlder(channelId, older);
+        else setOlder(older);
     }
 
     // Paging: at the top of the list, load the older page and put it above the first line.
@@ -196,13 +229,19 @@
         olderBusy = true;
         try {
             const roomId = openRoomId;
-            const lines = await readLines(roomId, { time: Number(first.dataset.time) || 0, id: first.dataset.id });
-            if (roomId !== openRoomId) return;
+            const channelId = window.roomChannels?.active() ?? 'general';
+            const lines = await readLines(roomId, { time: Number(first.dataset.time) || 0, id: first.dataset.id }, channelId);
+            if (!lines || roomId !== openRoomId) return;
             for (const line of lines) if (line.id) savedMessageIds.add(String(line.id));
-            window.reading.keepPosition(() => {
-                for (const line of lines) insertMessage(line.from, line.text, line.time, line.id, line.own === true);
-            });
-            setOlder(lines.length >= OLDER_PAGE ? 'more' : 'none');
+            const insertPage = () => {
+                for (const line of lines) insertMessage(line.from, line.text, line.time, line.id, line.own === true, line.channelId, line.attachment);
+            };
+            if (!window.roomChannels || window.roomChannels.isViewing(channelId)) window.reading.keepPosition(insertPage);
+            else insertPage();
+            window.chatAttachments?.restoreSaved(lines);
+            const older = lines.length >= OLDER_PAGE ? 'more' : 'none';
+            if (window.roomChannels) window.roomChannels.setOlder(channelId, older);
+            else setOlder(older);
         } finally {
             olderBusy = false;
         }
@@ -223,12 +262,16 @@
         const saved = typeof result?.roomId === 'string' && result.roomId !== '' && result.savedRoom === true;
         openRoomId = saved ? result.roomId : null;
         roomStorage.hidden = !saved;
+        historyToggle.hidden = !saved;
         clearConfirm.hidden = true;
         if (!saved) return;
         showKeepState(result.keepHistory !== false);
         if (!messageList.dataset.older) setOlder('more');
     }
 
+    roomStorage.addEventListener('toggle', event => {
+        if (event.newState === 'closed') clearConfirm.hidden = true;
+    });
     roomKeepHistory.addEventListener('change', async () => {
         if (!openRoomId) return;
         const want = roomKeepHistory.checked;
@@ -256,8 +299,10 @@
         if (!openRoomId) return;
         clearYes.disabled = true;
         try {
-            const result = await api.clearHistory(openRoomId);
+            const result = await deleteSavedData(openRoomId, api.clearHistory);
             clearSavedMarks();
+            window.chatAttachments?.clearedSaved();
+            window.roomChannels?.clearOlder();
             setOlder('none');
             clearConfirm.hidden = true;
             status.textContent = `Saved history deleted on this device (${Number(result?.cleared) || 0} messages).`;
@@ -278,44 +323,52 @@
     api.onLineSaved(data => noteSaved(data?.id));
     api.onSaveFailed(data => saveFailed(data));
 
-    // Reopen: show the chat screen at once with the saved lines, then start the node.
-    async function reopen(room) {
+    async function reopen(room, allowLegacy = false) {
         if (reopenBusy) return;
         reopenBusy = true;
         loginButton.disabled = true;
         for (const b of savedList.querySelectorAll('.reopen-room')) b.disabled = true;
-        const lines = await readLines(room.roomId);
-        internetRoom = true;
-        showChat(String(room.userName ?? ''), String(room.name ?? ''));
-        for (const line of lines) {
-            if (line.id) savedMessageIds.add(String(line.id));
-            addMessage(line.from, line.text, line.time, line.own === true, line.id, line.peerId ?? null);
-        }
-        linesLoadedFor = String(room.roomId);
-        setOlder(lines.length >= FIRST_PAGE ? 'more' : 'none');
-        window.reading.followLatest();
-        watchPeers = true;
-        updateWaiting();
+        let started = false;
         try {
-            const result = await api.reopenRoom(room.roomId);
+            const lines = await readLines(room.roomId);
+            if (!lines && archiveChanges.get(room.roomId)?.pending) return;
+            const result = await api.reopenRoom(room.roomId, allowLegacy);
+            started = true;
+            internetRoom = result?.internet === true;
+            showChat(String(room.userName ?? ''), String(room.name ?? ''));
+            for (const line of lines ?? []) {
+                if (line.id) savedMessageIds.add(String(line.id));
+                addMessage(line.from, line.text, line.time, line.own === true, line.id, line.peerId ?? null, line.channelId, line.attachment);
+            }
+            if (lines) {
+                linesLoadedFor = String(room.roomId);
+                loadedPages.add(linesLoadedFor + '/general');
+            }
+            setOlder((lines?.length ?? 0) >= FIRST_PAGE ? 'more' : 'none');
+            window.reading.followLatest();
             roomStarted(result);
+            window.chatAttachments?.restoreSaved(lines);
         } catch (err) {
             status.textContent = `Error: the room did not start: ${err?.message ?? err}`;
+        } finally {
+            if (!started) {
+                reopenBusy = false;
+                loginButton.disabled = false;
+                for (const b of savedList.querySelectorAll('.reopen-room')) b.disabled = false;
+            }
         }
     }
 
     window.savedRoomsUi = {
+        channelOpened(id) { if (openRoomId) void loadAfterLogin(openRoomId, id); },
         // The login fields of the save choice. Only a keyed room sends them.
-        loginOptions(type) {
-            if (type === 'lan') return {};
+        loginOptions() {
             return { save: saveRoomBox.checked && !saveRoomBox.disabled, keepHistory: keepHistoryBox.checked };
         },
         roomStarted(result) {
-            if (result?.saved === true || watchPeers) watchPeers = true;
             if (result?.saveError) status.textContent = `The room was not saved: ${result.saveError}`;
             showStorage(result);
             if (openRoomId && linesLoadedFor !== openRoomId) loadAfterLogin(openRoomId);
-            updateWaiting();
         },
         saveFailed
     };

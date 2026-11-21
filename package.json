@@ -5,10 +5,12 @@
   "main": "src/application/main.js",
   "type": "module",
   "scripts": {
+    "postinstall": "node src/network/libp2p-relay-fix.mjs",
+    "pretest": "node src/network/libp2p-relay-fix.mjs",
     "start": "electron .",
     "dev": "electron . --dev",
     "test": "node --test",
-    "dist": "electron-builder --win portable"
+    "dist": "electron-builder --win portable --publish never"
   },
   "keywords": [
     "p2p",
@@ -17,28 +19,25 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@chainsafe/libp2p-noise": "^13.0.0",
-    "@chainsafe/libp2p-yamux": "^6.0.2",
-    "@libp2p/circuit-relay-v2": "1.1.5",
-    "@libp2p/identify": "2.1.5",
-    "@libp2p/mdns": "^10.0.0",
-    "@libp2p/ping": "^1.0.20",
-    "@libp2p/tcp": "^9.1.6",
-    "@libp2p/upnp-nat": "1.2.5",
-    "@libp2p/utils": "^5.0.0",
-    "@libp2p/websockets": "^8.1.4",
-    "@nodeutils/defaults-deep": "^1.1.0",
+    "@chainsafe/libp2p-noise": "17.0.0",
+    "@chainsafe/libp2p-yamux": "8.0.1",
+    "@libp2p/circuit-relay-v2": "4.2.17",
+    "@libp2p/identify": "4.1.18",
+    "@libp2p/mdns": "12.0.36",
+    "@libp2p/tcp": "11.0.32",
+    "@multiformats/multiaddr": "13.0.3",
     "@sapphi-red/web-noise-suppressor": "0.4.1",
+    "@silentbot1/nat-api": "0.4.9",
     "better-sqlite3-multiple-ciphers": "13.2.0",
     "it-pipe": "^3.0.1",
     "it-pushable": "^3.2.4",
-    "libp2p": "^1.9.4",
+    "libp2p": "3.5.1",
     "uint8arrays": "^5.1.0",
     "uiohook-napi": "1.5.5"
   },
   "devDependencies": {
-    "electron": "^40.5.0",
-    "electron-builder": "^26.18.0",
+    "electron": "45.4.1",
+    "electron-builder": "26.18.0",
     "eslint": "^9.0.0",
     "prettier": "^3.0.0"
   },
@@ -54,13 +53,21 @@
       "output": "dist"
     },
     "artifactBuildStarted": "./build/portable-launcher.cjs",
+    "beforePack": "./src/network/libp2p-relay-fix.mjs",
     "npmRebuild": false,
+    "allowMissingDependencies": false,
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true
+    },
     "win": {
       "target": "portable"
     },
     "portable": {
-      "artifactName": "ASSCRACK-${version}-portable.exe",
-      "unpackDirName": "ASSCRACK"
+      "artifactName": "ASSCRACK-${version}-private-dev.exe"
     }
   }
 }

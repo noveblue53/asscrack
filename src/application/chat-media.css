@@ -1,0 +1,7 @@
+.chat-media { display: block; max-width: 100%; margin-block: .3rem; }
+.chat-media[hidden] { display: none; }
+.chat-media img, .chat-media video, .chat-media canvas { display: block; max-width: min(100%, 28rem); max-height: 16rem; object-fit: contain; }
+.chat-media canvas { width: auto; height: auto; }
+.chat-media button { margin-block: .2rem; }
+.chat-media-status { display: block; font-size: .9em; }
+.compact-transcript #messages .attachment-actions, .compact-transcript #messages .chat-media { grid-column: 3 / -1; }

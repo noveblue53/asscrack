@@ -1,0 +1,6 @@
+#activity-open { font-size: 11px; padding: 0 6px; }
+#room-activity { box-sizing: border-box; max-width: calc(100vw - 24px); width: 650px; color: #193950; background: #f2f9fd; border: 1px solid #66869d; border-radius: 6px; }
+#room-activity::backdrop { background: rgba(18, 34, 46, 0.45); }
+#room-activity h2 { margin: 0 0 8px; }
+#activity-lines { box-sizing: border-box; width: 100%; height: min(45vh, 340px); resize: vertical; white-space: pre; font: 12px/1.5 Consolas, monospace; }
+#room-activity .activity-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 6px; }

@@ -1,0 +1,138 @@
+name: Verify a Windows candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Verify an unsigned candidate or build with a production signer
+        required: true
+        type: choice
+        options: [private, signed]
+        default: private
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-2025
+    steps:
+      - name: Require a protected signing ref
+        env:
+          PROTECTED_REF: ${{ github.ref_protected }}
+          MODE: ${{ inputs.mode }}
+          SIGNER_SHA256: ${{ vars.ASSCRACK_WINDOWS_SIGNER_SHA256 }}
+        run: |
+          if ($env:MODE -eq 'signed') {
+            if ($env:PROTECTED_REF -ne 'true') { throw 'Signing requires a protected source ref.' }
+            if ($env:SIGNER_SHA256 -notmatch '\A[0-9a-fA-F]{64}\z') { throw 'Configure the approved signer SHA-256 fingerprint.' }
+          }
+
+  private-candidate:
+    if: inputs.mode == 'private'
+    needs: validate
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.22.1
+      - name: Install locked dependencies and verify an unsigned candidate
+        run: |
+          npm ci --ignore-scripts
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed.' }
+          npm test
+          if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
+          $output = Join-Path $env:RUNNER_TEMP 'private-candidate'
+          ./build/build-windows-candidate.ps1 -OutputDirectory $output
+          $manifest = Get-Content -LiteralPath (Join-Path $output 'verification.json') -Raw | ConvertFrom-Json
+          node tools/second-start-check.mjs --first (Join-Path $output $manifest.file) --temp $env:RUNNER_TEMP --out (Join-Path $output 'launch-smoke.json')
+          if ($LASTEXITCODE -ne 0) { throw 'Portable launcher smoke check failed.' }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: github.event.repository.private
+        with:
+          name: windows-private-unsigned-candidate
+          path: ${{ runner.temp }}/private-candidate
+          if-no-files-found: error
+          retention-days: 7
+
+  sign:
+    if: inputs.mode == 'signed'
+    needs: validate
+    runs-on: [self-hosted, Windows, X64, asscrack-signing]
+    environment: windows-release-signing
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.22.1
+      - name: Build with the installed signing identity
+        env:
+          ASSCRACK_WINDOWS_SIGNER_SHA1: ${{ vars.ASSCRACK_WINDOWS_SIGNER_SHA1 }}
+          ASSCRACK_WINDOWS_SIGNER_SHA256: ${{ vars.ASSCRACK_WINDOWS_SIGNER_SHA256 }}
+        run: |
+          npm ci --ignore-scripts
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed.' }
+          ./build/build-windows-candidate.ps1 -Mode TrustedSigned -OutputDirectory (Join-Path $env:RUNNER_TEMP 'signed-candidate')
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: github.event.repository.private
+        with:
+          name: windows-signed-pending-independent-verification
+          path: ${{ runner.temp }}/signed-candidate
+          if-no-files-found: error
+          retention-days: 1
+
+  verify-signed:
+    if: inputs.mode == 'signed' && github.event.repository.private
+    needs: sign
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.22.1
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: windows-signed-pending-independent-verification
+          path: ${{ runner.temp }}/signed-readback
+      - name: Verify the embedded payload and Windows certificate trust independently
+        env:
+          SIGNER_SHA256: ${{ vars.ASSCRACK_WINDOWS_SIGNER_SHA256 }}
+        run: |
+          npm ci --ignore-scripts
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed.' }
+          $inputFolder = Join-Path $env:RUNNER_TEMP 'signed-readback'
+          $expected = Get-Content -LiteralPath (Join-Path $inputFolder 'verification.json') -Raw | ConvertFrom-Json -AsHashtable
+          $checkout = (git rev-parse HEAD).Trim()
+          if ($expected.source -ne $checkout -or $expected.outputMode -ne 'TrustedSigned') { throw 'Unexpected build provenance.' }
+          $exe = @(Get-ChildItem -LiteralPath $inputFolder -File -Filter '*.exe')
+          if ($exe.Count -ne 1 -or $exe[0].Name -ne $expected.file) { throw 'Expected one signed candidate.' }
+          $verify = Join-Path $env:RUNNER_TEMP 'independent-verification'
+          $sevenZip = Join-Path $env:ProgramFiles '7-Zip/7z.exe'
+          $runtime = ./build/get-windows-electron.ps1 -OutputDirectory (Join-Path $env:RUNNER_TEMP 'official-electron')
+          node build/verify-windows-portable.cjs $exe[0].FullName $verify $sevenZip $runtime
+          if ($LASTEXITCODE -ne 0) { throw 'The readback payload did not match the checkout.' }
+          $actual = Get-Content -LiteralPath (Join-Path $verify 'verification.json') -Raw | ConvertFrom-Json -AsHashtable
+          if ($actual.sha256 -ne $expected.sha256 -or $actual.applicationSha256 -ne $expected.applicationSha256) { throw 'Signed artifact digest mismatch.' }
+          $evidence = @(./build/verify-windows-signatures.ps1 -Files @($exe[0].FullName, $actual.application) -SignerSha256 $env:SIGNER_SHA256)
+          if ($evidence.Count -ne 2) { throw 'Both embedded signatures must be verified.' }
+          node tools/second-start-check.mjs --first $exe[0].FullName --temp $env:RUNNER_TEMP --out (Join-Path $inputFolder 'launch-smoke.json')
+          if ($LASTEXITCODE -ne 0) { throw 'Signed portable launcher smoke check failed.' }
+          $expected.independentWindowsVerification = $evidence
+          ConvertTo-Json -InputObject $expected -Depth 32 | Set-Content -LiteralPath (Join-Path $inputFolder 'verification.json') -Encoding utf8
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: github.event.repository.private
+        with:
+          name: windows-verified-signed-candidate
+          path: ${{ runner.temp }}/signed-readback
+          if-no-files-found: error
+          retention-days: 7

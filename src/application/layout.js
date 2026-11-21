@@ -37,7 +37,8 @@
             buddiesShown: true,
             mapWidth: null,
             transferHeight: null,
-            transfersShown: true,
+            transfersPinned: false,
+            compactTranscript: false,
         };
     }
 
@@ -62,7 +63,8 @@
         pref.transferHeight = validSize('transferHeight', raw.transferHeight);
         if (SIDES.includes(raw.buddySide)) pref.buddySide = raw.buddySide;
         if (typeof raw.buddiesShown === 'boolean') pref.buddiesShown = raw.buddiesShown;
-        if (typeof raw.transfersShown === 'boolean') pref.transfersShown = raw.transfersShown;
+        if (typeof raw.compactTranscript === 'boolean') pref.compactTranscript = raw.compactTranscript;
+        if (typeof raw.transfersPinned === 'boolean') pref.transfersPinned = raw.transfersPinned;
         return pref;
     }
 
@@ -105,18 +107,18 @@
         }
     }
 
-    // The breakpoints of the old style sheet. A fresh profile gets these sizes.
+    // Give conversation more space without changing any saved splitter widths.
     function responsiveDefaults(width, height) {
         const bodyW = Math.max(0, width - 2 * PAD);
         let buddyWidth = 192;
         if (width <= 600) buddyWidth = 148;
-        else if (width >= 1100) buddyWidth = 236;
+        else if (width >= DOCK_MIN_W) buddyWidth = Math.round(clampNumber(0.22 * bodyW, 192, 370));
         let transferHeight = 90;
         if (height >= 900) transferHeight = 210;
         else if (height >= 700) transferHeight = 150;
         return {
             buddyWidth,
-            mapWidth: Math.round(clampNumber(0.36 * bodyW, 320, 500)),
+            mapWidth: Math.round(clampNumber(0.29 * bodyW, 300, 520)),
             transferHeight,
         };
     }
@@ -181,7 +183,6 @@
             mapWidth,
             mapMin,
             mapMax: Math.round(mapMax),
-            transfersShown: p.transfersShown,
             transferSet: p.transferHeight !== null,
             transferHeight,
             transferMin,
@@ -229,11 +230,12 @@
     const root = doc.documentElement;
     const body = doc.body;
     const buddyPanel = byId('buddy-panel');
+    const transferPanel = byId('transfer-panel');
+    const frameTransfers = byId('frame-transfers');
     const transferList = byId('transfers');
     const mapToggle = byId('map-toggle');
     const viewToggle = byId('view-toggle');
     const viewMenu = byId('view-menu');
-    const buddyToggle = byId('buddy-toggle');
     const items = {
         buddies: byId('view-buddies'),
         drawer: byId('view-buddy-drawer'),
@@ -249,6 +251,7 @@
     };
 
     let pref = readPref(window);
+    let transfersOpen = pref.transfersPinned;
     let eff = null;
     let drag = null;
     let drawerOpener = null;
@@ -268,7 +271,7 @@
     // The fixed vertical space: the four bands, the composer margin, the chat-body and transfer margins,
     // the transfer head (26), the columns (20) and the two panel borders.
     function measureChrome() {
-        const bands = boxHeight('titlebar') + boxHeight('toolbar') + boxHeight('composer') + boxHeight('statusbar');
+        const bands = boxHeight('titlebar') + boxHeight('room-heading') + boxHeight('composer') + boxHeight('statusbar');
         if (bands <= 0) return DEFAULT_CHROME_H;
         return bands + 3 * PAD + 26 + 20 + 2;
     }
@@ -296,8 +299,9 @@
 
     function updateMenu() {
         if (!viewMenu) return;
+        byId('view-compact')?.setAttribute('aria-checked', String(pref.compactTranscript));
         if (items.buddies) items.buddies.setAttribute('aria-checked', String(pref.buddiesShown));
-        if (items.transfers) items.transfers.setAttribute('aria-checked', String(pref.transfersShown));
+        if (items.transfers) items.transfers.setAttribute('aria-checked', String(pref.transfersPinned));
         if (items.map) items.map.setAttribute('aria-checked', String(mapIsOpen()));
         if (items.drawer) items.drawer.hidden = !(eff && eff.buddyMode === 'drawer');
         if (items.side) {
@@ -312,13 +316,17 @@
         setVar('--map-w', eff.mapWidth);
         setVar('--transfer-h', eff.transferHeight);
         setVar('--transfer-reserve', eff.transferReserve);
+        // A narrow map or Buddies drawer covers the transcript above the composer. Its height varies with drafts.
+        setVar('--composer-height', boxHeight('composer'));
         const cls = body.classList;
         cls.toggle('layout-buddy-right', eff.buddySide === 'right');
+        cls.toggle('compact-transcript', pref.compactTranscript);
         cls.toggle('layout-buddy-hidden', eff.buddyMode === 'hidden');
         cls.toggle('layout-buddy-drawer', eff.buddyMode === 'drawer');
         cls.toggle('layout-buddy-off', eff.buddyMode !== 'docked');
         cls.toggle('layout-map-docked', eff.mapDocked);
-        cls.toggle('layout-transfers-hidden', !eff.transfersShown);
+        transferPanel.hidden = !transfersOpen;
+        frameTransfers.setAttribute('aria-expanded', String(transfersOpen));
         cls.toggle('layout-transfer-set', eff.transferSet);
         setSeparator(separators.buddyWidth, eff.buddyWidth, eff.buddyMin, eff.buddyMax, 'Buddies width');
         setSeparator(separators.mapWidth, eff.mapWidth, eff.mapMin, eff.mapMax, 'Map width');
@@ -503,25 +511,17 @@
         if (mapIsOpen() && !eff.mapDocked && mapToggle) mapToggle.click();
         drawerOpener = opener || null;
         body.classList.add('layout-drawer-open');
-        if (buddyToggle) buddyToggle.setAttribute('aria-expanded', 'true');
         buddyPanel.focus({ preventScroll: true });
     }
 
     function closeDrawer(returnFocus) {
         if (!isDrawerOpen()) return;
         body.classList.remove('layout-drawer-open');
-        if (buddyToggle) buddyToggle.setAttribute('aria-expanded', 'false');
         const opener = drawerOpener;
         drawerOpener = null;
         if (returnFocus && opener && typeof opener.focus === 'function') opener.focus({ preventScroll: true });
     }
 
-    if (buddyToggle) {
-        buddyToggle.addEventListener('click', () => {
-            if (isDrawerOpen()) closeDrawer(true);
-            else openDrawer(buddyToggle);
-        });
-    }
     if (buddyPanel) {
         buddyPanel.addEventListener('keydown', event => {
             if (event.key !== 'Escape' || !isDrawerOpen()) return;
@@ -571,6 +571,19 @@
     }
 
     // keepOpen: Space on a check item changes it and keeps the menu open.
+    let compactSelection = null;
+    let viewOrigin = null;
+    // Native menu interaction can collapse a transcript selection before the click is delivered.
+    function rememberTranscript() {
+        const s = doc.getSelection();
+        const list = byId('messages');
+        compactSelection = s && !s.isCollapsed && list?.contains(s.anchorNode) && list.contains(s.focusNode)
+            ? [s.anchorNode, s.anchorOffset, s.focusNode, s.focusOffset] : null;
+        viewOrigin = doc.activeElement;
+    }
+    viewToggle?.addEventListener('pointerdown', rememberTranscript);
+    viewToggle?.addEventListener('keydown', rememberTranscript);
+
     function activate(item, keepOpen) {
         if (!item) return;
         const isCheck = item.getAttribute('role') === 'menuitemcheckbox';
@@ -581,9 +594,37 @@
             return;
         }
         if (!stay) closeMenu(true);
-        if (item === items.buddies) setPref({ buddiesShown: !pref.buddiesShown });
-        else if (item === items.transfers) setPref({ transfersShown: !pref.transfersShown });
+        if (item.id === 'view-voice') {
+            if (!pref.buddiesShown) setPref({ buddiesShown: true });
+            if (eff.buddyMode === 'drawer') openDrawer(viewToggle);
+            const join = byId('join-voice');
+            (join.hidden ? byId('mute') : join).focus({ preventScroll: true });
+        } else if (item.id === 'detach-voice') window.roomVoiceMonitor?.open();
+        else if (item.id === 'view-compact') {
+            window.reading.keepPosition(() => {
+                setPref({ compactTranscript: !pref.compactTranscript });
+                if (!stay && viewOrigin?.isConnected && !viewMenu.contains(viewOrigin)) {
+                    viewOrigin.focus({ preventScroll: true });
+                }
+                if (compactSelection?.[0].isConnected && compactSelection[2].isConnected) {
+                    doc.getSelection().setBaseAndExtent(...compactSelection);
+                }
+            });
+        } else if (item === items.buddies) setPref({ buddiesShown: !pref.buddiesShown });
+        else if (item === items.transfers) {
+            transfersOpen = !pref.transfersPinned;
+            setPref({ transfersPinned: transfersOpen });
+        }
         else if (item === items.map && mapToggle) mapToggle.click();
+        else if (item.id === 'view-theme') window.roomThemes.open(viewOrigin);
+        else if (item.id === 'view-system-buttons') window.frameControls?.toggleSystemButtons();
+        else if (item.id === 'view-idle') window.idlePeer?.enter();
+        else if (item.id === 'view-close-idle') window.idlePeer?.toggleClose();
+        else if (item.id === 'view-quit') window.asscrack.quit();
+        else if (item.id === 'view-clear-previews') void window.chatMedia?.clearPreviews();
+        else if (item.id === 'view-previews') window.chatMedia?.toggleAuto();
+        else if (item.id === 'view-attention') window.roomAttention?.openSettings();
+        else if (item.id === 'view-typing') window.typingUi?.toggleShare();
         else if (item === items.side) setPref({ buddySide: pref.buddySide === 'left' ? 'right' : 'left' });
         else if (item === items.reset) reset();
         updateMenu();
@@ -632,8 +673,7 @@
     doc.addEventListener('pointerdown', event => {
         const target = event.target;
         if (isMenuOpen() && !viewMenu.contains(target) && !viewToggle.contains(target)) closeMenu(false);
-        if (isDrawerOpen() && buddyPanel && !buddyPanel.contains(target)
-            && !(buddyToggle && buddyToggle.contains(target)) && !(viewMenu && viewMenu.contains(target))) {
+        if (isDrawerOpen() && buddyPanel && !buddyPanel.contains(target) && !(viewMenu && viewMenu.contains(target))) {
             closeDrawer(false);
         }
     }, true);
@@ -643,6 +683,7 @@
     function reset() {
         if (drag) cancelDrag();
         pref = defaultPref();
+        transfersOpen = false;
         render();
         save();
     }
@@ -659,7 +700,13 @@
         return false;
     }
 
-    window.layout = Object.freeze({ closeTopLayer, isDrawerOpen, reset });
+    function showTransfers(open) {
+        transfersOpen = open;
+        if (!open && pref.transfersPinned) setPref({ transfersPinned: false });
+        else render();
+    }
+    frameTransfers.addEventListener('click', () => showTransfers(!transfersOpen));
+    window.layout = Object.freeze({ closeTopLayer, isDrawerOpen, reset, showTransfers: () => showTransfers(true) });
 
     window.addEventListener('resize', schedule);
     // The map changes the room for the chat column. Only the map-open class starts a recompute (render itself
@@ -678,7 +725,7 @@
     // The bands change height (the tool band wraps, the chat screen shows). Recompute in the next frame.
     if (typeof ResizeObserver === 'function') {
         const observer = new ResizeObserver(schedule);
-        for (const id of ['titlebar', 'toolbar', 'composer', 'statusbar']) {
+        for (const id of ['titlebar', 'room-heading', 'composer', 'statusbar']) {
             const el = byId(id);
             if (el) observer.observe(el);
         }

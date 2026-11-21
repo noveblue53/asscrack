@@ -167,8 +167,11 @@ test('Do not disturb does not change the voice view and calls no voice function'
             return original(...args);
         };
     }
+    let inVoice = false;
+    const join = voice.join;
+    voice.join = async () => { await join(); inVoice = true; };
     voice.state = () => ({
-        self: 'self-peer-id', host: null,
+        self: 'self-peer-id', host: null, inVoice,
         members: { [SAM_A]: { inVoice: true, muted: true }, [SAM_B]: { inVoice: true, muted: false } }
     });
     f.window.asscrack.setPresence = async value => value;

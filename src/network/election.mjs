@@ -1,5 +1,8 @@
 // Host election with heartbeats. The rules are in
 // work-orders/voice-failover-20261117/briefs/step1.md ("The election rules").
+// Rule 6: A member that loses its last session clears its host and waits.
+// After a session reopens, rule 4 gives the group time to announce its live
+// host before a new election. An incumbent host keeps its role.
 // This module has no network code. node.mjs gives it these functions:
 //   sendTo(peerId, line)  send one control line on one session
 //   broadcast(line)       send one control line on all sessions
@@ -13,6 +16,7 @@ export function createElection({
     openPeers,
     onChange = () => {},
     isFullNode = () => false,
+    hostAllowed = null,
     heartbeatInterval = 1000,
     hostTimeout = 5000,
     electionDelay = 3000,
@@ -55,6 +59,7 @@ export function createElection({
         let best = null
         let bestFull = false
         for (const id of ids) {
+            if (hostAllowed && !hostAllowed(id)) continue
             const full = Boolean(isFullNode(id))
             if (best === null || (full && !bestFull) || (full === bestFull && id < best)) {
                 best = id
@@ -94,6 +99,10 @@ export function createElection({
 
     function tick() {
         if (stopped) return
+        if (hostAllowed && host !== null && !hostAllowed(host)) {
+            if (isHost()) setHost(null, term)
+            else hostLost()
+        }
         if (isHost()) {
             // Rule 2.
             if (!paused) broadcast(announcement())
@@ -121,6 +130,7 @@ export function createElection({
             if (stopped) return
             const { host: h, term: t } = message
             if (typeof h !== 'string' || !Number.isInteger(t)) return
+            if (hostAllowed && (h !== fromPeerId || !hostAllowed(h) || !Number.isSafeInteger(t) || t < 1 || t >= Number.MAX_SAFE_INTEGER)) return
             // Rule 7.
             suspected.delete(fromPeerId)
             suspected.delete(h)
@@ -138,7 +148,7 @@ export function createElection({
             suspected.delete(peerId) // rule 7
             // Rule 3, extended: each member that knows a live host sends the
             // announcement of that host on the new session.
-            if (host !== null && !lost) sendTo(peerId, announcement())
+            if (host !== null && !lost && (!hostAllowed || isHost())) sendTo(peerId, announcement())
             if (firstSessionTime === null) {
                 firstSessionTime = now()
                 delayTimer = setTimeout(() => {
@@ -149,6 +159,15 @@ export function createElection({
         },
         sessionClosed(peerId) {
             if (stopped) return
+            // A restricted member may have been elected while the last circuit was tearing down.
+            // Without an open session, even that temporary incumbent must wait for a live host.
+            if (openPeers().length === 0) {
+                clearTimeout(delayTimer)
+                delayTimer = null
+                firstSessionTime = null
+                setHost(null, term)
+                return
+            }
             if (peerId === host) hostLost() // rule 5
         },
         pauseHeartbeats(value) {

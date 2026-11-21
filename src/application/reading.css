@@ -12,6 +12,9 @@
   position: relative;
 }
 
+#messages .nick-highlight { background: #fff0a5; color: #462d00; font-weight: 700; }
+#messages .selected-highlight > .bubble-text { outline: 2px solid #664a16; outline-offset: 1px; }
+
 /* The first unread line: a "New messages" separator above it. */
 #messages li.unread-first {
   align-self: stretch;

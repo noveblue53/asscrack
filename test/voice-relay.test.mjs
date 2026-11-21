@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { setTimeout as delay } from 'node:timers/promises'
-import { createLibp2p } from 'libp2p'
+import { createStreamCompatibleLibp2p } from '../src/network/libp2p-streams.mjs'
 import { tcp } from '@libp2p/tcp'
 import { yamux } from '@chainsafe/libp2p-yamux'
 import { noise } from '@chainsafe/libp2p-noise'
@@ -19,10 +19,10 @@ async function waitUntil(check, limit) {
 }
 
 async function makeNode() {
-    return createLibp2p({
+    return createStreamCompatibleLibp2p({
         addresses: { listen: ['/ip4/127.0.0.1/tcp/0'] },
         transports: [tcp()],
-        connectionEncryption: [noise()],
+        connectionEncrypters: [noise()],
         streamMuxers: [yamux()],
         // No auto-dial: its 5 s timer stays after stop() in libp2p 1.x and keeps the test process open.
         connectionManager: { minConnections: 0 }

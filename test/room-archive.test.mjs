@@ -365,3 +365,96 @@ test('a version 1 database opens and goes to version 2 with its rows', (t) => {
   assert.equal(a.state().state, 'open');
   assert.equal(a.listMessages(roomId)[0].text, 'secret-plaintext-xyz');
 });
+
+test('named channels survive offline restart, share retention with General and remain private to the room credential', (t) => {
+  const dir = tmpDir();
+  const protector = fakeProtector('channels');
+  const first = crypto.randomUUID();
+  const second = crypto.randomUUID();
+  let a = openRoomArchive({ dir, protector, limits: {maxRows: 3} });
+  t.after(() => { a.close(); fs.rmSync(dir, {recursive: true, force: true}); });
+  const room = a.saveRoom({ name: 'Garage', roomKey: KEY, invite: 'one', userName: 'A', keepHistory: true }).roomId;
+  const other = a.saveRoom({ name: 'Garage', roomKey: Buffer.alloc(32, 9), invite: 'two', userName: 'A', keepHistory: true }).roomId;
+  a.saveChannels(room, [{id: first, name: 'Pictures'}, {id: second, name: 'Game night'}]);
+  a.saveChannels(other, [{id: first, name: 'Other room'}]);
+  const post = (id, time, channelId) => ({id, from: 'A', time, own: true, source: 'send', text: 'private-fixture-' + id, channelId});
+  a.addMessage(room, post('evicted', 1, second));
+  a.addMessage(room, post('named', 2, first));
+  a.addMessage(room, post('general', 3));
+  a.addMessage(room, post('newer', 4, first));
+  assert.equal(a.addMessage(room, post('general', 5, first)), false);
+  a.addMessage(other, post('other', 1, first));
+  a.close();
+  // A 0.7.0 reader's original query sees only General. Named bodies are encrypted on disk.
+  assert.equal(fs.readFileSync(path.join(dir, 'archive.db')).includes(Buffer.from('private-fixture-')), false);
+  const key = protector.unwrap(Buffer.from(JSON.parse(fs.readFileSync(path.join(dir, 'archive.key'))).wrapped, 'base64'));
+  const db = new Database(path.join(dir, 'archive.db'));
+  db.pragma("cipher='sqlcipher'");
+  db.pragma('legacy=4');
+  db.pragma(`key='${key.toString('hex')}'`);
+  assert.equal(db.pragma('user_version', {simple: true}), 3);
+  assert.deepEqual(db.prepare('SELECT msg_id FROM messages WHERE room_id=?').all(room), [{msg_id: 'general'}]);
+  db.close();
+  a = openRoomArchive({ dir, protector });
+  assert.deepEqual(a.channels(room).map(c => c.name).sort(), ['Game night', 'Pictures']);
+  assert.deepEqual(a.channels(other), [{id: first, name: 'Other room'}]);
+  assert.deepEqual(a.listMessages(room, {channelId: first, limit: 1}).map(m => m.id), ['newer']);
+  assert.deepEqual(a.listMessages(room, {channelId: first, before: {id: 'newer', time: 4}}).map(m => m.id), ['named']);
+  assert.deepEqual(a.listMessages(room, {channelId: second}), []);
+  assert.deepEqual(a.listMessages(room, {channelId: 'general'}).map(m => m.id), ['general']);
+  assert.deepEqual(a.replayMessages(room).map(m => [m.id, m.channelId]), [['named',first],['general',undefined],['newer',first]]);
+  assert.equal(a.clearMessages(room).length, 3);
+  assert.equal(a.channels(room).length, 2);
+  assert.deepEqual(a.replayMessages(room), []);
+  a.removeRoom(room);
+  assert.deepEqual(a.channels(room), []);
+  assert.equal(a.listMessages(other).length, 1);
+});
+
+test('attachment bytes share row and room retention, and pruning removes the descriptor with its row', t => {
+  const attachment = {
+    id: crypto.randomUUID(), source: '12D3KooWDESEF99R85j6RjTNo9RTboTu35bUNHKEY8NtQ5BY4hhF',
+    sha256: 'a'.repeat(64), size: 275, kind: 'image', name: 'car.png', expires: 2000000000000
+  };
+  const bytes = Buffer.byteLength(JSON.stringify(attachment)) + 2; // body and sender each occupy one byte
+  const { a, roomId } = openRoom(t, { maxBytes: bytes, maxRowBytes: bytes });
+  const msg = { ...row('card', 1, 'x', 'u'), attachment };
+  a.addMessage(roomId, msg);
+  assert.deepEqual(a.roomUsage(roomId), { rows: 1, bytes });
+  assert.deepEqual(a.listMessages(roomId)[0].attachment, attachment);
+  assert.throws(() => a.addMessage(roomId, { ...msg, id: 'long', text: 'xx' }), { code: 'row-too-large' });
+  a.addMessage(roomId, row('next', 2, 'x', 'u'));
+  assert.deepEqual(a.roomUsage(roomId), { rows: 1, bytes: 2 });
+  // Reusing the pruned ID as text detects a side row left behind by deletion.
+  a.addMessage(roomId, row('card', 3, 'x', 'u'));
+  assert.equal(a.listMessages(roomId)[1].attachment, undefined);
+  assert.equal(a.replayMessages(roomId).some(r => r.attachment), false);
+});
+
+test('verified download reference is local to the exact retained card, disappears on Clear, and never enters replay', t => {
+  const dir = tmpDir(), protector = fakeProtector('download');
+  const opened = openRoomArchive({ dir, protector });
+  const { roomId } = opened.saveRoom({ name: 'Same', roomKey: KEY, keepHistory: true });
+  const { roomId: other } = opened.saveRoom({ name: 'Same', roomKey: Buffer.alloc(32, 8), keepHistory: true });
+  const d = { id: '12345678-1234-4234-a234-123456789abc', source: '12D3KooWQywidz6ZPBn4JkDYuVmkyMrteYfnWbxtDt6HoK1pRQ1N',
+    sha256: 'a'.repeat(64), size: 3, kind: 'image', name: 'shot.png', expires: 123456 };
+  const record = { id: 'post', text: 'a shot', time: 15, source: 'live', peerId: d.source, attachment: d };
+  opened.addMessage(roomId, record); opened.addMessage(other, record);
+  const file = path.join(dir, 'download.png');
+  fs.writeFileSync(file, 'xyz');
+  opened.rememberDownload(roomId, { ...d, size: 4 }, file);
+  assert.equal(opened.getDownload(roomId, 'post', d.id), null);
+  opened.rememberDownload(roomId, d, file);
+  opened.close();
+  const reopened = openRoomArchive({ dir, protector }); t.after(() => reopened.close());
+  // Close before the delete: Windows cannot delete an open database file.
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  assert.deepEqual(reopened.getDownload(roomId, 'post', d.id), { descriptor:d, path:file });
+  assert.equal(reopened.getDownload(other, 'post', d.id), null);
+  assert.equal(reopened.getDownload(roomId, 'post', 'another'), null);
+  assert.equal(JSON.stringify(reopened.replayMessages(roomId)).includes(file), false);
+  assert.equal(JSON.stringify(reopened.listMessages(roomId)).includes(file), false);
+  reopened.clearMessages(roomId);
+  assert.equal(reopened.getDownload(roomId, 'post', d.id), null);
+  assert.equal(fs.readFileSync(file, 'utf8'), 'xyz');
+});

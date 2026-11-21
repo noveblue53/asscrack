@@ -1,0 +1,118 @@
+/* Keep the room transcript laid out at its scroll position while viewing a whisper. */
+body.whisper-open #message-panel > :not(#whisper-pane) {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+#whisper-pane {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  color: var(--ink);
+  background: var(--chat);
+}
+
+.whisper-header, #whisper-picker, .whisper-compose {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  background: var(--control-glass);
+}
+
+.whisper-header {
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+#whisper-close, #whisper-title {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#whisper-title {
+  margin: 0;
+  font: 700 1.2em var(--font-title);
+}
+
+#whisper-scope {
+  padding-inline-start: 8px;
+  border-inline-start: 1px solid var(--line);
+  font-size: .86em;
+  color: var(--ink-soft);
+}
+
+#whisper-picker { flex-wrap: wrap; }
+#whisper-peer { max-width: 100%; }
+
+#whisper-lines {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  margin: 0;
+  padding: 10px 12px;
+  list-style: none;
+  overflow-y: auto;
+}
+
+#whisper-lines li {
+  flex: none;
+  align-self: flex-start;
+  max-width: min(86%, 42rem);
+  padding: 6px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 11px 11px 11px 3px;
+  background: var(--surface-raised);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+#whisper-lines li[data-direction="out"] {
+  align-self: flex-end;
+  border-radius: 11px 11px 3px 11px;
+  background: var(--own-message);
+}
+
+#whisper-status {
+  margin: 0;
+  padding: 4px 9px;
+  font-size: .88em;
+  color: var(--ink-soft);
+}
+#whisper-status:empty { padding: 0; }
+
+.whisper-compose {
+  border-top: 1px solid var(--line-soft);
+}
+#whisper-draft {
+  flex: 1;
+  min-width: 0;
+  max-height: 6rem;
+  resize: none;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: inherit;
+}
+:root[data-theme] #whisper-send {
+  background: var(--glass);
+  color: var(--frame-ink);
+}
+#peers li[data-whisper-unread]::after {
+  content: attr(data-whisper-unread);
+  grid-column: 4;
+  grid-row: 1;
+  align-self: center;
+  padding: 1px 6px;
+  border-radius: .8em;
+  font: 600 .8em var(--font-small);
+  background: var(--frame-mid);
+  color: var(--frame-ink);
+}

@@ -1,0 +1,114 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'">
+<title>Synthetic screenshare experiment</title>
+<style>body { margin: 0; background: #0b1d32; color: white; font: 18px sans-serif; } canvas { display: block; }</style>
+<canvas width="1280" height="720" hidden></canvas>
+<script>
+'use strict';
+const canvas = document.querySelector('canvas');
+let sceneTimer;
+function startScene(scene) {
+    if (new URLSearchParams(location.search).get('source') !== 'yes') return;
+    clearInterval(sceneTimer);
+    canvas.hidden = false;
+    const ctx = canvas.getContext('2d', { alpha: false });
+    let tick = 0;
+    function draw() {
+        ctx.fillStyle = '#102238';
+        ctx.fillRect(0, 0, 1280, 720);
+        if (scene === 'motion') {
+            for (let row = 0; row < 18; ++row) {
+                for (let col = 0; col < 32; ++col) {
+                    ctx.fillStyle = 'hsl(' + (tick * 4 + col * 9 + row * 17) % 360 + ' 70% 52%)';
+                    ctx.fillRect(col * 40 + Math.round(Math.sin(tick / 4 + row) * 10), row * 40, 38, 37);
+                }
+            }
+        } else {
+            ctx.font = '22px monospace';
+            for (let row = 0; row < 20; row++) {
+                ctx.fillStyle = row === Math.floor(tick / 15) % 20 ? '#7bedc7' : '#bad1e0';
+                ctx.fillText('Example ' + row + '     1024.80      427.30      730.25       563.90      +5.8%', 20, row * 35 + 29);
+            }
+        }
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(20 + tick % 140, 704, 12, 8);
+        tick++;
+    }
+    draw();
+    sceneTimer = setInterval(draw, 1000 / 15);
+}
+
+const options = { video: { width: 1280, height: 720, frameRate: 15 }, audio: false };
+async function denial() {
+    try {
+        const s = await navigator.mediaDevices.getDisplayMedia(options);
+        s.getTracks().forEach(t => t.stop());
+        return 'granted';
+    } catch (err) { return err.name; }
+}
+async function measure(retainFrames) {
+    window.syntheticFrames = [];
+    const stream = await navigator.mediaDevices.getDisplayMedia(options);
+    const track = stream.getVideoTracks()[0];
+    const reader = new MediaStreamTrackProcessor({ track }).readable.getReader();
+    const entered = new Map();
+    const latency = [];
+    let bytes = 0, frames = 0, decoded = 0, dropped = 0, codecError;
+    const decoder = new VideoDecoder({
+        output(frame) { decoded++; frame.close(); },
+        error(err) { codecError = err; }
+    });
+    const encoder = new VideoEncoder({
+        output(chunk, meta) {
+            latency.push(performance.now() - entered.get(chunk.timestamp));
+            entered.delete(chunk.timestamp);
+            if (retainFrames) {
+                const copy = new Uint8Array(chunk.byteLength);
+                chunk.copyTo(copy);
+                window.syntheticFrames.push({ at: performance.now() - start, data: copy });
+            }
+            bytes += chunk.byteLength;
+            frames++;
+            if (meta.decoderConfig) decoder.configure(meta.decoderConfig);
+            decoder.decode(chunk);
+        },
+        error(err) { codecError = err; }
+    });
+    const stopTimer = setTimeout(() => reader.cancel(), 12000);
+    const start = performance.now();
+    let width, height;
+    try {
+        while (performance.now() - start < 8000) {
+            const { done, value: frame } = await reader.read();
+            if (done) break;
+            try {
+                if (codecError) throw codecError;
+                if (encoder.state === 'unconfigured') {
+                    width = frame.displayWidth;
+                    height = frame.displayHeight;
+                    encoder.configure({ codec: 'vp8', width, height, bitrate: 1500000, framerate: 15, latencyMode: 'realtime' });
+                }
+                if (encoder.encodeQueueSize >= 2) { dropped++; continue; }
+                entered.set(frame.timestamp, performance.now());
+                encoder.encode(frame, { keyFrame: frames % 45 === 0 });
+            } finally { frame.close(); }
+        }
+        await encoder.flush();
+        await decoder.flush();
+        if (codecError) throw codecError;
+    } finally {
+        clearTimeout(stopTimer);
+        track.stop();
+        await reader.cancel();
+        encoder.close();
+        decoder.close();
+    }
+    const seconds = (performance.now() - start) / 1000;
+    latency.sort((a,b) => a - b);
+    const round = n => Math.round(n * 10) / 10;
+    return { width, height, frames, decoded, dropped, fps: round(frames / seconds), bytes,
+        kbitPerSecond: round(bytes * 8 / seconds / 1000), encodeP95ms: round(latency[Math.floor((latency.length - 1) * .95)]),
+        ended: track.readyState === 'ended' };
+}
+</script>

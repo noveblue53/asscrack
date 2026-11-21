@@ -4,19 +4,18 @@
 //   node tools/second-start-check.mjs --first <portable.exe> [--second <portable.exe>] [--temp <dir>] [--out <file>]
 //
 // The script starts the first portable launcher, waits for the window of the app, and takes the SHA-256 of each file
-// in <temp>\ASSCRACK. Then it starts the second launcher (the same exe when --second is not given). It measures the
+// in the build-specific unpack directory. Then it starts the second launcher (the same exe when --second is not given). It measures the
 // time until the second launcher exits (limit 10 s), takes the SHA-256 values and the file IDs again, and checks
-// that the first copy still runs. At the end it closes each process that it started and deletes <temp>\ASSCRACK.
+// that the first copy still runs. At the end it closes each process that it started and deletes its own temporary check directory.
 //
-// --temp sets TEMP and TMP for the launchers (the NSIS $TEMP comes from GetTempPath). The default is the TEMP of this
-// process. Use an other folder when a copy of ASSCRACK runs on this PC from the usual %TEMP%\ASSCRACK: the script
-// stops when a process runs from the unpack folder before the start.
+// --temp selects the parent for a fresh TEMP and TMP directory for the launchers. Use a dedicated test account
+// or close any running ASSCRACK copy before starting this single-instance check.
 //
 // Exit code 0: PASS. 1: FAIL. 2: the run was not possible.
 
 import { spawn, execFileSync } from 'child_process';
 import { createHash } from 'crypto';
-import { createReadStream, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'fs';
+import { createReadStream, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'fs';
 import os from 'os';
 import path from 'path';
 
@@ -31,15 +30,14 @@ function arg(name, fallback) {
 
 const first = arg('--first');
 const second = arg('--second', first);
-const tempDir = path.resolve(arg('--temp', process.env.TMP || process.env.TEMP || os.tmpdir()));
+const tempParent = path.resolve(arg('--temp', process.env.TMP || process.env.TEMP || os.tmpdir()));
 const outFile = arg('--out');
 if (!first) {
     console.error('Usage: node tools/second-start-check.mjs --first <exe> [--second <exe>] [--temp <dir>] [--out <file>]');
     process.exit(2);
 }
-const unpackDir = path.join(tempDir, 'ASSCRACK');
-const appExe = path.join(unpackDir, 'ASSCRACK.exe');
-const workDir = path.join(tempDir, `asscrack-f1-check-${process.pid}`);
+let tempDir;
+let unpackDir;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const log = (...a) => console.log(new Date().toISOString(), ...a);
@@ -48,13 +46,13 @@ function ps(command) {
     return execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { encoding: 'utf8' }).trim();
 }
 
-// The ASSCRACK processes whose exe is in the unpack folder: [{ id, parent, window }].
+// Only processes from this invocation's isolated temporary tree.
 function appProcesses() {
-    const exe = appExe.replace(/'/g, "''");
+    const prefix = (tempDir + path.sep).replace(/'/g, "''");
     const out = ps(
-        `$p = Get-CimInstance Win32_Process -Filter "Name='ASSCRACK.exe'" | Where-Object { $_.ExecutablePath -eq '${exe}' };` +
+        `$p = Get-CimInstance Win32_Process -Filter "Name='ASSCRACK.exe'" | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith('${prefix}', [StringComparison]::OrdinalIgnoreCase) };` +
         ` @($p | ForEach-Object { $g = Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue;` +
-        ` [pscustomobject]@{ id = $_.ProcessId; parent = $_.ParentProcessId; window = [int64]($g.MainWindowHandle) } }) | ConvertTo-Json -Compress`);
+        ` [pscustomobject]@{ id = $_.ProcessId; parent = $_.ParentProcessId; window = [int64]($g.MainWindowHandle); executable = $_.ExecutablePath } }) | ConvertTo-Json -Compress`);
     if (!out) return [];
     const value = JSON.parse(out);
     return Array.isArray(value) ? value : [value];
@@ -118,7 +116,7 @@ function compare(before, after) {
 }
 
 function startLauncher(exe, tag) {
-    const child = spawn(exe, ['--log-dir', path.join(workDir, `logs-${tag}`)], {
+    const child = spawn(exe, ['--log-dir', path.join(tempDir, `logs-${tag}`)], {
         env: { ...process.env, TEMP: tempDir, TMP: tempDir },
         stdio: 'ignore',
         windowsHide: false
@@ -162,32 +160,24 @@ async function cleanup(launchers) {
     for (const p of appProcesses()) taskkill(['/F', '/T', '/PID', String(p.id)]);
     await waitFor(() => appProcesses().length === 0, 15_000, 1000);
     const left = appProcesses().length;
-    const folderAfterNormalEnd = existsSync(unpackDir);
-    if (left === 0) {
-        rmSync(unpackDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 });
-    }
-    rmSync(workDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 });
-    return { processesLeft: left, folderAfterNormalEnd, folderDeleted: !existsSync(unpackDir) };
+    const folderAfterNormalEnd = Boolean(unpackDir && existsSync(unpackDir));
+    if (left === 0) rmSync(tempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 });
+    return { processesLeft: left, folderAfterNormalEnd, folderDeleted: !existsSync(tempDir) };
 }
 
 async function main() {
-    const result = { first, second, tempDir, unpackDir, limitMs: LIMIT_MS, start: new Date().toISOString() };
+    const result = { first, second, limitMs: LIMIT_MS, start: new Date().toISOString() };
     log(`first ${first}`);
     log(`second ${second}`);
-    log(`unpack folder ${unpackDir}`);
     for (const exe of [first, second]) {
         if (!existsSync(exe)) {
             console.error(`Not found: ${exe}`);
             return 2;
         }
     }
-    if (appProcesses().length > 0) {
-        console.error(`A copy of ASSCRACK runs from ${unpackDir}. Close it or use --temp <other folder>.`);
-        return 2;
-    }
-    mkdirSync(tempDir, { recursive: true });
-    rmSync(unpackDir, { recursive: true, force: true });
-    mkdirSync(workDir, { recursive: true });
+    mkdirSync(tempParent, { recursive: true });
+    tempDir = mkdtempSync(path.join(tempParent, 'asscrack-f1-check-'));
+    result.tempDir = tempDir;
 
     const launchers = [];
     let pass = false;
@@ -205,7 +195,10 @@ async function main() {
             log(`FAIL: ${result.error}`);
             return 1;
         }
+        unpackDir = path.dirname(mainApp.executable);
+        result.unpackDir = unpackDir;
         log(`window of the first copy: pid ${mainApp.id}`);
+        log(`unpack folder ${unpackDir}`);
         await sleep(3000);
         const s1 = await snapshot();
         await sleep(2000);
@@ -241,7 +234,7 @@ async function main() {
             result.afterSecond.replaced.length === 0;
         const exitInTime = result.secondExitMs !== null && result.secondExitMs <= LIMIT_MS;
         result.checks = { filesSame, exitInTime, firstStillRuns: result.firstStillRuns };
-        pass = filesSame && exitInTime && result.firstStillRuns;
+        pass = filesSame && exitInTime && b.code === 0 && result.firstStillRuns;
     } finally {
         result.cleanup = await cleanup(launchers);
         log(`cleanup: ${JSON.stringify(result.cleanup)}`);

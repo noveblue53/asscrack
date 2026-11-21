@@ -9,7 +9,7 @@ const read = name => readFile(new URL(`../src/application/${name}`, import.meta.
 test('main.js has the IPC handlers of part 2 with a roomId check', async () => {
     const source = await read('main.js');
     for (const name of ['saved-room-lines', 'set-keep-history', 'clear-history', 'forget-room']) {
-        assert.ok(source.includes(`ipcMain.handle('asscrack:${name}'`), name);
+        assert.ok(source.includes(`handleRoomIpc('asscrack:${name}'`), name);
     }
     assert.ok(source.includes("roomId.length <= 128"));
 });
@@ -47,6 +47,8 @@ test('the window listens for line-saved and save-failed', async () => {
 
 test('index.html has the room storage controls', async () => {
     const source = await read('index.html');
+    assert.match(source, /<header id="room-heading">[\s\S]*?<h1 id="chat-room"><\/h1>[\s\S]*?<button id="invite-toggle"[\s\S]*?<\/header>/);
+    assert.match(source, /<button id="history-toggle"[^>]+popovertarget="room-storage"/);
     for (const id of ['room-storage', 'room-keep-history', 'history-state', 'clear-history', 'clear-confirm',
         'clear-confirm-yes', 'clear-confirm-no']) {
         assert.ok(source.includes(`id="${id}"`), id);
@@ -58,7 +60,7 @@ test('the window marks local-only and saved lines', async () => {
     assert.ok(source.includes("'local-only-mark'"));
     assert.ok(source.includes("'Only on this computer'"));
     assert.ok(source.includes("'Saved on this device'"));
-    assert.ok(source.includes('It is only in this window.'));
+    assert.doesNotMatch(source, /No peer got this message/);
 });
 
 test('the login screen has Forget with a confirmation, and the list has paging', async () => {
@@ -69,4 +71,37 @@ test('the login screen has Forget with a confirmation, and the list has paging',
     assert.ok(source.includes('messageList.dataset.older = value'));
     const reading = await read('reading.js');
     assert.ok(reading.includes('keepPosition,'));
+});
+
+test('a page already returned by the archive cannot restore saved marks after Clear', async () => {
+    const { createDom } = await import('./helpers/fake-dom.mjs');
+    const { runInNewContext } = await import('node:vm');
+    const html = await read('index.html');
+    const { document, window } = createDom([...html.matchAll(/\bid="([^"]+)"/g)].map(m => ({ id: m[1] })));
+    const el = id => document.getElementById(id);
+    const page = Promise.withResolvers();
+    const marked = new Set();
+    let reads = 0;
+    let clears = 0;
+    window.asscrack = {
+        listSavedRooms: async () => ({ state: 'open', rooms: [] }),
+        savedRoomLines: () => { reads++; return page.promise; },
+        clearHistory: async () => { clears++; return { cleared: 1 }; },
+        onPeerJoined() {}, onPeerLeft() {}, onLineSaved() {}, onSaveFailed() {}
+    };
+    window.reading = { keepPosition: fn => fn(), followLatest() {} };
+    window.readingCore = { newHistoryLines: lines => lines };
+    runInNewContext(await read('saved-rooms-ui.js'), {
+        document, window, status: el('status'), roomTypeSelect: el('room-type'), messageList: el('messages'),
+        peerItems: new Map(), savedMessageIds: marked, clearSavedMarks: () => marked.clear(), insertMessage() {}
+    });
+    window.savedRoomsUi.roomStarted({ savedRoom: true, roomId: 'r' });
+    assert.equal(reads, 1);
+    el('clear-confirm-yes').click();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(clears, 1);
+    page.resolve([{ id: 'stale', text: 'deleted' }]);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(marked.has('stale'), false);
+    assert.equal(el('messages').dataset.older, 'none');
 });

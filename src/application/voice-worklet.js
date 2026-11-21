@@ -48,17 +48,24 @@ class VoicePlayback extends AudioWorkletProcessor {
         this.port.onmessage = ({ data }) => {
             if (!data) return;
             if (data.type === 'samples') this.add(data.origin, data.samples);
-            else if (data.type === 'remove') this.origins.delete(data.origin);
+            else if (data.type === 'gain' && Number.isFinite(data.gain) && data.gain >= 0 && data.gain <= 1) {
+                this.origin(data.origin).gain = data.gain;
+            } else if (data.type === 'remove') this.origins.delete(data.origin);
             else if (data.type === 'clear') this.origins.clear();
         };
     }
 
-    add(origin, samples) {
+    origin(origin) {
         let o = this.origins.get(origin);
         if (!o) {
-            o = { chunks: [], offset: 0, size: 0, playing: false };
+            o = { chunks: [], offset: 0, size: 0, playing: false, gain: 1 };
             this.origins.set(origin, o);
         }
+        return o;
+    }
+
+    add(origin, samples) {
+        const o = this.origin(origin);
         o.chunks.push(samples);
         o.size += samples.length;
         while (o.size > MAX_SAMPLES && o.chunks.length > 1) {
@@ -79,7 +86,7 @@ class VoicePlayback extends AudioWorkletProcessor {
             while (i < out.length && o.chunks.length > 0) {
                 const chunk = o.chunks[0];
                 const n = Math.min(out.length - i, chunk.length - o.offset);
-                for (let k = 0; k < n; k++) out[i + k] += chunk[o.offset + k];
+                for (let k = 0; k < n; k++) out[i + k] += chunk[o.offset + k] * o.gain;
                 i += n;
                 o.offset += n;
                 o.size -= n;

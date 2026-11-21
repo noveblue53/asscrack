@@ -2,8 +2,8 @@
 
 // The node map: one plain SVG in #node-map that shows the room as a web.
 // - Each room member is a node. The own node has the text "(you)".
-// - A mesh edge is a chat session between two members (from the topology data). When either end reports the
-//   session as a relay link (kinds), the edge has the kind relay and a dashed line.
+// - A mesh edge is a chat session between two members (from the topology data). When the endpoints agree on a
+//   session route, use the reported kind. Missing or conflicting information produces an unknown edge.
 // - A full node has a FULL badge.
 // - A voice edge goes from each voice member to the host. The host is the voice relay and has a RELAY badge.
 // - A node that speaks now has a pulse (a CSS animation, see styles.css).
@@ -13,6 +13,7 @@
 //   window.nodeMap.highlight(peerId): marks the node of that peer ID for a short time (data-highlight="true",
 //   see menu.css). Only that node, also when two users have the same name. Returns false when the map has no node
 //   for that peer ID.
+//   window.nodeMap.select(peerId): keeps the inspected peer marked until selection changes.
 //   state = {
 //     self: <peer ID or null>, host: <peer ID or null>,
 //     nodes: [{ id, name, color, inVoice, muted, speaking, fullNode }],   color is a name color class (nc0 to nc7)
@@ -23,21 +24,22 @@
 // This file does not read the globals of the renderer. All peer text goes in with textContent.
 //
 // Test contract: each node element has data-node. The host node has data-host="true". A full node has
-// data-full-node="true". Each edge element has data-edge, data-kind (mesh, relay, voice or transfer), data-from and
-// data-to. A chat session is one edge: data-kind="relay" when either end reports it as relay, else "mesh".
+// data-full-node="true". Each edge element has data-edge, data-kind (mesh, relay, unknown, voice or transfer), data-from and
+// data-to. A chat session is one edge; its title identifies locally observed and peer-reported routes.
 //
 // Motion: the nodes are on a ring. When the ring changes, the nodes move to the new positions in MOVE_MS and then
 // stop. There is no continuous requestAnimationFrame loop. There is no motion while document.hidden is true or with
 // prefers-reduced-motion.
 (function () {
     const SVG_NS = 'http://www.w3.org/2000/svg';
-    const NODE_R = 14;
+    const NODE_R = 17;
     const MOVE_MS = 280;
     const COLOR_RE = /^nc[0-7]$/;
 
     const container = document.getElementById('node-map');
+    const legend = document.getElementById('map-legend');
     if (!container) {
-        window.nodeMap = { update() {}, highlight() { return false; } };
+        window.nodeMap = { update() {}, highlight() { return false; }, select() {} };
         return;
     }
 
@@ -55,7 +57,7 @@
 
     // ---- The fixed parts of the picture ----
 
-    const svg = svgEl('svg', { role: 'img', 'aria-label': 'Network map', width: '100%', height: '100%' });
+    const svg = svgEl('svg', { role: 'group', 'aria-label': 'Network map', width: '100%', height: '100%' });
     const defs = svgEl('defs');
     const gloss = svgEl('radialGradient', { id: 'nm-gloss', cx: 0.34, cy: 0.26, r: 0.62 });
     gloss.append(stop(0, '#ffffff', 0.9), stop(0.7, '#ffffff', 0));
@@ -72,17 +74,7 @@
     const voiceLayer = svgEl('g', { class: 'nm-layer-voice' });
     const transferLayer = svgEl('g', { class: 'nm-layer-transfer' });
     const nodeLayer = svgEl('g', { class: 'nm-layer-nodes' });
-    // The legend: a solid line is a direct chat link, a dashed line is a chat link through a relay.
-    const legend = svgEl('g', { class: 'nm-legend', transform: 'translate(10 14)', 'aria-hidden': 'true' });
-    legend.append(
-        svgEl('line', { class: 'nm-legend-direct', x1: 0, y1: 0, x2: 22, y2: 0 }),
-        svgEl('text', { class: 'nm-legend-text', x: 28, y: 4 }),
-        svgEl('line', { class: 'nm-legend-relay', x1: 0, y1: 16, x2: 22, y2: 16 }),
-        svgEl('text', { class: 'nm-legend-text', x: 28, y: 20 })
-    );
-    legend.children[1].textContent = 'direct';
-    legend.children[3].textContent = 'relay';
-    svg.append(defs, meshLayer, voiceLayer, transferLayer, nodeLayer, legend);
+    svg.append(defs, meshLayer, voiceLayer, transferLayer, nodeLayer);
     container.replaceChildren(svg);
 
     const layers = { mesh: meshLayer, voice: voiceLayer, transfer: transferLayer };
@@ -93,6 +85,7 @@
     const edges = new Map(); // key -> edge view
     let order = []; // peer IDs in ring sequence: the own node first, then the other nodes by peer ID
     let lastSignature = '';
+    let selected = null;
     let width = 0;
     let height = 0;
     let frame = 0; // the pending requestAnimationFrame ID, 0 when there is no motion
@@ -129,6 +122,7 @@
                 inVoice,
                 muted,
                 speaking: inVoice && !muted && item.speaking === true,
+                idle: item.idle === true,
                 fullNode: item.fullNode === true
             });
         }
@@ -136,10 +130,6 @@
         const mesh = new Set();
         const links = state?.links !== null && typeof state?.links === 'object' ? state.links : {};
         const kinds = state?.kinds !== null && typeof state?.kinds === 'object' ? state.kinds : {};
-        const reportsRelay = (a, b) => {
-            const row = kinds[a];
-            return row !== null && typeof row === 'object' && row[b] === 'relay';
-        };
         for (const [from, peers] of Object.entries(links)) {
             if (!seen.has(from) || !Array.isArray(peers)) continue;
             for (const to of peers) {
@@ -159,26 +149,42 @@
             transferIds.add(id);
             transfers.push({ id, from, to });
         }
-        const relay = [...mesh].filter(key => {
-            const [a, b] = key.split('|');
-            return reportsRelay(a, b) || reportsRelay(b, a);
-        }).sort();
-        // The kind of the chat link of each peer to the own node.
-        if (seen.has(self)) {
-            const relaySet = new Set(relay);
-            for (const node of list) {
-                if (node.self) continue;
-                const key = self < node.id ? `${self}|${node.id}` : `${node.id}|${self}`;
-                if (mesh.has(key)) node.linkToYou = relaySet.has(key) ? 'relay' : 'direct';
-            }
+        const chatEdges = [...mesh].sort().map(key => {
+            const [from, to] = key.split('|');
+            const a = kinds[from]?.[to];
+            const b = kinds[to]?.[from];
+            const local = (from === self && a) || (to === self && b);
+            const reported = a || b;
+            const conflict = a && b && a !== b;
+            const kind = !conflict && (reported === 'mesh' || reported === 'relay') ? reported : 'unknown';
+            const route = kind === 'mesh' ? 'Direct' : kind === 'relay' ? 'Relayed' : 'Unknown';
+            const evidence = conflict ? 'conflicting reports' : local ? 'observed here' : reported ? 'peer-reported' : 'route unavailable';
+            const title = route + ' (' + evidence + ')';
+            return { from, to, kind, title };
+        });
+        const byId = new Map(list.map(node => [node.id, node]));
+        for (const edge of chatEdges) {
+            if (edge.from === self) byId.get(edge.to).linkToYou = edge.title;
+            if (edge.to === self) byId.get(edge.from).linkToYou = edge.title;
         }
-        return { host: seen.has(host) ? host : null, nodes: list, mesh: [...mesh].sort(), relay, voice, transfers };
+        return { host: seen.has(host) ? host : null, nodes: list, chatEdges, voice, transfers };
     }
 
     // ---- Nodes ----
 
     function makeNode(id) {
-        const group = svgEl('g', { class: 'nm-node', 'data-node': id });
+        const group = svgEl('g', { class: 'nm-node', 'data-node': id, role: 'button', tabindex: 0 });
+        function activate() {
+            if (group.classList.contains('self')) window.roomActions?.editAvailability();
+            else window.peerInspector?.open(id);
+        }
+        group.addEventListener('click', activate);
+        group.addEventListener('keydown', e => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                activate();
+            }
+        });
         // The body has the start animation. The group has the position.
         const body = svgEl('g', { class: 'nm-body' });
         const title = svgEl('title');
@@ -228,13 +234,15 @@
         else node.group.removeAttribute('data-full-node');
         const first = Array.from(data.name.trim())[0];
         node.letter.textContent = first ? first.toUpperCase() : '?';
-        node.label.textContent = shortName(data.name, labelMax) + (data.self ? ' (you)' : '');
+        node.label.textContent = (data.self ? 'You' : shortName(data.name, labelMax)) + (data.idle ? ' · Idle peer' : '');
         const facts = [data.name + (data.self ? ' (you)' : '')];
+        if (data.idle) facts.push('Idle peer');
         if (data.host) facts.push('host: the voice relay of the room');
-        if (data.fullNode) facts.push('full node: it relays the chat links of the room');
-        if (data.linkToYou) facts.push(data.linkToYou === 'relay' ? 'link to you: through a relay' : 'link to you: direct');
+        if (data.fullNode) facts.push('Full node · available to relay');
+        if (data.linkToYou) facts.push('Chat link to you · ' + data.linkToYou);
         if (data.inVoice) facts.push(data.speaking ? 'speaks now' : data.muted ? 'in voice (muted)' : 'in voice');
         else facts.push('not in voice');
+        node.group.setAttribute('aria-label', data.self ? 'Edit your availability and status note' : 'Inspect ' + data.name);
         node.title.textContent = facts.join('\n');
         if (node.host !== data.host) {
             node.host = data.host;
@@ -270,12 +278,14 @@
             if (!node) {
                 node = makeNode(data.id);
                 nodes.set(data.id, node);
+                if (data.id === selected) setSelected(node, true);
             }
             showNode(node, data, labelMax);
         }
         const own = state.nodes.filter(node => node.self).map(node => node.id);
         const others = state.nodes.filter(node => !node.self).map(node => node.id).sort();
         order = [...own, ...others];
+        assignSlots();
     }
 
     // ---- Edges ----
@@ -283,13 +293,12 @@
     function syncEdges(state) {
         const wanted = new Map();
         // The edge key has the kind, so a change of the kind makes a new element.
-        const relay = new Set(state.relay);
-        for (const key of state.mesh) {
-            const [from, to] = key.split('|');
-            const kind = relay.has(key) ? 'relay' : 'mesh';
-            wanted.set(`${kind}|${key}`, { kind, from, to, lane: 0 });
+        for (const edge of state.chatEdges) {
+            wanted.set(`${edge.kind}|${edge.from}|${edge.to}`, { ...edge, lane: 0, layer: 'mesh' });
         }
-        for (const id of state.voice) wanted.set(`voice|${id}`, { kind: 'voice', from: id, to: state.host, lane: 0 });
+        for (const id of state.voice) wanted.set(`voice|${id}`, {
+            kind: 'voice', from: id, to: state.host, lane: 0, title: 'Voice membership'
+        });
         // Transfers between the same two nodes get different curves.
         const lanes = new Map();
         for (const transfer of state.transfers) {
@@ -308,6 +317,7 @@
             const edge = edges.get(key);
             if (edge) {
                 edge.lane = data.lane;
+                if (edge.title) edge.title.textContent = data.title;
                 continue;
             }
             const element = svgEl(data.kind === 'transfer' ? 'path' : 'line', {
@@ -318,13 +328,13 @@
                 'data-to': data.to
             });
             if (data.kind === 'transfer') element.setAttribute('marker-end', 'url(#nm-arrow)');
-            if (data.kind === 'mesh' || data.kind === 'relay') {
-                const title = svgEl('title');
-                title.textContent = data.kind === 'relay' ? 'relay link' : 'direct link';
+            const title = data.title ? svgEl('title') : null;
+            if (title) {
+                title.textContent = data.title;
                 element.append(title);
             }
-            (data.kind === 'relay' ? layers.mesh : layers[data.kind]).append(element);
-            edges.set(key, { element, ...data });
+            layers[data.layer ?? data.kind].append(element);
+            edges.set(key, { ...data, title, element });
         }
     }
 
@@ -334,7 +344,30 @@
         return Math.round(value * 10) / 10;
     }
 
-    // Set the target position of each node: a ring with the own node at the bottom.
+    // The first three members form a triangle. A later arrival takes the largest free arc.
+    // Existing peers keep their place on the ring as others join or leave.
+    function assignSlots() {
+        const occupied = order.map(id => nodes.get(id).slot).filter(Number.isFinite).sort((a, b) => a - b);
+        for (const id of order) {
+            const node = nodes.get(id);
+            if (Number.isFinite(node.slot)) continue;
+            let slot = occupied.length < 3 ? [0, 3 / 8, 5 / 8].find(value => !occupied.includes(value)) : null;
+            if (slot === null) {
+                let largest = 0;
+                for (let i = 0; i < occupied.length; i++) {
+                    const next = occupied[i + 1] ?? occupied[0] + 1;
+                    const gap = next - occupied[i];
+                    if (gap > largest) {
+                        largest = gap;
+                        slot = (occupied[i] + gap / 2) % 1;
+                    }
+                }
+            }
+            node.slot = slot;
+            occupied.push(slot);
+            occupied.sort((a, b) => a - b);
+        }
+    }
     function setTargets() {
         const w = width > 0 ? width : 320;
         const h = height > 0 ? height : 200;
@@ -343,9 +376,9 @@
         const centerY = h / 2;
         const radiusY = Math.max(0, h / 2 - (NODE_R + 36));
         const radiusX = Math.max(0, Math.min(w / 2 - 52, radiusY * 2.4));
-        order.forEach((id, index) => {
+        order.forEach(id => {
             const node = nodes.get(id);
-            const angle = Math.PI / 2 + (index * 2 * Math.PI) / count;
+            const angle = Math.PI / 2 + node.slot * 2 * Math.PI;
             node.toX = count === 1 ? centerX : centerX + radiusX * Math.cos(angle);
             node.toY = count === 1 ? centerY : centerY + radiusY * Math.sin(angle);
             placeLabel(node, count > 1 && Math.sin(angle) < -0.25);
@@ -461,6 +494,35 @@
         return true;
     }
 
+    function setSelected(node, value) {
+        if (!node) return;
+        if (value) node.group.setAttribute('data-selected', 'true');
+        else node.group.removeAttribute('data-selected');
+    }
+
+    function select(id) {
+        setSelected(nodes.get(selected), false);
+        selected = id;
+        setSelected(nodes.get(selected), true);
+    }
+
+    function updateLegend(state) {
+        if (!legend) return;
+        const kinds = new Set(state.chatEdges.map(edge => edge.kind));
+        const shown = {
+            relay: Boolean(state.host),
+            direct: kinds.has('mesh'),
+            relayed: kinds.has('relay'),
+            unknown: kinds.has('unknown'),
+            full: state.nodes.some(node => node.fullNode),
+            voice: state.nodes.some(node => node.inVoice),
+            speaking: state.nodes.some(node => node.speaking),
+            file: state.transfers.length > 0,
+        };
+        for (const key of legend.children) key.hidden = !shown[key.dataset.legend];
+        legend.hidden = !Object.values(shown).some(Boolean);
+    }
+
     // ---- Interface and page events ----
 
     function update(state) {
@@ -468,8 +530,10 @@
         const signature = JSON.stringify(next);
         if (signature === lastSignature) return;
         lastSignature = signature;
+        window.peerInspector?.update(next);
         syncNodes(next);
         syncEdges(next);
+        updateLegend(next);
         layout(true);
     }
 
@@ -493,5 +557,5 @@
     document.addEventListener('visibilitychange', showPageState);
     showPageState();
 
-    window.nodeMap = { update, highlight };
+    window.nodeMap = { update, highlight, select };
 })();

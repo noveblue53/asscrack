@@ -2,22 +2,21 @@
 
 **Automated Server Switch in Case Relays Are Crashed or Killed**
 
-ASSCRACK is a peer-to-peer desktop app for a small group: text chat, voice and file sharing with no central server.
-On a local network, the members find each other with no address input. When the host of a room closes, the other
-members elect a new host with no user action.
+ASSCRACK is a peer-to-peer desktop app for small groups to chat, talk and share files.
+The room owner invites individual devices and chooses which ones may take over as host.
 
-> **Test copy only.** ASSCRACK is in early development. Use it with friends who want to help test it. Do not use it
-> for private or important conversations. The chat history and the voice are not end-to-end encrypted.
+> **Private test candidate.** Noise encrypts connections between peers. Room members can read public chat,
+> and the host can hear the voice traffic it forwards. Whispers go to the selected peer.
 
 ## Status
 
-| Item | State (2026-11-19) |
+| Item | State (2026-11-20) |
 |---|---|
-| Latest build | **0.7.0**, a portable Windows `.exe`, built on Windows on 2026-11-20. The SHA-256 is in `CHANGELOG.md`, entry 0.7.0. Checks: 127.0.0.1 only. There is no public download yet. |
-| `main` | 0.6.0 plus fixes for faults F1 to F6, the stale "No peers" status line, room window milestone 1 and Quote and Find (milestone 2). Also manual status (milestone 3) voice processing with push-to-talk (5C) and saved rooms (milestone 6 parts 1 and 2). Not released. |
-| Open field checks | The internet test card 8 (0.7.0) on 2 Windows computers: saved rooms, Quote and Find, manual status and voice settings. |
-| Current phase | Phase 8 (internet rooms) and Phase 7 (desktop experience), toward release 1.0. Steps 1 and 2 of the 1.0 plan are on `main`. Step 4 started: milestone 6 part 1 (saved rooms with an encrypted local history) is on `main` with 127.0.0.1 results only. Milestone 6 part 2 (local-only sends, saved marks, Clear, Forget and older lines) is on `main` with 127.0.0.1 results only. The step 3 field tests wait for the operator. |
-| Plan | [`docs/WORK_PLAN_1.0.md`](docs/WORK_PLAN_1.0.md) gives the release order, the scope and the exit checks of 1.0. |
+| Release hardening | This branch adds device admission, host permissions, revocation and bounded network operations. The Windows verification workflow supports private and timestamped signed candidates. [Windows build](#build-and-run-from-source) |
+| Earlier friend pilot | Windows x64 portable RC1 uses the 0.7.0 app version. The changelog records the exact executable SHA-256 and frozen source. [Draft download](https://github.com/noveblue53/asscrack/releases) · [Build and verification](CHANGELOG.md#unreleased--windows-friend-pilot-release-candidate) · [Field card](docs/FRIEND_PILOT.md) |
+| Prior 0.7.0 field build | Three Windows peers used the build from `8dacddd` in the November 20 internet test. Its SHA-256 and observed faults are in the [changelog](CHANGELOG.md). |
+| Earlier review builds | The [field recovery report](docs/FIELD_RECOVERY_REPORT.md) and [desktop review](docs/DESKTOP_REVIEW.md) list the earlier x64 executable identities and single-computer results. |
+| Field acceptance | The friend pilot covers the open router-lease, reconnect, interrupted-file, alternate-relay and Windows profile checks. The 1.0 decision also depends on the qualifying game nights. [Release plan](docs/WORK_PLAN_1.0.md) |
 
 ### How to read the results
 
@@ -33,14 +32,14 @@ Each result in this file and in [`CHANGELOG.md`](CHANGELOG.md) has one of these 
 |---|---|---|
 | LAN discovery | The members of a room on one network find each other through mDNS. No address input. | LAN |
 | Text chat | Chat lines go to each member of the room. Names show as soon as a member joins. | LAN, internet (0.5.0) |
-| Host election and failover | The members elect one host with terms and heartbeats. When the host closes, a new host takes the role. | LAN (0.2.0). Recovery time on the internet: not measured. |
+| Host election and failover | Protected rooms elect an admitted device with hosting permission. An authorized alternate takes over if one is available. | LAN (0.2.0). Recovery time on the internet: not measured. |
 | Chat history | The host sends up to 200 recent lines to each new or restarted member. | LAN (0.3.1) |
 | Voice | Opus frames on a libp2p stream. The host forwards the frames. Two members with a direct connection send frames directly (0.6.0). | Voice through the host: LAN, internet (0.5.0). Direct voice: 127.0.0.1 |
 | File sharing | Offer a file to the room. Each member can accept or refuse it. The receiver checks the SHA-256 and keeps no partial file. | LAN (0.3.1), internet (0.5.0) |
 | Cancel for one receiver | The sender can stop the transfer to one receiver. The other receivers continue. | 127.0.0.1 |
-| Internet rooms | Make a room with a room key and share an invite code (`asscrack1:…`). Other people join with the code. | Internet (0.5.0, forwarded port) |
+| Room access | New rooms use invitations issued to a specific device. Earlier shared codes require explicit trust. | Device admission on loopback. Earlier shared codes tested over the internet (0.5.0). |
 | Rejoin with the invite code | The host leaves and comes back with the same code. The members find the host again. | Internet (0.5.2) |
-| UPnP host | With an empty Public address field, the app asks the router for a port. | Port map on a real router: internet (0.6.0). A join through that code: not tested. |
+| UPnP host | Select the UPnP option to ask your router to forward a TCP port. | Port map on a real router: internet (0.6.0). A join through that code: not tested. |
 | Full nodes and relays | A member with a reachable port is a full node. It relays chat, history, files and voice for members that cannot connect directly. The relays spread across the full nodes. | 127.0.0.1 |
 | Network map | A panel shows the members, the host, the direct and relay links, the speakers and the file transfers. | 127.0.0.1 |
 | Room window (not released) | Panels with saved sizes, a View menu, context menus, the reading position and an unread count. | 127.0.0.1 (same PC) |
@@ -51,7 +50,7 @@ Each result in this file and in [`CHANGELOG.md`](CHANGELOG.md) has one of these 
 
 ## Known limits
 
-- **Windows only.** The build target is a portable Windows `.exe`. Other operating systems have no test.
+- **Windows distribution.** The portable executable targets Windows. Automated and Electron checks on this review branch ran on Linux.
 - **Saved history only for saved internet rooms.** Since milestone 6 part 1 (127.0.0.1 results only), the app
   saves the lines of a saved internet room in an encrypted local database. LAN rooms stay live sessions with no save.
   The packaged Windows checks of saved rooms are open.
@@ -67,8 +66,12 @@ Each result in this file and in [`CHANGELOG.md`](CHANGELOG.md) has one of these 
   allows UPnP. A member behind a carrier-grade NAT (CGNAT) cannot be a full node.
 - **No fallback route, no connection.** Members that connect only through one relay lose the connection when that relay
   leaves. They dial the known full nodes again every 5 seconds.
-- **Privacy.** Noise encrypts each peer connection, and a room key keeps other people out of an internet room. But the
-  host that forwards voice can access the audio, and a relay can see connection metadata.
+- **Device access.** A device ID identifies an installation. Verify the ID with your friend before issuing their
+  invite. The owner must be online for that device’s first admission. A saved room retains its access state in the
+  encrypted archive. Revocation takes effect as connected peers receive the owner’s signed update. An isolated
+  group can keep using its last known state until it reconnects. People can keep content they already received.
+- **Voice and route privacy.** The host can decode the audio it forwards. A circuit relay sees who connects and
+  when traffic flows. The Noise connection between whisper endpoints protects their message content through the relay.
 - **Firewall question.** Windows asks one time for each build. Allow the app on private networks.
 - **Push to talk in the back uses a key hook.** While you are in voice in push-to-talk mode, the app watches the
   keyboard and the mouse of the system for the one key. It does not keep or log other keys. Clear the option "Also
@@ -100,11 +103,13 @@ npm start -- --profile ./profile-a
 npm start -- --profile ./profile-b
 ```
 
-To make the portable Windows build (`dist/ASSCRACK-<version>-portable.exe`), run this command on Windows:
+On Windows, `npm run dist` creates `dist/ASSCRACK-<version>-private-dev.exe` for developer testing. For a verified Windows x64 candidate, install the locked dependencies with `npm ci --ignore-scripts`, run `npm test`, and choose a fresh output directory.
 
-```bash
-npm run dist
+```powershell
+./build/build-windows-candidate.ps1 -OutputDirectory 'C:\builds\asscrack-private'
 ```
+
+The private candidate includes an executable digest and payload verification report. For signed staging, install the approved signing certificate in the signing account’s Windows certificate store and configure `ASSCRACK_WINDOWS_SIGNER_SHA1` and `ASSCRACK_WINDOWS_SIGNER_SHA256`. Run the same command with `-Mode TrustedSigned`, then verify both signatures and hashes independently before publishing. [Windows signing and verification](docs/WINDOWS_RELEASE.md)
 
 ### Run the tests
 
@@ -116,7 +121,7 @@ npm test
 
 ### Terminal demo
 
-The terminal demo sends chat lines with no window. The team uses it to test the network layer.
+The terminal demo listens on loopback by default. Its optional `--trusted-lan` mode uses the legacy shared LAN room. Use the desktop app for protected rooms.
 
 ```bash
 node src/network/transceiver.mjs --room <name> --name <name>
@@ -124,11 +129,11 @@ node src/network/transceiver.mjs --room <name> --name <name>
 
 ### Host an internet room
 
-1. Select **New internet room** and type a room name.
-2. If you forwarded a TCP port to this computer, type your public IP and that port in **Public address**. Else, keep
-   the field empty: the app then asks the router for a port (UPnP).
-3. Select **Invite**, then **Copy**. Send the code to your friends through a different app.
-4. Your friends select **Join with invite code** and paste the code.
+1. Choose **Create protected internet room**, and enter your name and room name. Use **Save room on this device** to keep the room for a later session.
+2. For an internet room, enter the public address of a TCP port forwarded to your computer before logging in, or select **Ask my router to open a TCP port (UPnP)**. Then select **Log In**. A protected LAN room uses local discovery.
+3. Have your friend choose **Join with invite code** and **Copy my device ID**. Confirm that ID with them through a channel you trust.
+4. In your room, open **Invite**, enter that device ID, and choose **Create device invite**. Grant hosting permission only to devices you trust with host duties. Send the resulting code to that friend and stay online for their first join.
+5. Open **Invite** to see issued devices and revoke one. Other connected members enforce the signed update when they receive it.
 
 ## How it works
 
@@ -153,9 +158,9 @@ The network code is in `src/network/`. The Electron app is in `src/application/`
 | 2. Host election and failover | Done. LAN tested on 2 computers. |
 | 3. Mumble server | Not planned. Voice uses Opus on libp2p streams. |
 | 4. Voice with reconnect | Done. LAN tested (WebRTC, 0.2.0 and 0.3.1). Voice on libp2p streams internet tested (0.5.0). Echo and noise suppression, voice activity and push-to-talk (5C) are on `main` with 127.0.0.1 results. Next: the 5C test on 2 computers. |
-| 5. Chat | Done: chat and history after a restart (LAN). Quote and Find (127.0.0.1). Manual status (127.0.0.1). Saved rooms with encrypted local history (milestone 6 part 1 and part 2, 127.0.0.1). Next: a room topic and unread highlights. |
-| 6. File sharing | Done. LAN tested (0.3.1), internet tested (0.5.0). Next: a Shared shelf for the room. |
-| 7. Desktop experience | In progress. The new look and the map (0.4.0), room window milestone 1 and Quote and Find have 127.0.0.1 results only. |
+| 5. Chat | Chat and history after a restart passed on LAN. Quote/Find, availability, saved rooms, topics, highlights, channels and online whispers have single-computer coverage. |
+| 6. File sharing | Ordinary transfers passed on LAN (0.3.1) and the internet (0.5.0). Recipient-level delivery, inline media, fresh retry and the Shared shelf are part of the friend-pilot checks. |
+| 7. Desktop experience | The room, themes, map, tray and detachable voice panel have single-computer evidence. Windows shell and device checks are open. |
 | 8. Internet rooms | In progress. Invite codes and rejoin are internet tested. UPnP join, relays and failover on the internet are open. |
 
 Release 1.0 is a portable messenger for a game night. A friend joins from a different network. The group can continue to
@@ -163,9 +168,10 @@ talk when a host closes. People reopen the same room the next day. See [`docs/WO
 
 ## Documents
 
-- [`CHANGELOG.md`](CHANGELOG.md): each release and each unreleased change, with its results and labels.
-- [`src/network/chatreadme.md`](src/network/chatreadme.md): the LAN and internet test cards.
-- [`docs/WORK_PLAN_1.0.md`](docs/WORK_PLAN_1.0.md): the 1.0 release plan.
+- Follow the short Windows rehearsal and game-night checks. [Friend-pilot field card](docs/FRIEND_PILOT.md)
+- Find releases and unreleased changes with their evidence labels. [Changelog](CHANGELOG.md)
+- Find the detailed LAN and internet test cards. [Network test cards](src/network/chatreadme.md)
+- Follow the milestone acceptance criteria and 1.0 ship decision. [Release plan](docs/WORK_PLAN_1.0.md)
 
 ## License
 

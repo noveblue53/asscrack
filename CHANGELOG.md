@@ -7,6 +7,102 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased — protected-room Windows candidate
+
+- New internet and LAN rooms use owner-signed device invitations. The first admission requires a live owner. The owner grants hosting separately and can revoke a device. An isolated peer enforces an update when it receives the signed revocation.
+- Legacy shared-code rooms require explicit consent. New internet rooms ask the router to forward a port only when the owner selects UPnP.
+- Relay reservations and connections require room admission. Chat queues, inbound file requests, transfers and media previews have bounded resource use. The app restricts native desktop actions to the packaged main frame and grants microphone access to the room.
+- Upgraded to Electron 45.4.1 and libp2p 3.5.1. The Windows release tools verify the embedded application and provide a separate timestamped signing path.
+- **127.0.0.1** — Two independent desktop profiles completed device enrollment, chat and revocation in both internet and LAN modes. A four-peer circuit workload delivered 360 expected public copies and 60 addressed whispers. A legacy RC1 peer exchanged messages with the updated stack.
+- **127.0.0.1, Windows 10 PC (merge check, 2026-11-21):** the operator accepted the merge of RC2 source `344a8b23` into `main`. `npm test`: the first run had 3 failures in `test/room-archive.test.mjs` and `test/saved-rooms.test.mjs`. The cause was the test cleanup: it deleted the temp folder before it closed a second database store, and Windows cannot delete an open file. The tests now close each store first. After the fix, 404 of 404 pass. One `npm start`: no error line. The terminal and the log show 2 Electron 45 deprecation warnings for the synchronous `safeStorage` calls. There is no LAN result and no internet result for this source.
+
+## Unreleased — Windows friend-pilot release candidate
+
+The friend pilot integrates the field recovery, desktop review and center-pane whisper branches at `09ee774`. The frozen runtime source is `42cf3c64dc17e6bc86df21e8e66c16301e151ea6`. It keeps the 0.7.0 app version. Use the executable name and SHA-256 in the handoff to identify the portable. [Work-plan closeout](docs/WORK_PLAN_1.0.md#friend-pilot-closeout) · [Windows field card](docs/FRIEND_PILOT.md)
+
+**Windows x64 portable RC1.** `ASSCRACK-0.7.0-friend-pilot-rc1-42cf3c6-windows-runner-x64.exe` is 109,230,103 bytes with SHA-256 `567507aafaf63c209732b8144abd65a396d4570a339dab616b66e3d2b815048d`. The unsigned build used Windows Server 2025, Node 24.22.1, Electron 40.5.0 and electron-builder 26.18.0. The portable opened its window on Windows. A second launch exited in 55 ms and preserved all 187 unpacked files and the first window. Quit cleaned up the unpack folder. The draft download passed the SHA-256, NSIS and embedded archive checks. All 90 packaged application and network files matched the frozen source after Windows line-ending normalization. Both native x64 addons matched the locked package bytes. [Native build and launcher check](https://github.com/noveblue53/asscrack/actions/runs/44710271972) · [Draft download](https://github.com/noveblue53/asscrack/releases)
+
+The extracted x64 app from the same draft download exchanged two-way keyed loopback chat, handled a second start, quit cleanly and reopened both archived lines exactly once with the other peer offline under Wine 11.22. The renderer reported zero errors.
+
+**Native Windows packaged room.** A Windows Server 2025 runner downloaded and verified the exact RC1 executable before extracting the app. Two fresh profiles joined by invite, exchanged named-channel chat and whispers, verified a 2 MiB file and an inline PNG original, and exercised join, mute and focused push-to-talk with synthetic audio. Windows CurrentUser DPAPI unwrapped the profile key, and ordinary read-only SQLite rejected the encrypted archive. A cold reopen showed both public messages once and excluded private chat. Removing the wrapper from a disposable copy left its database intact. Restoring the wrapper recovered both message identities and preserved the original profile. No renderer errors occurred. [Packaged Windows verification](https://github.com/noveblue53/asscrack/actions/runs/44764956047)
+
+**Native Windows retry and 0.7.0 migration.** A controlled TCP disconnect stopped an actual loopback transfer after Laptop wrote 983,040 bytes of a 16 MiB original. Retry stayed disabled while the source was offline. The same peer rejoined automatically. Three activations on the original card produced one transfer row and one SHA-256-verified file. The failed attempt cleaned up its partial and left a separately placed partial intact. A Windows profile created with the earlier `8dacddd` source and matching Electron and dependency payload also passed a cold upgrade to the exact RC1 app. Room identity, history, voice preference and message IDs survived. The saved credential rejoined the room and new channel messages survived another cold reopen. The original closed profile stayed byte-identical for the files checked. [Windows retry and upgrade run](https://github.com/noveblue53/asscrack/actions/runs/44766734239)
+
+**Windows account isolation.** The unprivileged Windows Local Service identity read and hash-verified copies of the encrypted archive and its protected key material. Its own DPAPI round trip passed. Windows denied its attempt to unwrap the original account's profile key. The original account reopened its saved history and recovered a disposable copy after restoring its wrapper. The original protected files stayed intact and the temporary task was removed. [Native Windows account-isolation run](https://github.com/noveblue53/asscrack/actions/runs/44768810298)
+
+**Earlier Linux cross-build.** `ASSCRACK-0.7.0-friend-pilot-rc1-42cf3c6-win-x64.exe` is 109,478,949 bytes with SHA-256 `d3241c136d43353b8c2c185a72e906f77718ae8fc47d3bcae2177722d49a4da3`. Its extracted x64 payload passed a fresh login, two-way keyed chat, second start and cold archive reopen under Wine 11.22. The outer PE32 launcher and a 32-bit control executable failed to start in Wine. The draft distributes the later Windows-built executable.
+
+**Frozen-source checks.** `npm test` passed 384/384 with zero skips in 115.105 s. `npm start` opened the Linux login window and exited 0 with host D-Bus diagnostics. In a separate loopback check the frozen source exchanged chat and eight byte-identical 1 MiB files with actual 0.6.0 (`d5ad3af`) and 0.7.0 (`de54371`) sources across both host directions. Older peers received no unsolicited shelf entries or chat from publishing.
+
+**Room and telemetry.** The six themes share the new room layout. The frame holds Transfers and View, the conversation header holds the room, channel and Invite, and the buddy pane carries voice. The selected buddy stays marked in the roster and on the map. Wide windows show connection facts and recent events alongside the map. Full events remain one action away.
+
+**127.0.0.1 visual review.** Linux Electron 40.5.0 rendered solo and three-peer keyed rooms at 1672 × 941 CSS px to match the concept and also checked 1492 × 815 and 800 × 600 at 1×. The wide room devoted 48.3% of its panel area to chat and 29.0% to the map and inspector. The populated room used synthetic microphones, John's live route and audio reading, two real events and an 83,968-byte verified file. The independent review found clipped window controls caused by scrolling into hidden login geometry. The rerender kept the frame at the origin, preserved John's map and roster selection for more than five seconds across activity, and allowed keyboard selection and details on the compact view. The renderer reported zero errors.
+
+**127.0.0.1 file retry.** In the running Linux Electron 40.5.0 app, Laptop lost its direct connection after receiving 6,684,660 bytes of a 128 MiB original. The original card disabled retry while the source was offline. After reconnect, **Retry** on that card restarted the transfer without a sender repost. Repeated activation started one attempt, the other recipient finished independently, and each receiver saved one full file with SHA-256 `ae6981ec27114548cfb8700b33c933a176c6a4a71f841b2dcf173d289dd85a7c`. The 16 MiB integration checks exercise both direct TCP and circuit relay.
+
+A separate Linux Electron check cut Laptop's only circuit externally during a 24 MiB transfer. The interrupted attempt cleaned its own partial and preserved a seeded stale file. The original card and Transfers row shared the retry state. Each of the two receivers saved one file with SHA-256 `1d40cf3b9660d6802bd529a2fadee57e23e3f857cdacbbd03f535afa2b0902d6`. The renderer reported zero errors.
+
+**127.0.0.1 Shared shelf.** Two running Electron profiles joined the same keyed room. The late profile downloaded a 1 MiB file from **Shared** with SHA-256 `a3f1b4f1e7ccf5ebb174809fdb35de6026d1ab93b1e33ba2b08e2e85a913bee1`. Publishing created no chat card and preserved the draft. Removing the listing left the saved copy, and the renderer reported zero page errors.
+
+**127.0.0.1 conversations and attention.** Two keyed Electron profiles exercised visible public typing, private draft isolation and real Linux D-Bus notifications. Opening a notification selected the right whisper or named channel and cleared its unread state. The private banner omitted message text. In Do Not Disturb, public highlights and private unread activity stayed visible, both native alerts stayed quiet, and mute still worked. The check exercised Web Audio for preview, join, mute and unmute. Windows notification activation and acoustic behavior remain field checks.
+
+**127.0.0.1 game-night rehearsal.** Fresh Linux Electron profiles joined by invite, replayed a named channel to a late arrival and used both whisper entry points. Equal names required a recipient choice. Disconnect and rejoin retained the private draft and the public draft and reading position. Synthetic microphone input exercised join and mute. An X11 key event exercised the global push-to-talk hook. The room rendered a PNG and separately saved its verified 5,574-byte original. Closing to Idle Peer released capture while two-way chat continued over the existing circuit. After all processes quit, a cold reopen through KWallet 6 and SQLCipher restored public history and the verified original. The restored transcript contained neither private test message.
+
+When the sole relay vanishes, a member with no sessions clears its temporary host term so it can join the returning full node. In an independent 127.0.0.1 exercise on the frozen source, a new full-node identity at the same endpoint brought fresh two-way chat back in about 4.08 s and fresh synthetic audio in about 4.09 s. The earlier baseline reached the new circuit but failed to agree on a host within 20 s. Real separate-network and intelligible-speech checks are open.
+
+## Unreleased — desktop review branch
+
+The **work/room-desktop** follow-on adds six persistent room themes, themed window controls, compact chat, a detachable voice panel and manual Idle Peer in the portable app. Public channels keep separate transcripts, drafts, unread counts and encrypted history. Captioned screenshots, GIFs and videos preserve a separate original download. Current senders bound file data ahead of receiver disk writes. Private whispers require a capable online recipient. Voice cues and native mention or whisper notifications have separate preferences.
+
+**127.0.0.1** Electron checks used isolated Linux profiles. Three peers and two active transfers remained in place through all six theme switches at 1280×720 and 800×600. The full-host, restricted-peer and mixed-version checks covered current code with real 0.7.0 and 0.6.0 peers. The [desktop review report](docs/DESKTOP_REVIEW.md) lists the binary, commits, test totals, attachments, benchmarks and outstanding Windows checks.
+
+**127.0.0.1** Two frozen-source Node runs each passed **371/371**. Direct and relayed 1 GiB retries were byte-identical. The frozen Windows x64 review executable `ASSCRACK-0.7.0-desktop-29d6dda.exe` is 106,789,665 bytes, SHA-256 `221e6682531f4fe6049d9dca12a5105a49f76402352ebf4319bbb53fac106005`, built from [`29d6dda`](https://github.com/noveblue53/asscrack/commit/29d6dda4e978521a38b6c8f807056537c826815d). Windows execution and qualifying game nights await the operator.
+
+## Unreleased — field recovery and everyday room controls
+
+The `work/0.7-field-recovery` review branch combines the three November 20 fixes with single-session dialing. A returning saved full node retries its verified endpoints, including when another room answers an old address. A cold host seeds its newest 200 eligible local rows. Clear and Forget remove deleted rows from pending replay while preserving later live traffic.
+
+The room has a named file draft and explicit room or buddy send actions. A verified receipt marks a recipient Delivered. Older receivers show an unconfirmed send. The same room window offers live topics, typing preferences, nick and keyword highlights, per-buddy listening, peer details and a redacted activity feed.
+
+**127.0.0.1.** All nine original fault checks failed on main and passed with the fixes. Two final Node 24.22.3 runs passed 321/321 with the corrected relay observer. The original observer returned 320/321 then 321/321. A Linux Electron upgrade from 0.7.0 reopened all 250 saved IDs and a late peer received exactly 51–250. The 0.6.0 upgrade preserved working hints and recovered only newly opted-in messages. A four-node alternate-relay experiment delivered fresh synthetic frames both ways in 39–42 ms across three runs. The terminal demos exchanged chat. Plain `npm start` exited 0 with zero app or renderer errors and four Linux environment diagnostics.
+
+**Windows x64 review binary.** `ASSCRACK-0.7.0-review-c906a81.exe`, 106,748,791 bytes, SHA-256 `e0f9f9915e42bc6245c81a2bb21a70898d9f0ae19bc428d1e9d8b3f4f65eedfc`. The package was built on Linux from [`c906a81`](https://github.com/noveblue53/asscrack/commit/c906a81714808ca5bde46e6494c7bb6f53dad5bf). It retains app version 0.7.0. Windows 10 execution, the physical router lease and multi-computer voice checks await the operator. [Full results and changed files](docs/FIELD_RECOVERY_REPORT.md) · [Operator card 9](src/network/chatreadme.md)
+
+## Unreleased — three fixes from the 0.7.0 internet test
+
+The November 20 field test used the packaged 0.7.0 executable on three Windows computers. PC accepted
+incoming TCP through UPnP. Brother and Laptop each connected directly to PC and used PC as their relay
+to reach one another. Times below are UTC. The fixes are on `fix/0.7.0-internet-faults`, based on `de54371`.
+
+| Fault | Evidence from the 0.7.0 field test | Change for review |
+|---|---|---|
+| Host election | Laptop lost its last session at 02:18:17 and claimed host at 02:18:20.874. Brother accepted at 02:18:22.795 and PC at 02:18:22.930. PC regained the role at 02:19:01.688. | A member that loses its last session clears its host and waits. After reconnect it gives the group time to announce its incumbent. Host ranking, term comparison and the three-field host message stay compatible with 0.6.0 and 0.7.0. An isolated legacy member can still originate a higher term. |
+| UPnP lease | PC logged the initial mapping on port 55247 at 02:01:46. The field log gives no lease-expiry measurement. The low-level mapper defaults to 1,800 seconds, but the locked 0.7.0 wrapper supplied 7,200 seconds and scheduled its own refresh after 6,600 seconds. | The app requests 1,800 seconds, refreshes the same TCP mapping after 900 seconds, logs one `upnp renew-failed` line per failed attempt and retries. It disables the library timer, stops its own timer on shutdown and unmaps the port. |
+| File delivery | For offer `bee7169b…`, PC logged sender `file-done` at 02:18:12.509. Laptop logged receiver `file-failed` with “stream ended” at 02:18:17.631. | An upgraded receiver advertises receipt support with `ack: 1` and confirms on chat after size and SHA-256 checks and the final save. Only then does the sender display **Delivered**. A failed transfer, lost session or 30-second receipt timeout displays **Failed**. An old receiver still gets the file and the sender displays **Sent (delivery unconfirmed)**. |
+
+**127.0.0.1 results** on one Linux computer with Node 24.22.3. The test harness supplied loopback interface metadata
+because the environment denies netlink enumeration. The fake-router suite also modeled a non-internal IPv4 interface
+on that same loopback address. TCP, mDNS and fake-router HTTP traffic stayed on the computer.
+
+- Against `de54371`, all seven new tests and both strengthened file-transfer checks failed. The same nine passed on the branch.
+  The three-node regression cut Laptop's TCP and relay connections, waited past the host timeout and verified that it rejoined
+  PC at the original term. The fake IGD saw the same ports and lease on retry after a failure, an unmap, and zero later map calls.
+  Cutting the receiver's connection with unread bytes buffered produced sender failure. The tests also cover hash rejection,
+  a missing receipt, a verified 50 MiB transfer, a legacy request and the window labels.
+- A mixed room with 0.6.0 as full host, a 0.7.0 member and an updated member kept the host at term 1 across the updated member's
+  disconnect and rejoin. File contents and subsequent chat were verified in both directions against both legacy source versions.
+- The two terminal demos started with `--room t` and names `a` and `b`, discovered each other on loopback and exchanged one
+  line in each direction.
+- Four full `npm test` runs each passed 274 of 275 checks, including one run from a clean checkout. Each failure was
+  `ERR_TOO_MANY_OUTBOUND_PROTOCOL_STREAMS` in `test/voice-direct.test.mjs`. Rerunning that file alone after each run
+  gave 1/2, 2/2, 2/2 and 2/2, in order. Its test and stream limits are unchanged.
+- `npm start` opened the login window with Electron 40.5.0 and exited normally after it closed. The developer console and app
+  log had zero errors. The terminal showed four Linux environment errors involving the netlink socket, the udev monitor and two
+  denied socket calls. The clean-terminal check remains open.
+
+Windows 10 startup and the packaged executable remain unverified for this branch. The operator deferred LAN and internet
+retesting, including failover on separate networks and renewal on a physical router.
+
 ## 0.7.0 (2026-11-20): portable build for a field test
 
 File: `dist/ASSCRACK-0.7.0-portable.exe`, SHA-256 `ffae5423607ef2271c89719059742147ae064007ca22fa71d00632efaeb02034`. The test card is "Internet test card 8 (0.7.0)" in

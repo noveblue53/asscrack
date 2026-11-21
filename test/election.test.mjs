@@ -167,6 +167,43 @@ test('g: a node alone has no host', { timeout: 15000 }, async () => {
     }
 })
 
+test('127.0.0.1: an isolated member rejoins the full host without changing its term', { timeout: 30000 }, async t => {
+    const timing = { heartbeatInterval: 200, hostTimeout: 1000, electionDelay: 500 }
+    const a = await createAsscrackNode({ ...base, ...timing, fullNode: true })
+    const nodes = [a]
+    t.after(() => stopAll(nodes))
+    nodes.push(...await makeNodes(2, { ...timing, fullNode: false }))
+    // When the host connection drops first, C must wait for B while their relay session tears down.
+    const [b, c] = nodes.slice(1).sort((x, y) => x.peerId < y.peerId ? -1 : 1)
+    await connectPair(b, a)
+    await connectPair(c, a)
+    await waitUntil(() => agree(nodes) && b.peers().includes(c.peerId) && c.peers().includes(b.peerId), 10000)
+    const elected = a.host()
+    assert.equal(elected.peerId, a.peerId)
+    const changes = new Map(nodes.map(n => [n, []]))
+    for (const n of nodes) n.events.on('host-changed', h => changes.get(n).push(h.peerId))
+
+    // Block automatic dials while the interface is down, then cut both C's TCP and relay connections.
+    let isolated = true
+    const gater = c.libp2p.components.connectionGater
+    const { denyDialMultiaddr, denyInboundConnection } = gater
+    gater.denyDialMultiaddr = () => isolated
+    gater.denyInboundConnection = () => isolated
+    t.after(() => Object.assign(gater, { denyDialMultiaddr, denyInboundConnection }))
+    for (const conn of c.libp2p.getConnections()) conn.abort(new Error('simulated network loss'))
+    await waitUntil(() => c.peers().length === 0 && !a.peers().includes(c.peerId) && !b.peers().includes(c.peerId), 5000)
+    await delay(timing.hostTimeout + timing.heartbeatInterval)
+    assert.equal(c.host(), null, 'C waits without a host throughout isolation')
+
+    isolated = false
+    await connectPair(c, a)
+    await waitUntil(() => agree(nodes), 5000)
+    assert.deepEqual(a.host(), elected)
+    assert.deepEqual(changes.get(a), [])
+    assert.deepEqual(changes.get(b), [])
+    assert.deepEqual(changes.get(c), [null, a.peerId])
+})
+
 // Unit tests of the rank (createElection with fake timers and fake send functions).
 
 function unit(selfId, peers, full) {
@@ -182,6 +219,65 @@ function unit(selfId, peers, full) {
     e.start()
     return { e, sent, setOpen: v => { open = v } }
 }
+
+test('a member with zero sessions waits for the live host announcement after reconnect', t => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] })
+    const c = unit('c', ['a'], ['a'])
+    t.after(() => c.e.stop())
+    c.e.sessionOpened('a')
+    c.e.handleAnnouncement('a', { host: 'a', term: 1 })
+    c.setOpen([])
+    c.e.sessionClosed('a')
+    t.mock.timers.tick(10000)
+    assert.equal(c.e.host(), null)
+    // Rejoin through a member that ranks below C. Even here, C must allow a fresh election delay.
+    c.setOpen(['z'])
+    c.e.sessionOpened('z')
+    t.mock.timers.tick(1000)
+    assert.equal(c.e.host(), null)
+    assert.deepEqual(c.sent, [])
+    c.e.handleAnnouncement('z', { type: 'host', host: 'a', term: 1 })
+    assert.deepEqual(c.e.host(), { peerId: 'a', term: 1 })
+})
+
+test('a member briefly elected during relay loss waits after the last circuit closes', t => {
+    const { e, sent, setOpen } = unit('a', ['h', 'z'], ['h', 'r'])
+    t.after(() => e.stop())
+    e.sessionOpened('h')
+    e.sessionOpened('z')
+    e.handleAnnouncement('h', { host: 'h', term: 1 })
+
+    // The direct session to the only full node closes before the remaining circuit.
+    setOpen(['z'])
+    e.sessionClosed('h')
+    assert.deepEqual(e.host(), { peerId: 'a', term: 2 })
+    setOpen([])
+    e.sessionClosed('z')
+    assert.equal(e.host(), null)
+
+    const priorAnnouncements = sent.length
+    setOpen(['r'])
+    e.sessionOpened('r')
+    assert.equal(sent.length, priorAnnouncements, 'the isolated member cannot announce itself as the incumbent')
+    e.handleAnnouncement('r', { host: 'r', term: 1 })
+    assert.deepEqual(e.host(), { peerId: 'r', term: 1 })
+})
+
+test('protected election accepts only live authorized peers announcing their own host authority', t => {
+    const announced = []
+    const election = createElection({ selfId: 'a', sendTo: (_peer, line) => announced.push(line), broadcast: () => {},
+        openPeers: () => ['b', 'h'], hostAllowed: id => id === 'h' })
+    t.after(() => election.stop())
+    election.handleAnnouncement('b', { host: 'b', term: 1 })
+    election.handleAnnouncement('b', { host: 'h', term: 1 })
+    assert.equal(election.host(), null)
+    election.handleAnnouncement('h', { host: 'h', term: Number.MAX_SAFE_INTEGER })
+    assert.equal(election.host(), null)
+    election.handleAnnouncement('h', { host: 'h', term: 1 })
+    assert.deepEqual(election.host(), { peerId: 'h', term: 1 })
+    election.sessionOpened('b')
+    assert.deepEqual(announced, [])
+})
 
 test('rank: the only full node (highest ID) becomes host in the first election', () => {
     mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] })

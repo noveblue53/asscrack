@@ -61,6 +61,44 @@ test('a public IP maps the listen port, and stop() unmaps it', { timeout: 15000 
     }
 })
 
+test('renew the same UPnP lease, retry a failure and stop renewing after unmap', { timeout: 15000 }, async t => {
+    const igd = await startIgd({ externalIp: PUBLIC_IP, addDelay: 100 })
+    const client = fakeClient(igd.port)
+    const map = client.map.bind(client)
+    const unmap = client.unmap.bind(client)
+    const actions = []
+    let attempts = 0
+    client.map = async opts => {
+        if (++attempts === 2) throw new Error('renewal rejected')
+        await map(opts)
+        actions.push('mapped')
+    }
+    client.unmap = async opts => {
+        actions.push('unmap')
+        await unmap(opts)
+    }
+    const warnings = t.mock.method(console, 'warn')
+    const a = await createAsscrackNode({ room: 'renew', listen: LISTEN, discovery: false, upnp: true, upnpLeaseSeconds: 1, upnpClient: client })
+    try {
+        const maps = () => igd.log.filter(r => r.action === 'AddPortMapping')
+        // The third attempt has reached the router. Stop while its response is still in flight.
+        await waitFor(() => maps().length === 2)
+        await a.stop()
+        assert.deepEqual(actions, ['mapped', 'mapped', 'unmap'])
+        assert.equal(igd.log.at(-1).action, 'DeletePortMapping')
+        assert.deepEqual(maps()[1], maps()[0])
+        assert.equal(maps()[0].ttl, '1')
+        const failures = warnings.mock.calls.map(call => call.arguments[0]).filter(line => line.includes('upnp renew-failed'))
+        assert.equal(failures.length, 1)
+        assert.match(failures[0], /renewal rejected/)
+        await delay(650) // past the next half-lease
+        assert.equal(attempts, 3)
+    } finally {
+        await a.stop()
+        await igd.close()
+    }
+})
+
 test('a CGNAT external IP does not map', { timeout: 15000 }, async () => {
     const igd = await startIgd({ externalIp: '100.64.1.5' })
     const a = await createAsscrackNode({ room: 'u2', listen: LISTEN, discovery: false, upnp: true, upnpClient: fakeClient(igd.port) })
@@ -115,12 +153,10 @@ test('the task timeout gives reason timeout', { timeout: 15000 }, async () => {
 // The child process: the node:test runner can have its own uncaughtException listener.
 const url = p => pathToFileURL(path.resolve(import.meta.dirname, p)).href
 const CHILD_ROUTER_ERROR = `
-import { installUpnpGuard } from '${url('../src/network/upnp-guard.mjs')}'
 import { createAsscrackNode } from '${url('../src/network/node.mjs')}'
 import { startIgd, fakeClient } from '${url('./helpers/fake-igd.mjs')}'
 let seen
 const line = new Promise(r => { seen = r })
-installUpnpGuard({ log: text => { console.log(text); seen() } })
 const igd = await startIgd({ externalIp: '${PUBLIC_IP}', addStatus: 500 })
 const node = await createAsscrackNode({ room: 'u4', listen: ['/ip4/127.0.0.1/tcp/0'], discovery: false, upnp: true, upnpTimeout: 500, upnpClient: fakeClient(igd.port) })
 node.events.on('upnp', e => { console.log('event ' + e.state + ' ' + (e.reason ?? '')); seen() })
@@ -132,14 +168,6 @@ console.log('stop ms ' + (Date.now() - t0))
 await igd.close()
 console.log('child stopped')
 `
-const CHILD_OTHER_ERROR = `
-import { installUpnpGuard } from '${url('../src/network/upnp-guard.mjs')}'
-installUpnpGuard()
-installUpnpGuard()
-setTimeout(() => { throw new Error('Request failed: 500 but not from the router') }, 10)
-setTimeout(() => {}, 5000)
-`
-
 function runChild(code, ms) {
     return new Promise((resolve, reject) => {
         const child = spawn(process.execPath, ['--input-type=module', '-e', code], { stdio: ['ignore', 'pipe', 'pipe'] })
@@ -152,22 +180,15 @@ function runChild(code, ms) {
     })
 }
 
-test('HTTP 500 on AddPortMapping: the guard logs router-error and the process exits with code 0', { timeout: 30000 }, async () => {
+test('HTTP 500 on AddPortMapping: the mapper reports router-error and the process exits with code 0', { timeout: 30000 }, async () => {
     const result = await runChild(CHILD_ROUTER_ERROR, 20000)
     assert.equal(result.code, 0, result.stderr)
-    assert.match(result.stdout, /upnp none reason=router-error error="Request failed: 500"/)
+    assert.match(result.stdout, /upnp none reason=router-error error="Action not authorized"/)
     assert.equal(result.stdout.match(/reason=router-error/g).length, 1, result.stdout)
     assert.equal(result.stdout.match(/event none router-error/g)?.length, 1, result.stdout)
     assert.doesNotMatch(result.stdout, /timeout/)
     assert.ok(Number(/stop ms (\d+)/.exec(result.stdout)[1]) < 1000, result.stdout)
     assert.match(result.stdout, /child stopped/)
-})
-
-test('an error that does not match the guard filter still exits with code 1', { timeout: 30000 }, async () => {
-    const result = await runChild(CHILD_OTHER_ERROR, 20000)
-    assert.equal(result.code, 1)
-    assert.match(result.stderr, /Request failed: 500 but not from the router/)
-    assert.doesNotMatch(result.stdout, /router-error/)
 })
 
 test('a stop during a slow AddPortMapping unmaps before stop() returns', { timeout: 15000 }, async () => {
