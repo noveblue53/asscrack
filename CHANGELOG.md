@@ -7,6 +7,42 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased — getting in: room reach and clear login texts (goal G1, 2026-11-21)
+
+A room owner can see if friends on the internet can join, and can repair it in the room. A friend gets plain texts
+for a bad invite. Gap IDs A1, B4, A3, A5, A6, A8, N2, N3, N8, N9 of `work-orders/gaps-1.0-20261121`.
+
+- **Reach of the room.** The Invite panel of the owner tells if the room has an address. It also tells when the app
+  asks the router for a port, or why the router did not open one. A button asks the router for a port (UPnP) in a running room,
+  and a saved room keeps that choice for each reopen. "Create device invite" is disabled while the room has no
+  address. The login card warns an owner with no public address and no UPnP, but does not stop the login.
+- **Status bar.** The texts are "Open to the internet", "Open through Alice", "Address not tested yet", "Asking the
+  router…", "No open port" and "Friends cannot join yet". Only the last text has the warning color. Before, each new owner saw a
+  red "No full node".
+- **Login errors.** These errors give a text that tells the repair:
+  - a bad invite
+  - an invite for a different device, or from a different version
+  - a port in use, or a bad public address
+- **Login card.** The button says "Create room", "Join room" or "Create LAN room", and "Starting the room…" while
+  the room starts. Enter in the invite box logs in. "Copy my device ID" is below the button for each room type and
+  goes to the join type after the copy. The window keeps the last user name. Each saved room has "Change name".
+- **Saved rooms.** "Save room on this device" is on by default for the two Create types (operator decision
+  2026-11-21). With the box off, a note tells that the room is gone at quit. Create with the name of a saved room
+  starts only at the second click.
+- **Texts.** A device invite has the label "Invite for this device". The note for old clients says "Ask them to get
+  the newest ASSCRACK."
+
+Results (**127.0.0.1**, this PC):
+- `npm test`: 468 of 468 pass (431 before). New: 3 UPnP cases with the fake router, 7 login error cases, 1 saved
+  room case, 26 window cases. One earlier full run had `test/send-record.test.mjs` fail one time as a file. The
+  file passes 20 of 20 alone, and G1 does not change the send path.
+- One `npm start`: no error line in the terminal, the developer console or the app log.
+- Two app copies: an owner with no address sees "Friends cannot join yet". "Create device invite" is off.
+  With the address 127.0.0.1:<port>, the owner invites the second copy. After the join, the owner sees "Open to
+  the internet" and the friend sees "Open through Alice". The quit of the friend gives 2 "Unknown room window"
+  error lines. `origin/main` gives the same 2 lines (older code, not in this goal).
+- No LAN result and no internet result. UPnP with a real router is not tested.
+
 ## Unreleased — the 1.0 release order (2026-11-21)
 
 The operator decided that 1.0 is a full-featured release that comes before the friends get it.
