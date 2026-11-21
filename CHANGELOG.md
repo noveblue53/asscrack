@@ -7,6 +7,29 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased — app icon in Windows (2026-11-21)
+
+The app has its own icon. Before, the portable .exe, the taskbar button and the window showed the default Electron
+icon, and the tray used a 32 x 32 PNG.
+
+- **One icon file.** `build/make-icon.cjs` renders `src/application/img/logo.svg` with Electron and writes
+  `src/application/img/app.ico` with 7 images: 16, 24, 32, 48, 64, 128 and 256 px. It adds no dependency. Run it
+  again with `npm run icon`.
+- **Use.** `build.win.icon`, the window and the tray use `app.ico`. Windows selects the tray size for each screen
+  scale. `tray.png` is removed.
+- **Known limit.** At 16 px the lightning bolt of the logo is hard to see. The circle is clear.
+
+Results (**this PC**, 127.0.0.1 for the network part):
+- `npm test`: 431 of 431 pass (426 before, plus 5 icon tests).
+- The icon of `ASSCRACK-0.8.0-portable.exe` and of the unpacked `ASSCRACK.exe` (shell icon, 32 px) is equal to the
+  32 px image of `app.ico`. The control, `electron.exe`, is different in 856 of 1024 pixels.
+- The window icon (16 px and 32 px) is equal to `app.ico` in the built .exe and in `npm start`. The taskbar button
+  shows the icon.
+- One `npm start` and one start of the built .exe (temporary `--profile` and `--log-dir`): 0 ERROR lines. One start
+  in a LAN room on 127.0.0.1 that went into Idle Peer mode made the tray with 0 ERROR lines.
+- The test build is not a release: it keeps the version 0.8.0 (123647234 bytes, SHA-256 `ac118adb...`). It does not
+  replace the 0.8.0 build in the shared `dist/`.
+
 ## Unreleased — polish pass on the room window (2026-11-21)
 
 A review of the window found 37 visual and keyboard faults. This change repairs 27 of them in the renderer files only.
