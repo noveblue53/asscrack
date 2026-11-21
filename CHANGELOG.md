@@ -29,6 +29,7 @@ friend-pilot release candidate" below give the details. This build adds these ch
   With a 64-character room name, `asscrack3:` has 469 (1 node) and 594 (3 nodes) characters.
 - **Asynchronous `safeStorage` calls.** The saved-rooms key uses `isAsyncEncryptionAvailable`, `encryptStringAsync`
   and `decryptStringAsync`. The Electron 45 deprecation warnings are gone. The archive opens before the window.
+  At the first start, the app makes the key file with an exclusive create. Thus two processes on one new profile use one key.
 - **Update text for 0.7.0 users.** The invite panel of a protected internet room and of a LAN room shows a text.
   It tells that people with 0.7.0 or older cannot join and must update to 0.8.0.
 
@@ -53,12 +54,13 @@ Results:
   terminal has 2 Chromium lines "GPU state invalid after WaitForGetOffsetInRange" at that quit. The same quick quit
   gave 0 such lines in 3 runs of `de9baa0` and 0 lines in 3 runs of 0.8.0. Thus the cause is not known, and this
   change did not cause the lines.
-- **127.0.0.1, build check (2026-11-21):** `npm test` 425 of 425 pass on `5127a48`. The source app and the built .exe started one
+- **127.0.0.1, build check (2026-11-21):** `npm test` 426 of 426 pass on `30bb0d2`. The source app and the built .exe started one
   time each, with a temporary `--profile` and `--log-dir`. Each start gave no ERROR line and no console error. Each
   log has "Saved rooms archive opened: state open".
-- **Build:** `dist/ASSCRACK-0.8.0-portable.exe`, 123321365 bytes, SHA-256
-  `1a964f4c210a9f9b080afcc3d42fea2f74ae0dd20e90740837aa1309dbc7e78c`, made by `npm run dist` from `5127a48`. The
-  build has no code signature.
+- **Build:** `dist/ASSCRACK-0.8.0-portable.exe`, 123318931 bytes, SHA-256
+  `93a0f755b8029db8a293e4c22b5ca2cd74ca22be0744d12a428b2fa590a23373`, made by `npm run dist` from `30bb0d2`. The
+  build has no code signature. It replaces the first 0.8.0 build from `5127a48` (SHA-256 `1a964f4c...7e78c`), which
+  did not have the key-file fix.
 - No LAN or internet test of 0.8.0 occurred. The operator deferred the tests with other users (2026-11-20).
 
 ## Unreleased — protected-room Windows candidate
