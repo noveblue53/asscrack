@@ -19,7 +19,8 @@ and the late scroll event of Chromium counted the new line as read. The marker w
 - **Tests.** `test/find-unread.test.mjs` loads the real room window scripts. It opens Find, adds a line, presses
   Escape, and then sends the late scroll event. It has a case for 20 px lines: there the old end is in the 24 px end
   band. `test/reading-hold.test.mjs`: the old test expected the new end after a line came during Find. That is the
-  fault, thus it is now two tests (no new line: follow; a new line: the old last line and 1 unread).
+  fault, thus it is now two tests. With no new line, the list follows. With a new line, the list shows the old last
+  line and 1 line is unread.
 - **Result: 127.0.0.1.** The new tests fail on the code of `main` and pass with the fix. No LAN test.
 
 ## Unreleased — the 1.0 release order (2026-11-21)
