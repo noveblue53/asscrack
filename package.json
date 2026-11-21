@@ -10,7 +10,8 @@
     "start": "electron .",
     "dev": "electron . --dev",
     "test": "node --test",
-    "dist": "electron-builder --win portable --publish never"
+    "dist": "electron-builder --win portable --publish never",
+    "icon": "electron build/make-icon.cjs"
   },
   "keywords": [
     "p2p",
@@ -64,7 +65,8 @@
       "onlyLoadAppFromAsar": true
     },
     "win": {
-      "target": "portable"
+      "target": "portable",
+      "icon": "src/application/img/app.ico"
     },
     "portable": {
       "artifactName": "ASSCRACK-${version}-portable.exe"

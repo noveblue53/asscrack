@@ -314,7 +314,7 @@ function enterIdlePeer() {
     if (!node || !mainWindow || mainWindow.isDestroyed() || quitting) return false;
     if (!tray) {
         try {
-            tray = new Tray(path.join(__dirname, 'img', 'tray.png'));
+            tray = new Tray(path.join(__dirname, 'img', 'app.ico'));
             tray.setToolTip('Asscrack');
             tray.setContextMenu(Menu.buildFromTemplate([
                 { label: 'Open Asscrack', click: restoreRoomWindow },
@@ -357,6 +357,7 @@ function createMainWindow() {
     mainWindow = new BrowserWindow({
         ...frame.options,
         title: 'AssCrack',
+        icon: path.join(__dirname, 'img', 'app.ico'),
         width: 800,
         height: 600,
         // The middle sky blue of styles.css: no white flash before the page shows.
