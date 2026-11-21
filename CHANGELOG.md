@@ -16,7 +16,7 @@ It has no new feature, no protocol change and no new dependency.
   usual labels. Saved rooms are in a second column when the window is 760 px or wider.
 - **Contrast.** Find with no result is readable in the dark themes. The message box placeholder has a contrast of 5.1:1
   or more (before: 2.6:1). The focus ring of the list rows and the Log In arrow on Pearl now use the colors of the
-  theme (before: a gold ring of 1.5:1 on white, and a white arrow).
+  theme. Before, the ring was gold (1.5:1 on white) and the arrow was white.
 - **Same look for the same function.** All dialogs have one frame. The selects and text fields have the look of the
   theme. The voice settings use the colors of the theme. Amber Terminal has square corners on all controls.
 - **Error texts.** The user does not see "Error invoking remote method ..." before an error. A Join with no name asks
