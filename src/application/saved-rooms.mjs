@@ -1,18 +1,25 @@
 // Saved rooms (milestone 6): the main-process part. This module does not import electron.
 // main.js gives the safeStorage object, the archive folder and the log function.
-import { openRoomArchive, roomFingerprint } from './room-archive.mjs';
+import { openRoomArchive, openRoomArchiveAsync, roomFingerprint } from './room-archive.mjs';
 
 // The protector of the archive key, from Electron safeStorage (DECISIONS.md S2).
 // The app never calls safeStorage.setUsePlainTextEncryption(). On Linux, the backend basic_text is not protection.
+// Only the asynchronous safeStorage calls (Electron 45 deprecates the synchronous calls). decryptStringAsync also reads
+// a key that an older version wrote with encryptString (Electron 45 test, candidate 0.8.0 B2).
+// unwrap() gives { value, reEncrypt }: reEncrypt is shouldReEncrypt of safeStorage.
 export function makeProtector(safeStorage, platform = process.platform) {
     return {
-        available() {
-            if (!safeStorage.isEncryptionAvailable()) return false;
+        async: true,
+        async available() {
+            if (!(await safeStorage.isAsyncEncryptionAvailable())) return false;
             if (platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text') return false;
             return true;
         },
-        wrap: b => safeStorage.encryptString(b.toString('base64')),
-        unwrap: b => Buffer.from(safeStorage.decryptString(b), 'base64')
+        wrap: b => safeStorage.encryptStringAsync(b.toString('base64')),
+        async unwrap(b) {
+            const r = await safeStorage.decryptStringAsync(b);
+            return { value: Buffer.from(r.result, 'base64'), reEncrypt: r.shouldReEncrypt === true };
+        }
     };
 }
 
@@ -21,6 +28,7 @@ function errText(err) {
 }
 
 // dir: the archive folder. protector: { available(), wrap(), unwrap() }. log(level, text).
+// A protector with async: true has asynchronous calls: call and await open() before the first other call.
 // backend(): optional, the safeStorage backend name for the log line (Linux only).
 // notify(type, data): optional, 'line-saved' { id } or 'save-failed' { id, reason }.
 // forgetHints(row): optional, Forget calls it with the getRoom() row before it deletes the room.
@@ -46,8 +54,15 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
         log(st.state === 'open' ? 'INFO' : 'WARN', line);
     }
 
+    let opening = null;
+
     function ensure() {
         if (!archive) {
+            if (protector?.async) {
+                // The asynchronous protector opens only in open().
+                if (!opening) log('WARN', 'Saved rooms archive not opened: open() was not called');
+                return null;
+            }
             try {
                 archive = openRoomArchive({ dir, protector, limits });
             } catch (err) {
@@ -79,10 +94,29 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
         return { state: st.state, reason: st.reason, rooms };
     }
 
-    function unlock() {
-        const a = ensure();
-        if (a) {
-            a.unlock();
+    // Opens the archive one time. A second call during the open waits for the same open. Never rejects.
+    function open() {
+        if (archive) return Promise.resolve();
+        if (!opening) {
+            opening = (async () => {
+                try {
+                    archive = await openRoomArchiveAsync({ dir, protector, limits });
+                } catch (err) {
+                    log('WARN', `Saved rooms archive not opened: ${errText(err)}`);
+                    return;
+                } finally {
+                    opening = null;
+                }
+                logState('opened');
+            })();
+        }
+        return opening;
+    }
+
+    async function unlock() {
+        if (!archive) await open();
+        if (archive) {
+            await archive.unlockAsync();
             logState('unlock');
         }
         return status();
@@ -323,7 +357,7 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
     }
 
     return {
-        rememberDownload, getDownload, status, unlock, lines, getRoom, loadChannels, persistChannels, prepareReplay, releaseReplay, afterLogin, recordSend, attachNode, setKeepHistory, clear, forget, activeInfo,
+        open, rememberDownload, getDownload, status, unlock, lines, getRoom, loadChannels, persistChannels, prepareReplay, releaseReplay, afterLogin, recordSend, attachNode, setKeepHistory, clear, forget, activeInfo,
         deviceIdentity, isProtectedRoom, persistMembership, close, active: () => active
     };
 }

@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import Database from 'better-sqlite3-multiple-ciphers';
-import { roomFingerprint, openRoomArchive, ARCHIVE_LIMITS } from '../src/application/room-archive.mjs';
+import { roomFingerprint, openRoomArchive, openRoomArchiveAsync, ARCHIVE_LIMITS } from '../src/application/room-archive.mjs';
 
 function tmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'room-archive-'));
@@ -457,4 +457,131 @@ test('verified download reference is local to the exact retained card, disappear
   reopened.clearMessages(roomId);
   assert.equal(reopened.getDownload(roomId, 'post', d.id), null);
   assert.equal(fs.readFileSync(file, 'utf8'), 'xyz');
+});
+
+// Asynchronous protector (Electron 45 safeStorage *Async calls). unwrap gives { value, reEncrypt }.
+// It reads the prefixes `${id}:` (old data) and `${id}2:` (new data). wrap writes `${id}2:` when newWrap is true.
+function asyncProtector(id, { reEncrypt = false, newWrap = false } = {}) {
+  const p = {
+    calls: { wrap: 0, unwrap: 0 },
+    available: async () => true,
+    wrap: async (buf) => { p.calls.wrap++; return Buffer.concat([Buffer.from(newWrap ? `${id}2:` : `${id}:`), buf]); },
+    unwrap: async (buf) => {
+      p.calls.unwrap++;
+      for (const pre of [Buffer.from(`${id}2:`), Buffer.from(`${id}:`)]) {
+        if (buf.subarray(0, pre.length).equals(pre)) return { value: Buffer.from(buf.subarray(pre.length)), reEncrypt };
+      }
+      throw new Error('cannot unwrap');
+    },
+  };
+  return p;
+}
+
+// Windows cannot delete an open database file: one after hook closes each kept store, then deletes the folders.
+function cleanup(t, ...dirs) {
+  const stores = [];
+  t.after(() => {
+    for (const s of stores) s.close();
+    for (const d of dirs) fs.rmSync(d, { recursive: true, force: true });
+  });
+  return s => { stores.push(s); return s; };
+}
+
+const wrappedKey = dir => Buffer.from(JSON.parse(fs.readFileSync(path.join(dir, 'archive.key'), 'utf8')).wrapped, 'base64');
+
+test('async protector: a new archive, then a reopen with the same lines', async (t) => {
+  const dir = tmpDir();
+  const keep = cleanup(t, dir);
+  const p = asyncProtector('A');
+  const a = await openRoomArchiveAsync({ dir, protector: p });
+  assert.deepEqual(a.state(), { state: 'open', reason: null });
+  const { roomId } = a.saveRoom({ name: 'room', roomKey: KEY, userName: 'u' });
+  a.addMessage(roomId, { id: 'm1', from: 'u', text: 'line one', time: 1, own: true, source: 'send' });
+  a.close();
+  const b = await openRoomArchiveAsync({ dir, protector: p });
+  keep(b);
+  assert.deepEqual(b.state(), { state: 'open', reason: null });
+  assert.deepEqual(b.listMessages(roomId).map(m => m.text), ['line one']);
+  assert.deepEqual(p.calls, { wrap: 1, unwrap: 1 });
+});
+
+test('async protector: a key from a synchronous protector opens (old profile)', async (t) => {
+  const dir = tmpDir();
+  const keep = cleanup(t, dir);
+  const roomId = seed(dir, fakeProtector('A'));
+  const p = asyncProtector('A');
+  const a = await openRoomArchiveAsync({ dir, protector: p });
+  keep(a);
+  assert.equal(a.state().state, 'open');
+  assert.deepEqual(a.listMessages(roomId).map(m => m.text), ['secret-plaintext-xyz']);
+  assert.equal(p.calls.wrap, 0, 'no reEncrypt: the key file stays');
+});
+
+test('async protector: reEncrypt writes the key again one time, and the new key opens', async (t) => {
+  const dir = tmpDir();
+  const keep = cleanup(t, dir);
+  const roomId = seed(dir, fakeProtector('A'));
+  assert.equal(wrappedKey(dir).subarray(0, 2).toString(), 'A:');
+  const p = asyncProtector('A', { reEncrypt: true, newWrap: true });
+  const a = await openRoomArchiveAsync({ dir, protector: p });
+  assert.equal(a.state().state, 'open');
+  assert.equal(p.calls.wrap, 1);
+  assert.equal(fs.existsSync(path.join(dir, 'archive.key.tmp')), false);
+  assert.equal(wrappedKey(dir).subarray(0, 3).toString(), 'A2:');
+  a.close();
+  const b = await openRoomArchiveAsync({ dir, protector: asyncProtector('A') });
+  keep(b);
+  assert.equal(b.state().state, 'open');
+  assert.deepEqual(b.listMessages(roomId).map(m => m.text), ['secret-plaintext-xyz']);
+});
+
+test('async protector: no reEncrypt when the database does not open', async (t) => {
+  const x = tmpDir();
+  const y = tmpDir();
+  const keep = cleanup(t, x, y);
+  seed(x, fakeProtector('A'));
+  seed(y, fakeProtector('A'));
+  // The key file of y with the database of x: the key unwraps, the database does not open.
+  fs.copyFileSync(path.join(x, 'archive.db'), path.join(y, 'archive.db'));
+  const keyBefore = fs.readFileSync(path.join(y, 'archive.key'), 'utf8');
+  const p = asyncProtector('A', { reEncrypt: true, newWrap: true });
+  const a = keep(await openRoomArchiveAsync({ dir: y, protector: p }));
+  assert.deepEqual(a.state(), { state: 'locked', reason: 'database-unreadable' });
+  assert.equal(p.calls.wrap, 0);
+  assert.equal(fs.readFileSync(path.join(y, 'archive.key'), 'utf8'), keyBefore);
+});
+
+test('async protector: a rejected unwrap locks, unlockAsync opens later, 2 calls share one open', async (t) => {
+  const dir = tmpDir();
+  const keep = cleanup(t, dir);
+  const roomId = seed(dir, fakeProtector('A'));
+  const p = asyncProtector('B');
+  const a = await openRoomArchiveAsync({ dir, protector: p });
+  keep(a);
+  assert.deepEqual(a.state(), { state: 'locked', reason: 'key-unwrap-failed' });
+  const ok = asyncProtector('A');
+  p.unwrap = ok.unwrap;
+  const [r1, r2] = await Promise.all([a.unlockAsync(), a.unlockAsync()]);
+  assert.deepEqual(r1, { state: 'open', reason: null });
+  assert.deepEqual(r2, { state: 'open', reason: null });
+  assert.equal(ok.calls.unwrap, 1);
+  assert.deepEqual(a.listMessages(roomId).map(m => m.text), ['secret-plaintext-xyz']);
+});
+
+test('async protector: unavailable gives the state unavailable and makes no file', async (t) => {
+  const root = tmpDir();
+  const dir = path.join(root, 'sub');
+  cleanup(t, root);
+  const a = await openRoomArchiveAsync({ dir, protector: { available: async () => false, wrap: async b => b, unwrap: async b => b } });
+  assert.deepEqual(a.state(), { state: 'unavailable', reason: 'protection-unavailable' });
+  assert.equal(fs.existsSync(dir), false);
+});
+
+test('openRoomArchive (synchronous) refuses an asynchronous protector', () => {
+  const dir = tmpDir();
+  try {
+    assert.throws(() => openRoomArchive({ dir, protector: asyncProtector('A') }), /asynchronous/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

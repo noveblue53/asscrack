@@ -136,7 +136,51 @@ function mapRow(r) {
   };
 }
 
+// The result of protector.unwrap(): a Buffer, or { value: Buffer, reEncrypt: boolean } (the async protector).
+function unwrapResult(r) {
+  if (r && !(r instanceof Uint8Array) && typeof r === 'object' && 'value' in r) {
+    return { value: Buffer.from(r.value), reEncrypt: r.reEncrypt === true };
+  }
+  return { value: Buffer.from(r), reEncrypt: false };
+}
+
+const isThenable = v => v !== null && (typeof v === 'object' || typeof v === 'function') && typeof v.then === 'function';
+
+// Runs the open steps. Each yield gives a protector result (a value or a promise).
+function runSync(gen) {
+  let step = gen.next();
+  while (!step.done) {
+    if (isThenable(step.value)) throw new Error('the protector is asynchronous: use openRoomArchiveAsync');
+    step = gen.next(step.value);
+  }
+  return step.value;
+}
+
+async function runAsync(gen) {
+  let step = gen.next();
+  while (!step.done) {
+    let v;
+    try { v = await step.value; } catch (err) { step = gen.throw(err); continue; }
+    step = gen.next(v);
+  }
+  return step.value;
+}
+
+// The protector can be synchronous (tests) or asynchronous (Electron safeStorage, makeProtector).
+// openRoomArchive() needs a synchronous protector. openRoomArchiveAsync() accepts both.
 export function openRoomArchive({ dir, protector, limits = null }) {
+  const a = makeRoomArchive({ dir, protector, limits });
+  a.unlock();
+  return a;
+}
+
+export async function openRoomArchiveAsync({ dir, protector, limits = null }) {
+  const a = makeRoomArchive({ dir, protector, limits });
+  await a.unlockAsync();
+  return a;
+}
+
+function makeRoomArchive({ dir, protector, limits = null }) {
   const lim = { ...ARCHIVE_LIMITS, ...(limits || {}) };
   const dbFile = path.join(dir, 'archive.db');
   const keyFile = path.join(dir, 'archive.key');
@@ -149,10 +193,17 @@ export function openRoomArchive({ dir, protector, limits = null }) {
     return st;
   }
 
-  function openSequence() {
-    if (!protector || !protector.available()) return setState('unavailable', 'protection-unavailable');
+  function writeKey(wrapped) {
+    fs.rmSync(tmpFile, { force: true });
+    writeFileSync600(tmpFile, JSON.stringify({ v: 1, wrapped: Buffer.from(wrapped).toString('base64') }));
+    fs.renameSync(tmpFile, keyFile);
+  }
+
+  function* openSequence() {
+    if (!protector || !(yield protector.available())) return setState('unavailable', 'protection-unavailable');
     fs.mkdirSync(dir, { recursive: true });
     let profileKey;
+    let reEncrypt = false;
     if (fs.existsSync(keyFile)) {
       let wrapped;
       try {
@@ -163,7 +214,7 @@ export function openRoomArchive({ dir, protector, limits = null }) {
         return setState('locked', 'key-unreadable');
       }
       try {
-        profileKey = Buffer.from(protector.unwrap(wrapped));
+        ({ value: profileKey, reEncrypt } = unwrapResult(yield protector.unwrap(wrapped)));
       } catch {
         return setState('locked', 'key-unwrap-failed');
       }
@@ -173,9 +224,7 @@ export function openRoomArchive({ dir, protector, limits = null }) {
     } else {
       fs.rmSync(tmpFile, { force: true });
       profileKey = crypto.randomBytes(32);
-      const wrapped = Buffer.from(protector.wrap(profileKey));
-      writeFileSync600(tmpFile, JSON.stringify({ v: 1, wrapped: wrapped.toString('base64') }));
-      fs.renameSync(tmpFile, keyFile);
+      writeKey(yield protector.wrap(profileKey));
     }
     let handle;
     try {
@@ -201,6 +250,11 @@ export function openRoomArchive({ dir, protector, limits = null }) {
       return setState('locked', 'database-unreadable');
     }
     db = handle;
+    // safeStorage asked for a new encryption of the key (shouldReEncrypt). Only after the database opened with the key.
+    // A failure keeps the old key file, which still opens.
+    if (reEncrypt) {
+      try { writeKey(yield protector.wrap(profileKey)); } catch { fs.rmSync(tmpFile, { force: true }); }
+    }
     return setState('open', null);
   }
 
@@ -209,12 +263,20 @@ export function openRoomArchive({ dir, protector, limits = null }) {
     return db;
   }
 
-  openSequence();
+  let pending = null;
 
   return {
     state: () => ({ ...st }),
     unlock() {
-      if (st.state !== 'open') openSequence();
+      if (st.state !== 'open') runSync(openSequence());
+      return { ...st };
+    },
+    // One open at a time: a second call during an open waits for the same open.
+    async unlockAsync() {
+      if (st.state !== 'open') {
+        if (!pending) pending = runAsync(openSequence()).finally(() => { pending = null; });
+        await pending;
+      }
       return { ...st };
     },
     saveRoom({ name, roomKey, invite = null, userName = null, keepHistory = true, membership = null }) {

@@ -6,7 +6,7 @@ import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import Database from 'better-sqlite3-multiple-ciphers';
 import { makeInvite, readInvite } from '../src/network/invite.mjs';
-import { createSavedRooms } from '../src/application/saved-rooms.mjs';
+import { createSavedRooms, makeProtector } from '../src/application/saved-rooms.mjs';
 import { roomFingerprint } from '../src/application/room-archive.mjs';
 
 const fakeProtector = {
@@ -344,4 +344,70 @@ test('cold attachment archive reopens live and own cards with just the projected
     restarted.clear(roomId);
     assert.deepEqual(restarted.lines(roomId), []);
     assert.deepEqual(restarted.prepareReplay('room', KEY_A, () => {}), []);
+});
+
+// A safeStorage fake with the Electron 45 API. The synchronous calls throw: makeProtector must not use them.
+function fakeSafeStorage({ available = true, shouldReEncrypt = false } = {}) {
+    const calls = [];
+    const no = name => () => { throw new Error(`synchronous safeStorage.${name} called`); };
+    return {
+        calls,
+        isEncryptionAvailable: no('isEncryptionAvailable'),
+        encryptString: no('encryptString'),
+        decryptString: no('decryptString'),
+        getSelectedStorageBackend: () => 'gnome_libsecret',
+        isAsyncEncryptionAvailable: async () => { calls.push('available'); return available; },
+        encryptStringAsync: async text => { calls.push('encrypt'); return Buffer.from('e:' + text); },
+        decryptStringAsync: async buf => {
+            calls.push('decrypt');
+            return { shouldReEncrypt, result: buf.subarray(2).toString() };
+        }
+    };
+}
+
+test('makeProtector uses only the asynchronous safeStorage calls', async () => {
+    const ss = fakeSafeStorage({ shouldReEncrypt: true });
+    const p = makeProtector(ss, 'win32');
+    assert.equal(p.async, true);
+    assert.equal(await p.available(), true);
+    const key = Buffer.alloc(32, 9);
+    const wrapped = await p.wrap(key);
+    const r = await p.unwrap(wrapped);
+    assert.ok(r.value.equals(key));
+    assert.equal(r.reEncrypt, true);
+    assert.deepEqual(ss.calls, ['available', 'encrypt', 'decrypt']);
+    assert.equal(await makeProtector(fakeSafeStorage({ available: false }), 'win32').available(), false);
+    const basic = { ...fakeSafeStorage(), getSelectedStorageBackend: () => 'basic_text' };
+    assert.equal(await makeProtector(basic, 'linux').available(), false);
+});
+
+test('createSavedRooms with the async protector: open(), then the saved room and lines after a restart', async (t) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'saved-rooms-'));
+    const stores = [];
+    // Windows cannot delete an open database file: close each store before the delete.
+    t.after(() => { for (const s of stores) s.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+    const logs = [];
+    const make = () => {
+        const s = createSavedRooms({ dir: path.join(dir, 'saved-rooms'), protector: makeProtector(fakeSafeStorage(), 'win32'),
+            log: (l, x) => logs.push([l, x]) });
+        stores.push(s);
+        return s;
+    };
+    const first = make();
+    // Before open(): no archive and no crash.
+    assert.equal(first.status().state, 'locked');
+    await Promise.all([first.open(), first.open()]);
+    assert.equal(first.status().state, 'open');
+    assert.equal(logs.filter(([, x]) => x.startsWith('Saved rooms archive opened: state open')).length, 1);
+    const r = first.afterLogin({ room: 'r', roomKey: KEY_A, userName: 'Ann', save: true });
+    assert.equal(r.saved, true);
+    assert.equal(first.recordSend({ id: 'm1', from: 'Ann', text: 'hello', time: 1, accepted: 1 }).saved, true);
+    first.close();
+    const second = make();
+    await second.open();
+    const st = second.status();
+    assert.equal(st.state, 'open');
+    assert.deepEqual(st.rooms.map(x => x.name), ['r']);
+    assert.deepEqual(second.lines(st.rooms[0].roomId).map(l => l.text), ['hello']);
+    assert.equal((await second.unlock()).state, 'open');
 });

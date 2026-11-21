@@ -560,7 +560,7 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
     return { peerId: node.peerId, room: options.room, internet: !lan, membership: node.memberState() };
 }
 
-// Saved rooms (milestone 6). The archive opens at the first saved-rooms call or login, after app ready.
+// Saved rooms (milestone 6). The archive opens after app ready, before the window (asynchronous safeStorage calls).
 let savedRooms = null;
 function getSavedRooms() {
     if (!savedRooms) {
@@ -1053,7 +1053,7 @@ if (singleInstance && isFirstInstance) {
     app.on('second-instance', restoreRoomWindow);
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
     if (!isFirstInstance) return;
     if (profileIndex === -1) clearLegacyDebugLogs(app.getPath('logs'));
     powerMonitor.on('resume', () => node?.refreshRoutes());
@@ -1063,5 +1063,7 @@ app.whenReady().then(() => {
     if (attentionPrefs.get().alerts && process.platform === 'win32' && app.isPackaged) {
         try { registerAlerts(); } catch { writeLog('WARN', 'Windows notification registration unavailable'); }
     }
+    // open() never rejects. A failure gives the state locked with the reason open-failed.
+    await getSavedRooms().open();
     createMainWindow();
 });
