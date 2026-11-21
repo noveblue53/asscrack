@@ -427,6 +427,10 @@ function saveHostFields(file, fields) {
 // Start the node of a room. options: the node options (name, room, and for a keyed room roomKey and inviteNodes).
 // The login handler and the reopen of a saved room use this function. Returns the login result.
 let retainRoomHints = null;
+// The last 'upnp' event of the room (the reach state of gap A1), and the call that saves the UPnP choice of a saved
+// room after enableUpnp() (gap N2). startRoom sets both.
+let lastUpnp = null;
+let saveUpnpChoice = () => {};
 async function startRoom(options, { publicAddress = '', allowUpnp = false, reopen = false, lan = false } = {}) {
     if (loginStarted) throw new Error('Already logged in');
     loginStarted = true;
@@ -492,13 +496,18 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
             options.port = 0;
             node = await createAsscrackNode(options);
         }
+        lastUpnp = null;
+        saveUpnpChoice = () => {};
+        node.events.on('upnp', data => { lastUpnp = data ?? null; });
         if (hints) {
             let persistence = false, mappedPort = null;
-            if (options.upnp) node.events.on('upnp', data => {
+            // For each room with hint files: an owner can turn on UPnP after the start (enableUpnp).
+            node.events.on('upnp', data => {
                 if (data?.state !== 'mapped' || !Number.isInteger(data.port)) return;
                 mappedPort = data.port;
                 if (persistence) saveHostFields(hints.host, { upnpPort: mappedPort });
             });
+            saveUpnpChoice = () => { if (persistence) saveHostFields(hints.host, { allowUpnp: true }); };
             retainRoomHints = () => {
                 mkdirSync(path.dirname(hints.peers), { recursive: true, mode: 0o700 });
                 if (!alreadySaved) node.setAddressStore(hints.peers);
@@ -734,6 +743,12 @@ handleRoomIpc('asscrack:set-keep-history', (_event, roomId, on) => {
     return getSavedRooms().setKeepHistory(roomId, on === true);
 });
 
+handleRoomIpc('asscrack:saved-room-name', (_event, roomId, name) => {
+    if (!validRoomId(roomId)) throw new Error('Saved room not found');
+    if (typeof name !== 'string' || !name.trim() || name.trim().length > 64) throw new Error('Enter a username of up to 64 characters.');
+    return getSavedRooms().setUserName(roomId, name.trim());
+});
+
 handleRoomIpc('asscrack:clear-history', (_event, roomId) => {
     if (!validRoomId(roomId)) throw new Error('Saved room not found');
     const result = getSavedRooms().clear(roomId);
@@ -750,14 +765,41 @@ handleRoomIpc('asscrack:forget-room', (_event, roomId) => {
     return result;
 });
 
+// The reach state of the room (gaps A1 and B4): can friends on the internet join it now?
+// state: 'lan', 'ready' (a public address), 'upnp-wait', 'upnp-failed' (the last upnp event was 'none') or 'none'.
+// reason: the reason of the last upnp event with the state 'none'. proven: this computer is a full node.
+function roomReach() {
+    const failed = lastUpnp?.state === 'none';
+    const reason = failed && typeof lastUpnp.reason === 'string' ? lastUpnp.reason : null;
+    let state;
+    if (node.roomKey() === null || node.memberState().lan === true) state = 'lan';
+    else if (node.publicAddrs().length > 0) state = 'ready';
+    else if (node.upnpPending()) state = 'upnp-wait';
+    else if (failed) state = 'upnp-failed';
+    else state = 'none';
+    return { state, reason: state === 'upnp-failed' ? reason : null, proven: node.fullNode() };
+}
+
 handleRoomIpc('asscrack:invite', () => {
     if (!node) throw new Error('Not logged in');
-    if (node.memberState().protected) return { membership: node.memberState() };
-    if (node.roomKey() === null) return { code: null, reason: 'lan' };
+    const reach = roomReach();
+    if (node.memberState().protected) return { membership: node.memberState(), reach };
+    if (node.roomKey() === null) return { code: null, reason: 'lan', reach };
     const code = node.invite();
-    if (code) return { code };
+    if (code) return { code, reach };
     // While the router can still open a port, the window tells the user to wait (not that a full node is missing).
-    return { code: null, reason: node.upnpPending() ? 'upnp-wait' : 'no-full-node' };
+    return { code: null, reason: node.upnpPending() ? 'upnp-wait' : 'no-full-node', reach };
+});
+
+// Gap N2: the owner asks the router for a port in a running room. A saved room keeps the choice for each reopen.
+handleRoomIpc('asscrack:enable-upnp', () => {
+    if (!node) throw new Error('Not logged in');
+    const started = node.enableUpnp();
+    if (started) {
+        saveUpnpChoice();
+        writeLog('INFO', 'UPnP turned on in the room');
+    }
+    return { started, reach: roomReach() };
 });
 
 handleRoomIpc('asscrack:member-invite', (_event, deviceId, canHost) => {

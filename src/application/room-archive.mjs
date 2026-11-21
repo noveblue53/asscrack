@@ -405,6 +405,9 @@ function makeRoomArchive({ dir, protector, limits = null }) {
     setKeepHistory(roomId, on) {
       need().prepare('UPDATE rooms SET keep_history = ? WHERE room_id = ?').run(on ? 1 : 0, roomId);
     },
+    setUserName(roomId, userName) {
+      need().prepare('UPDATE rooms SET user_name = ? WHERE room_id = ?').run(userName, roomId);
+    },
     removeRoom(roomId) {
       const d = need();
       d.transaction(() => {

@@ -118,6 +118,21 @@ test('the encrypted archive preserves exact device identity and protected state 
     assert.equal(ciphertext.includes(Buffer.from(signedState.revoked)), false);
 });
 
+test('a changed user name of a saved room stays after the archive closes and opens (gap A6)', t => {
+    const { rooms, dir } = setup(t);
+    const roomId = start(rooms, fakeNode(1), { userName: 'Old name' });
+    assert.throws(() => rooms.setUserName(roomId, '   '), /up to 64 characters/);
+    assert.throws(() => rooms.setUserName(roomId, 'x'.repeat(65)), /up to 64 characters/);
+    assert.throws(() => rooms.setUserName('no-such-room', 'Ann'), /not saved/);
+    assert.deepEqual(rooms.setUserName(roomId, '  New name  '), { roomId, userName: 'New name' });
+    rooms.close();
+    const reopened = createSavedRooms({ dir: path.join(dir, 'saved-rooms'), protector: fakeProtector });
+    try {
+        assert.equal(reopened.getRoom(roomId).userName, 'New name');
+        assert.equal(reopened.status().rooms.find(r => r.roomId === roomId).userName, 'New name');
+    } finally { reopened.close(); }
+});
+
 test('a profile with saved protected rooms does not replace a missing device identity', t => {
     const { rooms } = setup(t);
     const { saved } = rooms.afterLogin({ room: 'access', roomKey: KEY_A, save: true, membership: { role: 'owner' } });

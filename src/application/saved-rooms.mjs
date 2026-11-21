@@ -297,6 +297,18 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
         return { roomId, keepHistory: on === true };
     }
 
+    // The user name of a saved room (gap A6): 1 to 64 characters. The next reopen uses it.
+    function setUserName(roomId, name) {
+        const a = ensure();
+        if (!a || a.state().state !== 'open') throw new Error('room archive is not open');
+        if (typeof roomId !== 'string' || !a.getRoom(roomId)) throw new Error('room is not saved');
+        const userName = typeof name === 'string' ? name.trim() : '';
+        if (userName.length < 1 || userName.length > 64) throw new Error('Enter a username of up to 64 characters.');
+        a.setUserName(roomId, userName);
+        log('INFO', 'Saved room user name changed');
+        return { roomId, userName };
+    }
+
     function clear(roomId) {
         const a = ensure();
         if (!a || a.state().state !== 'open') throw new Error('room archive is not open');
@@ -357,7 +369,7 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
     }
 
     return {
-        open, rememberDownload, getDownload, status, unlock, lines, getRoom, loadChannels, persistChannels, prepareReplay, releaseReplay, afterLogin, recordSend, attachNode, setKeepHistory, clear, forget, activeInfo,
+        open, rememberDownload, getDownload, status, unlock, lines, getRoom, loadChannels, persistChannels, prepareReplay, releaseReplay, afterLogin, recordSend, attachNode, setKeepHistory, setUserName, clear, forget, activeInfo,
         deviceIdentity, isProtectedRoom, persistMembership, close, active: () => active
     };
 }
