@@ -22,6 +22,7 @@ import { createPttHook } from './ptt-hook.mjs';
 import { createWindowFrame } from './window-frame.mjs';
 import { attachVoiceMonitor } from './voice-monitor.mjs';
 import { installRoomPermissions, isDesktopFrame, lockDesktopNavigation } from './desktop-boundary.mjs';
+import { isAddressInUse, loginErrorText } from './login-errors.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -423,13 +424,6 @@ function saveHostFields(file, fields) {
         writeLog('WARN', `Host data not saved to ${file}: ${err?.message ?? err}`);
     }
 }
-// True when the error, its cause or one of its errors has the code EADDRINUSE.
-function isAddressInUse(err, depth = 0) {
-    if (!err || typeof err !== 'object' || depth > 4) return false;
-    if (err.code === 'EADDRINUSE') return true;
-    if (isAddressInUse(err.cause, depth + 1)) return true;
-    return Array.isArray(err.errors) && err.errors.some(e => isAddressInUse(e, depth + 1));
-}
 // Start the node of a room. options: the node options (name, room, and for a keyed room roomKey and inviteNodes).
 // The login handler and the reopen of a saved room use this function. Returns the login result.
 let retainRoomHints = null;
@@ -633,10 +627,25 @@ function getAdmissionIdentity() {
 
 handleRoomIpc('asscrack:device-id', () => getAdmissionIdentity().id);
 
-handleRoomIpc('asscrack:login', async (_event, { name, room, type, invite, publicAddress, allowUpnp, allowLegacy, save, keepHistory } = {}) => {
+// The login and the reopen give the user a plain text for an error (login-errors.mjs). The log keeps the original.
+async function withLoginErrors(what, options, start) {
+    try {
+        return await start();
+    } catch (err) {
+        console.warn(`${what} failed: ${err?.message ?? err}`);
+        throw new Error(loginErrorText(err, { port: options.port }));
+    }
+}
+
+handleRoomIpc('asscrack:login', async (_event, fields = {}) => {
     if (loginStarted) throw new Error('Already logged in');
+    const options = { downloadDir: downloadDir ?? app.getPath('downloads'), ...nodeFlags };
+    return withLoginErrors('Login', options, () => login(options, fields));
+});
+
+async function login(options, { name, room, type, invite, publicAddress, allowUpnp, allowLegacy, save, keepHistory } = {}) {
     if (typeof name !== 'string' || !name.trim() || name.length > 64) throw new Error('Enter a username of up to 64 characters.');
-    const options = { name: name.trim(), downloadDir: downloadDir ?? app.getPath('downloads'), ...nodeFlags };
+    options.name = name.trim();
     let lan = false;
     let typedInvite = null;
     if (type === 'join') {
@@ -665,7 +674,7 @@ handleRoomIpc('asscrack:login', async (_event, { name, room, type, invite, publi
     if (publicAddress !== undefined && (typeof publicAddress !== 'string' || publicAddress.length > 32)) throw new Error('Enter a valid public address.');
     const result = await startRoom(options, { publicAddress: publicAddress?.trim(), allowUpnp: type === 'new' && allowUpnp === true, lan });
     return afterRoomStart(result, { invite: typedInvite, userName: options.name, save, keepHistory: keepHistory !== false });
-});
+}
 
 // Saved rooms (milestone 6). The window gets no key, no invite and no file path.
 handleRoomIpc('asscrack:saved-rooms', () => getSavedRooms().status());
@@ -698,6 +707,10 @@ handleRoomIpc('asscrack:reopen-room', async (_event, roomId, allowLegacy) => {
         name: row.userName ?? '', room: row.name, roomKey: row.roomKey,
         downloadDir: downloadDir ?? app.getPath('downloads'), ...nodeFlags
     };
+    return withLoginErrors('Reopen', options, () => reopenRoom(row, options, allowLegacy));
+});
+
+async function reopenRoom(row, options, allowLegacy) {
     let lan = false;
     if (row.protected) {
         options.membership = restoreSavedAdmission(row, getAdmissionIdentity());
@@ -713,7 +726,7 @@ handleRoomIpc('asscrack:reopen-room', async (_event, roomId, allowLegacy) => {
     writeLog('INFO', 'Reopen of a saved room');
     const result = await startRoom(options, { reopen: true, lan });
     return afterRoomStart(result, { invite: row.invite, userName: row.userName, save: false, keepHistory: row.keepHistory });
-});
+}
 
 // Saved rooms (milestone 6): the room storage controls and Forget.
 handleRoomIpc('asscrack:set-keep-history', (_event, roomId, on) => {
