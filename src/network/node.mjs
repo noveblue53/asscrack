@@ -158,7 +158,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     }
     // UPnP (opt-in): only for a node that can become a full node by the dial-back. With upnp false, the module is
     // not loaded: no UPnP service, no SSDP and no timer.
-    const useUpnp = upnp === true && fullNode === 'auto' && !relayOnly && hasRelayRole
+    // let: enableUpnp() can turn UPnP on for a running node (an owner can repair the reach of the room).
+    let useUpnp = upnp === true && fullNode === 'auto' && !relayOnly && hasRelayRole
     if (useUpnp) {
         if (!Number.isInteger(upnpLeaseSeconds) || upnpLeaseSeconds < 1 || upnpLeaseSeconds > 0xffffffff) {
             throw new TypeError('upnpLeaseSeconds must be a positive unsigned 32-bit integer')
@@ -1500,6 +1501,16 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             })
             .finally(() => { clearTimeout(timer); upnpPhase = 'done' })
     }
+    // Turn UPnP on for a running node, or try again after a task that ended with no mapping. false when UPnP cannot
+    // apply: a LAN room, a relay-only node, fullNode not 'auto', a typed announce address, no relay role, or a stopped node.
+    function enableUpnp() {
+        if (stopped || !key || membership?.lan || relayOnly || fullNode !== 'auto' || announce.length > 0 || !hasRelayRole) return false
+        if (!Number.isInteger(upnpLeaseSeconds) || upnpLeaseSeconds < 1 || upnpLeaseSeconds > 0xffffffff) return false
+        useUpnp = true
+        if (upnpPhase === 'done' && !upnpState) upnpPhase = 'idle'
+        runUpnp()
+        return true
+    }
 
     // Read the active room's archive before any session can open. Register invalidation in the same
     // synchronous step so Clear can remove these rows even while the network is still starting.
@@ -1649,6 +1660,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         fullNode: () => selfFull,
         // True while the UPnP task can still give a mapped address (from the start until the result or the timeout).
         upnpPending: () => useUpnp && canRelay() && upnpPhase !== 'done' && !stopped,
+        enableUpnp,
         roomKey: () => key ? key.toString('base64url') : null,
         publicAddrs,
         knownFullNodes: () => Object.fromEntries([...hintIds()].map(id => [id, hintAddrs(id)])),

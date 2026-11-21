@@ -252,3 +252,87 @@ test('upnp false: no UPnP service', { timeout: 15000 }, async () => {
         await a.stop()
     }
 })
+
+// Goal G1 (N2): an owner can turn on UPnP in a running room. All results are 127.0.0.1 results with a fake router.
+async function protectedOwner(roomName, options) {
+    const { newRoomKey } = await import('../src/network/invite.mjs')
+    const { createDeviceIdentity, createRoomMembership } = await import('../src/network/room-membership.mjs')
+    const roomKey = newRoomKey()
+    const membership = createRoomMembership({ identity: createDeviceIdentity(), room: roomName, roomKey })
+    const node = await createAsscrackNode({ room: roomName, roomKey, membership, listen: LISTEN, discovery: false, ...options })
+    return { node, deviceId: createDeviceIdentity().id }
+}
+
+test('enableUpnp() maps a port for a running owner node that started with upnp false', { timeout: 15000 }, async () => {
+    const igd = await startIgd({ externalIp: PUBLIC_IP })
+    const { node: a, deviceId } = await protectedOwner('u8', { upnp: false, upnpClient: fakeClient(igd.port) })
+    try {
+        const events = upnpEvents(a)
+        await delay(200)
+        assert.deepEqual(igd.log, [], 'no router request before enableUpnp()')
+        assert.deepEqual(a.publicAddrs(), [])
+        assert.equal(a.upnpPending(), false)
+        assert.throws(() => a.createMemberInvite(deviceId), /reachable owner address/)
+        assert.equal(a.enableUpnp(), true)
+        assert.equal(a.upnpPending(), true)
+        await waitFor(() => events.length === 1)
+        assert.equal(events[0].state, 'mapped')
+        const port = portOf(a)
+        assert.deepEqual(a.publicAddrs(), [`/ip4/${PUBLIC_IP}/tcp/${port}`])
+        assert.equal(a.upnpPending(), false)
+        const { readInvite } = await import('../src/network/invite.mjs')
+        const code = a.createMemberInvite(deviceId)
+        assert.deepEqual(readInvite(code).nodes, [{ id: a.peerId, addrs: [`/ip4/${PUBLIC_IP}/tcp/${port}`] }])
+        // A second call with a mapping in place sends no new router request.
+        assert.equal(a.enableUpnp(), true)
+        await delay(100)
+        assert.deepEqual(igd.log.map(r => r.action), ['GetExternalIPAddress', 'AddPortMapping'])
+    } finally {
+        await a.stop()
+        await igd.close()
+    }
+    assert.equal(a.enableUpnp(), false, 'a stopped node')
+})
+
+test('enableUpnp() runs the UPnP task again after a task that ended with no mapping', { timeout: 15000 }, async () => {
+    const mode = { externalIp: '100.64.1.5' }
+    const igd = await startIgd(mode)
+    const { node: a } = await protectedOwner('u9', { upnp: true, upnpClient: fakeClient(igd.port) })
+    try {
+        const events = upnpEvents(a)
+        await waitFor(() => events.length === 1)
+        assert.equal(events[0].state, 'none')
+        assert.equal(events[0].reason, 'private-ip')
+        assert.equal(a.upnpPending(), false)
+        mode.externalIp = PUBLIC_IP
+        assert.equal(a.enableUpnp(), true)
+        assert.equal(a.upnpPending(), true)
+        await waitFor(() => events.length === 2)
+        assert.equal(events[1].state, 'mapped')
+        assert.deepEqual(igd.log.map(r => r.action), ['GetExternalIPAddress', 'GetExternalIPAddress', 'AddPortMapping'])
+        assert.deepEqual(a.publicAddrs(), [`/ip4/${PUBLIC_IP}/tcp/${portOf(a)}`])
+    } finally {
+        await a.stop()
+        await igd.close()
+    }
+})
+
+test('enableUpnp() is false for a LAN room, a typed address, fullNode not auto and a relay-only node', { timeout: 15000 }, async () => {
+    const { newRoomKey } = await import('../src/network/invite.mjs')
+    const { createDeviceIdentity, createRoomMembership } = await import('../src/network/room-membership.mjs')
+    const nodes = []
+    try {
+        const lanKey = newRoomKey()
+        const lan = createRoomMembership({ identity: createDeviceIdentity(), room: 'u10', roomKey: lanKey, lan: true })
+        nodes.push(await createAsscrackNode({ room: 'u10', roomKey: lanKey, membership: lan, listen: LISTEN, discovery: false }))
+        nodes.push((await protectedOwner('u11', { announce: ['/ip4/203.0.113.5/tcp/47000'] })).node)
+        nodes.push((await protectedOwner('u12', { fullNode: false })).node)
+        nodes.push(await createAsscrackNode({ room: 'u13', roomKey: newRoomKey(), relayOnly: true, discovery: false }))
+        for (const node of nodes) {
+            assert.equal(node.enableUpnp(), false)
+            assert.equal(node.upnpPending(), false)
+        }
+    } finally {
+        await Promise.allSettled(nodes.map(node => node.stop()))
+    }
+})
