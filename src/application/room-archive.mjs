@@ -193,10 +193,69 @@ function makeRoomArchive({ dir, protector, limits = null }) {
     return st;
   }
 
+  // Each write has its own tmp file, so that two processes do not share one tmp file.
+  function ownTmpFile() {
+    return path.join(dir, `archive.key.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`);
+  }
+
+  function keyText(wrapped) {
+    return JSON.stringify({ v: 1, wrapped: Buffer.from(wrapped).toString('base64') });
+  }
+
+  // Replaces the key file (reEncrypt).
   function writeKey(wrapped) {
-    fs.rmSync(tmpFile, { force: true });
-    writeFileSync600(tmpFile, JSON.stringify({ v: 1, wrapped: Buffer.from(wrapped).toString('base64') }));
-    fs.renameSync(tmpFile, keyFile);
+    const tmp = ownTmpFile();
+    try {
+      writeFileSync600(tmp, keyText(wrapped));
+      fs.renameSync(tmp, keyFile);
+    } finally {
+      fs.rmSync(tmp, { force: true });
+    }
+  }
+
+  // Creates the key file only if it does not exist. Gives false when an other process created it first (EEXIST).
+  function createKeyExclusive(wrapped) {
+    const tmp = ownTmpFile();
+    try {
+      writeFileSync600(tmp, keyText(wrapped));
+      try {
+        fs.linkSync(tmp, keyFile);
+        return true;
+      } catch (err) {
+        if (err && err.code === 'EEXIST') return false;
+      }
+    } finally {
+      fs.rmSync(tmp, { force: true });
+    }
+    // The file system refused the hard link: use an exclusive create of the key file.
+    try {
+      fs.writeFileSync(keyFile, keyText(wrapped), { flag: 'wx', mode: 0o600 });
+      return true;
+    } catch (err) {
+      if (err && err.code === 'EEXIST') return false;
+      throw err;
+    }
+  }
+
+  // Reads and unwraps the existing key file. Gives { profileKey, reEncrypt } or { fail: reason }.
+  function* readExistingKey() {
+    let wrapped;
+    try {
+      const j = JSON.parse(fs.readFileSync(keyFile, 'utf8'));
+      if (!j || j.v !== 1 || typeof j.wrapped !== 'string') throw new Error('bad');
+      wrapped = Buffer.from(j.wrapped, 'base64');
+    } catch {
+      return { fail: 'key-unreadable' };
+    }
+    let profileKey;
+    let reEncrypt;
+    try {
+      ({ value: profileKey, reEncrypt } = unwrapResult(yield protector.unwrap(wrapped)));
+    } catch {
+      return { fail: 'key-unwrap-failed' };
+    }
+    if (profileKey.length !== 32) return { fail: 'key-unwrap-failed' };
+    return { profileKey, reEncrypt };
   }
 
   function* openSequence() {
@@ -204,27 +263,29 @@ function makeRoomArchive({ dir, protector, limits = null }) {
     fs.mkdirSync(dir, { recursive: true });
     let profileKey;
     let reEncrypt = false;
-    if (fs.existsSync(keyFile)) {
-      let wrapped;
-      try {
-        const j = JSON.parse(fs.readFileSync(keyFile, 'utf8'));
-        if (!j || j.v !== 1 || typeof j.wrapped !== 'string') throw new Error('bad');
-        wrapped = Buffer.from(j.wrapped, 'base64');
-      } catch {
-        return setState('locked', 'key-unreadable');
-      }
-      try {
-        ({ value: profileKey, reEncrypt } = unwrapResult(yield protector.unwrap(wrapped)));
-      } catch {
-        return setState('locked', 'key-unwrap-failed');
-      }
-      if (profileKey.length !== 32) return setState('locked', 'key-unwrap-failed');
-    } else if (fs.existsSync(dbFile)) {
-      return setState('locked', 'key-missing');
-    } else {
+    let useExisting = fs.existsSync(keyFile);
+    // An other process can create the key file and the database between the two checks: check the key file again.
+    if (!useExisting && fs.existsSync(dbFile)) {
+      useExisting = fs.existsSync(keyFile);
+      if (!useExisting) return setState('locked', 'key-missing');
+    }
+    if (!useExisting) {
+      // Remove the tmp file of an interrupted first start of an older version.
       fs.rmSync(tmpFile, { force: true });
       profileKey = crypto.randomBytes(32);
-      writeKey(yield protector.wrap(profileKey));
+      let created;
+      try {
+        created = createKeyExclusive(yield protector.wrap(profileKey));
+      } catch {
+        return setState('locked', 'key-write-failed');
+      }
+      // An other process created the key file first: use its key.
+      if (!created) useExisting = true;
+    }
+    if (useExisting) {
+      const r = yield* readExistingKey();
+      if (r.fail) return setState('locked', r.fail);
+      ({ profileKey, reEncrypt } = r);
     }
     let handle;
     try {
@@ -253,7 +314,7 @@ function makeRoomArchive({ dir, protector, limits = null }) {
     // safeStorage asked for a new encryption of the key (shouldReEncrypt). Only after the database opened with the key.
     // A failure keeps the old key file, which still opens.
     if (reEncrypt) {
-      try { writeKey(yield protector.wrap(profileKey)); } catch { fs.rmSync(tmpFile, { force: true }); }
+      try { writeKey(yield protector.wrap(profileKey)); } catch { /* writeKey removed its own tmp file */ }
     }
     return setState('open', null);
   }

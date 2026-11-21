@@ -585,3 +585,33 @@ test('openRoomArchive (synchronous) refuses an asynchronous protector', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('first start race: two opens of one new folder share one key, and a third open reads both lines', async (t) => {
+  const dir = tmpDir();
+  const keep = cleanup(t, dir);
+  const base = asyncProtector('A');
+  let releaseFirst;
+  const firstGate = new Promise(r => { releaseFirst = r; });
+  let secondWrapped;
+  const secondDone = new Promise(r => { secondWrapped = r; });
+  // The wrap of the first archive resolves after the wrap of the second archive.
+  const p1 = { ...base, wrap: async (buf) => { const w = await base.wrap(buf); await firstGate; return w; } };
+  const p2 = { ...base, wrap: async (buf) => { const w = await base.wrap(buf); secondWrapped(); return w; } };
+  const first = openRoomArchiveAsync({ dir, protector: p1 });
+  const second = openRoomArchiveAsync({ dir, protector: p2 });
+  await secondDone;
+  const b = keep(await second);
+  releaseFirst();
+  const a = keep(await first);
+  assert.deepEqual(a.state(), { state: 'open', reason: null });
+  assert.deepEqual(b.state(), { state: 'open', reason: null });
+  const { roomId } = a.saveRoom({ name: 'room', roomKey: KEY, userName: 'u' });
+  a.addMessage(roomId, { id: 'm1', from: 'u', text: 'from first', time: 1, own: true, source: 'send' });
+  b.addMessage(roomId, { id: 'm2', from: 'u', text: 'from second', time: 2, own: true, source: 'send' });
+  a.close();
+  b.close();
+  const c = keep(await openRoomArchiveAsync({ dir, protector: asyncProtector('A') }));
+  assert.deepEqual(c.state(), { state: 'open', reason: null });
+  assert.deepEqual(c.listMessages(roomId).map(m => m.text), ['from first', 'from second']);
+  assert.deepEqual(fs.readdirSync(dir).filter(f => f.endsWith('.tmp')), []);
+});
