@@ -100,25 +100,29 @@
       <button id="map-toggle" type="button" aria-expanded="false" aria-controls="map-panel" hidden>Network map</button>
       <button id="view-toggle" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="view-menu">View</button>
       <ul id="view-menu" role="menu" aria-labelledby="view-toggle" hidden>
+        <!-- Groups: the panels, the voice, the transcript, the look and the sounds, then the app (Quit is the last line). -->
         <li id="view-buddies" role="menuitemcheckbox" aria-checked="true" tabindex="-1">Buddies</li>
         <li id="view-buddy-drawer" role="menuitem" tabindex="-1" hidden>Open Buddies</li>
+        <li id="view-side" role="menuitem" tabindex="-1">Move Buddies to the right</li>
         <li id="view-transfers" role="menuitemcheckbox" aria-checked="false" tabindex="-1">Pin Transfers</li>
         <li id="view-map" role="menuitemcheckbox" aria-checked="false" tabindex="-1">Network map</li>
         <li class="view-rule" role="separator"></li>
         <li id="view-voice" role="menuitem" tabindex="-1">Voice controls</li>
         <li id="detach-voice" role="menuitem" tabindex="-1">Detach voice panel</li>
+        <li class="view-rule" role="separator"></li>
         <li id="view-compact" role="menuitemcheckbox" aria-checked="false" tabindex="-1">Compact transcript</li>
         <li id="view-typing" role="menuitemcheckbox" aria-checked="false" tabindex="-1">Share typing status</li>
+        <li id="view-previews" role="menuitemcheckbox" aria-checked="true" tabindex="-1">Automatic image thumbnails</li>
+        <li id="view-clear-previews" role="menuitem" tabindex="-1">Clear thumbnail cache</li>
+        <li class="view-rule" role="separator"></li>
         <li id="view-theme" role="menuitem" aria-haspopup="dialog" aria-controls="theme-gallery" tabindex="-1">Theme…</li>
-        <li id="view-side" role="menuitem" tabindex="-1">Move Buddies to the right</li>
+        <li id="view-attention" role="menuitem" aria-haspopup="dialog" aria-controls="attention-settings" tabindex="-1">Sound &amp; notifications…</li>
         <li id="view-system-buttons" role="menuitemcheckbox" aria-checked="false" tabindex="-1" hidden>Windows system buttons (next launch)</li>
+        <li id="view-reset" role="menuitem" tabindex="-1">Reset layout</li>
+        <li class="view-rule" role="separator"></li>
         <li id="view-idle" role="menuitem" tabindex="-1">Enter Idle Peer</li>
         <li id="view-close-idle" role="menuitemcheckbox" aria-checked="true" tabindex="-1">Close to Idle Peer</li>
         <li id="view-quit" role="menuitem" tabindex="-1">Quit Asscrack</li>
-        <li id="view-clear-previews" role="menuitem" tabindex="-1">Clear thumbnail cache</li>
-        <li id="view-previews" role="menuitemcheckbox" aria-checked="true" tabindex="-1">Automatic image thumbnails</li>
-        <li id="view-attention" role="menuitem" aria-haspopup="dialog" aria-controls="attention-settings" tabindex="-1">Sound &amp; notifications…</li>
-        <li id="view-reset" role="menuitem" tabindex="-1">Reset layout</li>
       </ul>
       <div id="window-controls" role="group" aria-label="Window controls" hidden>
         <button type="button" id="window-minimize" aria-label="Minimize window" title="Minimize window"><span aria-hidden="true"></span></button>
@@ -254,7 +258,7 @@
           <p id="old-version-note" hidden>People with ASSCRACK 0.7.0 or older cannot join this room. Ask them to update to 0.8.0.</p>
           <form id="member-invite-form" hidden>
             <label for="member-device-id">Friend’s device ID</label>
-            <input id="member-device-id" maxlength="128" required autocomplete="off" spellcheck="false">
+            <input type="text" id="member-device-id" maxlength="128" required autocomplete="off" spellcheck="false">
             <label class="admission-check"><input type="checkbox" id="member-can-host"> Let this device host and relay</label>
             <button type="submit" id="member-invite-create">Create device invite</button>
             <p>Stay connected for their first join.</p>
@@ -271,7 +275,7 @@
           </section>
         </div>
         <dialog id="channel-dialog" aria-labelledby="channel-title"><form id="channel-create-form">
-          <h2 id="channel-title">Create public channel</h2><label>Channel name <input id="channel-name" required maxlength="80"></label>
+          <h2 id="channel-title">Create public channel</h2><label>Channel name <input type="text" id="channel-name" required maxlength="80" autocomplete="off"></label>
           <p id="channel-error" role="status"></p><button id="channel-cancel" type="button">Cancel</button><button>Create channel</button>
         </form></dialog>
         <!-- find.js: Ctrl+F shows this bar. It searches the lines in the list now. -->

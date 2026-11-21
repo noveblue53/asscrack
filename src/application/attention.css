@@ -1,12 +1,11 @@
-#attention-settings {
-    max-width: min(26rem, 90vw);
-    max-height: 88vh;
-    overflow: auto;
-    color: var(--ink, CanvasText);
-    background: var(--panel, Canvas);
-}
-#attention-settings fieldset { margin: 0.65rem 0; }
-#attention-settings label { display: block; margin: 0.5rem 0; }
-#attention-settings input[type="range"] { width: 100%; }
-#attention-settings p { max-width: 43ch; }
+/* The frame, the title and the backdrop come from the shared dialog rules (desktop-controls.css). With them the
+   dialog and its Done button are in an 800 x 600 window with no scroll. */
+#attention-settings { width: min(26rem, calc(100vw - 24px)); }
+#attention-settings label { display: block; margin: 6px 0; }
+#attention-settings input[type="range"] { width: 100%; margin: 0; }
+#attention-settings input[type="checkbox"] { margin: 0 4px 0 0; vertical-align: -1px; }
+#attention-settings p { max-width: 43ch; margin: 6px 0; font-size: 12.5px; color: var(--ink-soft); }
+#attention-percent { float: right; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+#attention-tone { margin-right: 6px; }
+#attention-settings #attention-status { color: var(--ink); }
 #attention-settings #attention-status:empty { display: none; }

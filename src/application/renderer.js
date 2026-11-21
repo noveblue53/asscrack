@@ -50,6 +50,17 @@ function firstLetter(name) {
     return first ? first.toUpperCase() : '?';
 }
 
+// The text of an error for the user. Electron puts "Error invoking remote method '<channel>': Error: " before the
+// message of an error from the main process. That part is for a programmer, not for the user.
+function errorText(err) {
+    return String(err?.message ?? err).replace(/^Error invoking remote method '[^']*': (?:\w*Error: )?/, '');
+}
+
+// The status band cuts a long status text with an ellipsis: the tooltip has the full text.
+new MutationObserver(() => {
+    status.title = status.textContent;
+}).observe(status, { childList: true, characterData: true, subtree: true });
+
 function updatePeerCount() {
     peerCount.textContent = String([...peerItems.keys()].filter(id => !idlePeerIds.has(id)).length + (selfLine && !selfIdle ? 1 : 0));
     if (waitingPeer) waitingPeer.hidden = peerItems.size !== 0;
@@ -398,7 +409,8 @@ async function login() {
     const invite = inviteInput.value.trim();
     const publicAddress = publicAddressInput.value.trim();
     if (!name || (type !== 'join' && !room)) {
-        status.textContent = 'Error: enter a username and a room.';
+        // The join type has no room field: it has the invite code.
+        status.textContent = type === 'join' ? 'Error: enter a username and an invite code.' : 'Error: enter a username and a room.';
         return;
     }
     if (type === 'join' && !invite) {
@@ -429,7 +441,7 @@ async function login() {
         showChat(name, room);
         roomStarted(result);
     } catch (err) {
-        status.textContent = `Error: ${err?.message ?? err}`;
+        status.textContent = `Error: ${errorText(err)}`;
         loginButton.disabled = false;
     }
 }
@@ -450,6 +462,8 @@ function showChat(name, room) {
     if (internetRoom) statusBar.querySelector('.net-note').textContent = 'Internet room';
     if (!selfLine) {
         selfLine = makePeerLine(`${name} (you)`, name, name, true);
+        // Two parts with the same text as before: the ellipsis of a long name cuts the name, not the mark "(you)".
+        selfLine.querySelector('.name').replaceChildren(makeSpan('name-text', name), makeSpan('you-mark', ' (you)'));
         selfLine.classList.add('self');
         peerList.prepend(selfLine);
     }
@@ -581,7 +595,7 @@ async function sendMessage() {
     try {
         record = channelId === 'general' ? await window.asscrack.send(text) : await window.asscrack.send(text, channelId);
     } catch (err) {
-        status.textContent = `Not sent: ${err?.message ?? err}. The message stays in the message box.`;
+        status.textContent = `Not sent: ${errorText(err)}. The message stays in the message box.`;
         return;
     } finally {
         sendBusy = false;
@@ -742,7 +756,7 @@ async function joinVoice() {
         ownMuted = false;
         startStatsTimer();
     } catch (err) {
-        if (err?.message !== 'Voice capture ended') voiceError.textContent = `Voice error: ${err?.message ?? err}`;
+        if (err?.message !== 'Voice capture ended') voiceError.textContent = `Voice error: ${errorText(err)}`;
     } finally {
         joining = false;
         updateVoiceView();
@@ -758,7 +772,7 @@ async function leaveVoice() {
         await window.voice.leave();
         window.roomAttention?.cue('leave');
     } catch (err) {
-        voiceError.textContent = `Voice error: ${err?.message ?? err}`;
+        voiceError.textContent = `Voice error: ${errorText(err)}`;
     }
     updateVoiceView();
 }
@@ -860,7 +874,7 @@ async function callFile(fn, offerId) {
     try {
         return await fn(offerId);
     } catch (err) {
-        status.textContent = `Error: ${err?.message ?? err}`;
+        status.textContent = `Error: ${errorText(err)}`;
         return false;
     }
 }
@@ -983,7 +997,7 @@ async function cancelReceive(key) {
     } catch (err) {
         entry.cancelRequested = false;
         if (entry.state === 'receiving') setTransferState(entry, 'receiving', 'Receiving');
-        status.textContent = `Error: ${err?.message ?? err}`;
+        status.textContent = `Error: ${errorText(err)}`;
         return false;
     }
 }
@@ -1001,7 +1015,7 @@ async function cancelToReceiver(key) {
         return true;
     } catch (err) {
         entry.cancelRequested = false;
-        status.textContent = `Error: ${err?.message ?? err}`;
+        status.textContent = `Error: ${errorText(err)}`;
         renderTransferActions(entry, entry.item);
         return false;
     }
@@ -1036,7 +1050,7 @@ async function revealTransfer(key) {
         if (result?.ok === true) return true;
         status.textContent = REVEAL_TEXT[result?.reason] ?? REVEAL_TEXT.unknown;
     } catch (err) {
-        status.textContent = `Error: ${err?.message ?? err}`;
+        status.textContent = `Error: ${errorText(err)}`;
     }
     return false;
 }
@@ -1047,7 +1061,7 @@ async function copyToClipboard(text, done) {
         status.textContent = done;
         return true;
     } catch (err) {
-        status.textContent = `Copy failed: ${err?.message ?? err}`;
+        status.textContent = `Copy failed: ${errorText(err)}`;
         return false;
     }
 }
@@ -1477,7 +1491,7 @@ async function sendFile() {
         }
         status.textContent = '';
     } catch (err) {
-        status.textContent = `Error: ${err?.message ?? err}`;
+        status.textContent = `Error: ${errorText(err)}`;
     } finally {
         offeringFile = false;
         updateFileDraft();
@@ -1697,7 +1711,7 @@ copyInviteButton.addEventListener('click', async () => {
         await window.asscrack.copyText(inviteCode.value);
         inviteNote.textContent = 'Copied';
     } catch (err) {
-        inviteNote.textContent = `Copy failed: ${err?.message ?? err}`;
+        inviteNote.textContent = `Copy failed: ${errorText(err)}`;
     }
 });
 
@@ -1771,7 +1785,7 @@ async function submitTopic(text) {
         status.textContent = '';
         return true;
     } catch (err) {
-        status.textContent = err?.message ?? 'Topic change failed.';
+        status.textContent = err?.message ? errorText(err) : 'Topic change failed.';
         return false;
     }
 }
@@ -1886,7 +1900,7 @@ async function applyPresence(sent) {
         const result = await window.asscrack.setPresence(sent);
         ownPresence = readPresence(result) ?? sent;
     } catch (err) {
-        status.textContent = `Status not set: ${err?.message ?? err}`;
+        status.textContent = `Status not set: ${errorText(err)}`;
         return false;
     }
     showOwnPresence();

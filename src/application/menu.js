@@ -368,6 +368,12 @@
     function refreshTabStops(listEl) {
         const rows = rowsOf(listEl);
         for (const row of rows) if (!row.hasAttribute('tabindex')) row.tabIndex = -1;
+        // The chat list: while the focus is not in the list, the tab stop is the newest line. Without this rule the
+        // tab stop stayed on the first line that the list got: Tab moved a long chat to its oldest line.
+        if (listEl === messageList && !listEl.contains(document.activeElement)) {
+            setTabStop(listEl, rows[rows.length - 1] ?? null);
+            return;
+        }
         const stop = tabStops.get(listEl);
         if (stop && stop.parentElement === listEl && rows.includes(stop)) return;
         // No current tab stop: the newest chat line, or the first row of the other lists.
@@ -380,6 +386,9 @@
         refreshTabStops(listEl);
         listEl.addEventListener('focusin', event => {
             const row = event.target.closest('li');
+            // The chat list: only the focus of a line itself moves the tab stop. A button in an older line (a file
+            // card) does not take the tab stop from the newest line: Tab goes through the buttons, then to that line.
+            if (listEl === messageList && event.target !== row) return;
             if (row && row.parentElement === listEl) setTabStop(listEl, row);
         });
         listEl.addEventListener('keydown', event => {

@@ -84,7 +84,7 @@
             open(id);
             messageInput.focus();
         } catch (err) {
-            document.getElementById('channel-error').textContent = err.message;
+            document.getElementById('channel-error').textContent = errorText(err);
             nameInput.focus();
         }
     });

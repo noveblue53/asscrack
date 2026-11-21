@@ -54,9 +54,10 @@ body:not(:has(#transfers li)) #transfer-count { display: none; }
     border-radius: 7px;
     box-shadow: 0 4px 16px rgb(0 35 55 / 25%);
 }
-#room-options:popover-open { display: grid; gap: 8px; }
-#room-options input { min-width: 0; padding: 4px 7px; }
-#topic-input { flex: 1; }
+#room-options:popover-open { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+#room-options input { min-width: 0; height: 30px; padding: 0 11px; }
+/* width 0 with flex 1: the field takes the free space, and its default size does not make the row too wide. */
+#topic-input { flex: 1; width: 0; }
 #highlight-words { display: block; width: 100%; margin-top: 3px; }
 #topic-unavailable { color: var(--ink-soft); font-size: .83em; }
 #next-highlight { margin-inline-start: auto; }
@@ -66,7 +67,8 @@ body:not(:has(#transfers li)) #transfer-count { display: none; }
 #map-panel .map-heading { min-height: 28px; }
 .map-heading h2 { margin: 0; font: inherit; }
 #map-close { margin-inline-start: auto; }
-.map-heading button { padding-inline: 7px; font-size: 11px; white-space: nowrap; }
+/* All the buttons of the map heading have the size of Close: a 30 px button does not go into the 28 px band. */
+.map-heading button { height: 20px; padding-inline: 9px; border-radius: 10px; font-size: 11px; white-space: nowrap; }
 body.layout-map-docked .map-heading :is(#peer-detail-map, #peer-detail-show) { display: none; }
 body:not(.layout-map-docked) #map-panel.inspecting:not(.show-map) :is(#node-map, #map-legend),
 body:not(.layout-map-docked) #map-panel.show-map #peer-details { display: none; }
@@ -86,7 +88,7 @@ body.layout-map-docked #peer-details { flex: 0 1 41%; }
 .peer-detail-head > :is(h3, h4) { margin: 0; overflow-wrap: anywhere; }
 .peer-detail-head h3 { font-size: 1.1em; }
 .peer-detail-head h4 { font-size: .94em; color: var(--accent); }
-#peer-search { width: 100%; margin-block: 4px; }
+#peer-search { width: 100%; height: 28px; margin-block: 4px; padding: 0 10px; border: 1px solid var(--line); border-radius: 14px; font: 13px var(--font-ui); color: var(--ink); background: var(--chat); }
 #peer-choices { max-height: 9em; overflow-y: auto; }
 #peer-choices button { display: block; width: 100%; text-align: left; }
 #peer-readings {
@@ -178,28 +180,48 @@ body.in-voice #voice-controls::before { display: none; }
 #peers button.avatar { padding: 0; min-width: 0; }
 #peers button.avatar:focus-visible { outline: 2px solid var(--focus, #235aa5); }
 #availability-dialog, #message-details {
-    max-width: min(340px, calc(100vw - 48px));
-    box-sizing: border-box;
-    padding: 16px;
-    font: 14px var(--font-ui);
-    color: var(--ink, #172839);
-    border: 1px solid var(--line);
-    border-radius: 7px;
-    background: var(--surface, #fff);
+    width: min(320px, calc(100vw - 48px));
     overflow-wrap: anywhere;
 }
-#availability-dialog h2, #message-details h2 { font-size: 17px; margin: 0 0 8px; }
-#availability-dialog form, #message-details form { text-align: right; }
-#availability-dialog #presence-controls {
-    display: grid;
-    grid-template-columns: 1fr;
-    margin: 8px 0;
-    padding: 0;
-    background: transparent;
-    border: none;
+#message-details p, #message-details time { display: block; margin: 0 0 6px; }
+
+/* ---- Dialogs: one look for all the dialogs of the window (the frame of the theme gallery) ---- */
+dialog {
+    box-sizing: border-box;
+    max-width: calc(100vw - 24px);
+    max-height: calc(100vh - 24px);
+    padding: 16px;
+    overflow: auto;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    font: 14px var(--font-ui);
+    box-shadow: 0 12px 36px rgb(0 0 0 / .28);
 }
-#availability-dialog #presence-controls input, #availability-dialog #presence-controls select { width: 100%; }
-#availability-dialog::backdrop, #message-details::backdrop { background: rgb(0 24 64 / 25%); }
+dialog::backdrop { background: rgb(12 22 20 / .48); }
+dialog h2 { margin: 0 0 12px; font: 700 18px var(--font-title); overflow-wrap: anywhere; }
+/* The row of Done at the end of a dialog. */
+dialog > form[method="dialog"] { margin-top: 14px; text-align: right; }
+dialog fieldset { margin: 0 0 10px; padding: 6px 12px 10px; border: 1px solid var(--line-soft); border-radius: 6px; }
+dialog legend { padding: 0 4px; font: 700 11px var(--font-small); letter-spacing: 0.4px; text-transform: uppercase; color: var(--accent); }
+:root[data-theme="amber-terminal"] dialog { border-radius: 3px; }
+
+/* A select with no rule of its own (the channel, the availability, the cue, the file recipient, the whisper buddy):
+   the size and the shape of the buttons at its side. The login card and the voice settings have their own rule. */
+select {
+    height: 30px;
+    padding: 0 8px;
+    border: 1px solid var(--line);
+    border-radius: 15px;
+    font: 13px var(--font-ui);
+}
+
+/* Create public channel. */
+#channel-dialog { width: min(360px, calc(100vw - 24px)); }
+#channel-create-form { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+#channel-create-form :is(h2, label, #channel-error) { flex: 1 0 100%; margin: 0; }
+#channel-create-form label { display: grid; gap: 4px; }
+#channel-name { width: 100%; }
+#channel-error { color: var(--danger); font-size: 12.5px; font-weight: 600; }
 
 #transfers, .file-card .progress-cell {
     box-shadow: inset 0 1px 3px rgb(0 0 0 / 18%);
@@ -251,7 +273,12 @@ body.compact-transcript #messages > li:not(.file-card) {
 }
 .compact-transcript #messages .time { grid-column: 1; grid-row: 1; color: var(--ink-soft, #465971); }
 .compact-transcript #messages .text { grid-column: 3; grid-row: 1; }
+/* The bubble has no box here (display: contents). The line is the frame of the floating Quote control. Without
+   position: relative on the line, each Quote control went to the top corner of the list (one on top of the other),
+   and the list got a horizontal scroll bar. */
+body.compact-transcript #messages > li:not(.file-card) { position: relative; }
 .compact-transcript #messages .btn-quote { grid-column: 4; grid-row: 1; }
+.compact-transcript #messages button.btn-quote, .compact-transcript #messages li.own button.btn-quote { top: 0; right: 2px; left: auto; }
 .compact-transcript #messages .local-only-mark { grid-column: 3 / -1; }
 .compact-transcript #messages li.unread-first::before { grid-column: 1 / -1; grid-row: 1; }
 .compact-transcript #messages li.unread-first :is(.time, .from, .text, .btn-quote) { grid-row: 2; }

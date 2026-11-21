@@ -91,19 +91,43 @@ body.whisper-open #message-panel > :not(#whisper-pane) {
 .whisper-compose {
   border-top: 1px solid var(--line-soft);
 }
+/* The same box as the message box of the room (quote.css): one look for the same function. */
 #whisper-draft {
   flex: 1;
+  box-sizing: border-box;
   min-width: 0;
+  min-height: 32px;
   max-height: 6rem;
   resize: none;
-  padding: 5px 8px;
+  padding: 6px 13px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  font: inherit;
+  border-radius: 16px;
+  font: 15px/18px var(--font-ui);
+}
+/* The placeholder has the name of the buddy. A long name stays on one line: no scroll bar in the empty box. */
+#whisper-draft::placeholder {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#whisper-send {
+  flex: none;
+  height: 32px;
+  padding: 0 18px;
+  border-radius: 16px;
 }
 :root[data-theme] #whisper-send {
   background: var(--glass);
   color: var(--frame-ink);
+}
+/* The Whispers button is in the 26 px head of Buddies: the size of the buttons of the map head. A 30 px button went
+   out of the band. */
+#whisper-open {
+  height: 20px;
+  margin-left: auto;
+  padding: 0 9px;
+  border-radius: 10px;
+  font-size: 11px;
 }
 #peers li[data-whisper-unread]::after {
   content: attr(data-whisper-unread);

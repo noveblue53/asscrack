@@ -7,6 +7,34 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased — polish pass on the room window (2026-11-21)
+
+A review of the window found 37 visual and keyboard faults. This change repairs 27 of them in the renderer files only.
+It has no new feature, no protocol change and no new dependency.
+
+- **Login card at 800 x 600.** Log In and the error text are now in the window. The check boxes are small, with
+  usual labels. Saved rooms are in a second column when the window is 760 px or wider.
+- **Contrast.** Find with no result is readable in the dark themes. Three items now have a contrast of 4.5:1 or more.
+  They are the message box placeholder, the focus ring of the list rows and the Log In arrow on Pearl.
+- **Same look for the same function.** All dialogs have one frame. The selects and text fields have the look of the
+  theme. The voice settings use the colors of the theme. Amber Terminal has square corners on all controls.
+- **Error texts.** The user does not see "Error invoking remote method ..." before an error. A Join with no name asks
+  for an invite code, not for a room.
+- **Keyboard.** Tab into the chat list goes to the newest line, not to the oldest line (rooms with file cards: see the
+  open item N01). The View menu has five groups, and Quit is the last line.
+- **Smaller items.** These items have small repairs: the Quote control of the compact transcript, the head buttons of
+  the map and of Buddies, and the topic editor. Also the "(you)" mark of a long name and the tooltip of a long status
+  text.
+
+Open items (not repaired): N01 to N10 in the report of the pass. Examples: the card buttons of older lines are tab
+stops, and the History popover covers the Room options popover.
+
+Results (**127.0.0.1**, this PC):
+- `npm test`: 426 of 426 pass.
+- One start with two profiles in one room: chat, file, image, voice, dialogs, whisper and Quit. Result: 0 ERROR
+  lines in the terminal, 0 errors in the developer console.
+- Contrast audit of 39 window states in each of the 6 themes: 75 findings before, 0 real findings after.
+
 ## 0.8.0 (2026-11-21): candidate build
 
 This build contains the protected-room hardening of RC2: device admission, host permissions, revocation and bounded

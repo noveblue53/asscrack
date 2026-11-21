@@ -102,10 +102,11 @@
   color: var(--ink-soft);
 }
 
+/* The accent color of the theme, as the sliders of the dialogs have. */
 #voice-settings input[type="range"] {
   width: 100%;
   margin: 0;
-  accent-color: #2a8fec;
+  accent-color: var(--accent, #2a8fec);
 }
 
 #voice-settings select {

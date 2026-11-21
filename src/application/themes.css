@@ -89,22 +89,28 @@
 :root[data-theme] :is(#titlebar > button, #join-voice, #leave-voice, #mute, #quote-remove) {
   color: var(--control-ink); background: var(--control-glass); border-color: var(--line); box-shadow: var(--relief); text-shadow: none;
 }
-:root[data-theme] :is(#titlebar > button[aria-expanded="true"], #login, #send, #send-file, .btn-accept, #jump-latest) {
+:root[data-theme] :is(#titlebar > button[aria-expanded="true"], #login, #send, #send-file, .btn-accept, #jump-latest, .reopen-room) {
   color: var(--frame-ink); background: var(--glass); border-color: var(--line); box-shadow: var(--relief);
 }
 :root[data-theme] :is(#voice-controls, #transfers, .file-card) :is(.btn-refuse, .btn-cancel, #leave-voice, #mute[aria-pressed="true"]) { color: var(--danger); }
 :root[data-theme] :is(input[type="text"], select, textarea, #message-input, #invite-code, #voice-settings select, #vs-ptt-key) {
   color: var(--ink); background: var(--chat); border-color: var(--line); box-shadow: inset 0 1px 2px rgb(0 0 0 / .1);
 }
-:root[data-theme] :is(input,textarea)::placeholder { color: var(--ink-soft); }
+/* A placeholder is lighter than a typed text, and its contrast on the field is 5:1 or more in each theme. The
+   message box had #8aa3bc from quote.css (2.6:1 on the white field of Aero Classic and of Pearl). */
+:root[data-theme] :is(input, textarea, #message-input)::placeholder { color: color-mix(in srgb, var(--ink-soft) 85%, var(--chat)); }
 :root[data-theme] :is(input, progress) { accent-color: var(--accent); }
 :root[data-theme] :is(button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, summary:focus-visible, [tabindex]:focus-visible) {
   outline: 2px solid var(--focus); outline-offset: -2px;
 }
 :root[data-theme] #titlebar > button:focus-visible { outline-offset: 1px; outline-color: var(--frame-ink); }
+/* A check box and a radio button are small: the ring goes around the box, not into it. */
+:root[data-theme] input:is([type="checkbox"], [type="radio"]):focus-visible { outline-offset: 1px; }
 :root[data-theme] :is(#view-menu, #row-menu) [role^="menuitem"]:is(:focus,:hover) {
   background: var(--glass); color: var(--frame-ink); text-shadow: none;
 }
+/* The keyboard ring of a menu line: the ink of its highlight band (the old gold did not show on the Pearl band). */
+:root[data-theme] :is(#view-menu, #row-menu) [role^="menuitem"]:focus-visible { outline-color: var(--frame-ink); }
 #view-menu [role="menuitemcheckbox"]::before { border-color: var(--line); background: var(--control-glass); box-shadow: none; }
 #view-menu [role="menuitemcheckbox"][aria-checked="true"]::before { border-color: var(--line); background: var(--glass); }
 #view-menu [role="menuitemcheckbox"][aria-checked="true"]::after { border-color: var(--frame-ink); }
@@ -119,9 +125,16 @@
 :root[data-theme] :is(#map-toggle,#attach-file,#send,#join-voice,#leave-voice,#mute,#voice-settings-toggle)::before {
   background: currentColor; mask: var(--glyph) center/contain no-repeat;
 }
+/* The arrow of Log In: the same method. A white picture has no contrast on the light Pearl button. */
+:root[data-theme] #login::after { background: currentColor; mask: url('img/icon-go.svg') center/contain no-repeat; }
 :root[data-theme] .count { color: var(--frame-ink); background: var(--glass); box-shadow: none; }
 .net-note, #statusbar #status:empty::before, #messages:empty::before, #voice-settings .vs-hint { color: var(--ink-soft); }
 #statusbar button { height: 19px; }
+/* The input meter of the voice settings: the colors of the theme (it was a white and blue bar in each theme). */
+#voice-settings .vs-meter { border-color: var(--line); background: var(--chat); box-shadow: inset 0 1px 2px rgb(0 0 0 / .15); }
+#vs-meter-fill { background: color-mix(in srgb, var(--ink-soft) 55%, var(--chat)); }
+#vs-meter-fill.open { background: var(--speaking); }
+#vs-meter-line { background: var(--danger); }
 body ::-webkit-scrollbar-thumb { background-color: var(--line); background-clip: padding-box; }
 #message-input:focus, input[type="text"]:focus { outline: 2px solid var(--focus); outline-offset: 0; }
 .layout-sep::after, #transfer-sep::after { background: var(--ink-soft); opacity: 1; box-shadow: 0 0 0 1px var(--surface-raised); }
@@ -143,6 +156,10 @@ body ::-webkit-scrollbar-thumb { background-color: var(--line); background-clip:
 #messages .time, #messages li.own .time { color: var(--ink-soft); }
 #messages .text .quote, #messages li.own .text .quote { background: var(--surface); border-color: var(--accent); }
 #quote-chip, #file-draft, #find-bar { background: var(--surface-raised); border-color: var(--line-soft); }
+/* Find with no result: the field keeps the colors of the theme, and the border and the count show the state. The
+   pale red field of find.css made the typed text unreadable in the four dark themes (1.1:1). */
+:root[data-theme] #find-bar[data-empty="true"] #find-input { color: var(--ink); background: var(--chat); border-color: var(--danger); }
+#find-bar[data-empty="true"] #find-count { color: var(--danger); font-weight: 700; }
 #messages li .local-only-mark { color: var(--warning); }
 #messages li.unread-first::before { background: none; text-shadow: none; color: var(--danger); }
 #messages li.file-card { background: var(--surface-raised); }
@@ -210,6 +227,9 @@ body ::-webkit-scrollbar-thumb { background-color: var(--line); background-clip:
 .mini-composer::after { inset: 2px 3px 2px 73%; background: var(--glass); border: none; }
 :root[data-theme="amber-terminal"] :is(button:not(.theme-choice),input,textarea,select,.panel,.bubble-text,.presence-mark,.login-card),
 :root[data-theme="amber-terminal"] #messages li .bubble-text { border-radius: 3px; }
+/* The controls that have a radius in a rule with an ID: the same square corner in Amber Terminal. */
+:root[data-theme="amber-terminal"] :is(#login, #send, #message-input, #whisper-draft, #whisper-send, #find-input, #peer-search, #titlebar > button,
+  #transfers button, #messages button, .map-heading button, #whisper-open, .field select, #theme-gallery, #quote-chip, #quote-remove) { border-radius: 3px; }
 :root[data-theme="amber-terminal"] :is(#titlebar,#toolbar,#statusbar,.panel-head,#composer) { box-shadow: none; }
 @media (max-width: 450px) { .theme-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 #transfers li.transfer:not(.offer-head)::before {

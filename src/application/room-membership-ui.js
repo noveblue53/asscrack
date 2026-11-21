@@ -24,7 +24,7 @@
             await api.copyText(id);
             enrollmentNote.textContent = 'Device ID copied. Send it to the owner.';
         } catch (error) {
-            enrollmentNote.textContent = error?.message ?? 'Could not copy your device ID.';
+            enrollmentNote.textContent = error?.message ? errorText(error) : 'Could not copy your device ID.';
         } finally { enrollment.disabled = false; }
     });
 
@@ -115,7 +115,7 @@
             inviteNote.textContent = 'Device access revoked.';
             confirming = null;
         } catch (error) {
-            inviteNote.textContent = error?.message ?? 'Could not revoke access.';
+            inviteNote.textContent = error?.message ? errorText(error) : 'Could not revoke access.';
         } finally {
             busy = false;
             listDevices();
@@ -141,7 +141,7 @@
             inviteNote.textContent = 'Invite ready for this device.';
             copyInviteButton.focus();
         } catch (error) {
-            inviteNote.textContent = error?.message ?? 'Could not create the device invite.';
+            inviteNote.textContent = error?.message ? errorText(error) : 'Could not create the device invite.';
         } finally {
             busy = create.disabled = target.disabled = canHost.disabled = false;
             listDevices();

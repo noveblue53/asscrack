@@ -62,10 +62,11 @@
   outline: none;
 }
 
+/* The focus color of the theme: the old gold had a contrast of 1.4:1 on the light panels. */
 #peers > li:focus-visible,
 #messages > li:focus-visible,
 #transfers > li:focus-visible {
-  outline: 2px solid #ffcf40;
+  outline: 2px solid var(--focus, #ffcf40);
   outline-offset: -2px;
 }
 
@@ -97,19 +98,9 @@
   }
 }
 
-#listening-dialog {
-  width: min(260px, calc(100vw - 48px));
-  padding: 16px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  font: 13px var(--font-ui);
-  color: var(--ink);
-  background: #f7fbff;
-}
-
-#listening-dialog h2 { margin: 0 0 12px; font-size: 16px; overflow-wrap: anywhere; }
+/* The frame, the title and the backdrop come from the shared dialog rules (desktop-controls.css). */
+#listening-dialog { width: min(300px, calc(100vw - 48px)); }
 #listening-dialog label { display: block; margin: 10px 0 4px; }
-#listener-percent { float: right; }
-#listener-volume { width: 100%; }
-#listening-dialog form { margin-top: 12px; text-align: right; }
-#listening-dialog::backdrop { background: rgb(0 24 64 / 25%); }
+#listening-dialog input[type="checkbox"] { margin: 0 4px 0 0; vertical-align: -1px; }
+#listener-percent { float: right; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+#listener-volume { width: 100%; margin: 0; }

@@ -190,6 +190,8 @@ input[type="text"] {
   color: var(--ink);
   background: linear-gradient(180deg, #e9f3fb 0%, #ffffff 42%);
   box-shadow: inset 0 2px 3px rgba(20, 70, 130, 0.18), 0 1px 0 rgba(255, 255, 255, 0.8);
+  /* A placeholder or a value that is longer than the field ends with an ellipsis. */
+  text-overflow: ellipsis;
 }
 
 input[type="text"]::placeholder {
@@ -319,25 +321,41 @@ input[type="text"]:focus {
   color: var(--blue-dark);
 }
 
-.field input {
+/* The field size is for the text fields only: a check box keeps its own size. */
+.field input:not([type="checkbox"]) {
   width: 100%;
   height: 34px;
 }
 
-.field .admission-check, #invite-panel .admission-check {
+/* A check box line: a sentence, not a field caption. All the check box lines of the login card and of the invite
+   panel have the same look. */
+.field .admission-check, #invite-panel .admission-check, .save-fields .check {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  align-items: flex-start;
+  gap: 7px;
   margin: 0;
-  font-size: 12px;
+  font: 400 12.5px/1.3 var(--font-ui);
   letter-spacing: normal;
   text-transform: none;
+  color: var(--ink);
 }
 
-.field .admission-check input, #invite-panel .admission-check input {
-  width: auto;
-  height: auto;
-  margin: 0;
+.field .admission-check input, #invite-panel .admission-check input, .save-fields .check input {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin: 1px 0 0;
+}
+
+/* The check boxes of the login card start below the first letter of the field captions. */
+.login-card :is(#upnp-field, .save-fields) {
+  display: grid;
+  gap: 6px;
+  padding-left: 13px;
+}
+
+.login-card #legacy-consent {
+  margin-left: 13px;
 }
 
 .device-enrollment { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin: 5px 0; font-size: 12px; }
@@ -366,6 +384,47 @@ input[type="text"]:focus {
   font-weight: 600;
   color: var(--stop);
   overflow-wrap: anywhere;
+}
+
+/* A short window (the default size is 800 x 600): the form, Log In and the error text stay in the window with no
+   scroll. The title band shows the logo and the name, thus the card does not show the logo again. */
+@media (max-height: 700px) {
+  #login-screen { padding-block: 8px; }
+  .login-card { padding-block: 12px 10px; }
+  .login-card .logo { display: none; }
+  .login-card h1 { font-size: 24px; }
+  .tagline { margin: 2px 0 8px; }
+  .field { margin-bottom: 7px; }
+  .device-enrollment { margin-block: 4px 0; }
+  #login { height: 36px; margin-top: 3px; }
+  .login-card #status { margin-top: 6px; }
+}
+
+/* Saved rooms and a window that is wide enough: the saved rooms are a second column, at the side of the form.
+   The user who comes back sees Reopen room with no scroll. The sequence in the document does not change.
+   The card is a grid with one column of 312 px (372 px with the padding, as before). Only the saved rooms section
+   goes into column 2, an automatic column: with no saved room that column is not there. This rule uses no :has():
+   a :has() rule on the card made each change in the room window cost a style pass of the card (measured on this
+   PC: 0.2 ms to 1.8 ms for one status text change). */
+@media (min-width: 760px) {
+  .login-card {
+    display: grid;
+    grid-template-columns: 312px;
+    grid-auto-columns: 286px;
+    align-content: start;
+    column-gap: 26px;
+    width: fit-content;
+    max-width: 100%;
+  }
+  .login-card > #saved-rooms-section {
+    grid-column: 2;
+    grid-row: 1 / span 24;
+    align-self: start;
+  }
+  .login-card > #saved-rooms-section .saved-head { margin-top: 4px; }
+  /* Grid items keep both margins (no collapse as in a block): the field above gives the space. */
+  .login-card > #login { margin-top: 0; }
+  .login-card > #archive-unlock { justify-self: center; }
 }
 
 /* ---- Chat screen ---- */
@@ -644,7 +703,20 @@ body.layout-map-docked.layout-buddy-off #chat-body {
 }
 
 #peers li.self .name {
+  display: flex;
   color: var(--blue-dark);
+}
+
+/* The own line: a long name gets the ellipsis, and the mark "(you)" stays in view. */
+#peers .name-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#peers .you-mark {
+  flex: none;
+  white-space: pre;
 }
 
 #peers .host-mark {
@@ -720,30 +792,24 @@ body.layout-map-docked.layout-buddy-off #chat-body {
   background: transparent;
 }
 
-/* The buddy panel is narrow: the menu and Set on row 1, the note on row 2 with the full width. */
+/* The own state and the status note are in the dialog "Your availability": the state menu on row 1, then the note
+   with Set at its side. (The old rules were for the narrow buddy panel: they put Set between the menu and the note.) */
 #presence-controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding: 4px 4px 0;
-}
-
-#presence-controls select,
-#presence-controls input {
-  min-width: 0;
-  font: 11px var(--font-small);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
 }
 
 #presence-controls select {
-  flex: 1;
+  grid-column: 1 / -1;
+  min-width: 0;
 }
 
 #presence-controls input[type="text"] {
-  order: 3;
-  flex: 1 0 100%;
-  height: 26px;
-  padding: 0 10px;
-  font: 12px var(--font-ui);
+  min-width: 0;
+  height: 30px;
+  padding: 0 11px;
+  font: 13px var(--font-ui);
 }
 
 /* Name colors: the same class gives the buddy icon color and the name color in the chat. */
@@ -1636,9 +1702,12 @@ body.map-open #node-map:not([data-paused]) .nm-node.speaking .nm-pulse {
   background: #ffffff;
 }
 
+/* The room type select has the size and the shape of the text fields. */
 .field select {
-  height: 30px;
-  padding: 0 8px;
+  height: 34px;
+  padding: 0 9px;
+  border-radius: 16px;
+  font-size: 14px;
 }
 
 .field textarea,
@@ -1707,6 +1776,8 @@ body.map-open #node-map:not([data-paused]) .nm-node.speaking .nm-pulse {
 #old-version-note { color: var(--ink-soft); }
 #room-members-section h2 { font-size: 13px; }
 #member-invite-form { display: grid; gap: 5px; }
+/* A device ID has 43 or more characters: the font of the invite code shows all of it in the panel. */
+#member-device-id { min-width: 0; height: 28px; padding: 0 10px; font: 12px Consolas, 'Courier New', monospace; }
 #member-invite-form button { justify-self: start; }
 #room-members { display: grid; gap: 6px; list-style: none; margin: 4px 0 0; padding: 0; }
 #room-members li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 4px 0; border-top: 1px solid var(--line); }
@@ -2053,7 +2124,7 @@ body.layout-buddy-drawer.layout-drawer-open #buddy-panel {
 }
 
 #buddy-panel:focus-visible {
-  outline: 2px solid #ffcf40;
+  outline: 2px solid var(--focus, #ffcf40);
   outline-offset: -2px;
 }
 
@@ -2075,13 +2146,15 @@ body.layout-dragging #buddy-panel {
 }
 
 /* Saved rooms (milestone 6). */
-.save-fields .check { display: flex; align-items: center; gap: 6px; font-weight: normal; }
-.save-fields .check input:disabled + * { opacity: 0.6; }
-#saved-rooms-section .saved-head { font-size: 1rem; margin: 12px 0 6px; }
+#saved-rooms-section { text-align: left; }
+#saved-rooms-section .saved-head { margin: 14px 0 4px 13px; font: 700 11px var(--font-small); letter-spacing: 0.4px; text-transform: uppercase; color: var(--blue-dark); }
 #saved-rooms { list-style: none; margin: 0; padding: 0; }
-#saved-rooms .saved-room { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
-#saved-rooms .saved-room-name { font-weight: bold; }
-#saved-rooms .saved-room-user { flex: 1; opacity: 0.8; }
+/* One saved room: the room name, the user name, then the buttons. A long room name wraps. */
+#saved-rooms .saved-room { display: flex; align-items: center; gap: 4px 8px; padding: 8px 0 8px 13px; border-top: 1px solid var(--line-soft); }
+#saved-rooms .saved-room-name { flex: 1 0 100%; font-weight: bold; overflow-wrap: anywhere; }
+#saved-rooms .saved-room-user { flex: 1 0 100%; min-width: 0; margin-bottom: 3px; font-size: 12px; color: var(--ink-soft); overflow-wrap: anywhere; }
+#saved-rooms button { height: 26px; padding: 0 12px; font-size: 12px; }
+#saved-rooms :is(.forget-room, .forget-yes) { color: var(--stop); }
 #archive-state { margin: 8px 0 4px; font-size: 0.9rem; }
 #waiting-peer { margin: 6px 10px; font-style: italic; opacity: 0.85; }
 #waiting-peer[hidden], #saved-rooms-section[hidden], #archive-state[hidden], #archive-unlock[hidden], #save-room-fields[hidden] { display: none; }

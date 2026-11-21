@@ -35,6 +35,8 @@
     const loadedPages = new Set();
     let olderBusy = false;
     const archiveChanges = new Map();
+    // The error text for the user (errorText of renderer.js). A test can load this file without renderer.js.
+    const errText = err => (typeof errorText === 'function' ? errorText(err) : String(err?.message ?? err));
 
     async function deleteSavedData(roomId, action) {
         const change = { pending: true };
@@ -139,7 +141,7 @@
                 item.remove();
                 await refresh(() => api.listSavedRooms());
             } catch (err) {
-                status.textContent = `Error: the room was not forgotten: ${err?.message ?? err}`;
+                status.textContent = `Error: the room was not forgotten: ${errText(err)}`;
                 yes.disabled = false;
                 no.disabled = false;
             }
@@ -281,7 +283,7 @@
             showKeepState(result?.keepHistory === true);
         } catch (err) {
             showKeepState(!want);
-            status.textContent = `Error: the saving choice did not change: ${err?.message ?? err}`;
+            status.textContent = `Error: the saving choice did not change: ${errText(err)}`;
         } finally {
             roomKeepHistory.disabled = false;
         }
@@ -307,7 +309,7 @@
             clearConfirm.hidden = true;
             status.textContent = `Saved history deleted on this device (${Number(result?.cleared) || 0} messages).`;
         } catch (err) {
-            status.textContent = `Error: the saved history was not deleted: ${err?.message ?? err}`;
+            status.textContent = `Error: the saved history was not deleted: ${errText(err)}`;
         } finally {
             clearYes.disabled = false;
         }
@@ -349,7 +351,7 @@
             roomStarted(result);
             window.chatAttachments?.restoreSaved(lines);
         } catch (err) {
-            status.textContent = `Error: the room did not start: ${err?.message ?? err}`;
+            status.textContent = `Error: the room did not start: ${errText(err)}`;
         } finally {
             if (!started) {
                 reopenBusy = false;

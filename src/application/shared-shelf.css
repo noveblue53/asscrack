@@ -1,16 +1,10 @@
+/* The frame, the title and the backdrop come from the shared dialog rules (desktop-controls.css). */
 #shared-shelf {
-    box-sizing: border-box;
     width: min(540px, calc(100vw - 36px));
     max-height: calc(100vh - 64px);
-    padding: 14px;
-    border: 1px solid var(--line);
-    border-radius: 7px;
     background: var(--surface-raised);
     color: var(--ink);
-    font: 14px var(--font-ui);
-    box-shadow: 0 12px 36px rgb(0 0 0 / 24%);
 }
-#shared-shelf::backdrop { background: rgb(0 24 32 / 29%); }
 #shared-shelf header, #shared-shelf footer {
     display: flex;
     flex-wrap: wrap;
@@ -19,8 +13,9 @@
 }
 #shared-shelf header { justify-content: space-between; }
 #shared-shelf footer { justify-content: flex-end; }
-#shared-shelf h2 { margin: 0; font-size: 18px; }
+#shared-shelf h2 { margin: 0; }
 #shared-shelf p { margin: 12px 0; }
+#shared-empty { color: var(--ink-soft); }
 #shared-notice:empty, #shared-list:empty { display: none; }
 #shared-list { padding: 0; margin: 10px 0; list-style: none; }
 #shared-list li {
