@@ -1,0 +1,69 @@
+name: Smoke-test a private Windows draft candidate
+
+on:
+  push:
+    branches: [codex/release-hardening-windows-verification]
+    paths:
+      - '.github/workflows/verify-hardened-windows-draft.yml'
+      - 'ci/hardened-windows-draft-pin.json'
+      - 'ci/fetch-private-windows-draft.ps1'
+      - 'ci/windows-hardened-smoke.cjs'
+  workflow_dispatch:
+    inputs:
+      release_id:
+        description: Private draft release ID in this repository
+        required: true
+        type: string
+      asset_id:
+        description: Windows x64 portable executable asset ID from that draft
+        required: true
+        type: string
+      source_sha:
+        description: Exact 40-character source commit pinned in the draft
+        required: true
+        type: string
+      asset_sha256:
+        description: Independently verified executable SHA-256
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  private-windows-smoke:
+    if: github.repository == 'noveblue53/asscrack'
+    runs-on: windows-2025
+    timeout-minutes: 15
+    permissions:
+      contents: write # GitHub restricts draft reads to actors with push access. These steps only issue GETs.
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.22.1
+      - name: Download and verify the pinned private draft asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ inputs.release_id }}
+          ASSET_ID: ${{ inputs.asset_id }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          ASSET_SHA256: ${{ inputs.asset_sha256 }}
+        run: ./ci/fetch-private-windows-draft.ps1
+      - name: Check the native packaged app through its visible controls
+        run: |
+          $root = $env:ASSCRACK_SMOKE_ROOT
+          $tooling = Join-Path $root 'tooling'
+          npm install --prefix $tooling --no-audit --no-fund --no-package-lock --ignore-scripts playwright-core@1.62.1
+          if ($LASTEXITCODE -ne 0) { throw 'CDP client installation failed.' }
+          $env:NODE_PATH = Join-Path $tooling 'node_modules'
+          node ci/windows-hardened-smoke.cjs
+          if ($LASTEXITCODE -ne 0) { throw 'Native packaged app smoke failed.' }
+      - name: Remove disposable candidate and profiles
+        if: always()
+        run: |
+          if ($env:ASSCRACK_SMOKE_ROOT) {
+            Remove-Item -LiteralPath $env:ASSCRACK_SMOKE_ROOT -Recurse -Force
+          }
