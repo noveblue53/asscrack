@@ -7,6 +7,50 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## 0.8.0 (2026-11-21): candidate build
+
+This build contains the protected-room hardening of RC2: device admission, host permissions, revocation and bounded
+network operations. The entries "Unreleased — protected-room Windows candidate" and "Unreleased — Windows
+friend-pilot release candidate" below give the details. This build adds these changes:
+
+- **Version 0.8.0.** The build name is `ASSCRACK-0.8.0-portable.exe` (before: `ASSCRACK-<version>-private-dev.exe`).
+- **Compact invite code (`asscrack3:`).** A protected room makes a binary code with the same contents and the same
+  signatures. It holds the room name, the room key, the host peer IDs, the addresses and the signed membership. A 4-byte
+  checksum refuses a damaged code. The app continues to read `asscrack1:` and `asscrack2:` codes. A legacy
+  shared-code room continues to make an `asscrack1:` code for 0.7.0 peers. Measured lengths (20-character room name,
+  1 IPv4 address for each host node):
+
+  | Code | 1 host node | 3 host nodes |
+  |---|---|---|
+  | `asscrack3:` (0.8.0) | 410 | 536 |
+  | `asscrack2:` (RC2) | 850 | 1116 |
+  | `asscrack1:` (no membership) | 276 | 541 |
+
+  With a 64-character room name, `asscrack3:` has 469 (1 node) and 594 (3 nodes) characters.
+- **Asynchronous `safeStorage` calls.** The saved-rooms key uses `isAsyncEncryptionAvailable`, `encryptStringAsync`
+  and `decryptStringAsync`. The Electron 45 deprecation warnings are gone. The archive opens before the window.
+- **Update text for 0.7.0 users.** The invite panel of a protected internet room and of a LAN room shows a text.
+  It tells that people with 0.7.0 or older cannot join and must update to 0.8.0.
+
+Results:
+- **127.0.0.1:** invite unit tests give a round trip for 1 and 3 host nodes with IPv4, IPv6 and DNS addresses. They
+  refuse a damaged code and a code with a wrong signature. Two 0.8.0 profiles joined one internet room with an
+  `asscrack3:` code. They sent a chat line in each direction.
+- **127.0.0.1:** a profile from `main` at `de9baa0` and a profile from the 0.7.0 build opened with their saved room
+  and 3 lines. One `npm start` showed no `safeStorage` warning and "Saved rooms archive opened: state open".
+- **127.0.0.1, 0.7.0 build and 0.8.0 together:**
+
+  | Case | Connect | Chat | 0.7.0 window | 0.8.0 window |
+  |---|---|---|---|---|
+  | Legacy internet room: 0.7.0 makes, 0.8.0 joins with `asscrack1:` | yes | both directions | "Internet room", 2 peers | "Legacy shared-code room", 2 peers, no update text |
+  | Legacy internet room: a second 0.7.0 joins through the 0.8.0 node | yes | both directions | "Internet room", 2 peers | "Legacy shared-code room", 2 peers, no update text |
+  | Protected internet room: 0.8.0 makes, 0.7.0 joins with `asscrack3:` | no | no | "The invite code has a wrong prefix" | "Waiting for a peer", update text |
+  | LAN room, same name, 0.7.0 first | no | no | "Waiting for a peer" | "Waiting for a peer", update text |
+  | LAN room, same name, 0.8.0 first | no | no | "Waiting for a peer" | "Waiting for a peer", update text |
+
+  The 0.8.0 copies wrote no ERROR line. The 0.7.0 copy wrote one ERROR line for the refused code.
+- No LAN or internet test of 0.8.0 occurred. The operator deferred the tests with other users (2026-11-20).
+
 ## Unreleased — protected-room Windows candidate
 
 - New internet and LAN rooms use owner-signed device invitations. The first admission requires a live owner. The owner grants hosting separately and can revoke a device. An isolated peer enforces an update when it receives the signed revocation.
