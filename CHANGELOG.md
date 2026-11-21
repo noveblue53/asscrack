@@ -7,6 +7,21 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased — Find keeps the unread marker (2026-11-21)
+
+Fault: open Find while the list is at the end. A new line comes. Press Escape. Before, the list went to the new end,
+and the late scroll event of Chromium counted the new line as read. The marker went away.
+
+- **Fix (`src/application/reading.js`).** `savePosition()` also keeps the anchor of a following list.
+  `restorePosition()` follows again only when no line is unread. Else it goes back to the old last line. When the
+  find hold ends with unread lines, a late scroll event at the restored position does not clear the count and the
+  marker. This is the same guard as for a highlight reveal and the return from a whisper.
+- **Tests.** `test/find-unread.test.mjs` loads the real room window scripts. It opens Find, adds a line, presses
+  Escape, and then sends the late scroll event. It has a case for 20 px lines: there the old end is in the 24 px end
+  band. `test/reading-hold.test.mjs`: the old test expected the new end after a line came during Find. That is the
+  fault, thus it is now two tests (no new line: follow; a new line: the old last line and 1 unread).
+- **Result: 127.0.0.1.** The new tests fail on the code of `main` and pass with the fix. No LAN test.
+
 ## Unreleased — the 1.0 release order (2026-11-21)
 
 The operator decided that 1.0 is a full-featured release that comes before the friends get it.
