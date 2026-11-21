@@ -165,15 +165,16 @@ The network code is in `src/network/`. The Electron app is in `src/application/`
 | 7. Desktop experience | The room, themes, map, tray and detachable voice panel have single-computer evidence. A polish pass (2026-11-21) repaired 27 visual and keyboard faults of the room window (127.0.0.1). Windows shell and device checks are open. |
 | 8. Internet rooms | In progress. Invite codes and rejoin are internet tested. Device admission and the compact `asscrack3:` invite (0.8.0) have 127.0.0.1 results. UPnP join, relays and failover on the internet are open. |
 
-Release 1.0 is a portable messenger for a game night. A friend joins from a different network. The group can continue to
-talk when a host closes. People reopen the same room the next day. See [`docs/WORK_PLAN_1.0.md`](docs/WORK_PLAN_1.0.md).
+Release 1.0 is the full-featured release. It adds screenshare, resume of large transfers, the ready check and an
+installer with start at sign-in. After the features come the security audit and the 1.0.0 build. The game nights with
+friends come after 1.0. See [`docs/WORK_PLAN_1.0.md`](docs/WORK_PLAN_1.0.md).
 
 ## Documents
 
 - Follow the short Windows rehearsal and game-night checks. [Friend-pilot field card](docs/FRIEND_PILOT.md)
 - Find releases and unreleased changes with their evidence labels. [Changelog](CHANGELOG.md)
 - Find the detailed LAN and internet test cards. [Network test cards](src/network/chatreadme.md)
-- Follow the milestone acceptance criteria and 1.0 ship decision. [Release plan](docs/WORK_PLAN_1.0.md)
+- Follow the milestone acceptance criteria, the 1.0 ship decision and the game nights after 1.0. [Release plan](docs/WORK_PLAN_1.0.md)
 
 ## License
 
