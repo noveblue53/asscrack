@@ -57,10 +57,6 @@
       <div class="field" id="invite-field" hidden>
         <label for="invite-input">Invite code</label>
         <textarea id="invite-input" rows="3" maxlength="131082" placeholder="Paste the invite code" spellcheck="false"></textarea>
-        <div class="device-enrollment">
-          <button type="button" id="copy-device-id">Copy my device ID</button>
-          <span id="device-id-note" role="status">Send your device ID to the owner to get your invite.</span>
-        </div>
         <label class="admission-check" id="legacy-consent" hidden>
           <input type="checkbox" id="allow-legacy"> I trust everyone who has this legacy shared code.
         </label>
@@ -71,17 +67,24 @@
       </div>
       <div class="field" id="upnp-field">
         <label class="admission-check"><input type="checkbox" id="allow-upnp"> Ask my router to open a TCP port with UPnP, including on saved reopen</label>
+        <p id="upnp-off-note" class="login-note" hidden>With no public address and no UPnP, friends on the internet cannot join. You can turn on UPnP later in the Invite panel.</p>
       </div>
 
       <!-- Saved rooms (milestone 6): only for a keyed room. saved-rooms-ui.js shows and fills these. -->
       <div class="field save-fields" id="save-room-fields" hidden>
         <label class="check"><input type="checkbox" id="save-room"> Save room on this device</label>
         <label class="check"><input type="checkbox" id="keep-history" checked> Keep local history</label>
+        <p id="save-off-note" class="login-note" hidden>If you do not save the room, it is gone when you quit. You must then create a new room and invite each device again.</p>
       </div>
 
-      <button id="login" type="button">Log In</button>
+      <!-- renderer.js sets the label for the room type: Create room, Join room or Create LAN room. -->
+      <button id="login" type="button">Create room</button>
       <!-- renderer.js moves #status into #statusbar after the login. -->
       <p id="status" role="status"></p>
+      <div class="device-enrollment">
+        <span id="device-id-note" role="status">Joining a friend’s room? Send your device ID to the room owner to get your invite.</span>
+        <button type="button" id="copy-device-id">Copy my device ID</button>
+      </div>
 
       <!-- Saved rooms (milestone 6). -->
       <div id="saved-rooms-section" hidden>
@@ -255,6 +258,11 @@
         </section>
         <div id="invite-panel" hidden>
           <p id="room-access-status" role="status" hidden></p>
+          <!-- room-membership-ui.js: the reach of the room for the owner (can friends on the internet join?). -->
+          <div id="reach-box" hidden>
+            <p id="reach-note" role="status"></p>
+            <button type="button" id="reach-upnp" hidden></button>
+          </div>
           <p id="old-version-note" hidden>People with ASSCRACK 0.7.0 or older cannot join this room. Ask them to get the newest ASSCRACK.</p>
           <form id="member-invite-form" hidden>
             <label for="member-device-id">Friend’s device ID</label>

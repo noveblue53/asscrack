@@ -8,6 +8,7 @@
     const saveRoomBox = document.getElementById('save-room');
     const keepHistoryBox = document.getElementById('keep-history');
     const saveFields = document.getElementById('save-room-fields');
+    const saveOffNote = document.getElementById('save-off-note');
     const savedList = document.getElementById('saved-rooms');
     const savedSection = document.getElementById('saved-rooms-section');
     const archiveState = document.getElementById('archive-state');
@@ -28,6 +29,9 @@
 
     let archiveOpen = false;
     let reopenBusy = false;
+    // The names of the saved rooms, in lower case (gap N9: Create with the name of a saved room).
+    let savedNames = new Set();
+    const STARTING_TEXT = 'Starting the room\u2026';
     // The saved room that is open in the chat screen: its roomId, or null.
     let openRoomId = null;
     // The roomId whose saved lines are shown (reopen or login).
@@ -63,8 +67,14 @@
             saveRoomBox.checked = kind === 'create';
             saveDefaultFor = kind;
         }
+        showSaveNote();
+    }
+    // Gap N9: a created room that is not saved is gone at quit.
+    function showSaveNote() {
+        if (saveOffNote) saveOffNote.hidden = roomTypeSelect.value === 'join' || saveRoomBox.checked;
     }
     roomTypeSelect.addEventListener('change', showSaveFields);
+    saveRoomBox.addEventListener('change', showSaveNote);
 
     function stateText(result) {
         if (result.state === 'unavailable') {
@@ -75,6 +85,7 @@
 
     function showRooms(rooms) {
         savedList.replaceChildren();
+        savedNames = new Set(rooms.map(room => String(room.name ?? '').trim().toLowerCase()).filter(Boolean));
         for (const room of rooms) {
             const item = document.createElement('li');
             item.className = 'saved-room';
@@ -89,8 +100,9 @@
             button.type = 'button';
             button.className = 'reopen-room';
             button.textContent = room.protected ? 'Reopen room' : 'Reopen legacy room';
-            if (room.protected) button.addEventListener('click', () => reopen(room));
-            item.append(name, user, button, ...(room.protected ? [] : legacyControls(room, button)), ...forgetControls(room, item));
+            if (room.protected) button.addEventListener('click', () => reopen(room, false, button));
+            item.append(name, user, button, ...(room.protected ? [] : legacyControls(room, button)),
+                ...nameControls(room, user), ...forgetControls(room, item));
             savedList.appendChild(item);
         }
         savedSection.hidden = rooms.length === 0;
@@ -111,8 +123,74 @@
         row.append(text, yes, no);
         button.addEventListener('click', () => { row.hidden = false; no.focus(); });
         no.addEventListener('click', () => { row.hidden = true; button.focus(); });
-        yes.addEventListener('click', () => { row.hidden = true; void reopen(room, true); });
+        yes.addEventListener('click', () => { row.hidden = true; void reopen(room, true, button); });
         return [row];
+    }
+
+    // Gap A6: change the user name of a saved room. The next reopen uses the new name.
+    function nameControls(room, user) {
+        const change = document.createElement('button');
+        change.type = 'button';
+        change.className = 'rename-room';
+        change.textContent = 'Change name';
+        const form = document.createElement('div');
+        form.className = 'rename-form';
+        form.hidden = true;
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.maxLength = 64;
+        input.autocomplete = 'off';
+        input.spellcheck = false;
+        input.setAttribute('aria-label', `Your name in ${String(room.name ?? 'this room')}`);
+        const save = document.createElement('button');
+        save.type = 'button';
+        save.className = 'rename-save';
+        save.textContent = 'Save';
+        const cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.className = 'rename-cancel';
+        cancel.textContent = 'Cancel';
+        form.append(input, save, cancel);
+        const close = () => {
+            form.hidden = true;
+            change.hidden = false;
+            change.focus();
+        };
+        change.addEventListener('click', () => {
+            input.value = String(room.userName ?? '');
+            form.hidden = false;
+            change.hidden = true;
+            input.focus();
+        });
+        cancel.addEventListener('click', close);
+        const submit = async () => {
+            const value = input.value.trim();
+            if (!value || value.length > 64) {
+                status.textContent = 'Error: enter a username of up to 64 characters.';
+                input.focus();
+                return;
+            }
+            save.disabled = cancel.disabled = true;
+            try {
+                const result = await api.setSavedRoomName(room.roomId, value);
+                room.userName = typeof result?.userName === 'string' ? result.userName : value;
+                user.textContent = room.userName;
+                status.textContent = '';
+                close();
+            } catch (err) {
+                status.textContent = `Error: the name did not change: ${errText(err)}`;
+            } finally {
+                save.disabled = cancel.disabled = false;
+            }
+        };
+        save.addEventListener('click', submit);
+        input.addEventListener('keydown', e => {
+            if (e.key === 'Enter' && !e.isComposing) {
+                e.preventDefault();
+                void submit();
+            }
+        });
+        return [change, form];
     }
 
     // Forget (decision P7): only on the login screen, with a confirmation.
@@ -336,11 +414,14 @@
     api.onLineSaved(data => noteSaved(data?.id));
     api.onSaveFailed(data => saveFailed(data));
 
-    async function reopen(room, allowLegacy = false) {
+    async function reopen(room, allowLegacy = false, button = null) {
         if (reopenBusy) return;
         reopenBusy = true;
         loginButton.disabled = true;
         for (const b of savedList.querySelectorAll('.reopen-room')) b.disabled = true;
+        // Gap A5: the button of this room says that the room starts.
+        const label = button?.textContent ?? '';
+        if (button) button.textContent = STARTING_TEXT;
         let started = false;
         try {
             const lines = await readLines(room.roomId);
@@ -368,6 +449,7 @@
                 reopenBusy = false;
                 loginButton.disabled = false;
                 for (const b of savedList.querySelectorAll('.reopen-room')) b.disabled = false;
+                if (button) button.textContent = label;
             }
         }
     }
@@ -383,7 +465,11 @@
             showStorage(result);
             if (openRoomId && linesLoadedFor !== openRoomId) loadAfterLogin(openRoomId);
         },
-        saveFailed
+        saveFailed,
+        // Gap N9: true when a saved room has this name (no difference for upper and lower case).
+        hasRoomNamed(name) {
+            return savedNames.has(String(name ?? '').trim().toLowerCase());
+        }
     };
 
     refresh(() => api.listSavedRooms());

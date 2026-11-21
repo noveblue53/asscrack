@@ -79,7 +79,9 @@ function makeBridge(options) {
         copyText: async text => {
             calls.push({ name: 'copyText', args: [text] });
             return true;
-        }
+        },
+        // options.api: calls that a script uses when it loads (for example listSavedRooms of saved-rooms-ui.js).
+        ...(options.api ?? {})
     };
     const bridge = new Proxy(base, {
         get(target, name) {
@@ -98,7 +100,8 @@ function makeBridge(options) {
     return { bridge, handlers, calls };
 }
 
-// options.send: async (text) => peer count, or throw. Returns the fixture.
+// options.send: async (text) => peer count, or throw. options.api: bridge calls that must exist before the scripts
+// load. Returns the fixture.
 export async function loadRoomWindow(options = {}) {
     const { document, window, Event } = createDom([...layout(), ...(options.elements ?? [])]);
     const { bridge, handlers, calls } = makeBridge(options);
@@ -128,6 +131,7 @@ export async function loadRoomWindow(options = {}) {
         clearInterval() {},
         queueMicrotask,
         Promise,
+        Event,
         MutationObserver: class {
             observe() {}
             disconnect() {}

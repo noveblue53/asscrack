@@ -11,21 +11,83 @@
     const codeLabel = get('invite-code-label');
     const devicesSection = get('room-members-section');
     const devices = get('room-members');
+    const reachBox = get('reach-box');
+    const reachNote = get('reach-note');
+    const reachButton = get('reach-upnp');
     let state = null;
+    // The reach state of asscrack:invite (gap A1), or null before the first answer.
+    let reach = null;
+    let reachBusy = false;
     let generatedFor = null;
     let confirming = null;
     let rendering = '';
     let busy = false;
 
+    // Gap A3: the device ID button is below the login button for each room type. After the copy, the window goes to
+    // the join type, because the next step of the friend is to paste the invite.
     enrollment.addEventListener('click', async () => {
         enrollment.disabled = true;
         try {
             const id = await api.getDeviceId();
             await api.copyText(id);
-            enrollmentNote.textContent = 'Device ID copied. Send it to the owner.';
+            if (typeof setRoomType === 'function' && roomTypeSelect.value !== 'join') setRoomType('join');
+            inviteInput?.focus();
+            enrollmentNote.textContent = 'Device ID copied. Send it to the room owner. Then paste the invite here.';
         } catch (error) {
             enrollmentNote.textContent = error?.message ? errorText(error) : 'Could not copy your device ID.';
         } finally { enrollment.disabled = false; }
+    });
+
+    // Gap A1: the texts of the owner for each reach state. A device invite needs an address (or a LAN room).
+    const REACH_TEXTS = {
+        untested: 'Address ready. ASSCRACK tests it when the first friend connects.',
+        'upnp-wait': 'Asking the router to open a port. This can take up to 70 seconds.',
+        'no-gateway': 'The router did not answer. Turn on UPnP in the router, or forward a TCP port.',
+        'private-ip': 'The router has no public address (a second router or the provider is between you and the internet). '
+            + 'UPnP cannot help. A friend with an open port must create the room.',
+        failed: 'The router did not open a port.',
+        none: 'Friends on the internet cannot join yet: this room has no address.'
+    };
+    function canInvite() {
+        return !reach || reach.state === 'ready' || reach.state === 'lan';
+    }
+    function showReach() {
+        if (!reachBox) return;
+        let text = '';
+        let action = '';
+        if (state?.owner && reach) {
+            if (reach.state === 'ready') text = reach.proven === true ? '' : REACH_TEXTS.untested;
+            else if (reach.state === 'upnp-wait') text = REACH_TEXTS['upnp-wait'];
+            else if (reach.state === 'upnp-failed') {
+                text = REACH_TEXTS[reach.reason] ?? REACH_TEXTS.failed;
+                action = 'Try UPnP again';
+            } else if (reach.state === 'none') {
+                text = REACH_TEXTS.none;
+                action = 'Ask my router to open a port (UPnP)';
+            }
+        }
+        reachBox.hidden = text === '';
+        reachNote.textContent = text;
+        reachButton.hidden = action === '';
+        reachButton.textContent = action;
+        reachButton.disabled = reachBusy;
+        if (!busy) create.disabled = !canInvite();
+    }
+    reachButton?.addEventListener('click', async () => {
+        if (reachBusy || !state?.owner) return;
+        reachBusy = true;
+        showReach();
+        try {
+            const result = await api.enableUpnp();
+            if (result?.reach) reach = result.reach;
+            if (result?.started === false) inviteNote.textContent = 'UPnP cannot start in this room.';
+        } catch (error) {
+            inviteNote.textContent = error?.message ? errorText(error) : 'Could not start UPnP.';
+        } finally {
+            reachBusy = false;
+            showReach();
+            if (typeof refreshInvite === 'function') refreshInvite();
+        }
     });
 
     function clearCode() {
@@ -85,10 +147,11 @@
         }));
     }
 
-    function update(next) {
+    function update(next, nextReach) {
         if (!next?.protected) return;
         const first = state === null;
         state = next;
+        if (nextReach !== undefined) reach = nextReach;
         inviteToggle.hidden = false;
         inviteToggle.textContent = next.owner ? 'Invite' : 'Access';
         if (first || !next.owner || next.members?.some(member => member.deviceId === generatedFor && member.revoked)) clearCode();
@@ -103,6 +166,7 @@
                 : next.admitted ? 'Waiting for a peer' : 'Waiting for the room owner';
         }
         listDevices();
+        showReach();
     }
 
     async function revoke(id) {
@@ -127,7 +191,7 @@
     canHost.addEventListener('change', clearCode);
     form.addEventListener('submit', async event => {
         event.preventDefault();
-        if (!state?.owner || busy) return;
+        if (!state?.owner || busy || !canInvite()) return;
         const id = target.value.trim();
         clearCode();
         busy = create.disabled = target.disabled = canHost.disabled = true;
@@ -135,6 +199,7 @@
             const code = await api.createMemberInvite(id, canHost.checked);
             if (typeof code !== 'string' || code.length === 0) throw new Error('No device invite was created.');
             generatedFor = id;
+            codeLabel.textContent = 'Invite for this device';
             inviteCode.value = code;
             codeLabel.hidden = inviteCode.hidden = copyInviteButton.hidden = false;
             copyInviteButton.disabled = false;
@@ -143,7 +208,8 @@
         } catch (error) {
             inviteNote.textContent = error?.message ? errorText(error) : 'Could not create the device invite.';
         } finally {
-            busy = create.disabled = target.disabled = canHost.disabled = false;
+            busy = target.disabled = canHost.disabled = false;
+            create.disabled = !canInvite();
             listDevices();
         }
     });

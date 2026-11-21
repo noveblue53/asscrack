@@ -381,28 +381,69 @@ function showLegacyConsent() {
     allowLegacy.checked = false;
 }
 
+const upnpOffNote = document.getElementById('upnp-off-note');
+
+// Gap A1: an internet room with no public address and no UPnP cannot get friends from the internet. The login is
+// not stopped: the owner can turn on UPnP later in the Invite panel.
 function showUpnpChoice() {
     if (!upnpField) return;
     upnpField.hidden = roomTypeSelect.value !== 'new';
     allowUpnp.disabled = publicAddressInput.value.trim() !== '';
+    if (upnpOffNote) {
+        upnpOffNote.hidden = roomTypeSelect.value !== 'new' || publicAddressInput.value.trim() !== '' || allowUpnp.checked === true;
+    }
 }
+
+// Gap A5: the label of the login button names the action of the room type.
+const LOGIN_LABELS = { new: 'Create room', join: 'Join room', lan: 'Create LAN room' };
+const STARTING_TEXT = 'Starting the room…';
+let loginBusy = false;
+function loginLabel() {
+    return LOGIN_LABELS[roomTypeSelect.value] ?? LOGIN_LABELS.new;
+}
+
+// Gap N9: Create with the name of a saved room starts no room at the first click. A second click starts it.
+// A change of the room name or of the room type resets this.
+const SAME_NAME_TEXT = 'A saved room has this name. Create makes a new, different room. To open the saved room, select Reopen room.';
+let sameNameWarned = false;
 
 function showRoomType() {
     const type = roomTypeSelect.value;
     roomField.hidden = type === 'join';
     inviteField.hidden = type !== 'join';
     publicAddressField.hidden = type === 'lan';
+    if (!loginBusy) loginButton.textContent = loginLabel();
+    sameNameWarned = false;
     showUpnpChoice();
     showLegacyConsent();
 }
+// Set the room type from code (the device ID button). The listeners of the change event run.
+function setRoomType(type) {
+    roomTypeSelect.value = type;
+    roomTypeSelect.dispatchEvent(new Event('change'));
+}
 roomTypeSelect.addEventListener('change', showRoomType);
 publicAddressInput.addEventListener('input', showUpnpChoice);
+allowUpnp?.addEventListener('change', showUpnpChoice);
 inviteInput.addEventListener('input', showLegacyConsent);
+roomInput.addEventListener('input', () => { sameNameWarned = false; });
 showRoomType();
+
+// Gap A6: the user name of the last successful login comes back in the empty Username field.
+const USER_NAME_KEY = 'asscrack.userName.v1';
+try {
+    const savedName = window.localStorage?.getItem(USER_NAME_KEY);
+    if (!usernameInput.value && typeof savedName === 'string' && savedName.length <= 64) usernameInput.value = savedName;
+} catch { /* no storage: the field stays empty */ }
+function rememberUserName(name) {
+    try { window.localStorage?.setItem(USER_NAME_KEY, name); } catch { /* no storage */ }
+}
 
 let internetRoom = false;
 
 async function login() {
+    // A reopen of a saved room also disables the button: Enter in a field must not start a second room.
+    if (loginBusy || loginButton.disabled) return;
     const name = usernameInput.value.trim();
     const type = roomTypeSelect.value;
     let room = roomInput.value.trim();
@@ -422,6 +463,11 @@ async function login() {
         allowLegacy?.focus();
         return;
     }
+    if (type !== 'join' && !sameNameWarned && window.savedRoomsUi?.hasRoomNamed?.(room)) {
+        sameNameWarned = true;
+        status.textContent = SAME_NAME_TEXT;
+        return;
+    }
     const options = { name, room, type };
     if (type === 'join') {
         options.invite = invite;
@@ -433,16 +479,22 @@ async function login() {
     }
     // Saved rooms (milestone 6): the save choice of a keyed room.
     if (window.savedRoomsUi) Object.assign(options, window.savedRoomsUi.loginOptions(type));
+    loginBusy = true;
     loginButton.disabled = true;
+    loginButton.textContent = STARTING_TEXT;
+    status.textContent = '';
     try {
         const result = await window.asscrack.login(options);
+        rememberUserName(name);
         internetRoom = result?.internet === true;
         if (typeof result?.room === 'string' && result.room) room = result.room;
         showChat(name, room);
         roomStarted(result);
     } catch (err) {
         status.textContent = `Error: ${errorText(err)}`;
+        loginBusy = false;
         loginButton.disabled = false;
+        loginButton.textContent = loginLabel();
     }
 }
 
@@ -626,6 +678,13 @@ for (const input of [usernameInput, roomInput, publicAddressInput]) {
         if (e.key === 'Enter') login();
     });
 }
+// Enter with no Shift in the invite box logs in. Shift+Enter keeps a new line. An IME composition keeps its Enter.
+inviteInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+        e.preventDefault();
+        login();
+    }
+});
 sendButton.addEventListener('click', sendMessage);
 // Enter sends. Shift+Enter makes a new line. An IME composition keeps its Enter.
 messageInput.addEventListener('keydown', e => {
@@ -1619,6 +1678,11 @@ const fullNodeState = document.getElementById('full-node-state');
 // A static text for protected rooms (internet and LAN): 0.7.0 and older cannot join them (DECISIONS.md item 100).
 const oldVersionNote = document.getElementById('old-version-note');
 
+// The reach state of the room from asscrack:invite (gap A1): { state, reason, proven }, or null before the first
+// answer. roomOwner: this device owns the protected room.
+let roomReach = null;
+let roomOwner = false;
+
 const NO_FULL_NODE_TEXT = 'No invite code: this room has no address that the internet can reach. '
     + 'Use an explicit public address or opt in to UPnP when starting a room.';
 const UPNP_WAIT_TEXT = 'Asking the router to open a port. This can take up to 70 seconds. The code shows here when it is ready.';
@@ -1627,25 +1691,37 @@ function hasApi(name) {
     return typeof window.asscrack?.[name] === 'function';
 }
 
-function showFullNodeState() {
-    let state = 'lan';
-    let text = '';
-    if (internetRoom) {
-        const first = [...fullNodePeers].filter(id => peerItems.has(id)).sort()[0];
-        if (fullNodeSelf) {
-            state = 'self';
-            text = 'This computer is a full node';
-        } else if (first) {
-            state = 'peer';
-            text = `Full node: ${peerNames.get(first) ?? String(first).slice(0, 12)}`;
-        } else {
-            state = 'none';
-            text = 'No full node';
-        }
+// Gap B4: the status bar item tells if friends on the internet can join. Internet rooms only. Only the state
+// 'warn' (an owner with no address and no peer) has the warning color.
+function fullNodeView() {
+    if (!internetRoom || roomReach?.state === 'lan') return { state: 'lan', text: '', tip: '' };
+    const first = [...fullNodePeers].filter(id => peerItems.has(id)).sort()[0];
+    if (fullNodeSelf) {
+        return { state: 'self', text: 'Open to the internet',
+            tip: 'This computer is a full node. Friends connect to it directly, and it can relay for others.' };
     }
+    if (first) {
+        const name = peerNames.get(first) ?? String(first).slice(0, 12);
+        return { state: 'peer', text: `Open through ${name}`, tip: `${name} is a full node. New friends join through that computer.` };
+    }
+    if (roomReach?.state === 'ready') {
+        return { state: 'untested', text: 'Address not tested yet', tip: 'ASSCRACK tests the address when the first friend connects.' };
+    }
+    if (roomReach?.state === 'upnp-wait') return { state: 'upnp-wait', text: 'Asking the router…', tip: '' };
+    if (peerItems.size > 0) {
+        return { state: 'no-port', text: 'No open port',
+            tip: 'No computer in the room has an open port now. Connected friends stay connected. New friends from the internet cannot join.' };
+    }
+    if (roomOwner) return { state: 'warn', text: 'Friends cannot join yet', tip: 'Open Invite for the reason.' };
+    return { state: 'hidden', text: '', tip: '' };
+}
+
+function showFullNodeState() {
+    const { state, text, tip } = fullNodeView();
     fullNodeState.dataset.state = state;
     fullNodeState.textContent = text;
-    fullNodeState.hidden = state === 'lan';
+    fullNodeState.title = tip;
+    fullNodeState.hidden = state === 'lan' || state === 'hidden';
 }
 
 async function refreshFullNode() {
@@ -1674,9 +1750,12 @@ async function refreshInvite() {
     }
     try {
         const info = await window.asscrack.getInvite();
+        roomReach = info?.reach && typeof info.reach.state === 'string' ? info.reach : null;
+        roomOwner = info?.membership?.protected === true && info.membership.owner === true;
+        showFullNodeState();
         if (oldVersionNote) oldVersionNote.hidden = info?.membership?.protected !== true;
         if (info?.membership?.protected) {
-            window.roomMembership?.update(info.membership);
+            window.roomMembership?.update(info.membership, roomReach);
             return;
         }
         if (info?.reason === 'lan') {
@@ -1734,9 +1813,12 @@ if (hasApi('onFullNodeAddrs')) {
 if (hasApi('onUpnp')) {
     window.asscrack.onUpnp(() => refreshInvite());
 }
-// The name of a full node can come later, and a full node can leave.
+// The name of a full node can come later, and a full node can leave. The peer count changes the text (gap B4).
 window.asscrack.onPeerName(() => showFullNodeState());
 window.asscrack.onPeerLeft(() => showFullNodeState());
+window.asscrack.onPeerJoined(() => showFullNodeState());
+// A membership change can change the reach (the relay role of this device).
+window.asscrack.onMembership(() => { if (selfLine) refreshInvite(); });
 
 // A proposed edit appears in the room header only when the host publishes it.
 const topicValue = document.getElementById('topic-value');
