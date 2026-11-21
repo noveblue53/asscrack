@@ -1,6 +1,6 @@
 {
   "name": "asscrack",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Automated Server Switch in Case Relays Are Crashed or Killed",
   "main": "src/application/main.js",
   "type": "module",
@@ -67,7 +67,7 @@
       "target": "portable"
     },
     "portable": {
-      "artifactName": "ASSCRACK-${version}-private-dev.exe"
+      "artifactName": "ASSCRACK-${version}-portable.exe"
     }
   }
 }
