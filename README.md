@@ -17,8 +17,8 @@ The room owner invites individual devices and chooses which ones may take over a
 | Earlier friend pilot | Windows x64 portable RC1 uses the 0.7.0 app version. The changelog records the exact executable SHA-256 and frozen source. [Draft download](https://github.com/noveblue53/asscrack/releases) · [Build and verification](CHANGELOG.md#unreleased--windows-friend-pilot-release-candidate) · [Field card](docs/FRIEND_PILOT.md) |
 | Prior 0.7.0 field build | Three Windows peers used the build from `8dacddd` in the November 20 internet test. Its SHA-256 and observed faults are in the [changelog](CHANGELOG.md). |
 | Earlier review builds | The [field recovery report](docs/FIELD_RECOVERY_REPORT.md) and [desktop review](docs/DESKTOP_REVIEW.md) list the earlier x64 executable identities and single-computer results. |
-| Field acceptance | The friend pilot covers the open router-lease, reconnect, interrupted-file, alternate-relay and Windows profile checks. The 1.0 decision also depends on the qualifying game nights. [Release plan](docs/WORK_PLAN_1.0.md) |
-| Phase | Phase 8 (internet rooms) and the friend-pilot closeout. Next: the field checks with other users, deferred by the operator on 2026-11-20. See the roadmap below. |
+| Field acceptance | The friend pilot covers the open router-lease, reconnect, interrupted-file, alternate-relay and Windows profile checks. These checks and the game nights come after the 1.0 release (operator, 2026-11-21). [Release plan](docs/WORK_PLAN_1.0.md) |
+| Phase | The 1.0 features. 1.0 is a full-featured release before the friends get it (operator, 2026-11-21). Next: screenshare, resume of large transfers, a ready check and an installer with start at sign-in. Then a security audit and the 1.0.0 build. The field checks with other users come after 1.0. See the roadmap below. |
 
 ### How to read the results
 
@@ -162,7 +162,7 @@ The network code is in `src/network/`. The Electron app is in `src/application/`
 | 4. Voice with reconnect | Done. LAN tested (WebRTC, 0.2.0 and 0.3.1). Voice on libp2p streams internet tested (0.5.0). Echo and noise suppression, voice activity and push-to-talk (5C) are on `main` with 127.0.0.1 results. Next: the 5C test on 2 computers. |
 | 5. Chat | Chat and history after a restart passed on LAN. Quote/Find, availability, saved rooms, topics, highlights, channels and online whispers have single-computer coverage. |
 | 6. File sharing | Ordinary transfers passed on LAN (0.3.1) and the internet (0.5.0). Recipient-level delivery, inline media, fresh retry and the Shared shelf are part of the friend-pilot checks. |
-| 7. Desktop experience | The room, themes, map, tray and detachable voice panel have single-computer evidence. Windows shell and device checks are open. |
+| 7. Desktop experience | The room, themes, map, tray and detachable voice panel have single-computer evidence. A polish pass (2026-11-21) repaired 27 visual and keyboard faults of the room window (127.0.0.1). Windows shell and device checks are open. |
 | 8. Internet rooms | In progress. Invite codes and rejoin are internet tested. Device admission and the compact `asscrack3:` invite (0.8.0) have 127.0.0.1 results. UPnP join, relays and failover on the internet are open. |
 
 Release 1.0 is a portable messenger for a game night. A friend joins from a different network. The group can continue to
