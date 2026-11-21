@@ -1,0 +1,133 @@
+name: Verify RC2 on Windows and attach it to the existing draft
+
+on:
+  push:
+    branches: [codex/rc2-native-draft-delivery]
+    paths: ['.github/workflows/rc2-native-draft-delivery.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: asscrack-rc2-native-draft-delivery
+  cancel-in-progress: false
+
+jobs:
+  build-and-deliver:
+    if: github.repository == 'noveblue53/asscrack'
+    runs-on: windows-2025
+    timeout-minutes: 25
+    permissions:
+      contents: write
+    env:
+      RC2_SOURCE: 42cf3b42b7bdb90fc80fb5f19fd5519aa82d643c
+      RC2_RELEASE_ID: '453396616'
+      RC2_TAG: v0.7.0-hardening-rc2
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: 42cf3b42b7bdb90fc80fb5f19fd5519aa82d643c
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.22.1
+      - name: Install locked dependencies and verify the native build
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $source = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $source -ne $env:RC2_SOURCE) { throw 'Wrong RC2 source checkout.' }
+          npm ci --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'Locked dependency installation failed.' }
+          $output = Join-Path $env:RUNNER_TEMP 'asscrack-rc2'
+          ./build/build-windows-candidate.ps1 -Mode Private -OutputDirectory $output
+          $manifest = Get-Content -LiteralPath (Join-Path $output 'verification.json') -Raw | ConvertFrom-Json -AsHashtable
+          if ($manifest.source -ne $env:RC2_SOURCE -or $manifest.outputMode -ne 'Private') { throw 'Unexpected build provenance.' }
+          $candidate = Join-Path $output $manifest.file
+          if ((Get-FileHash -LiteralPath $candidate -Algorithm SHA256).Hash -ne $manifest.sha256) { throw 'Candidate hash mismatch.' }
+          $smokePath = Join-Path $env:RUNNER_TEMP 'asscrack-rc2-smoke.json'
+          node tools/second-start-check.mjs --first $candidate --temp $env:RUNNER_TEMP --out $smokePath
+          if ($LASTEXITCODE -ne 0) { throw 'Portable launcher startup or second launch failed.' }
+          $smoke = Get-Content -LiteralPath $smokePath -Raw | ConvertFrom-Json -AsHashtable
+          if (-not $smoke.pass -or $smoke.cleanup.processesLeft -ne 0 -or -not $smoke.cleanup.folderDeleted) {
+            throw 'Portable smoke evidence did not confirm launch, reuse and cleanup.'
+          }
+          $manifest.nativeWindows = @{
+            os = [System.Environment]::OSVersion.VersionString
+            runner = 'windows-2025'
+            firstWindowOpened = $true
+            secondExitMs = $smoke.secondExitMs
+            secondExitCode = $smoke.secondExitCode
+            firstWindowStayedOpen = $smoke.firstStillRuns
+            extractedFilesUnchanged = $smoke.checks.filesSame
+            processesLeft = $smoke.cleanup.processesLeft
+            unpackPresentBeforeTestCleanup = $smoke.cleanup.folderAfterNormalEnd
+            testDirectoryRemoved = $smoke.cleanup.folderDeleted
+          }
+          $manifest.workflowRun = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          $manifest.file = 'ASSCRACK-0.7.0-hardening-rc2-42cf3b42-native-win-x64-private-unsigned.exe'
+          Move-Item -LiteralPath $candidate -Destination (Join-Path $output $manifest.file)
+          $manifestFile = Join-Path $output 'ASSCRACK-hardening-rc2-42cf3b42-native-verification.json'
+          ConvertTo-Json -InputObject $manifest -Depth 32 | Set-Content -LiteralPath $manifestFile -Encoding utf8
+          Write-Output "Verified $($manifest.file) SHA-256 $($manifest.sha256)"
+      - name: Attach the exact verified files to the existing draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $output = Join-Path $env:RUNNER_TEMP 'asscrack-rc2'
+          $manifestName = 'ASSCRACK-hardening-rc2-42cf3b42-native-verification.json'
+          $manifestPath = Join-Path $output $manifestName
+          $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json -AsHashtable
+          $candidateName = 'ASSCRACK-0.7.0-hardening-rc2-42cf3b42-native-win-x64-private-unsigned.exe'
+          if ($manifest.file -ne $candidateName -or $manifest.source -ne $env:RC2_SOURCE) { throw 'Unexpected candidate manifest.' }
+          $candidate = Join-Path $output $candidateName
+          if ((Get-FileHash -LiteralPath $candidate -Algorithm SHA256).Hash -ne $manifest.sha256) { throw 'Candidate hash mismatch before upload.' }
+          $headers = @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept = 'application/vnd.github+json'
+            'X-GitHub-Api-Version' = '2022-11-28'
+          }
+          $endpoint = "https://api.github.com/repos/noveblue53/asscrack/releases/$env:RC2_RELEASE_ID"
+          $upload = "https://uploads.github.com/repos/noveblue53/asscrack/releases/$env:RC2_RELEASE_ID/assets"
+          function Get-CheckedDraft {
+            $release = Invoke-RestMethod -Uri $endpoint -Headers $headers
+            if ([string]$release.id -ne $env:RC2_RELEASE_ID -or $release.draft -ne $true -or
+                $release.tag_name -ne $env:RC2_TAG -or $release.upload_url -ne "$upload{?name,label}") {
+              throw 'The expected unpublished RC2 draft no longer matches.'
+            }
+            $release
+          }
+          $targets = @(
+            @{ path = $candidate; type = 'application/octet-stream' },
+            @{ path = $manifestPath; type = 'application/json' }
+          )
+          $release = Get-CheckedDraft
+          foreach ($target in $targets) {
+            $target.name = Split-Path $target.path -Leaf
+            $target.digest = 'sha256:' + (Get-FileHash -LiteralPath $target.path -Algorithm SHA256).Hash.ToLowerInvariant()
+            $target.size = (Get-Item -LiteralPath $target.path).Length
+            $existing = @($release.assets | Where-Object { $_.name -eq $target.name })
+            if ($existing.Count -gt 1 -or ($existing.Count -eq 1 -and
+                ($existing[0].digest -ne $target.digest -or $existing[0].size -ne $target.size -or $existing[0].state -ne 'uploaded'))) {
+              throw "Conflicting asset $($target.name). Existing draft files were preserved."
+            }
+          }
+          foreach ($target in $targets) {
+            $release = Get-CheckedDraft
+            if (@($release.assets | Where-Object { $_.name -eq $target.name }).Count -eq 0) {
+              $url = "$upload`?name=$([uri]::EscapeDataString($target.name))"
+              $created = Invoke-RestMethod -Method Post -Uri $url -Headers $headers -InFile $target.path -ContentType $target.type
+              if ($created.name -ne $target.name -or $created.digest -ne $target.digest -or $created.size -ne $target.size) {
+                throw "GitHub did not confirm the requested name and digest for $($target.name)."
+              }
+            }
+          }
+          $release = Get-CheckedDraft
+          foreach ($target in $targets) {
+            $asset = @($release.assets | Where-Object { $_.name -eq $target.name -and $_.state -eq 'uploaded' })
+            if ($asset.Count -ne 1 -or $asset[0].digest -ne $target.digest -or $asset[0].size -ne $target.size) {
+              throw "Remote readback did not verify $($target.name)."
+            }
+            Write-Output "Draft asset ID $($asset[0].id): $($asset[0].name), $($asset[0].size) bytes, $($asset[0].digest)"
+          }
+          Write-Output "Release $($release.id) is still a draft."
