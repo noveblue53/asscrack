@@ -293,17 +293,20 @@
 
     if (jumpButton) jumpButton.addEventListener('click', () => followLatest({ smooth: true }));
 
-    // The position now, for restorePosition: following, or the first visible line and its offset.
+    // The position now, for restorePosition: following, and the first visible line and its offset. A following list
+    // also keeps its anchor: when unread lines come before the restore, the restore goes back to that line.
     function savePosition() {
         if (roomBeforeWhisper) return roomBeforeWhisper;
-        return { following, anchor: following ? null : captureAnchor() };
+        return { following, anchor: captureAnchor() };
     }
 
     // Put the list back at a saved position. The unread count and the marker do not change.
+    // A following position with unread lines (they came while the find bar was open) does not go to the new end:
+    // the list shows the old last line, and the unread lines stay below it.
     function restorePosition(saved) {
         if (!saved || roomBeforeWhisper) return;
         endJump();
-        following = saved.following === true;
+        following = saved.following === true && unread.count === 0;
         if (following) scrollToEnd();
         else restoreAnchor(saved.anchor);
         anchor = following ? null : captureAnchor();
@@ -311,12 +314,16 @@
     }
 
     // on: true while the find bar is open (see hold).
+    // When the hold ends with unread lines, Chromium can post the scroll event of the restore after the hold ended.
+    // highlightScrollTop makes that late event act as a find bar scroll: the count and the marker stay.
     function setHold(on) {
         hold = on === true;
         if (hold) {
             following = false;
             anchor = captureAnchor();
             showUnread();
+        } else if (!following && unread.count > 0) {
+            highlightScrollTop = list.scrollTop;
         }
     }
 

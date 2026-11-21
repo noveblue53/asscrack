@@ -103,7 +103,7 @@ test('the find hold keeps the unread count and the marker, and restorePosition g
     assert.equal(first.classList.contains('unread-first'), false);
 });
 
-test('restorePosition of a following list goes to the end and follows again', () => {
+test('restorePosition of a following list with no new line goes to the end and follows again', () => {
     const { list, reading, scrollTo, live } = load(30);
     scrollTo(list.scrollHeight);
     assert.equal(reading.isFollowing(), true);
@@ -111,12 +111,33 @@ test('restorePosition of a following list goes to the end and follows again', ()
     reading.setHold(true);
     assert.equal(reading.isFollowing(), false, 'the find bar owns the view while it is open');
     scrollTo(100);
-    live();
-    assert.equal(list.scrollTop, 100, 'a new line does not move the list away from the result');
     reading.restorePosition(saved);
     reading.setHold(false);
     assert.equal(reading.isFollowing(), true);
     assert.equal(list.scrollTop, list.scrollHeight - list.clientHeight);
+    live();
+    assert.equal(list.scrollTop, list.scrollHeight - list.clientHeight, 'the list follows the next line');
+    assert.equal(reading.unreadCount(), 0);
+});
+
+test('restorePosition of a following list with a new line goes back to the old last line, the line stays unread', () => {
+    const { list, reading, scrollTo, live } = load(30);
+    scrollTo(list.scrollHeight);
+    const end = list.scrollTop;
+    const saved = reading.savePosition();
+    reading.setHold(true);
+    scrollTo(100);
+    const fresh = live();
+    assert.equal(list.scrollTop, 100, 'a new line does not move the list away from the result');
+    reading.restorePosition(saved);
+    reading.setHold(false);
+    assert.equal(list.scrollTop, end, 'the old last line, not the new end');
+    assert.equal(reading.isFollowing(), false);
+    // The late scroll event of the restore. With 20 px lines the old end is in the 24 px end band.
+    scrollTo(list.scrollTop);
+    assert.equal(reading.unreadCount(), 1);
+    assert.equal(fresh.classList.contains('unread-first'), true);
+    assert.equal(reading.isFollowing(), false);
 });
 
 test('returning from a whisper restores the room line and retains new room messages as unread', () => {
