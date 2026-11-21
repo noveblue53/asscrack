@@ -1817,8 +1817,8 @@ if (hasApi('onUpnp')) {
 window.asscrack.onPeerName(() => showFullNodeState());
 window.asscrack.onPeerLeft(() => showFullNodeState());
 window.asscrack.onPeerJoined(() => showFullNodeState());
-// A membership change can change the reach (the relay role of this device).
-window.asscrack.onMembership(() => { if (selfLine) refreshInvite(); });
+// A membership change can change the reach of the owner (the relay role). Only the owner has a reach note.
+window.asscrack.onMembership(() => { if (selfLine && roomOwner) refreshInvite(); });
 
 // A proposed edit appears in the room header only when the host publishes it.
 const topicValue = document.getElementById('topic-value');
