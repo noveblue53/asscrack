@@ -7,6 +7,20 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased — the 1.0 release order (2026-11-21)
+
+The operator decided that 1.0 is a full-featured release that comes before the friends get it.
+`docs/WORK_PLAN_1.0.md` and the README roadmap give the new order:
+
+1. All 1.0 features: screenshare (7B), resume of large transfers (8), the ready check (9) and a per-user installer
+   with start at Windows sign-in. These items have no field gate before 1.0. Each exit before 1.0 is a 127.0.0.1
+   check or a check on this PC.
+2. The security audit and the fixes that the operator accepts.
+3. The 1.0.0 freeze and its checks on this PC.
+4. After 1.0: the game nights and card 9 are field checks of 1.0. A field fault gives a 1.0.x build.
+
+The upgrade checks from 0.7.0 and 0.6.0 and the mixed-version checks move after 1.0.
+
 ## Unreleased — app icon in Windows (2026-11-21)
 
 The app has its own icon. Before, the portable .exe, the taskbar button and the window showed the default Electron
