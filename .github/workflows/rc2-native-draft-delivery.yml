@@ -20,13 +20,13 @@ jobs:
     permissions:
       contents: write
     env:
-      RC2_SOURCE: 42cf3b42b7bdb90fc80fb5f19fd5519aa82d643c
+      RC2_SOURCE: 344a8b234dc6455e75fabfb6ca063e1898ddb401
       RC2_RELEASE_ID: '453396616'
       RC2_TAG: v0.7.0-hardening-rc2
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: 42cf3b42b7bdb90fc80fb5f19fd5519aa82d643c
+          ref: 344a8b234dc6455e75fabfb6ca063e1898ddb401
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -64,9 +64,9 @@ jobs:
             testDirectoryRemoved = $smoke.cleanup.folderDeleted
           }
           $manifest.workflowRun = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
-          $manifest.file = 'ASSCRACK-0.7.0-hardening-rc2-42cf3b42-native-win-x64-private-unsigned.exe'
+          $manifest.file = 'ASSCRACK-0.7.0-hardening-rc2-344a8b23-native-win-x64-private-unsigned.exe'
           Move-Item -LiteralPath $candidate -Destination (Join-Path $output $manifest.file)
-          $manifestFile = Join-Path $output 'ASSCRACK-hardening-rc2-42cf3b42-native-verification.json'
+          $manifestFile = Join-Path $output 'ASSCRACK-hardening-rc2-344a8b23-native-verification.json'
           ConvertTo-Json -InputObject $manifest -Depth 32 | Set-Content -LiteralPath $manifestFile -Encoding utf8
           Write-Output "Verified $($manifest.file) SHA-256 $($manifest.sha256)"
       - name: Attach the exact verified files to the existing draft
@@ -75,10 +75,10 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $output = Join-Path $env:RUNNER_TEMP 'asscrack-rc2'
-          $manifestName = 'ASSCRACK-hardening-rc2-42cf3b42-native-verification.json'
+          $manifestName = 'ASSCRACK-hardening-rc2-344a8b23-native-verification.json'
           $manifestPath = Join-Path $output $manifestName
           $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json -AsHashtable
-          $candidateName = 'ASSCRACK-0.7.0-hardening-rc2-42cf3b42-native-win-x64-private-unsigned.exe'
+          $candidateName = 'ASSCRACK-0.7.0-hardening-rc2-344a8b23-native-win-x64-private-unsigned.exe'
           if ($manifest.file -ne $candidateName -or $manifest.source -ne $env:RC2_SOURCE) { throw 'Unexpected candidate manifest.' }
           $candidate = Join-Path $output $candidateName
           if ((Get-FileHash -LiteralPath $candidate -Algorithm SHA256).Hash -ne $manifest.sha256) { throw 'Candidate hash mismatch before upload.' }
