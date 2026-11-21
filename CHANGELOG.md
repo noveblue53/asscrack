@@ -14,6 +14,7 @@ Each result has one of these labels:
 - Relay reservations and connections require room admission. Chat queues, inbound file requests, transfers and media previews have bounded resource use. The app restricts native desktop actions to the packaged main frame and grants microphone access to the room.
 - Upgraded to Electron 45.4.1 and libp2p 3.5.1. The Windows release tools verify the embedded application and provide a separate timestamped signing path.
 - **127.0.0.1** — Two independent desktop profiles completed device enrollment, chat and revocation in both internet and LAN modes. A four-peer circuit workload delivered 360 expected public copies and 60 addressed whispers. A legacy RC1 peer exchanged messages with the updated stack.
+- **127.0.0.1, Windows 10 PC (merge check, 2026-11-21):** the operator accepted the merge of RC2 source `344a8b23` into `main`. `npm test`: the first run had 3 failures in `test/room-archive.test.mjs` and `test/saved-rooms.test.mjs`. The cause was the test cleanup: it deleted the temp folder before it closed a second database store, and Windows cannot delete an open file. The tests now close each store first. After the fix, 404 of 404 pass. One `npm start`: no error line. The terminal and the log show 2 Electron 45 deprecation warnings for the synchronous `safeStorage` calls. There is no LAN result and no internet result for this source.
 
 ## Unreleased — Windows friend-pilot release candidate
 

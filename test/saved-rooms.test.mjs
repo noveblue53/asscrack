@@ -27,11 +27,15 @@ function setup(t, extra = {}) {
         dir: path.join(dir, 'saved-rooms'), protector: fakeProtector, log: (l, x) => logs.push([l, x]),
         notify: (type, data) => events.push([type, data]), forgetHints: row => hints.push(row), ...extra
     });
+    // Windows cannot delete an open database file: close each store of the test before the delete.
+    const reopened = [];
     t.after(() => {
         rooms.close();
+        for (const other of reopened) other.close();
         fs.rmSync(dir, { recursive: true, force: true });
     });
-    return { rooms, logs, events, hints, dir };
+    const keep = store => { reopened.push(store); return store; };
+    return { rooms, logs, events, hints, dir, keep };
 }
 
 function fakeNode(accepted) {
@@ -261,7 +265,7 @@ test('forget remains retryable if saved route hints cannot be removed', t => {
 
 
 test('importing a refreshed invite for a saved room keeps its identity, messages and history preference on reopen', t => {
-    const { rooms, dir } = setup(t);
+    const { rooms, dir, keep } = setup(t);
     const peerId = 'QmYwAPJzv5CZsnAzt8auVZRnGKYcmwZKKf7E1hgZ5tC6J8';
     const code = port => makeInvite({ room: 'room', key: KEY_A, nodes: [{ id: peerId, addrs: [`/ip4/127.0.0.1/tcp/${port}`] }] });
     const original = code(4001);
@@ -277,8 +281,7 @@ test('importing a refreshed invite for a saved room keeps its identity, messages
     assert.equal(imported.roomId, roomId);
     assert.equal(imported.keepHistory, false);
     rooms.close();
-    const reopened = createSavedRooms({ dir: path.join(dir, 'saved-rooms'), protector: fakeProtector });
-    t.after(() => reopened.close());
+    const reopened = keep(createSavedRooms({ dir: path.join(dir, 'saved-rooms'), protector: fakeProtector }));
     assert.equal(reopened.status().rooms.length, 1);
     assert.equal(reopened.getRoom(roomId).invite, refreshed);
     assert.deepEqual(reopened.lines(roomId).map(m => m.id), ['prior']);
@@ -306,7 +309,7 @@ test('a saved room retains its empty channel catalog with saving off and after C
 });
 
 test('cold attachment archive reopens live and own cards with just the projected metadata in their original channels', t => {
-    const {rooms, dir} = setup(t);
+    const {rooms, dir, keep} = setup(t);
     const node = fakeNode(1);
     const roomId = start(rooms, node);
     const channelId = 'eeb5f87a-8f35-4dac-9aa2-5bb32953f93c';
@@ -326,8 +329,7 @@ test('cold attachment archive reopens live and own cards with just the projected
     node.events.emit('live', {...live, id: 'malformed', attachment: {...attachment, name: '../private.png'}});
     node.events.emit('history', {messages: [{...live, id: 'catch-up'}]});
     rooms.close();
-    const restarted = createSavedRooms({dir: path.join(dir,'saved-rooms'), protector: fakeProtector});
-    t.after(() => restarted.close());
+    const restarted = keep(createSavedRooms({dir: path.join(dir,'saved-rooms'), protector: fakeProtector}));
     const general = restarted.lines(roomId,{channelId:'general'});
     assert.deepEqual(general.map(r => r.id), [own.id]);
     assert.deepEqual(general[0].attachment, attachment);
