@@ -1703,7 +1703,8 @@ body.map-open #node-map:not([data-paused]) .nm-node.speaking .nm-pulse {
   color: var(--ink-soft);
 }
 
-#room-access-status, #member-invite-form p, #room-members-section h2 { margin: 0; }
+#room-access-status, #old-version-note, #member-invite-form p, #room-members-section h2 { margin: 0; }
+#old-version-note { color: var(--ink-soft); }
 #room-members-section h2 { font-size: 13px; }
 #member-invite-form { display: grid; gap: 5px; }
 #member-invite-form button { justify-self: start; }

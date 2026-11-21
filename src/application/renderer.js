@@ -1602,6 +1602,8 @@ const inviteCode = document.getElementById('invite-code');
 const copyInviteButton = document.getElementById('copy-invite');
 const inviteNote = document.getElementById('invite-note');
 const fullNodeState = document.getElementById('full-node-state');
+// A static text for protected rooms (internet and LAN): 0.7.0 and older cannot join them (DECISIONS.md item 100).
+const oldVersionNote = document.getElementById('old-version-note');
 
 const NO_FULL_NODE_TEXT = 'No invite code: this room has no address that the internet can reach. '
     + 'Use an explicit public address or opt in to UPnP when starting a room.';
@@ -1658,6 +1660,7 @@ async function refreshInvite() {
     }
     try {
         const info = await window.asscrack.getInvite();
+        if (oldVersionNote) oldVersionNote.hidden = info?.membership?.protected !== true;
         if (info?.membership?.protected) {
             window.roomMembership?.update(info.membership);
             return;
