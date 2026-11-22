@@ -34,6 +34,7 @@ import { fitWindowBounds, MIN_WINDOW, readWindowBounds, saveWindowBounds } from 
 import { createTaskbarFlash } from './taskbar-flash.mjs';
 import { acceptScreenFrame, createScreenSources } from './screen-sources.mjs';
 import { createFriendLinks } from './friend-links.mjs';
+import { withDeviceMarks } from './peer-marks.mjs';
 import { attachFriendWindows, registerFriendIpc } from './friend-windows.mjs';
 import { installInterfaceCache } from '../network/interface-cache.mjs';
 import { createUpdateService } from './update-service.mjs';
@@ -854,7 +855,8 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
                 return;
             }
             const shelfId = type === 'file-offer' ? node.shelfTransfer(data.peerId, data.offerId) : undefined;
-            sendToWindow(`asscrack:${type}`, shelfId ? { ...data, shelfId } : data);
+            // L3 (P10a): the device marks of the names and the lines (peer-marks.mjs).
+            sendToWindow(`asscrack:${type}`, withDeviceMarks(type, shelfId ? { ...data, shelfId } : data, node));
         });
     }
     // The node dials the invite nodes at start and again with the redial timer (option inviteNodes).

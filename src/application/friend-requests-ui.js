@@ -43,7 +43,9 @@
     api.onRequest(event => {
         if (!event || typeof event !== 'object') return;
         if (event.kind === 'incoming') {
-            queue.push({ id: event.id, name: event.name || 'Someone' });
+            // L3 (P10a): the device mark beside the name. Two people can use the same name.
+            const name = event.name || 'Someone';
+            queue.push({ id: event.id, name: typeof event.mark === 'string' && /^[0-9a-f]{6}$/.test(event.mark) ? `${name} #${event.mark}` : name });
             show();
             return;
         }

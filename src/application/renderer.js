@@ -162,6 +162,7 @@ function groupWithPrevious(item) {
     const same = Boolean(prevFrom && itemFrom) && !prev.classList.contains('file-card') && !item.classList.contains('file-card')
         && prev.classList.contains('own') === item.classList.contains('own')
         && prev.classList.contains('unverified') === item.classList.contains('unverified')
+        && (prevFrom.dataset.mark ?? '') === (itemFrom.dataset.mark ?? '')
         && prevFrom.textContent === itemFrom.textContent
         && Math.abs(Number(item.dataset.time) - Number(prev.dataset.time)) < GROUP_MS;
     item.classList.toggle('cont', same);
@@ -175,6 +176,16 @@ function markUnverified(item) {
     item.classList.add('unverified');
     from.classList.add('unverified');
     from.title = 'The host gave this name. This computer does not know the device of this line.';
+    groupWithPrevious(item);
+    groupWithPrevious(nextContentRow(item));
+}
+
+// L3 (P10a): the device mark (6 hex characters, main.js peer-marks.mjs) beside the name of a line. The mark is CSS
+// (styles.css), thus the text of .from stays the name. Two devices with the same name do not group.
+function applyMark(item, mark) {
+    const from = item?.querySelector('.from');
+    if (!from || typeof mark !== 'string' || !/^[0-9a-f]{6}$/.test(mark)) return;
+    from.dataset.mark = mark;
     groupWithPrevious(item);
     groupWithPrevious(nextContentRow(item));
 }
@@ -325,6 +336,27 @@ function setPeerName(item, name) {
 let selfLine = null;
 // The name from the hello line of each peer.
 const peerNames = new Map();
+// L3 (P10a): the device mark of each peer (the peer-name event).
+const peerMarks = new Map();
+
+// L3 (P10a): the device mark beside each name of the peer list, and the mark "same name" when two people in the list
+// (this user included) use the same name.
+function refreshPeerMarks() {
+    const count = new Map();
+    const names = [ownName, ...[...peerItems.keys()].map(peerId => peerNames.get(peerId))].filter(Boolean)
+        .map(name => String(name).trim().toLowerCase());
+    for (const name of names) count.set(name, (count.get(name) ?? 0) + 1);
+    for (const [peerId, item] of [...peerItems, ...heldItems]) {
+        const nameSpan = item.querySelector('.name');
+        if (!nameSpan) continue;
+        const mark = peerMarks.get(peerId);
+        if (mark) nameSpan.dataset.mark = mark;
+        const name = peerNames.get(peerId);
+        const clash = Boolean(name) && (count.get(String(name).trim().toLowerCase()) ?? 0) > 1;
+        item.classList.toggle('name-clash', clash);
+        nameSpan.title = clash ? 'Another person in this room uses the same name. Look at the mark after the name.' : '';
+    }
+}
 
 // Gap B1: the grey buddy lines of peers that went with no bye. peer ID -> <li>. A grey line is not in peerItems:
 // it has no menu, it is no file recipient and it does not count.
@@ -345,6 +377,7 @@ function addPeer(peerId) {
     item.dataset.peerId = String(peerId);
     item.hidden = idlePeerIds.has(peerId);
     peerItems.set(peerId, item);
+    refreshPeerMarks();
     refreshFileRecipients();
     updatePeerCount();
     updateVoiceView();
@@ -356,6 +389,7 @@ function removePeer(peerId, hold = false) {
     const item = peerItems.get(peerId);
     if (!item) return;
     peerItems.delete(peerId);
+    refreshPeerMarks();
     if (listeningDialog?.open && listeningDialog.dataset.peerId === peerId) listeningDialog.close();
     refreshFileRecipients();
     updatePeerCount();
@@ -500,11 +534,13 @@ window.asscrack.onPeerLeft(data => peerLeft(data.peerId, data.left));
 window.asscrack.onPeerName(data => {
     if (typeof data.name !== 'string') return;
     peerNames.set(data.peerId, data.name);
+    if (typeof data.mark === 'string') peerMarks.set(data.peerId, data.mark);
     const item = peerItems.get(data.peerId) ?? heldItems.get(data.peerId);
     if (item) {
         setPeerName(item, data.name);
         refreshFileRecipients();
     }
+    refreshPeerMarks();
     if (roster) applyRoster(roster.named(data.peerId, data.name, Date.now()));
 });
 window.asscrack.onMessage(data => {
@@ -512,6 +548,7 @@ window.asscrack.onMessage(data => {
     if (item && data.from) setPeerName(item, data.from);
     const state = window.reading.beforeChange();
     const line = addMessage(data.from, data.text, data.time, false, data.id, data.peerId, data.channelId, data.attachment);
+    applyMark(line, data.mark);
     if (line && !window.idlePeer?.isIdle()) {
         window.roomAttention?.mention(data);
         if (window.roomChannels && !window.roomChannels.isViewing(data.channelId)) {
@@ -541,6 +578,7 @@ window.asscrack.onHistory(data => {
         if (!item) continue;
         added++;
         if (line.unverified === true) markUnverified(item);
+        applyMark(item, line.mark);
     }
     for (const line of lines) historyShown.add(line.channelId ?? 'general');
     console.info(`History shown: ${added} lines`);

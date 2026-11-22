@@ -18,6 +18,7 @@ import { addrsLine, createFriendRequests, validName } from '../network/friend-re
 import { displayText } from '../network/text-safety.mjs';
 import { createPrivateMessages, validPmText } from '../network/private-messages.mjs';
 import { observedIp, peerAddrAllowed } from '../network/fullnode.mjs';
+import { deviceMark } from '../network/device-mark.mjs';
 import { restoreSavedAdmission } from './room-admission.mjs';
 import { isAddressInUse } from './login-errors.mjs';
 
@@ -542,8 +543,9 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
     function requestEvent(event) {
         if (event.kind === 'outgoing') waiting.set(event.peerId, { id: event.id, name: event.name });
         if (event.kind === 'ended' && event.side === 'out') waiting.delete(event.peerId);
+        // L3 (P10a): the device mark of the other device. The window shows it beside the name of the request.
         events.emit('request', { kind: event.kind, id: event.id, name: event.name ?? '', side: event.side ?? null,
-            result: event.result ?? null });
+            result: event.result ?? null, mark: deviceMark(event.deviceId) });
         emitChanged();
     }
 

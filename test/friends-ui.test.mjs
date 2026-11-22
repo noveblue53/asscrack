@@ -205,3 +205,11 @@ test('the friend chat window: the state line, the marks and the text when the fr
     input.dispatchEvent(shift);
     assert.equal(shift.defaultPrevented, false);
 });
+
+// L3 (P10b): the name of a friend request is the text of the requester. The bar shows the device mark beside it.
+test('L3: the friend request bar shows the device mark beside the name', async () => {
+    const { room, on } = await load(open())
+    await room.login('Me')
+    on.request({ kind: 'incoming', id: 'r1', name: 'Sam', mark: 'a1b2c3' })
+    assert.match(room.el('friend-request-text').textContent, /^Sam #a1b2c3 wants to add you as a friend\./)
+})

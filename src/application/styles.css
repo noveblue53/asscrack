@@ -894,6 +894,25 @@ body.layout-map-docked.layout-buddy-off #chat-body {
   opacity: 0.75;
 }
 
+/* L3 (P10a): the device mark beside a name (renderer.js, applyMark and refreshPeerMarks). */
+.from[data-mark]::after,
+#peers .name[data-mark]::after {
+  content: " #" attr(data-mark);
+  font-weight: 400;
+  opacity: 0.75;
+}
+
+.from.unverified[data-mark]::after {
+  content: " #" attr(data-mark) " (not verified)";
+}
+
+#peers .name-clash .name::after {
+  content: " #" attr(data-mark) " (same name)";
+  font-weight: 400;
+  color: var(--warn, #c0392b);
+  opacity: 1;
+}
+
 #messages .bubble-text {
   display: flex;
   flex-wrap: wrap;
