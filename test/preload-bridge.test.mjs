@@ -53,7 +53,8 @@ function loadBridge() {
 
 test('the bridge exposes the room API and uses only ipcRenderer, contextBridge and webUtils of electron', () => {
     const b = loadBridge();
-    assert.deepEqual(Object.keys(b.worlds).sort(), ['asscrack', 'desktopFrame', 'roomVoiceMonitor']);
+    // G7a adds the world 'friends' (the Friends panel, the request bar and the buddy menu lines).
+    assert.deepEqual(Object.keys(b.worlds).sort(), ['asscrack', 'desktopFrame', 'friends', 'roomVoiceMonitor']);
     assert.deepEqual(b.touched, []);
     for (const [name, fn] of Object.entries(b.api)) assert.equal(typeof fn, 'function', name);
 });
@@ -210,4 +211,51 @@ test('the G5 calls send their IPC channel with no path, and the alias call sends
     // The array comes from the vm context of the preload (another Array prototype): compare the JSON text.
     assert.equal(JSON.stringify(b.invoked.at(-1)), JSON.stringify(['asscrack:activity-aliases', []]));
     assert.deepEqual(b.touched, []);
+});
+
+// G7a: the friend calls of the room window send only text and a strict true or false. The chat window bridge
+// (friend-chat-preload.cjs) sends no friend ID: the main process binds each chat window to its friend.
+test('the G7a friend calls send text and a strict boolean; the chat window bridge sends no friend ID', async () => {
+    const b = loadBridge();
+    const f = b.worlds.friends;
+    f.list();
+    f.relations([1, 'p2']);
+    f.relations('not a list');
+    f.request(7);
+    f.respond('r1', 'yes');
+    f.respond('r1', true);
+    f.remove('f1'); f.block('f1'); f.unblock('d1'); f.rename('f1', 42); f.setName('Ann');
+    f.setUpnp('on'); f.setUpnp(true); f.openChat('f1'); f.retry();
+    assert.equal(JSON.stringify(b.invoked), JSON.stringify([
+        ['asscrack:friends'], ['asscrack:friend-relations', ['1', 'p2']], ['asscrack:friend-relations', []],
+        ['asscrack:friend-request', '7'], ['asscrack:friend-respond', 'r1', false], ['asscrack:friend-respond', 'r1', true],
+        ['asscrack:friend-remove', 'f1'], ['asscrack:friend-block', 'f1'], ['asscrack:friend-unblock', 'd1'],
+        ['asscrack:friend-rename', 'f1', '42'], ['asscrack:friend-name', 'Ann'], ['asscrack:friend-upnp', false],
+        ['asscrack:friend-upnp', true], ['asscrack:friend-open-chat', 'f1'], ['asscrack:unlock-archive']
+    ]));
+    const got = [];
+    f.onChanged(view => got.push(view));
+    f.onRequest(event => got.push(event));
+    b.emit('asscrack:friends', { state: 'open' });
+    b.emit('asscrack:friend-request', { kind: 'incoming' });
+    assert.deepEqual(got, [{ state: 'open' }, { kind: 'incoming' }]);
+    assert.deepEqual(b.touched, []);
+
+    const chatSource = await readFile(new URL('../src/application/friend-chat-preload.cjs', import.meta.url), 'utf8');
+    const worlds = {}, invoked = [];
+    const electron = { contextBridge: { exposeInMainWorld: (name, api) => { worlds[name] = api; } },
+        ipcRenderer: { invoke: (...args) => { invoked.push(args); return Promise.resolve(null); }, on() {} } };
+    vm.runInNewContext(chatSource, { require: () => electron, Promise, Number, String });
+    assert.deepEqual(Object.keys(worlds).sort(), ['asscrack', 'friendChat']);
+    assert.deepEqual(Object.keys(worlds.asscrack), ['openLink']);
+    worlds.friendChat.state();
+    worlds.friendChat.lines(null);
+    worlds.friendChat.lines({ time: '5', id: 9, path: 'C:/x' });
+    worlds.friendChat.send(12);
+    worlds.asscrack.openLink({ toString: () => 'https://example.com' });
+    assert.equal(JSON.stringify(invoked), JSON.stringify([
+        ['asscrack:friend-chat-state'], ['asscrack:friend-chat-lines', null],
+        ['asscrack:friend-chat-lines', { time: 5, id: '9' }], ['asscrack:friend-chat-send', '12'],
+        ['asscrack:friend-chat-open-link', 'https://example.com']
+    ]));
 });

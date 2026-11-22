@@ -7,6 +7,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { createSavedRooms } from '../src/application/saved-rooms.mjs';
 import { makeProfile, protectedRoomPair, startLinks, befriend, waitFor, randomBasePort, fakeProtector, hintFiles } from './helpers/friends.mjs';
 import path from 'node:path';
+import net from 'node:net';
 
 // A new archive object on the same folder (a restart of the app).
 function reopen(profile) {
@@ -122,4 +123,24 @@ test('saved rooms: status() and listRooms() have no friend room; the reopen hand
     const main = readFileSync(new URL('../src/application/main.js', import.meta.url), 'utf8');
     const handler = main.slice(main.indexOf("handleRoomIpc('asscrack:reopen-room'"));
     assert.match(handler.slice(0, handler.indexOf('reopenRoom(row')), /isFriendRoom\(roomId\)/);
+});
+
+test('127.0.0.1 a friend port in use: the friend node starts on port 0 with one WARN line, and the friends connect', async t => {
+    const A = makeProfile(t, 'a'), B = makeProfile(t, 'b');
+    t.after(() => { A.rooms.close(); B.rooms.close(); });
+    const { roomA, roomB } = await protectedRoomPair(t, A, B);
+    const port = randomBasePort();
+    const blocker = net.createServer();
+    await new Promise(resolve => blocker.listen(port + 50, '0.0.0.0', resolve));
+    t.after(() => blocker.close());
+    const logs = [];
+    const linksA = await startLinks(t, A, { basePort: port, nodeOptions: { allowPrivateFullNode: true } });
+    const linksB = await startLinks(t, B, { basePort: port + 50, log: (level, text) => logs.push([level, text]) });
+    linksA.attachRoom(roomA);
+    linksB.attachRoom(roomB);
+    const { friendA, friendB } = await befriend(linksA, linksB, roomA, roomB);
+    assert.deepEqual(logs.filter(([level]) => level === 'WARN').map(([, text]) => text),
+        [`Friend port ${port + 50} is in use (EADDRINUSE). Start again with port 0`]);
+    assert.ok(!linksB.nodeOf(friendB).getMultiaddrs().some(a => a.includes(`/tcp/${port + 50}`)));
+    await waitFor(() => linksA.friend(friendA).state === 'online' && linksB.friend(friendB).state === 'online', 'online');
 });

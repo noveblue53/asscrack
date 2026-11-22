@@ -23,6 +23,25 @@ contextBridge.exposeInMainWorld('roomVoiceMonitor', {
     onMute: listen('asscrack:voice-monitor-mute')
 });
 
+// G7a: the Friends panel, the friend request bar and the buddy menu lines. Each call sends only text and true or false.
+const text = value => String(value ?? '');
+contextBridge.exposeInMainWorld('friends', {
+    list: () => ipcRenderer.invoke('asscrack:friends'),
+    relations: peerIds => ipcRenderer.invoke('asscrack:friend-relations', Array.isArray(peerIds) ? peerIds.slice(0, 128).map(text) : []),
+    request: peerId => ipcRenderer.invoke('asscrack:friend-request', text(peerId)),
+    respond: (id, accept) => ipcRenderer.invoke('asscrack:friend-respond', text(id), accept === true),
+    remove: friendId => ipcRenderer.invoke('asscrack:friend-remove', text(friendId)),
+    block: friendId => ipcRenderer.invoke('asscrack:friend-block', text(friendId)),
+    unblock: deviceId => ipcRenderer.invoke('asscrack:friend-unblock', text(deviceId)),
+    rename: (friendId, name) => ipcRenderer.invoke('asscrack:friend-rename', text(friendId), text(name)),
+    setName: name => ipcRenderer.invoke('asscrack:friend-name', text(name)),
+    setUpnp: on => ipcRenderer.invoke('asscrack:friend-upnp', on === true),
+    openChat: friendId => ipcRenderer.invoke('asscrack:friend-open-chat', text(friendId)),
+    retry: () => ipcRenderer.invoke('asscrack:unlock-archive'),
+    onChanged: listen('asscrack:friends'),
+    onRequest: listen('asscrack:friend-request')
+});
+
 contextBridge.exposeInMainWorld('asscrack', {
     getIdlePeer: () => ipcRenderer.invoke('asscrack:idle-peer'),
     onIdlePeer: listen('asscrack:idle-peer'),

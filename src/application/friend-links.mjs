@@ -157,7 +157,8 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
         try {
             node = await createNode(options);
         } catch (err) {
-            if (!isAddressInUse(err)) throw err;
+            // libp2p gives UnsupportedListenAddressesError with no cause when the fixed port is in use (this PC).
+            if (!isAddressInUse(err) && err?.name !== 'UnsupportedListenAddressesError') throw err;
             log('WARN', `Friend port ${options.port} is in use (EADDRINUSE). Start again with port 0`);
             options.port = 0;
             node = await createNode(options);
@@ -389,8 +390,10 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
             const requests = createFriendRequests({
                 send: (peerId, line) => node.sendTo(peerId, line),
                 isBlocked,
-                makeGrant: ({ peerId, deviceId, name }) => ownerGrant(node, peerId, deviceId, name),
-                acceptGrant: ({ peerId, deviceId, name, grant }) => receiveGrant(node, peerId, deviceId, name, grant),
+                makeGrant: ({ peerId, deviceId, name }) => ownerGrant(node, peerId, deviceId, name)
+                    .catch(err => { log('WARN', `Friend grant not made: ${errText(err)}`); throw err; }),
+                acceptGrant: ({ peerId, deviceId, name, grant }) => receiveGrant(node, peerId, deviceId, name, grant)
+                    .catch(err => { log('WARN', `Friend grant refused: ${errText(err)}`); throw err; }),
                 done: ({ peerId, deviceId, port, nodes }) => ownerDone(node, peerId, deviceId, port, nodes),
                 undo: ({ deviceId }) => {
                     const entry = byDevice(deviceId);
