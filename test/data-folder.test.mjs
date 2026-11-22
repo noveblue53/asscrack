@@ -7,10 +7,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
-    chooseDataFolder, cleanHoldFolders, dataPaths, holdFolder, INSTALLED_FOLDER, KEPT_MARKER, legacyFolder, moveOldData,
+    chooseDataFolder, cleanHoldFolders, dataPaths, downloadOwner, holdFolder, INSTALLED_FOLDER, KEPT_MARKER, legacyFolder, moveOldData,
     needsMove, notWritableText, PORTABLE_FOLDER, probeWritable, writeKeptMarker
 } from '../src/application/data-folder.mjs';
 import { UNINSTALLER_NAME } from '../src/application/start-at-sign-in.mjs';
+import { createDownloadScratch } from '../src/application/download-scratch.mjs';
 
 const root = new URL('..', import.meta.url);
 const INSTALLED = 'D:\\Apps\\ASSCRACK\\ASSCRACK.exe';
@@ -193,4 +194,51 @@ test('the move works with the cpSync of Electron 45, which refuses an existing e
     assert.equal(result.ok, true, JSON.stringify(result));
     assert.equal(readFileSync(path.join(dir, 'rooms', 'abc.json'), 'utf8'), '[]');
     assert.equal(existsSync(legacy), false);
+});
+
+// A paused partial (P7c) in the download scratch of a run that stopped. dead: the process ID of that run.
+function pausedPartial(downloads, owner, dead) {
+    const scratchOf = createDownloadScratch(downloads, owner, { pid: dead, alive: () => false });
+    const name = `.asscrack-resume-${'a'.repeat(64)}-5.part`;
+    writeFileSync(path.join(scratchOf.directory, name), 'hello');
+    return name;
+}
+
+test('the paused partials in the download folder stay with a data folder that moved on the same PC', t => {
+    const s = scratch(t);
+    const downloads = path.join(s, 'Downloads');
+    const a = path.join(s, 'a', PORTABLE_FOLDER);
+    mkdirSync(a, { recursive: true });
+    const name = pausedPartial(downloads, downloadOwner(a, a), 1001);
+    const b = path.join(s, 'b', PORTABLE_FOLDER);
+    fs.renameSync(path.join(s, 'a'), path.join(s, 'b'));
+    const next = createDownloadScratch(downloads, downloadOwner(b, b), { pid: 1002, alive: pid => pid === 1002 });
+    assert.equal(readFileSync(path.join(next.directory, name), 'utf8'), 'hello', 'the new run adopts the partial');
+    assert.deepEqual(readdirSync(downloads), [path.basename(next.directory)], 'the old scratch folder is gone');
+});
+
+test('after Move the new folder owns the paused partials of the old version', t => {
+    const s = scratch(t);
+    const downloads = path.join(s, 'Downloads');
+    const legacy = path.join(s, 'appdata', 'ASSCRACK');
+    oldData(legacy);
+    // The old version used its user data path as the owner text.
+    const name = pausedPartial(downloads, legacy, 2001);
+    const dir = path.join(s, 'a', PORTABLE_FOLDER);
+    assert.equal(moveOldData({ from: legacy, to: dir }).ok, true);
+    assert.equal(downloadOwner(dir, legacy), legacy);
+    const next = createDownloadScratch(downloads, downloadOwner(dir, dir), { pid: 2002, alive: pid => pid === 2002 });
+    assert.equal(readFileSync(path.join(next.directory, name), 'utf8'), 'hello');
+    // A new data folder with no owner file gets its own path: the folders of the current versions keep their hash.
+    const fresh = path.join(s, 'fresh');
+    mkdirSync(fresh);
+    assert.equal(downloadOwner(fresh, fresh), fresh);
+    assert.equal(downloadOwner(fresh, 'other'), fresh);
+});
+
+test('main.js gives the download scratch the owner text of the data folder', () => {
+    const source = readFileSync(new URL('src/application/main.js', root), 'utf8');
+    assert.match(source, /createDownloadScratch\(options\.downloadDir, downloadOwner\(app\.getPath\('userData'\)/);
+    assert.match(source, /if \(result\.ok\) downloadOwner\(to, defaultUserData\)/);
+    assert.ok(source.indexOf("const defaultUserData = app.getPath('userData')") < source.indexOf("app.setPath('userData'"));
 });

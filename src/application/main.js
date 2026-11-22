@@ -38,7 +38,7 @@ import { withDeviceMarks } from './peer-marks.mjs';
 import { attachFriendWindows, registerFriendIpc } from './friend-windows.mjs';
 import { installInterfaceCache } from '../network/interface-cache.mjs';
 import { createUpdateService } from './update-service.mjs';
-import { chooseDataFolder, cleanHoldFolders, dataPaths, holdFolder, legacyFolder, moveFailedText, moveOldData, needsMove,
+import { chooseDataFolder, cleanHoldFolders, dataPaths, downloadOwner, holdFolder, legacyFolder, moveFailedText, moveOldData, needsMove,
     notWritableText, probeWritable, writeKeptMarker } from './data-folder.mjs';
 import { CHOICE_FILE, choiceAfterForget, createStartEntry, createStartRunner, isInstalledBuild, isStaleChoice, normalizeChoice,
     readChoice, START_IDLE_FLAG, startArgs, startRooms, writeChoice } from './start-at-sign-in.mjs';
@@ -74,6 +74,8 @@ const dataFolder = chooseDataFolder({ argv: process.argv, env: process.env, isPa
 // The move question of the first start with an empty data folder: { from, to }, or null. Then this run uses a hold
 // folder in %TEMP% (Chromium must not open the new folder before the move) and stops after the answer.
 let moveOffer = null;
+// The user data path of the old versions (the Electron default). It is the owner text of their download scratch.
+const defaultUserData = app.getPath('userData');
 function useDataFolder(dir) {
     const paths = dataPaths(dir);
     app.setPath('userData', paths.userData);
@@ -731,7 +733,7 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
     loginStarted = true;
     try {
         try {
-            downloadScratch ??= createDownloadScratch(options.downloadDir, app.getPath('userData'));
+            downloadScratch ??= createDownloadScratch(options.downloadDir, downloadOwner(app.getPath('userData'), app.getPath('userData')));
             options.scratchDir = downloadScratch.directory;
         } catch {
             writeLog('WARN', 'Private download staging unavailable');
@@ -1754,6 +1756,8 @@ async function offerMove({ from, to }) {
     let restart = true;
     if (response === 0) {
         const result = moveOldData({ from, to });
+        // The paused partials of the old version in the download folder stay with the moved data.
+        if (result.ok) downloadOwner(to, defaultUserData);
         writeLog(result.ok ? 'INFO' : 'WARN', `Data folder: move ${result.ok ? `done, ${result.files} files` : `failed (${result.reason})`}`);
         if (!result.ok) {
             restart = false;

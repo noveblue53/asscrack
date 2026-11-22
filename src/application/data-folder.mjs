@@ -167,6 +167,26 @@ export function moveFailedText(result, from) {
         'Start ASSCRACK again to try again.';
 }
 
+// The download scratch (download-scratch.mjs) is in the download folder, and the hash of an owner text gives its
+// name. The paused partials of a run are in it. Before the data folder, the owner text was the user data path, thus a
+// moved folder lost its paused partials. Now the data folder keeps the owner text in this file.
+export const DOWNLOAD_OWNER_FILE = 'download-owner.json';
+
+// Gives the owner text of the data folder dir. When the file is missing or bad, it writes fallback (the user data path
+// of this run, or for a moved old folder the user data path of the old version) and gives it.
+export function downloadOwner(dir, fallback, fsx = fs) {
+    const file = path.join(dir, DOWNLOAD_OWNER_FILE);
+    try {
+        const saved = JSON.parse(fsx.readFileSync(file, 'utf8'));
+        if (saved?.v === 1 && typeof saved.owner === 'string' && saved.owner.length > 0 && saved.owner.length <= 4096) return saved.owner;
+    } catch { /* missing or bad: write it */ }
+    try {
+        fsx.writeFileSync(`${file}.tmp`, JSON.stringify({ v: 1, owner: fallback }));
+        fsx.renameSync(`${file}.tmp`, file);
+    } catch { /* the next run tries again */ }
+    return fallback;
+}
+
 export function holdFolder(temp, pid) {
     return path.join(temp, `${HOLD_PREFIX}${pid}`);
 }
