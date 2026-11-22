@@ -630,3 +630,28 @@ test('revision 3b: one late keyframe each 10 s does not stop the headroom of rul
     s.run(1000, { frameBytes: () => 500 })
     assert.ok(s.v('a').noHeadroomAt > before, 'the second late keyframe stops the headroom')
 })
+
+test('revision 3c: a viewer with an excess of 20 to 35 ms goes to the slow tier when the other viewer has headroom', () => {
+    // Check 16 (X2) with revision 3b: such a viewer stopped the up steps of its tier (U1) and was never slow.
+    const s = sim()
+    s.add('a')
+    s.add('b')
+    s.run(6000)
+    s.conf.get('b').delay = 30
+    s.run(4500)
+    assert.equal(s.rate.tiers().length, 2, 'b is in the slow tier')
+    assert.deepEqual(s.rate.tiers()[1].viewers, ['b'])
+    // It does not come back while its excess stays at 20 ms or more.
+    s.v('b').rate = s.rate.tiers()[0].bitrate
+    s.run(5000)
+    assert.equal(s.rate.tiers().length, 2, 'b stays slow with an excess of 25 ms')
+    // Two viewers with the same excess (a shared uplink, check 20): no split.
+    const both = sim()
+    both.add('a')
+    both.add('b')
+    both.run(6000)
+    both.conf.get('a').delay = 30
+    both.conf.get('b').delay = 30
+    both.run(6000)
+    assert.equal(both.rate.tiers().length, 1)
+})

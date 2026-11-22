@@ -232,7 +232,7 @@ export function createScreenRate({ quality = 'auto', source = null, now, params 
             congestions: 0, rate: P.startBitrate, limit: null, calm: 0, noIncreaseUntil: 0, noDecreaseUntil: 0, excess: 0,
             lates: [], calmSince: t, queueSince: null, tier: null, switches: 0, slow: false, decreased: false, acked: [],
             deep: 0, lastDecreaseAt: -Infinity, nextSeq: 0, lastSeq: null, addedAt: t, lastNewFrameAt: t,
-            noHeadroomAt: t, lateNow: false, keyLate: false, otherLate: false, keyExemptAt: -Infinity,
+            noHeadroomAt: t, mildSince: null, lateNow: false, keyLate: false, otherLate: false, keyExemptAt: -Infinity,
             keyExemptUntil: -Infinity, delivered: 0, mergeProbe: null, mergeBlockedUntil: 0, mergeBackoff: P.upBackoffMs }
         // Rule A2: a new viewer starts at max(start, bitrate of the fast tier), at most its target (R5).
         v.rate = Math.min(targetOf(v), tiers[0] ? Math.max(P.startBitrate, tiers[0].bitrate) : P.startBitrate)
@@ -549,6 +549,9 @@ export function createScreenRate({ quality = 'auto', source = null, now, params 
             } else { v.calm = 0; v.calmSince = null }
             if (v.excess >= P.lowMs || v.decreased) v.queueSince ??= t
             else v.queueSince = null
+            // Revision 3c: an excess at or above the threshold of U1 (20 ms).
+            if (v.excess >= P.headroomMs || v.decreased) v.mildSince ??= t
+            else v.mildSince = null
             v.lates = v.lates.filter(x => t - x <= P.lateDownMs)
         }
         // Rule A7: slow viewers and the return to the fast tier.
@@ -576,10 +579,14 @@ export function createScreenRate({ quality = 'auto', source = null, now, params 
             for (const tier of tiers) {
                 const members = membersOf(tier)
                 const calmOthers = members.some(v => !v.decreased && v.excess < P.lowMs && v.queueSince === null)
+                // Revision 3c: a viewer with an excess of 20 ms or more for 3 s stops the up steps of its tier (U1).
+                // When another viewer of the tier has headroom, that viewer goes to the slow tier.
+                const headroomOthers = members.some(v => !v.decreased && v.excess < P.headroomMs && v.mildSince === null)
                 for (const v of members) {
                     // Revision 3b: no split in the first 5 s of a viewer (the first keyframes at the start rate).
-                    if (!v.slow && calmOthers && t - v.addedAt >= P.slowGraceMs &&
-                        (v.decreased || (v.queueSince !== null && t - v.queueSince >= P.slowHoldMs))) {
+                    if (!v.slow && t - v.addedAt >= P.slowGraceMs &&
+                        ((calmOthers && (v.decreased || (v.queueSince !== null && t - v.queueSince >= P.slowHoldMs))) ||
+                         (headroomOthers && v.mildSince !== null && t - v.mildSince >= P.slowHoldMs))) {
                         v.slow = true
                         regroupNeeded = true
                         history.push({ t, viewer: v.id, why: 'slow tier', rate: v.rate })
@@ -588,7 +595,7 @@ export function createScreenRate({ quality = 'auto', source = null, now, params 
             }
             const fast = tiers[0]
             for (const v of viewers.values()) {
-                if (v.slow && fast && fast.members > 0 && v.tier !== fast.id && v.rate >= P.mergeFactor * fast.bitrate && v.excess < P.lowMs &&
+                if (v.slow && fast && fast.members > 0 && v.tier !== fast.id && v.rate >= P.mergeFactor * fast.bitrate && v.excess < P.headroomMs &&
                     t >= v.mergeBlockedUntil) {
                     v.slow = false
                     v.mergeProbe = { at: t }
