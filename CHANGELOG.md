@@ -28,7 +28,7 @@ Each result has one of these labels:
   The reason: the last step of a received file is a rename on the same drive. The start menu shortcut for notifications stays in the
   Windows folder for it. The update setup file and the unpack folder of the portable build stay in `%TEMP%`. The start
   entry stays in the registry.
-- Checks (this PC): `npm test` 932 tests, 914 pass, 0 fail, 18 skipped. New tests: `test/data-folder.test.mjs`, and
+- Checks (this PC): `npm test` 933 tests, 915 pass, 0 fail, 18 skipped. New tests: `test/data-folder.test.mjs`, and
   the entry repair in `test/start-at-sign-in.test.mjs`. On the base, these tests fail. The portable build in a folder
   `a`: a LAN room on this PC with a second copy, a line, Quit. Then the folder `a` moved to `b`: the saved room and the
   line are there. `%APPDATA%\ASSCRACK` did not change (names, sizes and times). The move question with a fake
