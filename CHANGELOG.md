@@ -7,6 +7,36 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased — voice channels (goal G6, 2026-11-21)
+
+A protected room gets named voice channels, like Discord. Each person is in one channel at a time. The room window
+shows each channel with its people, and one click joins a channel or moves to it.
+
+- **Channels.** The Buddies panel has the section "Voice channels". General is always there. Each row shows the name,
+  the number of people and the people in it, with "muted" or "deafened". The own channel shows "(you)". A click or
+  Enter on a row joins (not in voice) or moves (in voice). "Join voice" joins the last channel of this run.
+- **Only the room owner edits.** The owner sees Create. The row menu of the owner has Rename and Delete. At most 16
+  channels, each name 1 to 40 characters and unique with no case. The owner device signs the list. Each member keeps
+  the newest valid list, sends it to the other members and saves it with the room. A legacy shared-code room has
+  only General.
+- **Delete.** Delete asks first and gives the number of people in the channel. These people move to General, and
+  each one sees a text about the move to General.
+- **Routing.** The host sends the voice of a person only to the people in the same channel. Two people get a direct
+  voice stream only in the same channel. After a move, a person sends no voice for 250 milliseconds. A move does
+  not open the microphone again, and the mute and Deafen state stay.
+- **Other parts.** With 2 or more channels, the buddy line shows the channel ("in voice (muted) · Raid · 40%"). The
+  detached voice panel starts with the channel name. The network map shows "in voice · Raid". The cue for a
+  different person plays when that person comes into my channel or goes out of it.
+- **Limits.** A channel is a routing filter, not a lock: each member can join each channel, and the host gets the
+  voice of each channel. The speaking ring shows only in my own channel. On a slow relay route, the first voice
+  after a move can still go to the old channel.
+- **Result: 127.0.0.1, this PC.** `npm test`: 605 of 605 pass (15 new G6 tests: 2 with real protected-room nodes on
+  127.0.0.1, 13 with no network). Measured move hold on 127.0.0.1: 16 frames held, the first frame out 254 ms after the
+  move. `node --test test/voice-gate.test.mjs test/voice-settings.test.mjs`: 16 of 16 pass. The two-copy voice
+  check gives the same result as for G4. An app check with two copies on this PC: 18 of 18 checks pass. B in
+  General gets no audio of A in Raid. After the move, B gets it with no new microphone. The delete moves both to
+  General. No LAN result: the operator tests voice channels on a real relay route.
+
 ## Unreleased — voice (goal G4, 2026-11-21)
 
 Voice tells the user when the microphone or the speakers fail. A user with no microphone can listen. Deafen is new,
