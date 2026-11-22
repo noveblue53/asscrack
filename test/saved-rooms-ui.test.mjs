@@ -1,5 +1,5 @@
-// Saved rooms (milestone 6 part 2): source checks for the IPC names, the preload functions and the window events.
-// Electron does not start.
+// Saved rooms (milestone 6 part 2): source checks of main.js (the IPC names) and index.html (the controls). Electron
+// does not start. test/preload-bridge.test.mjs and test/saved-rooms-window.test.mjs test the bridge and the window.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -27,12 +27,6 @@ test('main.js send returns saved and saveError with the record', async () => {
     assert.ok(source.includes('return { ...record, ...save };'));
 });
 
-test('the window listens for line-saved and save-failed', async () => {
-    const source = await read('saved-rooms-ui.js');
-    assert.ok(source.includes('api.onLineSaved('));
-    assert.ok(source.includes('api.onSaveFailed('));
-});
-
 test('index.html has the room storage controls', async () => {
     const source = await read('index.html');
     assert.match(source, /<header id="room-heading">[\s\S]*?<h1 id="chat-room"><\/h1>[\s\S]*?<button id="invite-toggle"[\s\S]*?<\/header>/);
@@ -41,24 +35,6 @@ test('index.html has the room storage controls', async () => {
         'clear-confirm-yes', 'clear-confirm-no']) {
         assert.ok(source.includes(`id="${id}"`), id);
     }
-});
-
-test('the window marks local-only and saved lines', async () => {
-    const source = await read('renderer.js');
-    assert.ok(source.includes("'local-only-mark'"));
-    assert.ok(source.includes("'Only on this computer'"));
-    assert.ok(source.includes("'Saved on this device'"));
-    assert.doesNotMatch(source, /No peer got this message/);
-});
-
-test('the login screen has Forget with a confirmation, and the list has paging', async () => {
-    const source = await read('saved-rooms-ui.js');
-    for (const cls of ['forget-room', 'forget-confirm', 'forget-yes', 'forget-no']) {
-        assert.ok(source.includes(`'${cls}'`), cls);
-    }
-    assert.ok(source.includes('messageList.dataset.older = value'));
-    const reading = await read('reading.js');
-    assert.ok(reading.includes('keepPosition,'));
 });
 
 test('a page already returned by the archive cannot restore saved marks after Clear', async () => {
