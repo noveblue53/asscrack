@@ -101,6 +101,7 @@ the budget. One `suppressed` line (`of`, `count`) follows. A write error writes 
 | `upnp` | `state reason port external renew` | UPnP |
 | `full-node` | `peer on self` | node |
 | `host` | `host none term reason self` (`first self-elect announce-first higher-term tie-break not-allowed isolated`) | election |
+| `failover` | `lost host term reason end inVoice self hostMs voiceMs chatMs`. Start: this member loses the host (`reason`: `timeout closed not-allowed`). `hostMs`: to the next host. `voiceMs`: to the first voice frame after the next host (only when in voice at the loss). `chatMs`: to the first chat line received or sent after the loss. `end`: `done`, `timeout` (2 minutes; a missing part has no field) or `superseded` (a next loss) | election and node, one line for each loss |
 | `admission` | `event peer cause` | the generic admission point of the owner |
 | `reach` | `state reason proven` | each change of the reach state |
 | `clock` | `peer rttMs offsetMs` | the clock line (see below) |

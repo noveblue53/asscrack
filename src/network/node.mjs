@@ -100,6 +100,8 @@ const KNOCK_CIRCUITS = 8
 const FORWARD_DIAL_MS = 8000
 const FORWARD_READ_LIMITS = { maxLineBytes: 64 * 1024, maxStreamBytes: 256 * 1024 }
 const ipOf = addr => /^\/ip[46]\/([^/]+)\//.exec(addr)?.[1] ?? null
+// Diagnostics (1.0.1, REVIEW.md rank 6): a failover line waits at most this time for the return of voice and chat.
+export const FAILOVER_WAIT_MS = 120000
 
 // A room key is 32 bytes: a Uint8Array or a base64url string. Returns a Buffer, or null for a LAN room.
 export function parseRoomKey(roomKey) {
@@ -172,6 +174,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     // and a relay lets a peer that is not admitted open a circuit to the owner peer. The friend link nodes do not set it.
     // easy-join part 3: knock.isFriend(deviceId) -> true for a friend that is not blocked ("Always allow my friends").
     knock = false,
+    // Diagnostics (1.0.1): the longest wait of a failover line for the return of voice and chat (the tests use less).
+    failoverWaitMs = FAILOVER_WAIT_MS,
     // P9C: the update hub of the app (update-spread.mjs), or null: no update lines.
     updates = null } = {}) {
     if (typeof room !== 'string') throw new TypeError('room must be a string')
@@ -624,10 +628,12 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         openPeers: () => [...sessions.keys()],
         isFullNode: peerId => peerId === selfId ? selfFull : peerFull.get(peerId) === true,
         hostAllowed,
+        onLost: info => failoverStart(info),
         onChange: info => {
             const wasHost = lastHostId === selfId
             lastHostId = info.peerId
             events.emit('host-changed', info)
+            failoverHost(info)
             topic.elected(info)
             channels.changedHost()
             // A new host sends the history to each member with a session. A member whose session opened before
@@ -650,6 +656,50 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         electionDelay
     })
 
+    // Diagnostics (1.0.1, REVIEW.md rank 6): the failover time of this member. The start is the loss of the host (the
+    // election, rule 5). hostMs: the time to the next host (not the lost one). voiceMs: the time to the first voice frame
+    // that this node delivers after the next host, only when this node was in voice at the loss. chatMs: the time to the
+    // first chat line that this node receives, or sends to at least one peer, after the loss. One 'failover' event
+    // when all parts are there (end 'done'), at failoverWaitMs (end 'timeout', a missing part has no field), at the
+    // next loss (end 'superseded'), or not at all when the node stops.
+    let failover = null
+    function failoverStart({ peerId, term, reason }) {
+        if (failover) failoverEnd('superseded')
+        const at = Date.now()
+        failover = { lost: peerId, term, reason, at, inVoice: voiceState.inVoice === true,
+            timer: setTimeout(() => failoverEnd('timeout'), failoverWaitMs) }
+        failover.timer.unref?.()
+    }
+    function failoverHost({ peerId, term }) {
+        if (!failover || failover.hostMs !== undefined || !peerId || peerId === failover.lost) return
+        failover.host = peerId
+        failover.term = term
+        failover.hostMs = Date.now() - failover.at
+        failoverCheck()
+    }
+    function failoverVoice(origin) {
+        if (!failover || failover.hostMs === undefined || failover.voiceMs !== undefined || !failover.inVoice || origin === failover.lost) return
+        failover.voiceMs = Date.now() - failover.at
+        failoverCheck()
+    }
+    function failoverChat() {
+        if (!failover || failover.chatMs !== undefined) return
+        failover.chatMs = Date.now() - failover.at
+        failoverCheck()
+    }
+    function failoverCheck() {
+        if (failover.hostMs !== undefined && failover.chatMs !== undefined && (!failover.inVoice || failover.voiceMs !== undefined)) failoverEnd('done')
+    }
+    function failoverEnd(end) {
+        const f = failover
+        if (!f) return
+        failover = null
+        clearTimeout(f.timer)
+        if (end === 'stopped') return
+        events.emit('failover', { lost: f.lost, host: f.host, term: f.term, reason: f.reason, end, inVoice: f.inVoice,
+            self: f.host === selfId, hostMs: f.hostMs, voiceMs: f.voiceMs, chatMs: f.chatMs })
+    }
+
     voiceRelay = createVoiceRelay({
         libp2p: node,
         selfId: node.peerId.toString(),
@@ -666,7 +716,10 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             return list
         },
         connectionFor: peerId => sessionConns.get(peerId) ?? node.getConnections().find(c => c.remotePeer.toString() === peerId),
-        onFrame: frame => events.emit('voice-frame', frame),
+        onFrame: frame => {
+            if (failover) failoverVoice(frame.origin)
+            events.emit('voice-frame', frame)
+        },
         // Voice peers in the own voice channel whose session connection is not relayed.
         directCandidates: () => [...peerVoice.keys()].filter(p => {
             const conn = sessionConns.get(p)
@@ -964,6 +1017,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                             attachment: control.message.attachment }, peerId)
                         if (history.add(record)) events.emit('message', record)
                         events.emit('live', record)
+                        failoverChat()
                     }
                     else if (control.type === 'attachment' && sessions.get(peerId) === session) attachments.handle(peerId, control).catch(() => {})
                     else if (control.type === 'shelf' && sessions.get(peerId) === session) shelf.handle(peerId, session, control).catch(() => {})
@@ -1084,6 +1138,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                     attachments.remember(message, peerId)
                     if (sessions.get(peerId) === session) typing.remove(peerId)
                     if (history.add(message)) events.emit('message', { peerId, ...message })
+                    failoverChat()
                     // Saved rooms (milestone 6): each valid live line, also a line that a host replay gave first.
                     // The archive keeps one row for each ID. The window and the terminal demo use 'message'.
                     events.emit('live', { peerId, ...message })
@@ -2134,6 +2189,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         let count = 0
         for (const [peerId, session] of sessions) if (memberAllowed(peerId) && (!named || channels.capable(peerId)) && session.send(line)) count++
         if (count > 0) history.add(message)
+        if (count > 0) failoverChat()
         typing.edited(false)
         return { ...message, accepted: count }
     }
@@ -2346,6 +2402,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         screenTestRate: screen.testRate,
         async stop() {
             stopped = true
+            failoverEnd('stopped')
             // easy-join part 2: each knock that waits gets 'timeout' ("The owner is not online").
             knockDesk?.stop()
             for (const timer of knockCircuits.values()) clearTimeout(timer)

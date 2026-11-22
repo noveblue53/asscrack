@@ -6,7 +6,7 @@ import { addrClass, ipClass } from './journal.mjs';
 
 // The node events that go into the journal.
 export const JOURNAL_NODE_EVENTS = Object.freeze(['connection', 'dial-failed', 'dial-ok', 'upnp', 'full-node', 'host-changed',
-    'peer-left', 'session-refused', 'session-ids', 'admission', 'clock', 'file-offer', 'file-done', 'file-failed',
+    'peer-left', 'failover', 'session-refused', 'session-ids', 'admission', 'clock', 'file-offer', 'file-done', 'file-failed',
     'file-refused', 'file-cancelled', 'file-paused', 'file-resumed', 'file-restarted', 'file-discarded', 'file-expired',
     'file-retried', 'diag', 'knock-event']);
 
@@ -82,6 +82,9 @@ export function projectNodeEvent(type, data, selfId = null) {
                 self: selfId !== null && d.peerId === selfId }];
         case 'peer-left':
             return ['peer-left', { peer: d.peerId, left: d.left === true ? 'bye' : 'lost' }];
+        case 'failover':
+            return ['failover', { lost: d.lost, host: d.host, term: d.term, reason: reasonCode(d.reason), end: d.end,
+                inVoice: d.inVoice, self: d.self, hostMs: d.hostMs, voiceMs: d.voiceMs, chatMs: d.chatMs }];
         case 'session-refused':
             return ['session-refused', { peer: d.peerId, cause: refuseCause(d.cause) }];
         case 'session-ids':

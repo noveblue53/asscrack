@@ -8,6 +8,8 @@
 //   broadcast(line)       send one control line on all sessions
 //   openPeers()           the peer IDs with an open session
 //   onChange({ peerId, term })  called when host or term changes
+//   onLost({ peerId, term, reason })  called when this member loses the host (rule 5; diagnostics, 1.0.1). reason:
+//                         'timeout' (no heartbeat), 'closed' (the session of the host closed) or 'not-allowed'
 //   isFullNode(peerId)    true when that peer accepts incoming TCP; the rank puts full nodes first, then the lower peer ID
 export function createElection({
     selfId,
@@ -15,6 +17,7 @@ export function createElection({
     broadcast,
     openPeers,
     onChange = () => {},
+    onLost = () => {},
     isFullNode = () => false,
     hostAllowed = null,
     heartbeatInterval = 1000,
@@ -91,10 +94,11 @@ export function createElection({
     }
 
     // Rule 5.
-    function hostLost() {
+    function hostLost(reason) {
         if (lost || isHost() || host === null) return
         lost = true
         suspected.add(host)
+        try { onLost({ peerId: host, term, reason }) } catch { /* diagnostics only */ }
         elect()
     }
 
@@ -102,7 +106,7 @@ export function createElection({
         if (stopped) return
         if (hostAllowed && host !== null && !hostAllowed(host)) {
             if (isHost()) setHost(null, term, 'not-allowed')
-            else hostLost()
+            else hostLost('not-allowed')
         }
         if (isHost()) {
             // Rule 2.
@@ -114,7 +118,7 @@ export function createElection({
                     elect()
                 }
             } else if (now() - lastHeartbeat > hostTimeout) {
-                hostLost()
+                hostLost('timeout')
             }
         } else {
             firstElection()
@@ -173,7 +177,7 @@ export function createElection({
                 setHost(null, term, 'isolated')
                 return
             }
-            if (peerId === host) hostLost() // rule 5
+            if (peerId === host) hostLost('closed') // rule 5
         },
         pauseHeartbeats(value) {
             paused = Boolean(value)

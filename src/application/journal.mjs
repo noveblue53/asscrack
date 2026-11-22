@@ -165,6 +165,10 @@ export const EVENT_FIELDS = Object.freeze({
     upnp: { state: kinds.code, reason: kinds.code, port: kinds.int, external: ADDR, renew: kinds.bool },
     'full-node': { peer: kinds.peer, on: kinds.bool, self: kinds.bool },
     host: { host: kinds.peer, term: kinds.int, reason: kinds.code, self: kinds.bool, none: kinds.bool },
+    // Diagnostics (1.0.1, rank 6): the time from the loss of the host to the next host, to voice and to chat.
+    failover: { lost: kinds.peer, host: kinds.peer, term: kinds.int, reason: kinds.code,
+        end: oneOf('done', 'timeout', 'superseded'), inVoice: kinds.bool, self: kinds.bool, hostMs: kinds.int,
+        voiceMs: kinds.int, chatMs: kinds.int },
     admission: { event: oneOf('admitted', 'refused', 'revoked', 'invite-made'), peer: kinds.peer, cause: kinds.code },
     reach: { state: kinds.code, reason: kinds.code, proven: kinds.bool },
     clock: { peer: kinds.peer, rttMs: kinds.int, offsetMs: kinds.int },
