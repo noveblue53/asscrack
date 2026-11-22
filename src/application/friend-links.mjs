@@ -174,8 +174,9 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
         };
         if (peerId && !removed) Object.assign(view, friendAvailability(entry, peerId));
         if (inRoom) view.roomName = room.name ?? '';
-        // easy-join: the owner of the current protected room can invite this friend (friend-invite.mjs).
-        view.canInvite = !removed && !inRoom && canInviteTo(entry);
+        // easy-join: the owner of the current protected room can invite this friend (friend-invite.mjs). A friend that is
+        // in this room now (also with a friend link session) gets no item.
+        view.canInvite = !removed && roomPeerOf(entry) === null && canInviteTo(entry);
         return view;
     }
 

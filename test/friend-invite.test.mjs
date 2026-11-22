@@ -112,9 +112,9 @@ test('private messages: the invite op uses the id, the ack and the repeat check 
 
 test('127.0.0.1 friend invite, online friend: the owner invites from the friend row, the friend joins with the code', { timeout: 90000 }, async t => {
     const { A, B, roomA, linksA, linksB, friendA, friendB } = await friends(t);
-    // A owns the room of the friend request (an internet room with no public address on 127.0.0.1): the item is there,
-    // but the owner node cannot make an invite with no reachable address.
-    assert.equal(linksA.friend(friendA).canInvite, true);
+    // A owns the room of the friend request, but B is in that room now: no item. The call itself gives 'no-address'
+    // (an internet room with no public address on 127.0.0.1).
+    assert.equal(linksA.friend(friendA).canInvite, false);
     assert.deepEqual(linksA.invite(friendA), { result: 'no-address' });
     // A opens its own LAN protected room R.
     const R = await ownerRoom(t, A.identity);
