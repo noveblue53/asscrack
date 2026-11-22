@@ -25,7 +25,8 @@ A person with a room code asks the owner to join. The owner sees the request and
 - **1.0.0 apps.** A 1.0.0 app shows "This invite comes from a different ASSCRACK version" for a room code.
 
 Checks (127.0.0.1 on this PC, not LAN, not internet): `test/knock.test.mjs` has 15 tests. `test/knock-node.test.mjs`
-has 6 tests: Allow through a relaying member, Deny, owner offline, flood, old code, LAN room.
+has 8 tests: Allow through a relaying member, Deny, owner offline, flood (direct and through the relay), old code, LAN
+room, restart of the owner.
 `test/knock-relay.test.mjs` has 2 tests: the relay rule and the circuit limits. `test/knock-ui.test.mjs` has 4 tests.
 Three app copies on this PC: B knocks and A selects Allow, then chat in both directions. C knocks with an old code,
 then with the new code, and A selects Deny.

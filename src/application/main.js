@@ -1142,6 +1142,8 @@ handleRoomIpc('asscrack:saved-room-lines', (_event, roomId, opts) => {
 
 handleRoomIpc('asscrack:reopen-room', async (_event, roomId, allowLegacy) => {
     if (loginStarted) throw new Error('Already logged in');
+    // easy-join part 2: a knock waits for the owner. A reopen now would make the Allow of the owner fail.
+    if (knocking) throw new Error('ASSCRACK is waiting for the room owner. Wait for the answer.');
     if (typeof roomId !== 'string' || roomId.length > 128) throw new Error('Saved room not found');
     // G7a: a friend room is not a saved room of the list. Only its friend link opens it.
     if (getSavedRooms().isFriendRoom(roomId)) throw new Error('Saved room not found');
