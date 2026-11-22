@@ -269,9 +269,9 @@ test('W4 check 3a: frame slots, E1, the full bucket of E3, the E11 report and a 
     await startShare(f);
     const view = tiers => ({ tiers, capture: { preset: 'max', width: 2560, height: 1440, fps: 60 }, cap: 'max' });
     f.emit('onScreenEncoder', view([
-        { tier: 'a', preset: 'standard', width: 1280, height: 720, fps: 15, bitrate: 1500000 },
-        { tier: 'b', preset: 'smooth', width: 1280, height: 720, fps: 30, bitrate: 3000000 },
-        { tier: 'c', preset: 'high', width: 1920, height: 1080, fps: 60, bitrate: 9000000 }
+        { tier: 1, preset: 'standard', width: 1280, height: 720, fps: 15, bitrate: 1500000 },
+        { tier: 2, preset: 'smooth', width: 1280, height: 720, fps: 30, bitrate: 3000000 },
+        { tier: 3, preset: 'high', width: 1920, height: 1080, fps: 60, bitrate: 9000000 }
     ]));
     // A capture at 60 frames each second for 2 s. The second second has exactly the frame rate of each preset.
     const second = async () => {
@@ -293,19 +293,19 @@ test('W4 check 3a: frame slots, E1, the full bucket of E3, the E11 report and a 
     assert.equal(a.frames[0].key, true, 'the first frame of an encoder is a keyframe');
     assert.equal(a.frames[1].key, false);
     assert.deepEqual(JSON.parse(JSON.stringify(names(f.calls, 'setScreenSize').map(c => c.args[0]))),
-        [{ tier: 'a', width: 1280, height: 720 }, { tier: 'b', width: 1280, height: 720 }, { tier: 'c', width: 1920, height: 1080 }],
+        [{ tier: 1, width: 1280, height: 720 }, { tier: 2, width: 1280, height: 720 }, { tier: 3, width: 1920, height: 1080 }],
         'P8a-3: the size of each tier after its configure');
     // E11: a report each 500 ms with the slots of each tier.
     const reports = names(f.calls, 'reportScreenEncoder').map(c => c.args[0]);
     assert.ok(reports.length >= 1);
-    assert.deepEqual([...reports[0].tiers.map(t => t.tier)], ['a', 'b', 'c']);
+    assert.deepEqual([...reports[0].tiers.map(t => t.tier)], [1, 2, 3]);
     assert.ok(reports[0].tiers[2].slots >= 29 && reports[0].tiers[2].slots <= 31, `slots ${reports[0].tiers[2].slots}`);
 
     // E3: the bucket starts full (1 s of 1.5 Mbit/s = 187 500 bytes). A chunk of 400 000 bytes empties it: the next
     // slots are skipped. E4: a queue of 2 drops.
     a.out(400000, false);
     const sent = names(f.calls, 'sendScreenFrame').at(-1).args[0];
-    assert.equal(sent.tier, 'a');
+    assert.equal(sent.tier, 1);
     assert.equal(sent.data.length, 400000);
     f.calls.length = 0;
     c.encodeQueueSize = 2;
@@ -316,16 +316,16 @@ test('W4 check 3a: frame slots, E1, the full bucket of E3, the E11 report and a 
     }
     const after = names(f.calls, 'reportScreenEncoder').map(r => r.args[0].tiers);
     const sum = (tier, key) => after.flat().filter(t => t.tier === tier).reduce((n, t) => n + t[key], 0);
-    assert.ok(sum('a', 'skipped') >= 7, `E3 skipped ${sum('a', 'skipped')} slots of tier a`);
-    assert.equal(sum('b', 'skipped'), 0);
-    assert.ok(sum('c', 'dropped') >= 28, `E4 dropped ${sum('c', 'dropped')} slots of tier c`);
+    assert.ok(sum(1, 'skipped') >= 7, `E3 skipped ${sum(1, 'skipped')} slots of tier a`);
+    assert.equal(sum(2, 'skipped'), 0);
+    assert.ok(sum(3, 'dropped') >= 28, `E4 dropped ${sum(3, 'dropped')} slots of tier c`);
     c.encodeQueueSize = 0;
 
     // E1: tier b leaves the list: its encoder closes. A new preset of tier a: a new encoder, only for tier a.
     f.calls.length = 0;
     f.emit('onScreenEncoder', view([
-        { tier: 'a', preset: 'smooth', width: 1280, height: 720, fps: 30, bitrate: 2000000 },
-        { tier: 'c', preset: 'high', width: 1920, height: 1080, fps: 60, bitrate: 9000000 }
+        { tier: 1, preset: 'smooth', width: 1280, height: 720, fps: 30, bitrate: 2000000 },
+        { tier: 3, preset: 'high', width: 1920, height: 1080, fps: 60, bitrate: 9000000 }
     ]));
     assert.equal(b.state, 'closed', 'E1');
     assert.equal(a.state, 'closed', 'the old encoder of tier a');
@@ -336,7 +336,7 @@ test('W4 check 3a: frame slots, E1, the full bucket of E3, the E11 report and a 
     assert.equal(f.encoders.length, 4, 'one new encoder');
     assert.equal(a2.configs[0].framerate, 30);
     assert.equal(a2.frames[0].key, true, 'a keyframe after the new preset');
-    assert.deepEqual(JSON.parse(JSON.stringify(names(f.calls, 'setScreenSize').map(c => c.args[0]))), [{ tier: 'a', width: 1280, height: 720 }]);
+    assert.deepEqual(JSON.parse(JSON.stringify(names(f.calls, 'setScreenSize').map(c => c.args[0]))), [{ tier: 1, width: 1280, height: 720 }]);
     // A chunk of the closed encoder goes nowhere.
     f.calls.length = 0;
     b.out(1000);
@@ -346,7 +346,7 @@ test('W4 check 3a: frame slots, E1, the full bucket of E3, the E11 report and a 
 test('W4: a keyframe request with an old kept frame encodes it at once, and a refresh tick encodes it again', async () => {
     const f = load();
     await startShare(f);
-    const view = flags => ({ tiers: [{ tier: 'fast', preset: 'standard', width: 1280, height: 720, fps: 15, bitrate: 1500000, ...flags }] });
+    const view = flags => ({ tiers: [{ tier: 1, preset: 'standard', width: 1280, height: 720, fps: 15, bitrate: 1500000, ...flags }] });
     f.emit('onScreenEncoder', view({}));
     f.frame();
     await flush();

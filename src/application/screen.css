@@ -64,13 +64,14 @@
    that the reading position of the transcript does not change. The composer is not visible. */
 body.screen-fill #screen-stage {
   position: fixed;
-  top: var(--frame-height, 36px);
-  right: 0;
-  bottom: 0;
-  left: 0;
+  inset: var(--frame-height, 36px) 0 0 0;
   z-index: 40;
+  width: auto;
+  height: auto;
   max-height: none;
   margin: 0;
+  padding: 0;
+  border: 0;
   border-radius: 0;
 }
 

@@ -218,6 +218,7 @@ contextBridge.exposeInMainWorld('asscrack', {
     onFileExpired: listen('asscrack:file-expired'),
     onFilePartials: listen('asscrack:file-partials'),
     // P8b, screenshare (design section 4, IPC). The window sends only IDs, a quality name, numbers and frame bytes.
+    // A tier ID is a number (screen-rate.mjs).
     getScreenSources: () => ipcRenderer.invoke('asscrack:screen-sources'),
     pickScreenSource: (id, quality) => ipcRenderer.invoke('asscrack:screen-pick', String(id ?? ''), String(quality ?? '')),
     getScreenQuality: () => ipcRenderer.invoke('asscrack:screen-last-quality'),
@@ -225,10 +226,10 @@ contextBridge.exposeInMainWorld('asscrack', {
         { preset: String(preset ?? 'auto'), width: Number(width), height: Number(height) }),
     stopScreenShare: reason => ipcRenderer.send('asscrack:screen-stop', String(reason ?? 'stopped')),
     sendScreenFrame: ({ tier, key, timestampMs, data } = {}) => ipcRenderer.send('asscrack:screen-frame',
-        { tier: String(tier ?? ''), key: key === true, timestampMs: Number(timestampMs), data }),
+        { tier: Number(tier), key: key === true, timestampMs: Number(timestampMs), data }),
     reportScreenEncoder: report => ipcRenderer.send('asscrack:screen-report', report),
     setScreenSize: ({ tier, width, height } = {}) => ipcRenderer.send('asscrack:screen-size',
-        { tier: String(tier ?? ''), width: Number(width), height: Number(height) }),
+        { tier: Number(tier), width: Number(width), height: Number(height) }),
     watchScreen: peerId => ipcRenderer.invoke('asscrack:screen-watch', String(peerId ?? '')),
     unwatchScreen: () => ipcRenderer.send('asscrack:screen-unwatch'),
     requestScreenKey: () => ipcRenderer.send('asscrack:screen-keyreq'),

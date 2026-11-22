@@ -449,7 +449,8 @@
         if (!current) return;
         const listed = new Set();
         for (const entry of Array.isArray(view?.tiers) ? view.tiers : []) {
-            if (typeof entry?.tier !== 'string' || !PRESETS[entry.preset]) continue;
+            // A tier ID is a number of screen-rate.mjs.
+            if (!Number.isInteger(entry?.tier) || !PRESETS[entry.preset]) continue;
             listed.add(entry.tier);
             let tier = current.tiers.get(entry.tier);
             if (!tier) {

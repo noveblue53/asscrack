@@ -2947,8 +2947,8 @@ window.asscrack.onPeerJoined(data => showPeerPresence(data?.peerId));
 window.asscrack.onPeerLeft(data => forgetPresence(data?.peerId));
 
 // ---- The one Escape dispatcher ----
-// Escape closes only the top layer, in this sequence: the context menu (menu.js), the View menu and the Buddies
-// drawer (layout.js), Fill window of the screen stage (screen-view.js), a focused whisper pane, the find bar (find.js, it puts the list back at its old position), the quote chip (only with
+// Escape closes only the top layer, in this sequence: Fill window of the screen stage (screen-view.js), the context menu (menu.js), the View menu and the Buddies
+// drawer (layout.js), a focused whisper pane, the find bar (find.js, it puts the list back at its old position), the quote chip (only with
 // the focus in the composer), the voice settings, the invite panel, the map. The View menu and the drawer stop their own Escape when the focus is
 // in them. A separator drag stops its Escape in the capture phase on window. Then this listener gets no event.
 function focusIsIn(element) {
@@ -2958,6 +2958,11 @@ function focusIsIn(element) {
 
 document.addEventListener('keydown', e => {
     if (e.key !== 'Escape' || e.defaultPrevented || document.querySelector('dialog[open]')) return;
+    // P8b: Fill window of the screen stage (screen-view.js) is a manual popover. Escape goes back.
+    if (window.screenView?.unfill()) {
+        e.preventDefault();
+        return;
+    }
     if (document.querySelector(':popover-open')) return;
     if (window.contextMenu?.isOpen()) {
         e.preventDefault();
@@ -2965,11 +2970,6 @@ document.addEventListener('keydown', e => {
         return;
     }
     if (window.layout?.closeTopLayer()) {
-        e.preventDefault();
-        return;
-    }
-    // P8b: Fill window of the screen stage (screen-view.js) goes back.
-    if (window.screenView?.unfill()) {
         e.preventDefault();
         return;
     }

@@ -309,9 +309,10 @@ test('the P8b screen calls send the channel and the arguments that the main proc
         ['asscrack:screen-last-quality']
     ]);
     const data = new Uint8Array([1, 2, 3]);
-    b.api.sendScreenFrame({ tier: 'fast', key: 1, timestampMs: 12, data });
+    b.api.sendScreenFrame({ tier: 1, key: 1, timestampMs: 12, data });
     b.api.stopScreenShare();
-    b.api.setScreenSize({ tier: 'slow', width: 1280, height: 720 });
+    b.api.setScreenSize({ tier: '2', width: 1280, height: 720 });
+    assert.equal(b.sent.at(-1)[1].tier, 2, 'the tier ID is a number');
     b.api.reportScreenEncoder({ tiers: [] });
     b.api.unwatchScreen();
     b.api.requestScreenKey();

@@ -271,9 +271,17 @@
 
     // ---- Fill window ----
 
+    // Fill window puts the stage in the top layer (a manual popover): no ancestor with a transform or a filter can
+    // change its box, and the other parts keep their layout under it (the reading position stays).
     function fill(on) {
         filled = on === true && !stage.hidden;
         document.body.classList.toggle('screen-fill', filled);
+        if (typeof stage.showPopover === 'function') {
+            try {
+                if (filled) { stage.setAttribute('popover', 'manual'); stage.showPopover(); }
+                else if (stage.hasAttribute('popover')) { if (stage.matches(':popover-open')) stage.hidePopover(); stage.removeAttribute('popover'); }
+            } catch { /* the stage stays in its place */ }
+        }
         if (fillButton) {
             fillButton.textContent = filled ? 'Exit fill window' : 'Fill window';
             fillButton.setAttribute('aria-pressed', String(filled));
