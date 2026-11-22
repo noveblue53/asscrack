@@ -62,13 +62,24 @@ class VoicePlayback extends AudioWorkletProcessor {
                 this.origin(data.origin).gain = data.gain;
             } else if (data.type === 'remove') this.origins.delete(data.origin);
             else if (data.type === 'clear') this.origins.clear();
+            // Diagnostics (1.0.1): the counters of each origin since the last question, then zero.
+            else if (data.type === 'stats') {
+                const origins = {};
+                for (const [origin, o] of this.origins) {
+                    origins[origin] = { underruns: o.underruns, trims: o.trims };
+                    o.underruns = 0;
+                    o.trims = 0;
+                }
+                this.port.postMessage({ type: 'stats', origins });
+            }
         };
     }
 
     origin(origin) {
         let o = this.origins.get(origin);
         if (!o) {
-            o = { chunks: [], offset: 0, size: 0, playing: false, gain: 1 };
+            // underruns: the queue became empty during playback. trims: samples dropped above MAX_SAMPLES.
+            o = { chunks: [], offset: 0, size: 0, playing: false, gain: 1, underruns: 0, trims: 0 };
             this.origins.set(origin, o);
         }
         return o;
@@ -79,6 +90,7 @@ class VoicePlayback extends AudioWorkletProcessor {
         o.chunks.push(samples);
         o.size += samples.length;
         while (o.size > MAX_SAMPLES && o.chunks.length > 1) {
+            o.trims++;
             const first = o.chunks.shift();
             o.size -= first.length - o.offset;
             o.offset = 0;
@@ -105,7 +117,10 @@ class VoicePlayback extends AudioWorkletProcessor {
                     o.offset = 0;
                 }
             }
-            if (o.size <= 0) o.playing = false;
+            if (o.size <= 0) {
+                o.playing = false;
+                o.underruns++;
+            }
         }
         for (let i = 0; i < out.length; i++) out[i] = limit(out[i]);
         for (let c = 1; c < outputs[0].length; c++) outputs[0][c].set(out);

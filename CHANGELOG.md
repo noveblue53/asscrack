@@ -9,6 +9,32 @@ Each result has one of these labels:
 
 ## Unreleased
 
+### Diagnostics from friends with one click
+
+- ASSCRACK keeps a diagnostics journal in the data folder (`diagnostics`). It records what went right and what went
+  wrong. Examples are room starts, sessions with the route and the close cause, failed dials, UPnP and host changes.
+  Also the voice quality each minute, the voice devices, file transfers, screen shares, errors, crashes and hangs. The
+  journal stays on the computer. `docs/DIAGNOSTICS.md` gives the format.
+- The journal is always on. This changes the rule of `42cf3b4` ("persist raw diagnostics only in an explicit run").
+  Reason: the friends of the operator must not need a start option to give a useful report. The writer removes the
+  private data when it writes a line. Each event has a fixed field list, and no line has text of a peer. An address
+  class replaces each IP address, and an error text has no path. A test sends canary strings through two real nodes
+  and finds none of them in the journal or in the bundle (127.0.0.1). The raw log of `--log-dir` does not change.
+- "Ask for diagnostics…" on a buddy line, and "Ask everyone for diagnostics" in the Room options. Only a member device
+  of a protected room can ask. The other person sees "<name> asks for your diagnostics" with Send and Not now. The
+  prompt shows what is in the bundle and its summary. Nothing goes out without Send. Limits: one pending request for
+  each person, 1 hour of quiet after Not now, at most 3 prompts each hour.
+- The bundle is a zip file. It has a manifest with the hash of each file and of the program file, and a plain
+  summary. It also has the journal, the system and reach data, and the crash list. The crash memory files go into it only with a second
+  checkbox. The asker gets it in `diagnostics\received`.
+- "Mark a problem…" (Room options and voice controls) writes the time and a category in the journal.
+- "Save diagnostics…" in the About dialog makes the same zip in a folder that the user selects.
+- The crash reporter of Electron writes crash dumps to the data folder. It uploads nothing.
+- Each side of a session sends a session ID and a clock line. Thus the bundles of two computers can go on one
+  timeline. A 1.0.0 peer ignores these lines and cannot get a request.
+- Results: `npm test` and a two-copy check on this PC (127.0.0.1). B asks, and A selects Send. B gets the zip with
+  the expected files and no canary text. Not now sends nothing. No LAN result yet.
+
 ### One data folder next to the program
 
 - ASSCRACK keeps all its data in one folder. This includes the settings, the history, the saved rooms and the friends.

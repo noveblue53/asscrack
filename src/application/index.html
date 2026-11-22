@@ -26,6 +26,7 @@
   <link rel="stylesheet" href="friends.css">
   <link rel="stylesheet" href="screen.css">
   <link rel="stylesheet" href="updates.css">
+  <link rel="stylesheet" href="diagnostics.css">
 </head>
 <body>
   <!-- Decoration only: the sky bubbles behind the two screens. -->
@@ -271,6 +272,7 @@
           <button id="leave-voice" type="button" hidden>Leave voice</button>
           <!-- P8b, screen-share.js: a share does not need voice. -->
           <button id="share-screen" type="button" aria-pressed="false">Share screen</button>
+          <button id="mark-problem-voice" type="button" aria-haspopup="dialog" aria-controls="mark-dialog" hidden>Mark a problem…</button>
           <span id="voice-error" role="alert"></span>
         </div>
       </section>
@@ -310,6 +312,11 @@
             <button id="activity-open" type="button" aria-haspopup="dialog" aria-controls="room-activity">Room activity</button>
             <button id="leave-room" type="button" aria-haspopup="dialog" aria-controls="leave-dialog">Leave room…</button>
             <button id="ready-open" type="button" title="Ask the room: Ready? (or type /ready and a text)">Ready check</button>
+          </div>
+          <!-- Diagnostics (1.0.1, diagnostics-ui.js). -->
+          <div class="room-menu-actions" id="diag-room-actions">
+            <button id="mark-problem" type="button" aria-haspopup="dialog" aria-controls="mark-dialog">Mark a problem…</button>
+            <button id="ask-everyone" type="button">Ask everyone for diagnostics</button>
           </div>
           <span id="topic-unavailable" hidden>Topic editing requires a compatible host.</span>
           <div id="topic-editor" hidden>
@@ -626,12 +633,65 @@
       <button id="about-copy" type="button">Copy version info</button>
       <button id="about-data" type="button">Open data folder</button>
     </div>
-    <p>To report a problem: open Room, Room activity, select Copy diagnostics, and send that text with the version info.</p>
+    <p>To report a problem: select Save diagnostics and send the zip file to the person who helps you. A room member
+      can also ask you for diagnostics. Nothing goes out without your Send.</p>
+    <div class="about-actions">
+      <button id="about-diag-save" type="button">Save diagnostics…</button>
+      <label><input id="about-diag-dumps" type="checkbox"> Add crash memory files (can contain parts of chats)</label>
+    </div>
     <p>For a full debug log, start ASSCRACK with --log-dir and a folder. The log can contain network addresses.</p>
     <p id="about-log" hidden>A debug log is on for this run.</p>
     <p id="about-status" role="status"></p>
     <form method="dialog"><button>Done</button></form>
   </dialog>
+
+  <!-- Diagnostics (1.0.1, diagnostics-ui.js): the prompt of the asked person. The text is local and fixed. -->
+  <dialog id="diag-prompt" aria-labelledby="diag-prompt-title">
+    <h2 id="diag-prompt-title">A room member asks for your diagnostics</h2>
+    <p id="diag-prompt-who"></p>
+    <details open>
+      <summary>What is in it</summary>
+      <p>The diagnostics journal of this computer: what went right and what went wrong (connections, voice quality, file
+        transfers, errors, crashes), with the times. The ASSCRACK and Windows versions, the CPU and the memory. The kind
+        of each network address (LAN, public, relay) and the ports, but no address. The peer IDs of the room members
+        (each member sees them already).</p>
+      <p>Not in it: no chat text, no names, no file names, no room keys, no invites, no clipboard text.</p>
+      <p>Files: <span id="diag-files"></span></p>
+      <pre id="diag-preview" tabindex="0"></pre>
+    </details>
+    <label><input id="diag-prompt-dumps" type="checkbox"> Add crash memory files (can contain parts of chats)</label>
+    <p id="diag-prompt-status" role="status"></p>
+    <div class="diag-actions">
+      <button id="diag-prompt-send" type="button">Send</button>
+      <button id="diag-prompt-later" type="button">Not now</button>
+    </div>
+  </dialog>
+
+  <dialog id="mark-dialog" aria-labelledby="mark-title">
+    <h2 id="mark-title">Mark a problem</h2>
+    <p>ASSCRACK writes the time and what went wrong in your diagnostics. Nothing goes out.</p>
+    <fieldset>
+      <legend>What went wrong?</legend>
+      <label><input type="radio" name="mark-category" value="voice-bad"> Voice is bad</label>
+      <label><input type="radio" name="mark-category" value="cannot-hear-them"> I cannot hear a person</label>
+      <label><input type="radio" name="mark-category" value="they-cannot-hear-me"> They cannot hear me</label>
+      <label><input type="radio" name="mark-category" value="screen-bad"> Screen share is bad</label>
+      <label><input type="radio" name="mark-category" value="cannot-connect"> I cannot connect</label>
+      <label><input type="radio" name="mark-category" value="file-failed"> A file failed</label>
+      <label><input type="radio" name="mark-category" value="other"> Other</label>
+    </fieldset>
+    <p id="mark-status" role="status"></p>
+    <div class="diag-actions">
+      <button id="mark-save" type="button">Mark</button>
+      <form method="dialog"><button>Cancel</button></form>
+    </div>
+  </dialog>
+
+  <div id="diag-bar" role="status" aria-live="polite" hidden>
+    <p id="diag-bar-text"></p>
+    <button id="diag-bar-open" type="button" hidden>Open folder</button>
+    <button id="diag-bar-close" type="button" aria-label="Close">×</button>
+  </div>
 
   <!-- P9C: updates-ui.js shows this bar when a new signed version is available or ready. -->
   <div id="update-bar" role="status" aria-live="polite" hidden>
@@ -765,5 +825,6 @@
   <script src="app-shell.js"></script>
   <script src="startup-ui.js"></script>
   <script src="updates-ui.js"></script>
+  <script src="diagnostics-ui.js"></script>
 </body>
 </html>

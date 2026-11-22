@@ -85,6 +85,68 @@
     const listeners = [];
     const levelListeners = [];
 
+    // ---- Diagnostics (1.0.1): counters, one summary each minute in voice (docs/DIAGNOSTICS.md, voice-summary). ----
+    // Nothing for each frame goes out: only the counters. The sequence number of each frame shows the loss.
+    const SUMMARY_MS = 60000;
+    const own = { sent: 0, encodeErrors: 0, sendErrors: 0, blocks: 0, open: 0 };
+    function diag(type, fields) {
+        try { api.diagEvent?.(type, fields); } catch { /* the journal is optional */ }
+    }
+    function originStats(o) {
+        o.stats ??= { frames: 0, gaps: 0, dups: 0, late: 0, lastSeq: null, lastAt: 0, jitterSum: 0, jitterN: 0, decodeErrors: 0 };
+        return o.stats;
+    }
+    // seq: the 32-bit sequence number of the origin. A jump of more than 500 frames is a new sender (no loss).
+    function countFrame(o, seq, at) {
+        const s = originStats(o);
+        s.frames++;
+        if (!Number.isInteger(seq)) return;
+        if (s.lastSeq !== null) {
+            const d = (seq - s.lastSeq) >>> 0;
+            if (d === 0) { s.dups++; return; }
+            if (d >= 0x80000000) { s.late++; return; }
+            if (d > 1 && d <= 500) s.gaps += d - 1;
+            if (d === 1 && s.lastAt) { s.jitterSum += Math.abs(at - s.lastAt - 20); s.jitterN++; }
+        }
+        s.lastSeq = seq;
+        s.lastAt = at;
+    }
+    // The underruns and trims of the playback worklet since the last question. Empty after 500 ms.
+    function playbackStats() {
+        if (!playbackNode) return Promise.resolve({});
+        return new Promise(resolve => {
+            const port = playbackNode.port;
+            const timer = setTimeout(() => { port.removeEventListener('message', onStats); resolve({}); }, 500);
+            function onStats({ data }) {
+                if (data?.type !== 'stats') return;
+                clearTimeout(timer);
+                port.removeEventListener('message', onStats);
+                resolve(data.origins ?? {});
+            }
+            port.addEventListener('message', onStats);
+            port.start?.();
+            port.postMessage({ type: 'stats' });
+        });
+    }
+    async function summary() {
+        if (!inVoice) return;
+        const worklet = await playbackStats();
+        for (const [origin, o] of origins) {
+            const s = o.stats;
+            const w = worklet[origin] ?? {};
+            if (!s?.frames && !w.underruns) continue;
+            diag('voice-summary', { origin, frames: s?.frames ?? 0, gaps: s?.gaps ?? 0, dups: s?.dups ?? 0, late: s?.late ?? 0,
+                jitterMs: s?.jitterN ? s.jitterSum / s.jitterN : 0, decodeErrors: s?.decodeErrors ?? 0,
+                underruns: w.underruns ?? 0, trims: w.trims ?? 0, secs: 60 });
+            if (s) Object.assign(s, { frames: 0, gaps: 0, dups: 0, late: 0, jitterSum: 0, jitterN: 0, decodeErrors: 0 });
+        }
+        diag('voice-summary', { own: true, sent: own.sent, encodeErrors: own.encodeErrors, sendErrors: own.sendErrors,
+            gateOpenPct: own.blocks ? (100 * own.open) / own.blocks : 0, secs: 60 });
+        Object.assign(own, { sent: 0, encodeErrors: 0, sendErrors: 0, blocks: 0, open: 0 });
+    }
+    // The node tests load this file in a VM with no timers.
+    if (typeof setInterval === 'function') setInterval(() => { summary().catch(() => {}); }, SUMMARY_MS);
+
     // One audio change at a time: join, leave, a settings change and the preview use the same objects.
     let queue = Promise.resolve();
     function serial(fn) {
@@ -121,6 +183,7 @@
         try {
             encoder.encode(data);
         } catch (err) {
+            own.encodeErrors++;
             console.warn('Voice encode failed:', err?.message ?? err);
         } finally {
             data.close();
@@ -132,6 +195,7 @@
         const result = gate.push(samples, performance.now());
         inputLevel = result.level;
         const sending = inVoice && !muted;
+        if (sending) { own.blocks++; if (result.open) own.open++; }
         if (sending) for (const b of result.send) encodeBlock(b);
         const next = sending && result.open;
         if (next !== transmitting) {
@@ -153,10 +217,11 @@
                 const bytes = new Uint8Array(chunk.byteLength);
                 chunk.copyTo(bytes);
                 if (!canSend()) return;
+                own.sent++;
                 Promise.resolve(api.sendVoiceFrame(bytes))
-                    .catch(err => console.warn('Voice frame send failed:', err?.message ?? err));
+                    .catch(err => { own.sendErrors++; console.warn('Voice frame send failed:', err?.message ?? err); });
             },
-            error: err => console.warn('Voice encoder error:', err?.message ?? err)
+            error: err => { own.encodeErrors++; console.warn('Voice encoder error:', err?.message ?? err); }
         });
         enc.configure({ codec: 'opus', sampleRate: SAMPLE_RATE, numberOfChannels: 1, bitrate: BITRATE });
         return enc;
@@ -189,6 +254,7 @@
                 }
             },
             error: err => {
+                originStats(o).decodeErrors++;
                 console.warn('Voice decoder error:', err?.message ?? err);
                 o.decoder = null;
             }
@@ -197,12 +263,13 @@
         return dec;
     }
 
-    function handleFrame({ origin, data } = {}) {
+    function handleFrame({ origin, seq, data } = {}) {
         if (typeof origin !== 'string' || !data || origin === selfId) return;
         const o = originEntry(origin);
         const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
         o.bytesReceived += bytes.length;
         o.lastAt = performance.now();
+        if (inVoice) countFrame(o, seq, o.lastAt);
         // A host that is not in voice does not play. G6: no frame of a known member in a different channel.
         if (!inVoice || !playbackNode || typeof AudioDecoder !== 'function') return;
         const member = members.get(origin);
@@ -212,6 +279,7 @@
             o.decoder.decode(new EncodedAudioChunk({ type: 'key', timestamp: o.timestamp, data: bytes }));
             o.timestamp += Math.round(BLOCK * 1e6 / SAMPLE_RATE);
         } catch (err) {
+            originStats(o).decodeErrors++;
             console.warn('Voice decode failed:', err?.message ?? err);
         }
     }
@@ -364,6 +432,10 @@
         const track = stream.getAudioTracks()[0];
         if (!track) return;
         const applied = track.getSettings();
+        // The label goes to main.js, which writes only its kind and a tag (journal.mjs deviceClass).
+        diag('voice-device', { dir: 'in', ok: true, label: track.label, fallback: inputFallback, sampleRate: applied.sampleRate,
+            channels: applied.channelCount, ec: applied.echoCancellation === true, ns: applied.noiseSuppression === true,
+            agc: applied.autoGainControl === true, suppressor: suppressor() });
         console.info(`Voice capture: device "${track.label}" suppressor ${suppressor()} settings ${JSON.stringify({
             echoCancellation: applied.echoCancellation,
             noiseSuppression: applied.noiseSuppression,
@@ -386,8 +458,10 @@
             await context.setSinkId(wanted);
             outputFallback = false;
             console.info(`Voice output device: ${wanted === '' ? 'default' : 'selected device'}`);
+            diag('voice-device', { dir: 'out', ok: true, fallback: false });
         } catch (err) {
             console.warn(`Voice output device not set (${err?.name ?? err}); the default device is used`);
+            diag('voice-device', { dir: 'out', ok: false, fallback: true, error: String(err?.name ?? 'error').toLowerCase() });
             outputFallback = true;
             if (context && context.sinkId !== '') await context.setSinkId('').catch(() => {});
         }
@@ -402,7 +476,10 @@
             await applySink();
             return;
         }
-        if (!outputFallback) console.warn('Voice output device not connected; the default device is used');
+        if (!outputFallback) {
+            console.warn('Voice output device not connected; the default device is used');
+            diag('voice-device', { dir: 'out', ok: true, fallback: true });
+        }
         outputFallback = true;
         if (context && context.sinkId !== '') await context.setSinkId('').catch(() => {});
     }
@@ -457,6 +534,7 @@
     function captureEnded(stream) {
         if (stream !== localStream) return;
         console.warn('Voice microphone track ended; the capture opens again');
+        diag('voice-device', { dir: 'in', ok: true, ended: true });
         const generation = captureGeneration;
         serial(async () => {
             if (stream !== localStream || generation !== captureGeneration) return;
@@ -513,6 +591,7 @@
             if (microphoneErrors.has(err) && generation === captureGeneration) {
                 captureError = errorCode(err?.name);
                 console.warn(`Voice microphone did not open (${err?.name ?? 'Error'}: ${err?.message ?? err})`);
+                diag('voice-device', { dir: 'in', ok: false, error: String(err?.name ?? 'error').toLowerCase() });
                 changed();
             }
             throw err;

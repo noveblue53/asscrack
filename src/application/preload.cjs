@@ -63,6 +63,17 @@ contextBridge.exposeInMainWorld('asscrack', {
     leaveRoomInfo: () => ipcRenderer.invoke('asscrack:leave-room-info'),
     getAbout: () => ipcRenderer.invoke('asscrack:about'),
     openDataFolder: () => ipcRenderer.invoke('asscrack:open-data-folder'),
+    // Diagnostics (1.0.1): requests, the answer of the user, the bundle, the marks. The window gets no path.
+    diagAsk: peerId => ipcRenderer.invoke('asscrack:diag-ask', String(peerId ?? '')),
+    diagAskAll: () => ipcRenderer.invoke('asscrack:diag-ask-all'),
+    diagPreview: includeDumps => ipcRenderer.invoke('asscrack:diag-preview', includeDumps === true),
+    diagAnswer: (id, send, includeDumps) => ipcRenderer.invoke('asscrack:diag-answer', String(id ?? ''), send === true, includeDumps === true),
+    diagSave: includeDumps => ipcRenderer.invoke('asscrack:diag-save', includeDumps === true),
+    diagOpenReceived: () => ipcRenderer.invoke('asscrack:diag-open-received'),
+    diagMark: category => ipcRenderer.invoke('asscrack:diag-mark', String(category ?? '')),
+    // The voice code: the device result and the voice summary each minute (main.js checks the type and each field).
+    diagEvent: (type, fields) => ipcRenderer.send('asscrack:diag-event', String(type ?? ''), fields && typeof fields === 'object' ? { ...fields } : {}),
+    onDiag: listen('asscrack:diag'),
     // P9C: the updates. The window gets the versions, the note text and the state. It gives no path and no URL.
     getUpdate: () => ipcRenderer.invoke('asscrack:update'),
     checkUpdate: () => ipcRenderer.invoke('asscrack:update-check'),
