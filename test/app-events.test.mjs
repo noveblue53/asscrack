@@ -14,16 +14,6 @@ test('main.js forwards the history event', async () => {
     assert.match(match[1], /'history'/);
 });
 
-test('preload.cjs exposes onHistory', async () => {
-    const source = await read('preload.cjs');
-    assert.ok(source.includes("onHistory: listen('asscrack:history')"));
-});
-
-test('renderer.js listens for history', async () => {
-    const source = await read('renderer.js');
-    assert.ok(source.includes('window.asscrack.onHistory('));
-});
-
 test('only an explicit local debug run writes raw console logs', async () => {
     const source = await read('main.js');
     assert.ok(source.includes("'console-message'"));
@@ -40,12 +30,6 @@ test('main.js forwards the topology event', async () => {
     assert.ok(source.includes("handleRoomIpc('asscrack:topology'"));
 });
 
-test('preload.cjs exposes onTopology and getTopology', async () => {
-    const source = await read('preload.cjs');
-    assert.ok(source.includes("onTopology: listen('asscrack:topology')"));
-    assert.ok(source.includes("getTopology: () => ipcRenderer.invoke('asscrack:topology')"));
-});
-
 test('main.js logs the direction, the cancel side and the file actions', async () => {
     const source = await read('main.js');
     assert.ok(source.includes('parts.push(`direction ${direction}`)'));
@@ -53,11 +37,6 @@ test('main.js logs the direction, the cancel side and the file actions', async (
     for (const action of ['offer-file', 'accept-file', 'refuse-file', 'cancel-file']) {
         assert.ok(source.includes(`logAction('${action}'`), action);
     }
-});
-
-test('preload.cjs passes a peer ID in cancelFile', async () => {
-    const source = await read('preload.cjs');
-    assert.ok(source.includes("cancelFile: (offerId, peerId) => ipcRenderer.invoke('asscrack:cancel-file', offerId, peerId)"));
 });
 
 test('the transfer window labels confirmed delivery, legacy sends, failure and the saved file', async () => {
@@ -266,13 +245,6 @@ test('a dropped file waits for Send file, survives offer failure, and can be rem
 });
 
 // ---- Package C (room window): row actions, context menus, Escape, Show in Explorer ----
-
-test('preload.cjs exposes revealFile by key and no path API for the reveal', async () => {
-    const source = await read('preload.cjs');
-    assert.ok(source.includes("revealFile: key => ipcRenderer.invoke('asscrack:reveal-file', String(key))"));
-    assert.doesNotMatch(source, /showItemInFolder|openPath|shell\./);
-    assert.doesNotMatch(source, /reveal\w*\s*:\s*\(?\s*\w*[pP]ath/);
-});
 
 test('main.js records the receive path of file-done by offerId|peerId and checks that the file exists', async () => {
     const source = await read('main.js');

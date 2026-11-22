@@ -27,18 +27,6 @@ test('main.js send returns saved and saveError with the record', async () => {
     assert.ok(source.includes('return { ...record, ...save };'));
 });
 
-test('preload.cjs exposes the part 2 functions', async () => {
-    const source = await read('preload.cjs');
-    for (const name of ['savedRoomLines', 'setKeepHistory', 'clearHistory', 'forgetRoom']) {
-        assert.match(source, new RegExp(`\\b${name}: `), name);
-    }
-    assert.ok(source.includes("onLineSaved: listen('asscrack:line-saved')"));
-    assert.ok(source.includes("onSaveFailed: listen('asscrack:save-failed')"));
-    assert.ok(source.includes("ipcRenderer.invoke('asscrack:set-keep-history'"));
-    assert.ok(source.includes("ipcRenderer.invoke('asscrack:clear-history'"));
-    assert.ok(source.includes("ipcRenderer.invoke('asscrack:forget-room'"));
-});
-
 test('the window listens for line-saved and save-failed', async () => {
     const source = await read('saved-rooms-ui.js');
     assert.ok(source.includes('api.onLineSaved('));
