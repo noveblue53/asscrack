@@ -3,12 +3,13 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-const defaults = Object.freeze({ voiceCues: true, volume: 35, alerts: false, previews: false, sound: false });
+const defaults = Object.freeze({ voiceCues: true, otherVoiceCues: true, messageCues: true, volume: 35, alerts: false,
+    previews: false, sound: false });
 
 export function attentionSettings(file) {
     function merge(current, patch) {
         const next = { ...current };
-        for (const key of ['voiceCues', 'alerts', 'previews', 'sound']) {
+        for (const key of ['voiceCues', 'otherVoiceCues', 'messageCues', 'alerts', 'previews', 'sound']) {
             if (typeof patch?.[key] === 'boolean') next[key] = patch[key];
         }
         if (Number.isInteger(patch?.volume)) next.volume = Math.max(0, Math.min(100, patch.volume));

@@ -380,6 +380,7 @@ function applyRoster(actions) {
         else if (action.type === 'add' || action.type === 'restore') addPeer(action.peerId);
         else if (action.type === 'grey') removePeer(action.peerId, true);
         else if (action.type === 'remove') {
+            otherVoiceGone(action.peerId);
             const held = heldItems.get(action.peerId);
             if (held) {
                 heldItems.delete(action.peerId);
@@ -394,7 +395,61 @@ function applyRoster(actions) {
     if (roster) window.roomLink?.presence(roster.link());
 }
 
+// ---- Voice cues of other people (P11) ----
+// peer ID -> { inVoice, openedAt, base, lost }: the last known voice state of each peer (null: not known yet). A peer
+// sends a voice line when its session opens only if it is in voice. Thus the first state in VOICE_BASE_MS after the
+// session opens is the base (no cue), and with no state in that time the peer is not in voice. A peer that comes back
+// in the 10 s of G2 thus gives no cue. The entry stays while the roster holds the peer: the leave cue comes when the
+// roster removes the line. The states update also when I am not in voice, thus the states that come at my own Join
+// are not a change.
+const VOICE_BASE_MS = 3 * 1000;
+const otherVoice = new Map();
+
+function otherInVoice(entry, now) {
+    if (!entry) return false;
+    if (entry.inVoice === null) return now - entry.openedAt > VOICE_BASE_MS ? false : null;
+    return entry.inVoice;
+}
+
+function otherVoiceOpened(peerId) {
+    otherVoice.set(peerId, { inVoice: null, openedAt: Date.now(), base: true, lost: false });
+}
+
+// After a 'peer-left' event: 0 peers is my own loss. The peers that go at that time give no leave cue later.
+function otherVoiceLoss() {
+    if ((roster?.link().peers ?? peerItems.size) > 0) return;
+    for (const entry of otherVoice.values()) entry.lost = true;
+}
+
+function otherVoiceState(peerId, inVoice) {
+    if (typeof peerId !== 'string' || !peerId || peerId === selfId) return;
+    const now = Date.now();
+    const entry = otherVoice.get(peerId);
+    const before = otherInVoice(entry, now);
+    const inBase = entry?.base === true && now - entry.openedAt <= VOICE_BASE_MS;
+    otherVoice.set(peerId, { inVoice, openedAt: entry?.openedAt ?? now, base: false, lost: entry?.lost === true });
+    // No entry: a state before the session event. Not a known change.
+    if (!entry || inBase || before === null || before === inVoice) return;
+    otherVoiceCue(inVoice ? 'other-join' : 'other-leave');
+}
+
+// The roster removes the line of a peer: at once after a bye, or at the end of the grey time.
+function otherVoiceGone(peerId) {
+    const entry = otherVoice.get(peerId);
+    otherVoice.delete(peerId);
+    // No leave cue when I have 0 peers after the event (my own loss).
+    if (entry?.lost || otherInVoice(entry, Date.now()) !== true) return;
+    if ((roster?.link().peers ?? peerItems.size) > 0) otherVoiceCue('other-leave');
+}
+
+function otherVoiceCue(kind) {
+    if (ownInVoice && !joining) window.roomAttention?.cue(kind, 'voice-other');
+}
+
+window.asscrack.onVoiceState(data => otherVoiceState(data?.peerId, data?.inVoice === true));
+
 function peerJoined(peerId) {
+    otherVoiceOpened(peerId);
     const notes = rosterNow();
     if (notes) applyRoster(notes.joined(peerId, Date.now(), peerNames.get(peerId)));
     else addPeer(peerId);
@@ -404,6 +459,7 @@ function peerLeft(peerId, withBye) {
     const notes = rosterNow();
     if (notes) applyRoster(notes.left(peerId, withBye === true, Date.now()));
     else removePeer(peerId);
+    otherVoiceLoss();
 }
 
 window.asscrack.onPeerDiscovered(data => console.log('peer-discovered', data));

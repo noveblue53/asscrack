@@ -103,7 +103,8 @@ function makeBridge(options) {
 
 // options.send: async (text) => peer count, or throw. options.api: bridge calls that must exist before the scripts
 // load. options.clock: a clock of fake-clock.mjs for the timers and Date of the scripts (default: the real timers,
-// and setInterval does nothing). Returns the fixture.
+// and setInterval does nothing). options.globals: more globals of the scripts (for example AudioContext and navigator
+// for attention.js). Returns the fixture.
 export async function loadRoomWindow(options = {}) {
     const { document, window, Event } = createDom([...layout(), ...(options.elements ?? [])]);
     const { bridge, handlers, calls } = makeBridge(options);
@@ -138,7 +139,8 @@ export async function loadRoomWindow(options = {}) {
         MutationObserver: class {
             observe() {}
             disconnect() {}
-        }
+        },
+        ...(options.globals ?? {})
     };
     window.window = window;
     window.document = document;

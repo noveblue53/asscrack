@@ -7,6 +7,33 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased — sound cues for other people and for messages (goal P11, 2026-11-21)
+
+ASSCRACK plays a short local cue when a different person joins or leaves voice, and for a mention or a whisper to
+me. The cues are oscillator tones (no sound file). Only the local user hears them: the voice capture does not get
+them.
+
+- **Voice cues of other people.** "Other person joins voice" and "Other person leaves voice" play only while I am in
+  voice. They play only for a real change of the voice state of that peer. These give no cue:
+  - the first voice state in 3 s after the session of a peer opens
+  - the states at my own Join
+  - a reconnect in the 10 s of G2.
+
+  A peer in voice that goes gives the leave cue at once after a bye. With no bye, the cue comes after 10 s if the
+  peer does not come back. When I have 0 peers after the event (my own loss), no leave cue plays.
+- **Message cues.** A mention of my name or keyword plays a cue, and a whisper to me plays a cue. The cue plays only
+  when the conversation is not in view or the window does not have the focus. The cue plays also when desktop notifications are off. My own lines and
+  the history replay give no cue.
+- **Rules.** No cue of other people and no message cue in Idle Peer or in Do not disturb. The own cues do not change.
+  At most one message cue each 2 s and one voice cue of other people each 0.5 s. ASSCRACK drops a cue in that time.
+- **Settings.** "Sound & notifications" has 2 new switches: "Other people join or leave voice" and "Mentions and
+  whispers" (both on by default). The cue volume controls all cues. The preview list has the 4 new cues.
+- **Result: 127.0.0.1, this PC.** `npm test`: 527 of 527 pass (12 new cue tests with the fake clock).
+  `node --test test/voice-gate.test.mjs test/voice-settings.test.mjs`: 16 of 16 pass. App check with two copies (a
+  stub records each cue): 9 of 9 checks pass. The cues play for a join, a leave, a mention and a whisper. No cue
+  plays for the replay of saved lines. One start of the app: no error line. No LAN test. The sound of the cues
+  on real speakers is not tested.
+
 ## Unreleased — room link and transcript notes (goal G2, 2026-11-21)
 
 The room tells what the connection does, and the chat shows who came and who went. Gap IDs A2, A4, B1, B2, B3, D6,

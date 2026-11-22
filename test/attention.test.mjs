@@ -67,11 +67,17 @@ test('sound and privacy settings are per profile, validated, and retain mute and
     t.after(() => rmSync(dir, { recursive: true, force: true }));
     const file = path.join(dir, 'prefs.json');
     const prefs = attentionSettings(file);
-    assert.deepEqual(prefs.get(), { alerts: false, previews: false, sound: false, voiceCues: true, volume: 35 });
-    prefs.set({ alerts: true, previews: 'yes', voiceCues: false, volume: 120 });
+    assert.deepEqual(prefs.get(), { alerts: false, previews: false, sound: false, voiceCues: true, otherVoiceCues: true,
+        messageCues: true, volume: 35 });
+    prefs.set({ alerts: true, previews: 'yes', voiceCues: false, otherVoiceCues: 'no', messageCues: 0, volume: 120 });
     const reopened = attentionSettings(file).get();
     assert.equal(reopened.alerts, true); assert.equal(reopened.previews, false);
     assert.equal(reopened.voiceCues, false); assert.equal(reopened.volume, 100);
+    // P11 keys: the same validation as the old keys (only a boolean changes them).
+    assert.equal(reopened.otherVoiceCues, true); assert.equal(reopened.messageCues, true);
+    prefs.set({ otherVoiceCues: false, messageCues: false });
+    assert.equal(attentionSettings(file).get().otherVoiceCues, false);
+    assert.equal(attentionSettings(file).get().messageCues, false);
 });
 
 test('portable notification identity uses the stable executable and preserves unrelated Start Menu shortcuts', t => {
