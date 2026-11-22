@@ -309,3 +309,11 @@ test('the file-done listener of main.js uses only names of its own scope', async
     assert.match(body, /if \(node !== doneNode\) return;/);
     assert.doesNotMatch(body, /\blive\b/);
 });
+
+test('a Shared download has no Pause: the Shared panel has no paused state', async () => {
+    const f = await room();
+    f.handlers.onFileOffer({ ...OFFER, shelfId: 'shelf-1' });
+    const [row] = f.el('transfers').children;
+    assert.equal(row.dataset.state, 'receiving');
+    assert.deepEqual(actions(row), ['cancel-receive']);
+});

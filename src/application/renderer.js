@@ -1386,8 +1386,8 @@ function renderTransferActions(entry, row) {
             makeButton('Refuse', () => refuseTransfer(key), 'refuse')
         );
     } else if (entry.state === 'receiving') {
-        // P7b: Pause keeps the received part (P7a). A row of the shared shelf or of a chat attachment can also pause.
-        if (hasApi('pauseFile')) buttons.append(makeButton('Pause', () => pauseTransfer(key), 'pause'));
+        // P7b: Pause keeps the received part (P7a). A chat attachment can also pause; a Shared download cannot.
+        if (hasApi('pauseFile') && !entry.shelf) buttons.append(makeButton('Pause', () => pauseTransfer(key), 'pause'));
         buttons.append(makeButton('Cancel', () => cancelReceive(key), 'cancel-receive'));
     } else if (entry.direction === 'receive' && (entry.state === 'paused' || entry.state === 'waiting')) {
         if (entry.state === 'paused' && entry.resumable && hasApi('resumeFile')) {
@@ -1837,6 +1837,8 @@ window.asscrack.onFileOffer(data => {
     const entry = getTransfer(data.offerId, data.peerId, 'receive', data);
     if (entry.card || entry.state !== null) return;
     if (data.shelfId) {
+        // P7b: the Shared panel has no paused state (shared-shelf.mjs), thus a shelf receive has no Pause.
+        entry.shelf = true;
         setTransferState(entry, 'receiving', 'Receiving');
         return;
     }

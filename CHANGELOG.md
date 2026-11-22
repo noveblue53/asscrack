@@ -29,11 +29,13 @@ Fix: each received file failed at its end with "stream ended" in the app on orig
 Results:
 - `npm test` passes (127.0.0.1).
 - One `npm start` gives no error line (this PC).
-- Two copies (127.0.0.1): A offers a 600 MiB file to B. B pauses at 40.8 %, quits and starts again. A offers the
-  file again, and B continues from the kept part. The SHA-256 of the saved file and of the source agree. A sent
-  372,244,480 bytes after the resume: the remainder exactly. Discard of a second paused transfer deleted its kept
-  part of 110,493,696 bytes.
-- Two copies (127.0.0.1): Resume in the same run continues on the same row, and a kept part stays after Leave room.
+- Two copies (127.0.0.1): A offers a 600 MiB file (629,145,600 bytes) to B. B pauses at 259,260,416 bytes
+  (41.2 %), quits and starts again. A offers the file again, and B continues from the kept part. The SHA-256 of the
+  saved file and of the source agree. A sent 369,885,184 bytes after the resume: the remainder exactly. Discard of a
+  second paused transfer deleted its kept part of 111,804,416 bytes.
+- Two copies (127.0.0.1): Resume in the same run continues on the same row (A sent 370,278,400 bytes, the
+  remainder). A kept part stays after Leave room, and the next room shows it.
+- A Shared download has no Pause: the Shared panel has no paused state.
 
 ## Unreleased — Windows app shell (goal G5, 2026-11-21)
 
