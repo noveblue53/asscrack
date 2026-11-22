@@ -7,6 +7,22 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased
+
+### Fix: the tiles of the screen-share picker
+
+In the "Share your screen" dialog, the thumbnails went out of their tiles and covered the names, the headings and the
+next tiles. Cause: each tile is a button, and the global button rule gives each button a height of 30 px. The tile
+rule in `screen.css` now sets `height: auto` and `white-space: normal`.
+
+Checks (this PC, one copy of the app):
+- New test `test/screen-picker-layout.test.mjs`: Electron loads `index.html`, fills the picker and measures each
+  tile in each theme. It fails on 1.0.0 and passes with the fix.
+- The dev app with a fresh profile, picker opened through CDP, 7 tiles, 7 themes: before, each tile was 30 px high
+  and its 90 px canvas went out of it; after, each tile is 118 px high (116 px in Amber Terminal) and contains its
+  canvas and its name. No tile overlaps a tile or a heading. No error line in the console.
+- `npm test`: 917 tests, 899 pass, 0 fail, 18 skipped.
+
 ## 1.0.0 (2026-11-22): the full-featured release
 
 Release 1.0.0 is the full-featured release before the friends get the app (operator, 2026-11-21). The entries below
