@@ -18,7 +18,7 @@ The room owner invites individual devices and chooses which ones may take over a
 | Prior 0.7.0 field build | Three Windows peers used the build from `8dacddd` in the November 20 internet test. Its SHA-256 and observed faults are in the [changelog](CHANGELOG.md). |
 | Earlier review builds | The [field recovery report](docs/FIELD_RECOVERY_REPORT.md) and [desktop review](docs/DESKTOP_REVIEW.md) list the earlier x64 executable identities and single-computer results. |
 | Field acceptance | The friend pilot covers the open router-lease, reconnect, interrupted-file, alternate-relay and Windows profile checks. These checks and the game nights come after the 1.0 release (operator, 2026-11-21). [Release plan](docs/WORK_PLAN_1.0.md) |
-| Phase | The 1.0 features. 1.0 is a full-featured release before the friends get it (operator, 2026-11-21). Next: screenshare, resume of large transfers, a ready check and an installer with start at sign-in. Then a security audit and the 1.0.0 build. The field checks with other users come after 1.0. Goal G1 of the 1.0 gap list (room reach and login texts) is on `main` with 127.0.0.1 results. See the roadmap below. |
+| Phase | The 1.0 features. 1.0 is a full-featured release before the friends get it (operator, 2026-11-21). Next: screenshare, resume of large transfers, a ready check and an installer with start at sign-in. Then a security audit and the 1.0.0 build. The field checks with other users come after 1.0. Goal G1 of the 1.0 gap list (room reach and login texts) is on `main` with 127.0.0.1 results. Package P3 replaced 12 source-text checks of the room window with behavior tests (127.0.0.1). See the roadmap below. |
 
 ### How to read the results
 
