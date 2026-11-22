@@ -157,7 +157,7 @@
         if (member.idle) lines.push('Idle peer');
         if (member.host) lines.push('Host');
         if (member.fullNode) lines.push('Full node');
-        link.textContent = member.self ? 'This device' : member.linkToYou || 'Unknown (route unavailable)';
+        link.textContent = member.self ? 'This device' : member.linkToYou || 'Unknown';
         voice.textContent = member.speaking ? 'Speaking' : member.muted ? 'In voice · muted' : member.inVoice ? 'In voice' : 'Out of voice';
         const outgoing = transfers.filter(item => item.to === selected).length;
         const incoming = transfers.filter(item => item.from === selected).length;

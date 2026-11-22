@@ -46,10 +46,10 @@ test('voiceChannelsCore: General first, then by name; the people below each row;
     assert.equal(c.action(false, 'general', RAID), 'join');
     assert.equal(c.action(true, 'general', RAID), 'move');
     assert.equal(c.action(true, RAID, RAID), 'none');
-    assert.equal(c.deleteText('Raid', 3), 'Delete the voice channel Raid? The 3 people in it move to General.');
-    assert.equal(c.deleteText('Raid', 1), 'Delete the voice channel Raid? The person in it moves to General.');
-    assert.equal(c.deleteText('Raid', 0), 'Delete the voice channel Raid?');
-    assert.equal(c.movedText('Raid'), 'The voice channel Raid was deleted. You are in General now.');
+    assert.equal(c.deleteText('Raid', 3), 'Delete Raid? 3 people move to General.');
+    assert.equal(c.deleteText('Raid', 1), 'Delete Raid? 1 person moves to General.');
+    assert.equal(c.deleteText('Raid', 0), 'Delete Raid?');
+    assert.equal(c.movedText('Raid'), 'Raid was deleted. You\'re in General.');
 });
 
 // ---- The real voice.js ----
@@ -329,7 +329,7 @@ test('the owner sees Create, Rename and Delete; a member does not; the delete te
     f.member(SAM, { channel: RAID });
     f.member(ALEX, { channel: RAID });
     await f.window.roomActions.run('delete-voice-channel', raid);
-    assert.equal(f.el('voice-channel-delete-text').textContent, 'Delete the voice channel Raid? The 2 people in it move to General.');
+    assert.equal(f.el('voice-channel-delete-text').textContent, 'Delete Raid? 2 people move to General.');
     f.el('voice-channel-delete-confirm').click();
     await settle();
     assert.deepEqual(f.edits.at(-1), ['delete', RAID]);
@@ -341,7 +341,7 @@ test('the owner sees Create, Rename and Delete; a member does not; the delete te
     f.voice.s.channel = RAID;
     f.voice.s.inVoice = true;
     f.setView({ seq: 5, channels: [GENERAL], movedFrom: { id: RAID, name: 'Raid' } });
-    assert.equal(f.el('status').textContent, 'The voice channel Raid was deleted. You are in General now.');
+    assert.equal(f.el('status').textContent, 'Raid was deleted. You\'re in General.');
     assert.deepEqual(f.rows().map(li => li.querySelector('.vc-name').textContent), ['General', 'Unknown channel'],
         'Sam and Alex are still in the old ID until their new voice lines come');
     assert.deepEqual(f.errors, []);

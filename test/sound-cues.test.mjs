@@ -305,11 +305,11 @@ test('a cue of my own action plays in Do not disturb and is silent in Idle Peer 
     f.el('attention-tone').value = 'mute';
     f.el('attention-preview').click();
     await settle();
-    assert.equal(f.el('attention-status').textContent, 'Preview played.');
+    assert.equal(f.el('attention-status').textContent, '', 'UI copy pass: no text when the preview plays');
     f.el('attention-tone').value = 'mention';
     f.el('attention-preview').click();
     await settle();
-    assert.equal(f.el('attention-status').textContent, 'Sounds are quiet in your current availability.');
+    assert.equal(f.el('attention-status').textContent, 'Sounds are off while Do not disturb is on.');
 
     const idle = await room();
     await idle.joinVoice();
@@ -318,7 +318,7 @@ test('a cue of my own action plays in Do not disturb and is silent in Idle Peer 
     idle.el('attention-tone').value = 'join';
     idle.el('attention-preview').click();
     await settle();
-    assert.equal(idle.el('attention-status').textContent, 'Sounds are quiet in your current availability.');
+    assert.equal(idle.el('attention-status').textContent, 'Sounds are off in Idle Peer.');
     assert.deepEqual(idle.own, ['join']);
     assert.deepEqual(f.errors, []);
 });

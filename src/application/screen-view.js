@@ -27,7 +27,7 @@
         source: name => `${name} stopped sharing.`,
         idle: name => `${name} stopped sharing.`,
         slow: () => 'Your connection is too slow for this share.',
-        full: () => 'This share has 6 viewers.',
+        full: () => 'Viewer limit reached (6).',
         refused: () => 'This share is not available.',
         error: name => `${name}'s share stopped.`,
         timeout: name => `${name}'s share stopped.`
@@ -144,7 +144,7 @@
         renderBanner();
     }
     // A failure of a check of section 2.9: the viewer stops with an error.
-    function failWatch(w, text = 'This share cannot be shown on this computer.') {
+    function failWatch(w, text = 'Can\'t play this share on this PC.') {
         if (watch !== w) return;
         stopWatching({ send: true, text });
     }

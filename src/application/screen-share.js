@@ -22,7 +22,7 @@
         max: { label: 'Max (1440p, 60 fps)', width: 2560, height: 1440, fps: 60 }
     });
     const LADDER = ['standard', 'smooth', 'balanced', 'high', 'max'];
-    const QUALITIES = [['auto', 'Auto (adapts to each viewer)'], ...LADDER.map(id => [id, PRESETS[id].label])];
+    const QUALITIES = [['auto', 'Auto'], ...LADDER.map(id => [id, PRESETS[id].label])];
     // Section 5.
     const KEPT_KEY_MS = 100; // E5
     const SIZE_CHANGE_MS = 1000; // E7
@@ -163,6 +163,7 @@
             const option = document.createElement('option');
             option.value = id;
             option.textContent = label;
+            if (id === 'auto') option.title = 'Adapts to each viewer';
             qualitySelect.append(option);
         }
     }
@@ -549,7 +550,7 @@
                 if (quality) {
                     const tiers = Array.isArray(lastViewers.tiers) ? lastViewers.tiers.filter(t => (t.viewers ?? []).length > 0) : [];
                     const lines = current.quality !== 'auto' ? [`Quality: ${PRESETS[current.quality]?.label ?? current.quality}`]
-                        : tiers.length ? tiers.map(tierLine) : ['Quality: Auto (adapts to each viewer)'];
+                        : tiers.length ? tiers.map(tierLine) : ['Quality: Auto'];
                     quality.replaceChildren(...lines.map(text => { const line = document.createElement('span'); line.textContent = text; return line; }));
                 }
                 if (notes) {
@@ -560,10 +561,10 @@
                     const cpu = lastViewers.cpu;
                     if (current.quality === 'auto' && cpu?.lowered && PRESETS[lastViewers.cap]) {
                         const above = LADDER[LADDER.indexOf(lastViewers.cap) + 1];
-                        if (above) texts.push(`This computer is too slow for ${PRESETS[above].label}. Auto uses ${PRESETS[lastViewers.cap].label}.`);
+                        if (above) texts.push(`Too slow for ${PRESETS[above].label}. Using ${PRESETS[lastViewers.cap].label}.`);
                     }
                     if (current.quality !== 'auto' && cpu?.tooSlow) {
-                        texts.push(`This computer cannot encode ${PRESETS[current.quality]?.label ?? current.quality} in real time. Select Auto.`);
+                        texts.push(`Can't encode ${PRESETS[current.quality]?.label ?? current.quality} in real time. Try Auto.`);
                     }
                     notes.replaceChildren(...texts.map(text => { const line = document.createElement('span'); line.textContent = text; return line; }));
                     notes.hidden = texts.length === 0;
@@ -607,7 +608,7 @@
         endLocal();
         if (data.reason === 'source') showError('Sharing stopped: the source closed.');
         else if (data.reason === 'isolated') showError('Sharing stopped: the room connection was lost.');
-        else if (data.reason === 'conflict') showError(`${nameOf(data.by)} started to share at the same time. Your share stopped.`);
+        else if (data.reason === 'conflict') showError(`${nameOf(data.by)} started sharing. Your share stopped.`);
     });
     api.onIdlePeer?.(state => {
         idle = state?.idle === true;

@@ -239,8 +239,8 @@
         node.label.textContent = (data.self ? 'You' : shortName(data.name, labelMax)) + (data.idle ? ' · Idle peer' : '');
         const facts = [data.name + (data.self ? ' (you)' : '')];
         if (data.idle) facts.push('Idle peer');
-        if (data.host) facts.push('host: the voice relay of the room');
-        if (data.fullNode) facts.push('Full node · available to relay');
+        if (data.host) facts.push('Host (voice relay)');
+        if (data.fullNode) facts.push('Full node (can relay)');
         if (data.linkToYou) facts.push('Chat link to you · ' + data.linkToYou);
         if (data.inVoice) facts.push((data.speaking ? 'speaks now' : data.muted ? 'in voice (muted)' : 'in voice') + (data.channel ? ' · ' + data.channel : ''));
         else facts.push('not in voice');

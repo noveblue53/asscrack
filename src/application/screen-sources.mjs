@@ -13,7 +13,7 @@ export const THUMBNAIL_SIZE = Object.freeze({ width: 320, height: 180 });
 // Section 2.2, the quality select: Auto first, then the ladder from the lowest to the highest preset.
 const MAX_PRESET = SCREEN_PRESETS[SCREEN_PRESETS.length - 1];
 export const PICKER_QUALITIES = Object.freeze([
-    Object.freeze({ id: 'auto', label: 'Auto (adapts to each viewer)', width: MAX_PRESET.width, height: MAX_PRESET.height,
+    Object.freeze({ id: 'auto', label: 'Auto', width: MAX_PRESET.width, height: MAX_PRESET.height,
         fps: MAX_PRESET.fps, bitrate: MAX_PRESET.bitrate }),
     ...SCREEN_PRESETS.map(p => Object.freeze({ id: p.id, label: p.label, width: p.width, height: p.height, fps: p.fps, bitrate: p.bitrate }))
 ]);

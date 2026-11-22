@@ -75,7 +75,7 @@ export function registerNotificationShortcut({ appData, executable, args = '', s
     const present = existsSync(file);
     if (present) {
         const old = shell.readShortcutLink(file);
-        if (old.appUserModelId !== WINDOWS_APP_ID) throw new Error('The ASSCRACK Start Menu shortcut already belongs to another app.');
+        if (old.appUserModelId !== WINDOWS_APP_ID) throw new Error('The Start menu shortcut belongs to another app.');
         if (old.target === executable && (old.args || '') === args &&
             old.toastActivatorClsid?.toLowerCase() === WINDOWS_TOAST_ID.toLowerCase()) return;
     }

@@ -79,7 +79,7 @@
             } catch { failed(); }
             function failed() {
                 if (current !== generation) return;
-                stop(); showError(entry, 'Animation unavailable. The original can still be saved.');
+                stop(); showError(entry, 'Can\'t play this animation.');
             }
         }
         toggle.addEventListener('click', () => {
@@ -110,11 +110,11 @@
         const media = document.createElement(descriptor.kind === 'video' ? 'video' : 'img');
         if (descriptor.kind === 'video') {
             media.controls = true; media.preload = 'metadata'; media.playsInline = true;
-            if (!media.canPlayType(info.mime)) { showError(entry, 'This video format cannot be played here.'); return; }
+            if (!media.canPlayType(info.mime)) { showError(entry, 'Can\'t play this video format.'); return; }
             media.addEventListener('loadedmetadata', () => {
                 if (media.videoWidth * media.videoHeight <= 16_000_000 && Math.max(media.videoWidth,media.videoHeight) <= 8192) return;
                 media.removeAttribute('src'); media.load();
-                showError(entry, 'Video dimensions exceed the inline playback limit.');
+                showError(entry, 'Video too large to play here.');
             });
             media.addEventListener('play', () => {
                 if (window.idlePeer?.isIdle()) { media.pause(); return; }
@@ -128,7 +128,7 @@
             media.addEventListener('click', () => { void view(entry); });
         }
         media.addEventListener('error', () => {
-            if (entry.url === url && box.contains(media)) showError(entry, 'Preview unavailable. The original can still be saved.');
+            if (entry.url === url && box.contains(media)) showError(entry, 'No preview.');
         }, { once: true });
         media.src = url; box.append(media);
     }

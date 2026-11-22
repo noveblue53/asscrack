@@ -50,7 +50,7 @@
     function open(id, name, control) {
         peerId = id;
         opener = control;
-        title.textContent = id ? 'Recent activity · ' + name : 'Room activity on this device';
+        title.textContent = id ? 'Recent activity · ' + name : 'Room activity';
         transfers.checked = false;
         dialog.showModal();
         resetFilter();
@@ -63,7 +63,7 @@
     transfers.addEventListener('change', resetFilter);
     all.addEventListener('click', () => {
         peerId = null;
-        title.textContent = 'Room activity on this device';
+        title.textContent = 'Room activity';
         resetFilter();
     });
     pause.addEventListener('click', () => follow(pause.getAttribute('aria-pressed') === 'true'));

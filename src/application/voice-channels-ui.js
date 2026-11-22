@@ -55,13 +55,13 @@
     }
 
     function deleteText(name, count) {
-        const first = `Delete the voice channel ${name}?`;
+        const first = `Delete ${name}?`;
         if (count === 0) return first;
-        if (count === 1) return `${first} The person in it moves to General.`;
-        return `${first} The ${count} people in it move to General.`;
+        if (count === 1) return `${first} 1 person moves to General.`;
+        return `${first} ${count} people move to General.`;
     }
 
-    const movedText = name => `The voice channel ${name} was deleted. You are in General now.`;
+    const movedText = name => `${name} was deleted. You're in General.`;
 
     window.voiceChannelsCore = Object.freeze({ GENERAL, UNKNOWN, sorted, label, rows, action, deleteText, movedText });
 

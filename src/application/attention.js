@@ -202,7 +202,7 @@
     }
 
     const ready = api.getAttentionSettings().then(value => { prefs = value; render(); })
-        .catch(() => { status.textContent = 'Sound and notification settings could not be loaded.'; });
+        .catch(() => { status.textContent = 'Couldn\'t load settings.'; });
     for (const [key, suffix] of Object.entries(fields)) {
         const input = byId('attention-' + suffix);
         if (!input) continue;
@@ -212,7 +212,7 @@
                 prefs = await api.setAttentionSettings({ [key]: value });
                 status.textContent = '';
             } catch (err) {
-                status.textContent = String(err?.message ?? 'The setting could not be saved.').replace(/^Error invoking remote method '[^']+': Error: /, '');
+                status.textContent = String(err?.message ?? 'Couldn\'t save this setting.').replace(/^Error invoking remote method '[^']+': Error: /, '');
             }
             render();
         });
@@ -223,10 +223,14 @@
     byId('attention-tone').addEventListener('change', render);
     byId('attention-preview').addEventListener('click', async () => {
         const played = await cue(byId('attention-tone').value, previewClass(), null, { preview: true });
-        const quietNow = quietFor(CUE_RULES[previewClass()]);
-        status.textContent = played ? 'Preview played.' : quietNow ? 'Sounds are quiet in your current availability.' : 'Audio output unavailable.';
+        const rule = CUE_RULES[previewClass()];
+        // UI copy pass: no text when the preview plays (you hear it); a reason when it does not.
+        const quietText = dnd() && !rule.dnd ? 'Sounds are off while Do not disturb is on.' : 'Sounds are off in Idle Peer.';
+        status.textContent = played ? '' : quietFor(rule) ? quietText : 'Audio output unavailable.';
     });
-    byId('attention-windows').hidden = !navigator.userAgent.includes('Windows');
+    // The Start menu shortcut of the notifications (Windows only): a tooltip, not a paragraph.
+    const alertsLabel = byId('attention-alerts-label');
+    if (alertsLabel && navigator.userAgent.includes('Windows')) alertsLabel.title = 'Not for the chat you have open. Adds a Start menu shortcut.';
     api.onAttentionOpen(openTarget);
     // G7b: the friend lines come from the main process (friend-links.mjs), not from the room.
     window.friends?.onAttention?.(target => incoming(target && typeof target === 'object' ? { ...target, kind: 'friend' } : null));

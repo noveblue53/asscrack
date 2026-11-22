@@ -185,7 +185,7 @@ test('W4 check 1: the picker shows Loading sources, then the two lists; Share wa
     assert.equal(f.el('screen-share-go').disabled, true);
     const quality = f.el('screen-quality');
     assert.deepEqual(quality.children.map(o => o.value), ['auto', 'standard', 'smooth', 'balanced', 'high', 'max']);
-    assert.deepEqual(quality.children.map(o => o.textContent), ['Auto (adapts to each viewer)', 'Standard (720p, 15 fps)',
+    assert.deepEqual(quality.children.map(o => o.textContent), ['Auto', 'Standard (720p, 15 fps)',
         'Smooth (720p, 30 fps)', 'Balanced (1080p, 30 fps)', 'High (1080p, 60 fps)', 'Max (1440p, 60 fps)']);
     assert.equal(quality.value, 'auto', 'Auto is selected');
     f.resolveSources();
@@ -396,7 +396,7 @@ test('W5 check 4: the banner, the END texts, peer-left, and a watch again after 
 
     // Watch, then the END texts of section 3.2.
     const texts = { stopped: 'Ann stopped sharing.', source: 'Ann stopped sharing.', idle: 'Ann stopped sharing.',
-        slow: 'Your connection is too slow for this share.', full: 'This share has 6 viewers.',
+        slow: 'Your connection is too slow for this share.', full: 'Viewer limit reached (6).',
         refused: 'This share is not available.', error: "Ann's share stopped." };
     for (const [reason, text] of Object.entries(texts)) {
         f.emit('onScreenState', { peerId: 'peer-a', sharing: true, shareId: SHARE, preset: 'auto' });
@@ -466,7 +466,7 @@ test('W5: the viewer drops a keyframe with a wrong size, asks for a keyframe aft
     f.emit('onScreenFrame', { peerId: 'peer-a', key: true, seq: 5, timestampMs: 160, data: key(1920, 1080) });
     assert.equal(f.el('screen-stage').hidden, true);
     assert.equal(names(f.calls, 'unwatchScreen').length, 1);
-    assert.equal(f.el('screen-notice').textContent, 'This share cannot be shown on this computer.');
+    assert.equal(f.el('screen-notice').textContent, 'Can\'t play this share on this PC.');
     // Stop watching.
     f.el('screen-watch').click();
     await flush();

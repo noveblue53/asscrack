@@ -1607,13 +1607,14 @@ function renderTransferActions(entry, row) {
     if (hadFocus) (buttons.firstElementChild ?? row).focus({ preventScroll: true });
 }
 
-function setTransferState(entry, state, text) {
+// tip: the tooltip of the state text (default: the text). UI copy pass: a raw failure reason or "Delivery not confirmed".
+function setTransferState(entry, state, text, tip = text) {
     entry.state = state;
     const render = row => {
         row.dataset.state = state;
         const stateSpan = row.querySelector('.state-text');
         stateSpan.textContent = text;
-        stateSpan.title = text;
+        stateSpan.title = tip;
         renderTransferActions(entry, row);
     };
     render(entry.item);
@@ -1643,17 +1644,17 @@ async function acceptTransfer(key) {
     if (!entry || entry.direction !== 'receive' || entry.state !== 'offered') return false;
     setTransferState(entry, 'receiving', 'Receiving');
     const ok = await callFile(window.asscrack.acceptFile, entry.item.dataset.offerId);
-    if (ok !== true) setTransferResult(entry, 'failed', 'Failed: the offer is not available');
+    if (ok !== true) setTransferResult(entry, 'failed', 'Failed: offer expired');
     return ok === true;
 }
 
 async function retryTransfer(key) {
     const entry = liveTransfer(key);
     if (!entry || entry.direction !== 'receive' || entry.state !== 'failed' || !canRetryTransfer(entry)) return false;
-    setTransferState(entry, 'requesting', 'Requesting retry…');
+    setTransferState(entry, 'requesting', 'Retrying…');
     const ok = await callFile(window.asscrack.retryFile, entry.item.dataset.offerId);
     if (ok !== true && entry.state === 'requesting' && transferKey(entry.item) === key) {
-        setTransferResult(entry, 'failed', 'Failed: retry could not start');
+        setTransferResult(entry, 'failed', 'Retry failed');
     }
     return ok === true;
 }
@@ -1675,7 +1676,7 @@ async function refuseTransfer(key) {
     setTransferState(entry, 'refusing', 'Refusing');
     const ok = await callFile(window.asscrack.refuseFile, entry.item.dataset.offerId);
     if (ok === true) setTransferResult(entry, 'refused', 'Refused');
-    else setTransferResult(entry, 'failed', 'Failed: the offer is not available');
+    else setTransferResult(entry, 'failed', 'Failed: offer expired');
     return ok === true;
 }
 
@@ -1687,7 +1688,7 @@ async function cancelReceive(key) {
     setTransferState(entry, 'receiving', 'Cancelling');
     try {
         const ok = await window.asscrack.cancelFile(entry.item.dataset.offerId);
-        if (!ok) throw new Error('Cancel is no longer available');
+        if (!ok) throw new Error('Too late to cancel');
         return true;
     } catch (err) {
         entry.cancelRequested = false;
@@ -1706,7 +1707,7 @@ async function cancelToReceiver(key) {
     renderTransferActions(entry, entry.item);
     try {
         const ok = await window.asscrack.cancelFile(entry.item.dataset.offerId, entry.item.dataset.peerId);
-        if (!ok) throw new Error('Cancel is no longer available');
+        if (!ok) throw new Error('Too late to cancel');
         return true;
     } catch (err) {
         entry.cancelRequested = false;
@@ -1731,8 +1732,8 @@ async function cancelWholeOffer(offerId) {
 }
 
 const REVEAL_TEXT = {
-    missing: 'The file is not in its folder. It was moved or deleted.',
-    unknown: 'This computer has no record of this received file.'
+    missing: 'File was moved or deleted.',
+    unknown: 'File not found.'
 };
 
 // Show in Explorer for a file that this computer received. The main process keeps the path.
@@ -1955,7 +1956,7 @@ function makeTransferRow(offerId, peerId, direction, info, className) {
     item.dataset.peerId = String(peerId);
     item.dataset.direction = direction;
     const progress = document.createElement('progress');
-    progress.setAttribute('aria-label', 'File transfer progress');
+    progress.setAttribute('aria-label', 'Progress');
     progress.max = Number(info.size) || 1;
     progress.value = 0;
     // The cell around the bar shows the percent text (data-pct, see showProgress).
@@ -2024,11 +2025,26 @@ function transferForEvent(data) {
     return entry;
 }
 
-function setTransferResult(entry, state, text) {
+function setTransferResult(entry, state, text, tip = text) {
     if (RESULT_STATES.has(entry.state)) return;
     entry.cancelRequested = false;
     entry.pauseRequested = false;
-    setTransferState(entry, state, text);
+    setTransferState(entry, state, text, tip);
+}
+
+// P6 of the UI copy pass: the short window text of a transfer failure reason (src/network/file-transfer.mjs). An
+// unknown reason gives "Failed"; the tooltip has the raw reason.
+const FAIL_TEXTS = {
+    'peer left': 'they left', 'stream ended': 'connection lost', 'transfer stalled': 'stalled',
+    'too many active file transfers': 'too many transfers', 'not enough disk space': 'disk full',
+    'offer expired': 'offer expired', 'resume expired': 'resume expired', 'retry expired': 'retry expired',
+    'retry request timed out': 'no answer', 'the sender can no longer offer this file': 'no longer offered',
+    'the source file changed': 'file changed', 'original file changed': 'file changed',
+    'the paused part is over the storage budget': 'no space for the partial file'
+};
+function failText(reason) {
+    const short = FAIL_TEXTS[reason];
+    return short ? `Failed: ${short}` : 'Failed';
 }
 
 window.asscrack.onFileOffer(data => {
@@ -2121,10 +2137,11 @@ window.asscrack.onFileDone(data => {
         setTransferResult(entry, 'done', `Saved as ${fileName}`);
     } else {
         entry.confirmed = data.confirmed === true;
-        const text = data.confirmed === true ? 'Delivered' : 'Sent (delivery unconfirmed)';
+        const text = data.confirmed === true ? 'Delivered' : 'Sent ?';
         // P7b: a resumed send gives the bytes of this attempt (P7a: `sent`).
         const resumed = Number(data.offset) > 0 && Number.isFinite(Number(data.sent));
-        setTransferResult(entry, 'done', resumed ? `${text} · ${formatSize(data.sent)} sent after the resume` : text);
+        const full = resumed ? `${text} · ${formatSize(data.sent)} after resume` : text;
+        setTransferResult(entry, 'done', full, data.confirmed === true ? full : 'Delivery not confirmed');
     }
 });
 
@@ -2135,7 +2152,7 @@ window.asscrack.onFileFailed(data => {
     entry.retryable = data.retryable === true;
     entry.cancelRequested = false;
     entry.pauseRequested = false;
-    setTransferState(entry, 'failed', `Failed: ${data.reason ?? ''}`);
+    setTransferState(entry, 'failed', failText(data.reason), String(data.reason ?? ''));
 });
 window.asscrack.onFileRefused(data => setTransferResult(transferForEvent({ ...data, direction: 'send' }), 'refused', 'Refused'));
 window.asscrack.onFileCancelled(data => {
@@ -2201,7 +2218,7 @@ function pausedText(entry) {
     const parts = ['Paused', `${formatSize(bytes)} of ${formatSize(size)}`];
     const expiresAt = Number(partial?.expiresAt);
     if (partial && Number.isFinite(expiresAt) && expiresAt > 0) parts.push(`kept until ${new Date(expiresAt).toLocaleString()}`);
-    if (entry.kept && !entry.resumable) parts.push('it continues when the sender offers the file again');
+    if (entry.kept && !entry.resumable) parts.push('resumes when the sender is back');
     return parts.join(' · ');
 }
 
@@ -2224,7 +2241,7 @@ async function pauseTransfer(key) {
     if (ok !== true && entry.pauseRequested) {
         entry.pauseRequested = false;
         if (entry.state === 'receiving') setTransferState(entry, 'receiving', 'Receiving');
-        status.textContent = 'Pause is not possible now.';
+        status.textContent = 'Can\'t pause now.';
     }
     return ok === true;
 }
@@ -2257,7 +2274,7 @@ async function resumeTransfer(key, fromJoin = false) {
             entry.waitRetried = true;
             setTimeout(() => { if (entry.state === 'waiting') void resumeTransfer(transferKey(entry.item), true); }, 2000);
         }
-    } else setTransferState(entry, 'paused', `${pausedText(entry)} · Resume could not start`);
+    } else setTransferState(entry, 'paused', `${pausedText(entry)} · Resume failed`);
     return false;
 }
 
@@ -2280,7 +2297,7 @@ function discardTransfer(key) {
     discardKey = key;
     const name = entry.item.querySelector('.file-name').textContent;
     document.getElementById('discard-text').textContent =
-        `Discard the partial file of ${name}? The download starts again from the beginning next time.`;
+        `Discard the partial download of ${name}? It will restart from the beginning.`;
     if (!discardBound) {
         discardBound = true;
         document.getElementById('discard-confirm').addEventListener('click', () => {
@@ -2300,10 +2317,10 @@ async function confirmDiscard() {
     const partialKey = entry.partialKey;
     const ok = await callFile(window.asscrack.discardPartial, partialKey);
     if (ok !== true) {
-        status.textContent = 'The kept part is in use or no longer on this computer.';
+        status.textContent = 'Partial file is in use or gone.';
         return false;
     }
-    partialGone(partialKey, 'The kept part is discarded. The download starts again from the beginning next time.');
+    partialGone(partialKey, 'Partial file discarded.');
     return true;
 }
 
@@ -2341,7 +2358,7 @@ function keptRow(partial) {
     if (entry.kept || entry.state !== null) return;
     Object.assign(entry, { kept: true, partialKey: partial.key, resumable, retryable: resumable, from });
     const peer = entry.item.querySelector('.peer-name');
-    peer.textContent = resumable ? `from ${transferPeerName(partial.peerId, from)} (an earlier session)` : 'from an earlier session';
+    peer.textContent = resumable ? `from ${transferPeerName(partial.peerId, from)} (earlier)` : 'from earlier';
     peer.title = peer.textContent;
     setProgress(entry, partial.bytes, partial.size);
     setTransferState(entry, 'paused', pausedText(entry));
@@ -2408,7 +2425,7 @@ window.asscrack.onFileResumed?.(data => {
     const entry = getTransfer(data.offerId, data.peerId, send ? 'send' : 'receive', data);
     if (RESULT_STATES.has(entry.state)) return;
     setProgress(entry, data.offset, data.size);
-    setTransferState(entry, send ? 'sending' : 'receiving', `${send ? 'Sending' : 'Receiving'} · continues from ${formatSize(data.offset)}`);
+    setTransferState(entry, send ? 'sending' : 'receiving', `${send ? 'Sending' : 'Receiving'} · resuming at ${formatSize(data.offset)}`);
 });
 
 window.asscrack.onFileRestarted?.(data => {
@@ -2416,18 +2433,18 @@ window.asscrack.onFileRestarted?.(data => {
     const entry = getTransfer(data.offerId, data.peerId, 'receive', data);
     if (RESULT_STATES.has(entry.state)) return;
     setProgress(entry, 0);
-    setTransferState(entry, 'receiving', 'The download started again from the beginning.');
+    setTransferState(entry, 'receiving', 'Restarted from the beginning.');
 });
 
 window.asscrack.onFileExpired?.(partial => {
-    if (typeof partial?.key === 'string') partialGone(partial.key, 'The kept part expired.');
+    if (typeof partial?.key === 'string') partialGone(partial.key, 'Partial file expired.');
 });
 
 window.asscrack.onFileDiscarded?.(partial => {
     if (typeof partial?.key !== 'string' || !keptPartials.has(partial.key)) return;
     partialGone(partial.key, partial.reason === 'user'
-        ? 'The kept part is discarded. The download starts again from the beginning next time.'
-        : `The kept part was deleted (${partial.reason ?? 'unknown'}).`);
+        ? 'Partial file discarded.'
+        : `Partial file deleted (${partial.reason ?? 'unknown'}).`);
 });
 
 window.asscrack.onFilePartials?.(data => syncPartials(data?.partials));
@@ -2438,7 +2455,7 @@ function updateOfferSummary(offerId) {
     const head = offerHeads.get(offerId);
     if (!head) return;
     const counts = new Map();
-    const labels = { offered: 'awaiting reply', sending: 'sending', paused: 'paused', refused: 'declined', failed: 'failed', cancelled: 'cancelled' };
+    const labels = { offered: 'waiting', sending: 'sending', paused: 'paused', refused: 'declined', failed: 'failed', cancelled: 'cancelled' };
     let pending = false;
     for (const entry of head.rows) {
         const label = entry.state === 'done' ? (entry.confirmed ? 'delivered' : 'sent (unconfirmed)') : labels[entry.state];
@@ -3230,12 +3247,12 @@ document.addEventListener('keydown', e => {
     window.idlePeer = {
         isIdle: () => idle,
         enter: async () => {
-            try { if (!await api.enterIdlePeer()) status.textContent = 'The tray is unavailable. The room is still open.'; }
-            catch { status.textContent = 'Could not enter Idle Peer.'; }
+            try { if (!await api.enterIdlePeer()) status.textContent = 'Tray unavailable.'; }
+            catch { status.textContent = 'Couldn\'t minimize to tray.'; }
         },
         toggleClose: async () => {
             try { await api.setCloseToTray(!closeToTray); }
-            catch { status.textContent = 'Could not save the close preference.'; }
+            catch { status.textContent = 'Couldn\'t save this setting.'; }
         }
     };
     api.onIdlePeer?.(state => { updates++; apply(state); });

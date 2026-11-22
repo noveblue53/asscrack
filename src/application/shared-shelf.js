@@ -24,7 +24,7 @@
             row.item.classList.toggle('program-file', kind.program);
             if (kind.program) row.info.textContent += ` · ${kind.warning}`;
         }
-        const badges = { requesting: 'Requesting from source…', receiving: 'Downloading', saved: 'Saved',
+        const badges = { requesting: 'Requesting…', receiving: 'Downloading', saved: 'Saved',
             failed: reason || 'Download failed', cancelled: 'Cancelled' };
         row.state.textContent = badges[state] ?? (available ? 'Available' : 'Unavailable');
         if (!available && ['failed', 'cancelled'].includes(state)) row.state.textContent += ' · Source unavailable';
@@ -44,11 +44,11 @@
         try {
             if (own) await api.removeSharedFile(id);
             else if (state === 'receiving') {
-                if (!await api.cancelFile(offerId)) notice.textContent = 'The download can no longer be cancelled.';
+                if (!await api.cancelFile(offerId)) notice.textContent = 'Too late to cancel.';
             } else if (state === 'saved') {
                 if (!(await api.revealFile(`${offerId}|${peerId}`))?.ok) notice.textContent = 'The saved file was moved or deleted.';
             } else if (!await api.downloadSharedFile(peerId, id)) notice.textContent = 'The source is no longer available.';
-        } catch { notice.textContent = 'The file action could not be completed.'; }
+        } catch { notice.textContent = 'That didn\'t work. Try again.'; }
         finally { row.busy = false; update(row); }
     }
 
@@ -116,8 +116,9 @@
             await api.shareFile(file);
             notice.textContent = '';
         } catch (error) {
-            const reason = error.message?.split('Error: ').at(-1);
-            notice.textContent = reason || 'Could not share that file.';
+            // P1, P6: no "Error:" prefix; the window text of a known network reason.
+            const reason = typeof errorText === 'function' ? errorText(error) : error.message?.split('Error: ').at(-1);
+            notice.textContent = reason || 'Couldn\'t share that file.';
         } finally {
             share.disabled = false;
             if (dialog.open && document.activeElement === document.body) share.focus();

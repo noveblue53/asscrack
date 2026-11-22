@@ -490,7 +490,7 @@ function updateTray() {
     }
     tray.setContextMenu(Menu.buildFromTemplate([
         { label: 'Open ASSCRACK', click: restoreRoomWindow },
-        { label: 'Close to Idle Peer', type: 'checkbox', checked: closeToTray, click: item => {
+        { label: 'Close to tray', type: 'checkbox', checked: closeToTray, click: item => {
             try { setCloseToTray(item.checked); } catch (err) { writeLog('WARN', `Close preference not saved: ${err?.message ?? err}`); }
         } },
         { label: 'Quit ASSCRACK', click: () => app.quit() }
@@ -534,7 +534,7 @@ function hideForFriends() {
     if (!existsSync(friendsTrayHintFile)) {
         try { writeFileSync(friendsTrayHintFile, JSON.stringify({ shown: true })); }
         catch (err) { writeLog('WARN', `Tray hint flag not saved: ${err?.message ?? err}`); }
-        showTrayBalloon('ASSCRACK stays online for your friends. Click the tray icon to open it. Right-click it to quit.');
+        showTrayBalloon('Still running in the tray.');
     }
     return true;
 }
@@ -565,9 +565,9 @@ function enterIdlePeer() {
         try { writeFileSync(trayHintFile, JSON.stringify({ shown: true })); }
         catch (err) { writeLog('WARN', `Tray hint flag not saved: ${err?.message ?? err}`); }
     }
-    const hint = 'ASSCRACK is still in the room as Idle Peer. Click the tray icon to open it. Right-click it to quit.';
+    const hint = 'Still in the room. Running in the tray.';
     if (firstClose) showTrayBalloon(leftVoice ? 'You left voice. ' + hint : hint);
-    else if (leftVoice) showTrayBalloon('You left voice. ASSCRACK is still in the room as Idle Peer.');
+    else if (leftVoice) showTrayBalloon('You left voice. Still in the room.');
     return true;
 }
 
@@ -591,7 +591,7 @@ function startupView() {
         entry: startEntry.state() };
 }
 function setStartup(raw) {
-    if (!installedBuild) throw new Error('Only the installed ASSCRACK can start at sign-in.');
+    if (!installedBuild) throw new Error('Only the installed app can start at sign-in.');
     const choice = normalizeChoice(raw);
     if (choice.mode === 'room' && !startRooms(getSavedRooms().status().rooms).some(room => room.roomId === choice.roomId)) {
         throw new Error('Saved room not found');
@@ -1702,7 +1702,7 @@ function resetScreen(current) {
 
 handleRoomIpc('asscrack:set-voice', (_event, state) => {
     if (!node) throw new Error('Not logged in');
-    if (idlePeer && state?.inVoice === true) throw new Error('Idle Peer has left voice');
+    if (idlePeer && state?.inVoice === true) throw new Error('You left voice.');
     const result = node.setVoice(state ?? {});
     inVoice = state?.inVoice === true;
     journal('voice-state', { in: inVoice, muted: state?.muted === true, deafened: state?.deafened === true,

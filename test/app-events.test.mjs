@@ -47,7 +47,7 @@ test('the transfer window labels confirmed delivery, legacy sends, failure and t
     room.handlers.onFileFailed({ ...send, offerId: 'third', reason: 'peer left' });
     room.handlers.onFileDone({ ...send, offerId: 'fourth', direction: 'receive', savedName: 'note.txt' });
     const labels = room.el('transfers').children.map(row => row.querySelector('.state-text').textContent);
-    assert.deepEqual(labels, ['Delivered', 'Sent (delivery unconfirmed)', 'Failed: peer left', 'Saved as note.txt']);
+    assert.deepEqual(labels, ['Delivered', 'Sent ?', 'Failed: they left', 'Saved as note.txt']);
 });
 
 test('a live file card and its Transfers row share one offer, actions and saved path key', async () => {
@@ -153,7 +153,7 @@ test('room offer groups list every recipient and distinguish delivery, legacy se
     const [head, ...rows] = room.el('transfers').children;
     assert.deepEqual(rows.map(el => el.dataset.peerId), recipients);
     assert.equal(rows[1].querySelector('.file-name').textContent, offer.name);
-    assert.match(head.querySelector('.offer-summary').textContent, /3 awaiting reply/);
+    assert.match(head.querySelector('.offer-summary').textContent, /3 waiting/);
     const event = { direction: 'send', offerId: offer.offerId };
     room.handlers.onFileDone({ ...event, peerId: 'one', confirmed: true });
     room.handlers.onFileDone({ ...event, peerId: 'three', confirmed: false });

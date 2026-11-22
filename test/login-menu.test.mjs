@@ -9,7 +9,7 @@ import { createDom } from './helpers/fake-dom.mjs';
 const html = await readFile(new URL('../src/application/index.html', import.meta.url), 'utf8');
 const layoutSource = await readFile(new URL('../src/application/layout.js', import.meta.url), 'utf8');
 const LOGIN_LINES = ['Theme…', 'Sound & notifications…', 'Keyboard shortcuts…', 'About ASSCRACK…',
-    'Windows system buttons (next launch)', 'Quit Asscrack'];
+    'Native title bar', 'Quit'];
 
 // The <li> lines of #view-menu in index.html: { id, attrs, hidden, text }.
 function menuLines() {
@@ -80,7 +80,7 @@ test('the View menu on the login screen has the six login lines, and the arrow k
     }
     assert.deepEqual(seen, [...LOGIN_LINES, LOGIN_LINES[0]]);
     r.key('End');
-    assert.equal(r.document.activeElement.textContent, 'Quit Asscrack');
+    assert.equal(r.document.activeElement.textContent, 'Quit');
 });
 
 test('in a room the View menu shows the room lines again', () => {
@@ -89,8 +89,8 @@ test('in a room the View menu shows the room lines again', () => {
     r.toggle.click();
     const lines = r.visible();
     for (const text of LOGIN_LINES) assert.ok(lines.includes(text), text);
-    for (const text of ['Buddies', 'Pin Transfers', 'Voice controls', 'Compact transcript', 'Reset layout', 'Enter Idle Peer',
-        'Close to Idle Peer']) assert.ok(lines.includes(text), text);
+    for (const text of ['Buddies', 'Pin Transfers', 'Voice controls', 'Compact mode', 'Reset layout', 'Minimize to tray',
+        'Close to tray']) assert.ok(lines.includes(text), text);
     assert.ok(!lines.includes('Open Buddies'), 'the drawer line shows only in the drawer mode');
     // Back on the login screen (after Leave room the window reloads; this checks the same rule).
     r.toggle.click();

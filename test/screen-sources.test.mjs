@@ -66,7 +66,7 @@ test('W3 check 4: an ID that was not in the last list is refused; check 4a: the 
     assert.throws(() => screen.pick('screen:9:0', 'auto'), /not in the list/);
     assert.throws(() => screen.pick('web-contents-media-stream:7', 'auto'), /not in the list/);
     assert.deepEqual(PICKER_QUALITIES.map(q => q.id), ['auto', 'standard', 'smooth', 'balanced', 'high', 'max']);
-    assert.deepEqual(PICKER_QUALITIES.map(q => q.label), ['Auto (adapts to each viewer)', 'Standard (720p, 15 fps)',
+    assert.deepEqual(PICKER_QUALITIES.map(q => q.label), ['Auto', 'Standard (720p, 15 fps)',
         'Smooth (720p, 30 fps)', 'Balanced (1080p, 30 fps)', 'High (1080p, 60 fps)', 'Max (1440p, 60 fps)']);
     assert.deepEqual(screen.pick('screen:0:0', 'auto'), { name: 'Screen 1', width: 2560, height: 1440, frameRate: 60, bitrate: 12000000 });
     assert.deepEqual(screen.pick('window:11:0', 'standard'), { name: 'Notepad', width: 1280, height: 720, frameRate: 15, bitrate: 1500000 });

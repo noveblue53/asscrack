@@ -111,7 +111,7 @@ test('a pause that the node refuses gives the receiving row back', async () => {
     assert.equal(row.dataset.state, 'receiving');
     assert.equal(text(row), 'Receiving');
     assert.deepEqual(actions(row), ['pause', 'cancel-receive']);
-    assert.equal(f.el('status').textContent, 'Pause is not possible now.');
+    assert.equal(f.el('status').textContent, 'Can\'t pause now.');
 });
 
 test('an attachment or shelf receive that pauses has Discard but no Resume', async () => {
@@ -132,7 +132,7 @@ test('Resume asks the sender, and the resume attempt continues on the same rows 
     for (const r of [row, card]) {
         assert.equal(r.dataset.offerId, NEXT);
         assert.equal(r.dataset.state, 'receiving');
-        assert.equal(text(r), 'Receiving · continues from 40.0 MB');
+        assert.equal(text(r), 'Receiving · resuming at 40.0 MB');
     }
     f.handlers.onFileProgress({ offerId: NEXT, peerId: SAM, direction: 'receive', bytes: 70 * MIB, size: SIZE });
     assert.equal(row.querySelector('progress').value, 70 * MIB);
@@ -170,19 +170,19 @@ test('Discard asks first with the file name, then deletes the kept part', async 
     const dialog = f.el('discard-dialog');
     assert.equal(dialog.open, true);
     assert.equal(f.el('discard-text').textContent,
-        'Discard the partial file of big.iso? The download starts again from the beginning next time.');
+        'Discard the partial download of big.iso? It will restart from the beginning.');
     assert.deepEqual(f.log.filter(([name]) => name === 'discardPartial'), [], 'no delete before the answer');
     f.el('discard-confirm').click();
     await settle();
     assert.equal(dialog.open, false);
     assert.deepEqual(f.log.filter(([name]) => name === 'discardPartial'), [['discardPartial', KEY]]);
     assert.equal(row.dataset.state, 'failed');
-    assert.equal(text(row), 'The kept part is discarded. The download starts again from the beginning next time.');
+    assert.equal(text(row), 'Partial file discarded.');
     // The offer stays open to a new attempt from byte 0 (Retry as before).
     assert.deepEqual(actions(row), ['retry']);
     // The node event of the same Discard changes nothing more.
     f.handlers.onFileDiscarded({ ...partial(), reason: 'user' });
-    assert.equal(text(row), 'The kept part is discarded. The download starts again from the beginning next time.');
+    assert.equal(text(row), 'Partial file discarded.');
 });
 
 test('a restarted event shows that the download started again from the beginning', async () => {
@@ -193,20 +193,20 @@ test('a restarted event shows that the download started again from the beginning
     f.handlers.onFileRestarted({ offerId: NEXT, peerId: SAM, direction: 'receive', reason: 'the sender cannot continue from an offset',
         resumeOf: OFFER.offerId });
     assert.equal(row.dataset.offerId, NEXT);
-    assert.equal(text(row), 'The download started again from the beginning.');
+    assert.equal(text(row), 'Restarted from the beginning.');
     assert.equal(row.querySelector('progress').value, 0);
     f.handlers.onFileProgress({ offerId: NEXT, peerId: SAM, direction: 'receive', bytes: 5 * MIB, size: SIZE });
-    assert.equal(text(row), 'The download started again from the beginning.');
+    assert.equal(text(row), 'Restarted from the beginning.');
     assert.equal(f.el('transfers').children.length, 1);
 });
 
-test('an expired kept part shows "The kept part expired." and only Retry', async () => {
+test('an expired kept part shows "Partial file expired." and only Retry', async () => {
     const f = await room();
     const { row } = await paused(f);
     f.handlers.onFileExpired(partial());
     f.handlers.onFilePartials({ partials: [] });
     assert.equal(row.dataset.state, 'failed');
-    assert.equal(text(row), 'The kept part expired.');
+    assert.equal(text(row), 'Partial file expired.');
     assert.deepEqual(actions(row), ['retry']);
 });
 
@@ -217,7 +217,7 @@ test('a failed resume keeps Discard for the part that stays on disk', async () =
     await settle();
     f.handlers.onFileFailed({ offerId: OFFER.offerId, peerId: SAM, direction: 'receive',
         reason: 'the sender can no longer offer this file', retryable: false });
-    assert.equal(text(row), 'Failed: the sender can no longer offer this file');
+    assert.equal(text(row), 'Failed: no longer offered');
     assert.deepEqual(actions(row), ['discard']);
 });
 
@@ -226,9 +226,9 @@ test('a kept part of an earlier session gets its own row with Discard, and the r
     await settle();
     const [row] = f.el('transfers').children;
     assert.equal(row.dataset.state, 'paused');
-    assert.equal(row.querySelector('.peer-name').textContent, 'from an earlier session');
+    assert.equal(row.querySelector('.peer-name').textContent, 'from earlier');
     assert.equal(text(row), `Paused · 40.0 MB of 100.0 MB · kept until ${new Date(EXPIRES).toLocaleString()} · ` +
-        'it continues when the sender offers the file again');
+        'resumes when the sender is back');
     assert.deepEqual(actions(row), ['discard']);
     // Sam offers the same file again. The accepted receive uses the kept part (the node continues it).
     f.handlers.onFileOffer({ ...OFFER, offerId: NEXT });
@@ -272,9 +272,9 @@ test('the sender row shows the pause of the receiver and continues as the resume
     f.handlers.onFileRetried({ offerId: NEXT, retryOf: OFFER.offerId, peerId: SAM, direction: 'send', name: 'big.iso', size: SIZE });
     f.handlers.onFileResumed({ offerId: NEXT, peerId: SAM, direction: 'send', offset: 40 * MIB, size: SIZE });
     assert.equal(row.dataset.offerId, NEXT);
-    assert.equal(text(row), 'Sending · continues from 40.0 MB');
+    assert.equal(text(row), 'Sending · resuming at 40.0 MB');
     f.handlers.onFileDone({ offerId: NEXT, peerId: SAM, direction: 'send', confirmed: true, offset: 40 * MIB, sent: 60 * MIB });
-    assert.equal(text(row), 'Delivered · 60.0 MB sent after the resume');
+    assert.equal(text(row), 'Delivered · 60.0 MB after resume');
     assert.equal(f.el('transfers').children.length, 1);
 });
 
@@ -328,7 +328,7 @@ test('P7c: a kept part with a retry state has Resume, finds the sender by its na
     await settle();
     const [row] = f.el('transfers').children;
     assert.equal(row.dataset.state, 'paused');
-    assert.equal(row.querySelector('.peer-name').textContent, 'from Sam (an earlier session)');
+    assert.equal(row.querySelector('.peer-name').textContent, 'from Sam (earlier)');
     assert.equal(text(row), `Paused · 40.0 MB of 100.0 MB · kept until ${new Date(EXPIRES).toLocaleString()}`);
     assert.deepEqual(actions(row), ['resume', 'discard']);
     button(row, 'resume').click();
@@ -341,7 +341,7 @@ test('P7c: a kept part with a retry state has Resume, finds the sender by its na
     f.handlers.onFileResumed({ offerId: NEXT, peerId: SAM, direction: 'receive', offset: 40 * MIB, size: SIZE, resumeOf: OFFER.offerId });
     assert.equal(row.dataset.offerId, NEXT);
     assert.equal(row.dataset.peerId, SAM);
-    assert.equal(text(row), 'Receiving · continues from 40.0 MB');
+    assert.equal(text(row), 'Receiving · resuming at 40.0 MB');
     f.handlers.onFileDone({ offerId: NEXT, peerId: SAM, direction: 'receive', savedName: 'big.iso', resumeOf: OFFER.offerId });
     assert.equal(text(row), 'Saved as big.iso');
     assert.equal(f.el('transfers').children.length, 1);
@@ -371,7 +371,7 @@ test('P7c: a kept part with no retry state stays as in P7b (Discard only)', asyn
     const f = await room({ listPartials: async () => [partial({ offerId: 'old-offer' })] });
     await settle();
     const [row] = f.el('transfers').children;
-    assert.equal(row.querySelector('.peer-name').textContent, 'from an earlier session');
+    assert.equal(row.querySelector('.peer-name').textContent, 'from earlier');
     assert.deepEqual(actions(row), ['discard']);
 });
 
@@ -391,9 +391,9 @@ test('P7c: the "Paused by" row of the sender continues when the receiver resumes
     assert.equal(row.dataset.peerId, NEW_SAM);
     assert.equal(text(row), 'Resume offered');
     f.handlers.onFileResumed({ offerId: NEXT, peerId: NEW_SAM, direction: 'send', offset: 40 * MIB, size: SIZE });
-    assert.equal(text(row), 'Sending · continues from 40.0 MB');
+    assert.equal(text(row), 'Sending · resuming at 40.0 MB');
     f.handlers.onFileDone({ offerId: NEXT, peerId: NEW_SAM, direction: 'send', confirmed: true, offset: 40 * MIB, sent: 60 * MIB });
-    assert.equal(text(row), 'Delivered · 60.0 MB sent after the resume');
+    assert.equal(text(row), 'Delivered · 60.0 MB after resume');
     assert.equal(f.el('transfers').children.length, 1, 'no second row');
 });
 

@@ -17,17 +17,16 @@
 
     function entryText(view) {
         if (view.mode === 'off') return '';
-        if (!view.entry?.present) return 'Windows has no start entry for ASSCRACK. Turn the setting off and on again.';
-        if (!view.entry.enabled) {
-            return 'The start is off in Windows (Task Manager, Startup apps). Turn ASSCRACK on there to start at sign-in.';
-        }
-        return 'Windows starts ASSCRACK when you sign in.';
+        if (!view.entry?.present) return 'Startup entry missing. Turn this off and on again.';
+        if (!view.entry.enabled) return 'Turned off in Task Manager › Startup apps.';
+        // U10 of the UI copy pass: the checkbox shows that the start is on.
+        return '';
     }
 
     function show(view) {
         menuLine.hidden = view?.available !== true;
         if (view?.available !== true) return;
-        const options = [new Option('Friends only (no room)', FRIENDS)];
+        const options = [new Option('No room (friends only)', FRIENDS)];
         for (const room of view.rooms ?? []) options.push(new Option(String(room.name ?? ''), 'room:' + String(room.roomId)));
         choice.replaceChildren(...options);
         if (view.mode === 'room') choice.value = 'room:' + view.roomId;
@@ -35,7 +34,7 @@
         on.checked = view.mode !== 'off';
         choice.disabled = !on.checked;
         entry.textContent = entryText(view);
-        if (view.archive !== 'open') status.textContent = 'The saved rooms are locked. Only "Friends only" is available now.';
+        if (view.archive !== 'open') status.textContent = 'Saved rooms are locked.';
     }
 
     function selected() {
@@ -52,7 +51,7 @@
         try {
             show(await api.setStartup(selected()));
         } catch (err) {
-            status.textContent = 'The start at sign-in was not saved: ' + errorText(err);
+            status.textContent = 'Couldn\'t save: ' + errorText(err);
             try { show(await api.getStartup()); } catch { /* the dialog keeps its state */ }
         } finally {
             busy = false;
@@ -67,7 +66,7 @@
         try {
             show(await api.getStartup());
         } catch {
-            status.textContent = 'The start at sign-in setting could not be read.';
+            status.textContent = 'Couldn\'t read this setting.';
         }
         if (!dialog.open) dialog.showModal();
     }
