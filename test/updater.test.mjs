@@ -299,6 +299,10 @@ test('the restart script waits, installs silently, and starts the new version wi
         "$p = Start-Process -FilePath 'C:\\T\\it''s\\ASSCRACK-1.0.1-setup.exe' -ArgumentList '--updated /S /D=C:\\P\\asscrack' -Wait -PassThru",
         "Start-Process -FilePath 'C:\\P\\asscrack\\ASSCRACK.exe' -ArgumentList '--profile \"D:\\my profile\"'"
     ]);
+    // A folder that the user picked at install can have spaces and an apostrophe. NSIS reads /D= to the end of the line.
+    const custom = restartScript({ waitPids: [], setup: { file: 'C:\\T\\s.exe', installDir: "D:\\My Apps\\O'Neil\\ASSCRACK" },
+        start: { file: 'x.exe', args: [] } });
+    assert.ok(custom.includes("-ArgumentList '--updated /S /D=D:\\My Apps\\O''Neil\\ASSCRACK' -Wait"), custom);
     assert.equal(Buffer.from(encodedCommand('ab'), 'base64').toString('utf16le'), 'ab');
     // Two stages: the first stage starts the second stage (hidden) with the encoded restart script, and exits.
     const args = helperArgs('C:\W\powershell.exe', "Write-Output 'x'");

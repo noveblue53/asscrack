@@ -62,13 +62,24 @@ class VoicePlayback extends AudioWorkletProcessor {
                 this.origin(data.origin).gain = data.gain;
             } else if (data.type === 'remove') this.origins.delete(data.origin);
             else if (data.type === 'clear') this.origins.clear();
+            // Diagnostics (1.0.1): the counters of each origin since the last question, then zero.
+            else if (data.type === 'stats') {
+                const origins = {};
+                for (const [origin, o] of this.origins) {
+                    origins[origin] = { trims: o.trims };
+                    o.trims = 0;
+                }
+                this.port.postMessage({ type: 'stats', origins });
+            }
         };
     }
 
     origin(origin) {
         let o = this.origins.get(origin);
         if (!o) {
-            o = { chunks: [], offset: 0, size: 0, playing: false, gain: 1 };
+            // trims (diagnostics): the chunks dropped above MAX_SAMPLES. An empty queue is not counted here: the gate of
+            // the sender empties it at each pause (voice.js counts the late frames).
+            o = { chunks: [], offset: 0, size: 0, playing: false, gain: 1, trims: 0 };
             this.origins.set(origin, o);
         }
         return o;
@@ -79,6 +90,7 @@ class VoicePlayback extends AudioWorkletProcessor {
         o.chunks.push(samples);
         o.size += samples.length;
         while (o.size > MAX_SAMPLES && o.chunks.length > 1) {
+            o.trims++;
             const first = o.chunks.shift();
             o.size -= first.length - o.offset;
             o.offset = 0;

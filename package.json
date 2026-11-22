@@ -75,8 +75,10 @@
       "artifactName": "ASSCRACK-${version}-portable.exe"
     },
     "nsis": {
-      "oneClick": true,
+      "oneClick": false,
       "perMachine": false,
+      "allowElevation": false,
+      "allowToChangeInstallationDirectory": true,
       "artifactName": "ASSCRACK-${version}-setup.exe",
       "installerIcon": "src/application/img/app.ico",
       "uninstallerIcon": "src/application/img/app.ico",

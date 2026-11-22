@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, Notification, nativeImage, protocol, Tray, screen, powerMonitor, clipboard, desktopCapturer, dialog, ipcMain, safeStorage, session, shell } from 'electron';
+import { app, BrowserWindow, Menu, Notification, nativeImage, protocol, Tray, screen, powerMonitor, clipboard, crashReporter, desktopCapturer, dialog, ipcMain, safeStorage, session, shell } from 'electron';
 import { createRoomMedia } from './room-media.mjs';
 import { createRoomIpc } from './room-ipc.mjs';
 import { createImageDecoder } from './image-decoder.mjs';
@@ -7,11 +7,16 @@ import { APP_PRIVILEGES, APP_SCHEME, appPage, createAppHandler } from './app-sch
 import { createClipboardStaging } from './clipboard-image.mjs';
 import { createDownloadScratch } from './download-scratch.mjs';
 import { clearLegacyDebugLogs } from './local-debug.mjs';
+import { createDiagnostics, interfaceSummary, logDeduper, logText } from './diagnostics.mjs';
+import { journalNodeEvents, loginErrorCode, RENDERER_TYPES } from './diag-events.mjs';
+import { buildBundle, hashFile } from './diag-bundle.mjs';
+import { deviceClass, EVENT_FIELDS, JOURNAL_DIR } from './journal.mjs';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import path from 'path';
 import os from 'os';
-import { mkdirSync, appendFileSync, existsSync, readFileSync, writeFileSync, renameSync, rmSync } from 'fs';
+import { mkdirSync, appendFileSync, existsSync, readFileSync, writeFileSync, renameSync, rmSync, readdirSync, statSync } from 'fs';
+import { copyFile, rename, unlink, writeFile } from 'fs/promises';
 import { format } from 'util';
 import { createAsscrackNode, keyedServiceTag } from '../network/node.mjs';
 import { newRoomKey, readInvite } from '../network/invite.mjs';
@@ -38,6 +43,8 @@ import { withDeviceMarks } from './peer-marks.mjs';
 import { attachFriendWindows, registerFriendIpc } from './friend-windows.mjs';
 import { installInterfaceCache } from '../network/interface-cache.mjs';
 import { createUpdateService } from './update-service.mjs';
+import { chooseDataFolder, cleanHoldFolders, dataPaths, downloadOwner, holdFolder, legacyFolder, moveFailedText, moveOldData, needsMove,
+    notWritableText, probeWritable, writeKeptMarker } from './data-folder.mjs';
 import { CHOICE_FILE, choiceAfterForget, createStartEntry, createStartRunner, isInstalledBuild, isStaleChoice, normalizeChoice,
     readChoice, START_IDLE_FLAG, startArgs, startRooms, writeChoice } from './start-at-sign-in.mjs';
 
@@ -65,8 +72,35 @@ const EVENTS = ['channels', 'peer-discovered', 'peer-joined', 'peer-left', 'mess
 
 // Test option: --profile <dir> gives each instance its own user data folder.
 const profileIndex = process.argv.indexOf('--profile');
-if (profileIndex !== -1 && process.argv[profileIndex + 1]) {
-    app.setPath('userData', path.resolve(process.argv[profileIndex + 1]));
+// One data folder (data-folder.mjs): the portable build uses "ASSCRACK Data" next to the .exe, the installed build
+// <install folder>\data, --profile its folder, npm start the Electron default. Each path is set before ready.
+const dataFolder = chooseDataFolder({ argv: process.argv, env: process.env, isPackaged: app.isPackaged,
+    platform: process.platform, execPath: process.execPath, exists: existsSync });
+// The move question of the first start with an empty data folder: { from, to }, or null. Then this run uses a hold
+// folder in %TEMP% (Chromium must not open the new folder before the move) and stops after the answer.
+let moveOffer = null;
+// The user data path of the old versions (the Electron default). It is the owner text of their download scratch.
+const defaultUserData = app.getPath('userData');
+function useDataFolder(dir) {
+    const paths = dataPaths(dir);
+    app.setPath('userData', paths.userData);
+    app.setPath('sessionData', paths.sessionData);
+    app.setAppLogsPath(paths.logs);
+    app.setPath('crashDumps', paths.crashDumps);
+}
+if (dataFolder.dir) {
+    const probe = probeWritable(dataFolder.dir);
+    if (!probe.ok) {
+        dialog.showErrorBox('ASSCRACK cannot start', notWritableText(dataFolder.dir, probe.error));
+        process.exit(1);
+    }
+    const legacy = legacyFolder({ env: process.env, appData: app.getPath('appData') });
+    if (dataFolder.kind !== 'profile' && needsMove({ dir: dataFolder.dir, legacy })) {
+        moveOffer = { from: legacy, to: dataFolder.dir };
+        useDataFolder(holdFolder(app.getPath('temp'), process.pid));
+    } else {
+        useDataFolder(dataFolder.dir);
+    }
 }
 
 // Single instance lock (F1, goal 7): only for the packaged build with the default user data folder. Electron keys the
@@ -76,6 +110,28 @@ const singleInstance = app.isPackaged && profileIndex === -1;
 const isFirstInstance = !singleInstance || app.requestSingleInstanceLock();
 if (!isFirstInstance) {
     app.exit(0);
+}
+
+// Diagnostics (1.0.1, docs/DIAGNOSTICS.md): the redacted journal of this run in <data folder>\diagnostics. It is always
+// on and stays on this computer (DECISIONS.md: the redaction at write time replaces the opt-in rule of 42cf3b4 for this
+// journal). Not in the run that asks the move question (hold folder) and not in a second copy that exits. The crash
+// reporter writes the dumps to the crashDumps path of the data folder and uploads nothing.
+let diag = null;
+const buildKind = !app.isPackaged ? 'dev' : process.env.PORTABLE_EXECUTABLE_DIR ? 'portable'
+    : isInstalledBuild({ platform: process.platform, isPackaged: app.isPackaged, env: process.env, execPath: process.execPath, exists: existsSync }) ? 'installed' : 'other';
+if (isFirstInstance && !moveOffer) {
+    try { crashReporter.start({ uploadToServer: false }); } catch (err) { console.warn('Crash reporter not started:', err?.message ?? err); }
+    try {
+        diag = createDiagnostics({ app, userData: app.getPath('userData'), alive: processRuns, appRoot: path.resolve(__dirname, '..', '..'),
+            info: { dataKind: dataFolder.kind, startKind: process.argv.includes(START_IDLE_FLAG) ? 'sign-in' : 'manual', buildKind } });
+        diag.hookApp();
+    } catch (err) {
+        console.warn('Diagnostics journal not started:', err?.message ?? err);
+    }
+}
+// One journal event (journal.mjs checks the type and each field). False when the journal is off.
+function journal(type, fields) {
+    return diag?.write(type, fields) ?? false;
 }
 
 // Raw diagnostics can contain network addresses. Persist them only in an explicit
@@ -88,7 +144,17 @@ function pad(n) {
     return String(n).padStart(2, '0');
 }
 
+// A curated log line: the journal gets it (with the redaction of journal.mjs), and the raw log of --log-dir. The same
+// text again within 10 s goes only to the raw log.
+const dedupeLog = logDeduper();
 function writeLog(level, text) {
+    const line = dedupeLog(logText(text));
+    if (line !== null) journal('log', { level, text: line });
+    writeRaw(level, text);
+}
+
+// Only the raw log of --log-dir (raw addresses: never the journal).
+function writeRaw(level, text) {
     if (!logFile) return;
     const line = `${new Date().toISOString()} ${level} ${String(text).slice(0, 8192)}\n`;
     const bytes = Buffer.byteLength(line);
@@ -112,7 +178,7 @@ function openLog() {
         const file = path.join(dir, `asscrack-${stamp}-${process.pid}.log`);
         writeFileSync(file, '', { flag: 'wx', mode: 0o600 });
         logFile = file;
-        writeLog('INFO', `ASSCRACK ${app.getVersion()} Electron ${process.versions.electron} (local debug capture)`);
+        writeRaw('INFO', `ASSCRACK ${app.getVersion()} Electron ${process.versions.electron} (local debug capture)`);
     } catch (err) {
         logFile = null;
         console.error('Log file open failed:', err);
@@ -125,7 +191,7 @@ if (logFile) for (const [method, level] of [['log', 'LOG'], ['info', 'INFO'], ['
     const original = console[method].bind(console);
     console[method] = (...args) => {
         original(...args);
-        writeLog(level, format(...args));
+        writeRaw(level, format(...args));
     };
 }
 
@@ -144,7 +210,7 @@ function logEvent(type, data) {
     const parts = [`event ${type}`];
     if (type === 'connection' || type === 'dial-failed' || type === 'upnp') {
         for (const [k, v] of Object.entries(data ?? {})) if (v !== undefined && v !== null) parts.push(`${k} ${JSON.stringify(v)}`);
-        writeLog('EVENT', parts.join(' '));
+        writeRaw('EVENT', parts.join(' '));
         return;
     }
     if (data?.peerId) parts.push(`peer ${data.peerId}`);
@@ -166,12 +232,13 @@ function logEvent(type, data) {
         if (Number.isFinite(data.size)) parts.push(`size ${data.size}`);
         if (typeof data.reason === 'string') parts.push(`reason ${JSON.stringify(data.reason)}`);
     }
-    writeLog('EVENT', parts.join(' '));
+    writeRaw('EVENT', parts.join(' '));
 }
 
 // One log line for each file action of the user. A Cancel before the transfer starts gives no node event.
 function logAction(action, offerId) {
-    writeLog('EVENT', `action ${action} offer ${offerId}`);
+    journal('file', { event: 'action', action, offer: String(offerId).split(' ')[0] });
+    writeRaw('EVENT', `action ${action} offer ${offerId}`);
 }
 
 // Test option: --downloads <dir> sets the folder for received files.
@@ -575,6 +642,127 @@ handleRoomIpc('asscrack:about', () => ({
     system: `${process.platform === 'win32' ? 'Windows' : process.platform} ${process.getSystemVersion()}`,
     debugLog: logFile !== null
 }));
+// ---- Diagnostics: requests, bundles and marks (1.0.1, docs/DIAGNOSTICS.md). The window gets no path. ----
+const diagFolder = () => path.join(app.getPath('userData'), JOURNAL_DIR);
+const receivedFolder = () => path.join(diagFolder(), 'received');
+const fileStamp = () => new Date().toISOString().replace(/[-:]/g, '').replace(/\..*$/, '').replace('T', '-');
+let exeHash = null;
+// The SHA-256 of the program file (once for each run, streamed: no stall of the main thread).
+function exeSha256() {
+    exeHash ??= hashFile(process.env.PORTABLE_EXECUTABLE_FILE || process.execPath).catch(() => null);
+    return exeHash;
+}
+function diagSystem() {
+    const cpus = os.cpus();
+    return { version: app.getVersion(), electron: process.versions.electron, chromium: process.versions.chrome, os: os.release(),
+        arch: process.arch, build: buildKind, data: dataFolder.kind, run: diag?.run ?? null,
+        journal: !diag ? 'off' : diag.journal.failed ? 'stopped' : 'on', cpu: cpus[0]?.model?.trim() ?? null, cpus: cpus.length,
+        ramMb: Math.round(os.totalmem() / 1048576), uptimeS: Math.round(process.uptime()), ...interfaceSummary() };
+}
+// The last reach result: the state of roomReach(), the UPnP state with no address, the number of peers.
+function diagReach() {
+    if (!node) return { inRoom: false };
+    const upnp = lastUpnp ? { state: lastUpnp.state ?? null, reason: lastUpnp.reason ?? null, port: lastUpnp.port ?? null } : null;
+    return { inRoom: true, ...roomReach(), upnp, peers: node.peers().length };
+}
+async function makeBundle(includeDumps) {
+    diag?.flushSync();
+    return buildBundle({ diagDir: diagFolder(), crashDir: app.getPath('crashDumps'), includeDumps: includeDumps === true,
+        system: diagSystem(), reach: diagReach(), exe: { sha256: await exeSha256() } });
+}
+// The bundles of the "Send" answers wait in diagnostics\outgoing for the transfer. Files older than 1 h go.
+function outgoingFile() {
+    const dir = path.join(diagFolder(), 'outgoing');
+    mkdirSync(dir, { recursive: true });
+    for (const name of readdirSync(dir)) {
+        try { if (Date.now() - statSync(path.join(dir, name)).mtimeMs > 3600_000) rmSync(path.join(dir, name), { force: true }); } catch { /* next time */ }
+    }
+    return path.join(dir, `${fileStamp()}-${Math.random().toString(16).slice(2, 10)}.zip`);
+}
+// A received bundle moves from the download folder to diagnostics\received under a name of this computer.
+async function saveReceived(data) {
+    const dir = receivedFolder();
+    const target = path.join(dir, `${fileStamp()}-${String(data.peerId).slice(-8).replace(/[^A-Za-z0-9]/g, '_')}.zip`);
+    try {
+        mkdirSync(dir, { recursive: true });
+        try { await rename(data.path, target); } catch { await copyFile(data.path, target); await unlink(data.path).catch(() => {}); }
+        journal('diag', { event: 'saved', peer: data.peerId, id: data.id, size: data.size });
+        sendToWindow('asscrack:diag', { event: 'saved', peerId: data.peerId, id: data.id });
+    } catch (err) {
+        journal('diag', { event: 'save-failed', peer: data.peerId, id: data.id, reason: err?.code?.toLowerCase?.() });
+        sendToWindow('asscrack:diag', { event: 'failed', peerId: data.peerId, id: data.id, reason: 'not saved' });
+    }
+}
+function onDiagEvent(data) {
+    if (data?.event === 'received' && typeof data.path === 'string') { void saveReceived(data); return; }
+    sendToWindow('asscrack:diag', { event: data?.event, id: data?.id, peerId: data?.peerId, by: data?.by, side: data?.side,
+        reason: typeof data?.reason === 'string' ? data.reason.slice(0, 64) : undefined });
+}
+handleRoomIpc('asscrack:diag-ask', (_event, peerId) => {
+    if (!node) throw new Error('Not logged in');
+    if (typeof peerId !== 'string' || !peerId || peerId.length > 128) return { ok: false, reason: 'offline' };
+    return node.askDiagnostics(peerId);
+});
+// "Ask everyone in the room": one request for each member, and the own bundle in the same folder (both sides of
+// each connection).
+handleRoomIpc('asscrack:diag-ask-all', async () => {
+    if (!node) throw new Error('Not logged in');
+    let asked = 0, skipped = 0;
+    for (const peerId of node.peers()) { if (node.askDiagnostics(peerId).ok) asked++; else skipped++; }
+    let saved = false;
+    try {
+        const bundle = await makeBundle(false);
+        mkdirSync(receivedFolder(), { recursive: true });
+        await writeFile(path.join(receivedFolder(), `${fileStamp()}-own.zip`), bundle.zip);
+        journal('diag', { event: 'saved-own' });
+        saved = true;
+    } catch (err) { writeLog('WARN', `Own diagnostics not saved: ${err?.code ?? err?.message ?? err}`); }
+    return { asked, skipped, saved };
+});
+handleRoomIpc('asscrack:diag-preview', async (_event, includeDumps) => {
+    const bundle = await makeBundle(includeDumps === true);
+    return { summary: bundle.summary.slice(0, 20000), files: bundle.names.slice(0, 64) };
+});
+handleRoomIpc('asscrack:diag-answer', async (_event, id, send, includeDumps) => {
+    if (!node || typeof id !== 'string' || id.length > 64) return { ok: false, reason: 'expired' };
+    if (send !== true) return node.answerDiagnostics(id, null);
+    const file = outgoingFile();
+    await writeFile(file, (await makeBundle(includeDumps === true)).zip);
+    const result = await node.answerDiagnostics(id, file);
+    if (!result.ok) rmSync(file, { force: true });
+    return { ok: result.ok === true, reason: result.reason };
+});
+handleRoomIpc('asscrack:diag-save', async (_event, includeDumps) => {
+    const options = { title: 'Save diagnostics', filters: [{ name: 'Zip file', extensions: ['zip'] }],
+        defaultPath: path.join(app.getPath('downloads'), `asscrack-diagnostics-${fileStamp()}.zip`) };
+    const { canceled, filePath } = mainWindow && !mainWindow.isDestroyed() ? await dialog.showSaveDialog(mainWindow, options) : await dialog.showSaveDialog(options);
+    if (canceled || !filePath) return { ok: false, canceled: true };
+    await writeFile(filePath, (await makeBundle(includeDumps === true)).zip);
+    journal('diag', { event: 'saved-own', crashDumps: includeDumps === true });
+    return { ok: true };
+});
+handleRoomIpc('asscrack:diag-open-received', async () => {
+    mkdirSync(receivedFolder(), { recursive: true });
+    const error = await shell.openPath(receivedFolder());
+    return { ok: !error };
+});
+// "Mark a problem": a category, the time and the room state. No free text.
+handleRoomIpc('asscrack:diag-mark', (_event, category) => {
+    if (EVENT_FIELDS.mark.category(category) === undefined) throw new Error('Select what went wrong.');
+    if (!journal('mark', { category, inVoice, sharing: screenOwn, peers: node?.peers().length ?? 0 })) throw new Error('Diagnostics are off.');
+    diag?.flushSync();
+    return true;
+});
+// The voice code of the window: the device result and the voice summary each minute. A device label becomes a kind
+// and a tag here (journal.mjs deviceClass); the label does not go in the journal.
+onRoomIpc('asscrack:diag-event', (_event, type, fields) => {
+    if (!RENDERER_TYPES.has(type) || !fields || typeof fields !== 'object') return;
+    if (type === 'voice-device') {
+        const { label, ...rest } = fields;
+        journal(type, { ...rest, ...deviceClass(typeof label === 'string' ? label.slice(0, 256) : '', diag?.tagKey()) });
+    } else journal(type, fields);
+});
+
 // Gap E3: open the user data folder of this profile in Explorer. The window gets no path.
 handleRoomIpc('asscrack:open-data-folder', async () => {
     const error = await shell.openPath(app.getPath('userData'));
@@ -637,8 +825,10 @@ function createMainWindow() {
         restoreRoom: restoreRoomWindow, warn: message => writeLog('WARN', message)
     });
 
+    diag?.attachWindow(mainWindow);
+    mainWindow.once('ready-to-show', () => journal('ready', { ms: Math.round(process.uptime() * 1000) }));
     if (logFile) mainWindow.webContents.on('console-message', details => {
-        writeLog('WINDOW', `${details.level} ${details.message} (${details.sourceId}:${details.lineNumber})`);
+        writeRaw('WINDOW', `${details.level} ${details.message} (${details.sourceId}:${details.lineNumber})`);
     });
 
     // P9B: maximize() shows the window. A start at sign-in maximizes at the first show.
@@ -655,7 +845,7 @@ function createMainWindow() {
     // G7a: the friend chat windows close with the main window (then the app quits as before).
     mainWindow.on('closed', () => { friendWindows.closeAll(); imageDecoder.close(); });
     // Windows shutdown may bypass before-quit. Do not hide or veto session termination.
-    mainWindow.on('session-end', () => { quitting = true; });
+    mainWindow.on('session-end', () => { quitting = true; diag?.quit(); });
 
     mainWindow.loadURL(ROOM_PAGE);
 
@@ -704,7 +894,7 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
     loginStarted = true;
     try {
         try {
-            downloadScratch ??= createDownloadScratch(options.downloadDir, app.getPath('userData'));
+            downloadScratch ??= createDownloadScratch(options.downloadDir, downloadOwner(app.getPath('userData'), app.getPath('userData')));
             options.scratchDir = downloadScratch.directory;
         } catch {
             writeLog('WARN', 'Private download staging unavailable');
@@ -778,6 +968,10 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
         lastUpnp = null;
         saveUpnpChoice = () => {};
         onLive('upnp', data => { lastUpnp = data ?? null; });
+        // Diagnostics (1.0.1): the node events of the journal (diag-events.mjs projects each field), and the
+        // diagnostics requests (the prompt, the answers, the received bundle).
+        journalNodeEvents(onLive, journal, node.peerId);
+        onLive('diag', onDiagEvent);
         if (hints) {
             let persistence = false, mappedPort = null;
             // For each room with hint files: an owner can turn on UPnP after the start (enableUpnp).
@@ -848,6 +1042,8 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
             logEvent(type, data);
             // The diagnostic window reads a redacted projection of these local events.
             if (type === 'connection' || type === 'dial-failed' || (idlePeer && type === 'voice-frame')) return;
+            // Diagnostics: the transfer of a bundle is not a row of Transfers (the diagnostics bar shows it).
+            if (type.startsWith('file-') && node.isDiagOffer?.(data?.offerId)) return;
             if (type === 'file-done' && data?.direction === 'receive') {
                 const { path: localPath, ...event } = data;
                 const savedName = typeof localPath === 'string' ? path.basename(localPath) : null;
@@ -940,10 +1136,14 @@ function getAdmissionIdentity() {
 handleRoomIpc('asscrack:device-id', () => getAdmissionIdentity().id);
 
 // The login and the reopen give the user a plain text for an error (login-errors.mjs). The log keeps the original.
-async function withLoginErrors(what, options, start) {
+async function withLoginErrors(what, options, start, kind = 'reopen') {
     try {
-        return await start();
+        const result = await start();
+        journal('room', { event: 'start', kind, protected: result?.membership?.protected === true, lan: result?.internet === false,
+            upnp: options.upnp === true, address: Array.isArray(options.announce) });
+        return result;
     } catch (err) {
+        journal('room', { event: 'start-failed', kind, reason: loginErrorCode(err) });
         console.warn(`${what} failed: ${err?.message ?? err}`);
         throw new Error(loginErrorText(err, { port: options.port }));
     }
@@ -952,7 +1152,7 @@ async function withLoginErrors(what, options, start) {
 handleRoomIpc('asscrack:login', async (_event, fields = {}) => {
     if (loginStarted) throw new Error('Already logged in');
     const options = { downloadDir: downloadDir ?? app.getPath('downloads'), ...nodeFlags };
-    return withLoginErrors('Login', options, () => login(options, fields));
+    return withLoginErrors('Login', options, () => login(options, fields), ['new', 'lan', 'join'].includes(fields?.type) ? fields.type : undefined);
 });
 
 async function login(options, { name, room, type, invite, publicAddress, allowUpnp, allowLegacy, save, keepHistory } = {}) {
@@ -1128,9 +1328,19 @@ function roomReach() {
     return { state, reason: state === 'upnp-failed' ? reason : null, proven: node.fullNode() };
 }
 
+// Diagnostics: one journal line for each change of the reach state.
+let lastReach = null;
+function journalReach(reach) {
+    const text = JSON.stringify(reach);
+    if (text === lastReach) return;
+    lastReach = text;
+    journal('reach', reach);
+}
+
 queryRoomIpc('asscrack:invite', () => {
     if (!node) throw new Error('Not logged in');
     const reach = roomReach();
+    journalReach(reach);
     if (node.memberState().protected) return { membership: node.memberState(), reach };
     if (node.roomKey() === null) return { code: null, reason: 'lan', reach };
     const code = node.invite();
@@ -1271,11 +1481,13 @@ function forwardScreenEvents(onLiveEvent) {
             screenOwn = data.sharing === true;
             taskbarFlash.setSharing(screenOwn);
             if (screenOwn) writeLog('EVENT', `screen share started preset ${data.preset}`);
+            if (screenOwn) journal('screen', { event: 'start', share: data.shareId, preset: data.preset });
         }
         sendToWindow('asscrack:screen-state', data);
     });
     onLiveEvent('screen-ended', data => {
         writeLog('EVENT', data?.own ? `screen share stopped reason ${data.reason}` : `screen watch ended reason ${data?.reason}`);
+        journal('screen', { event: data?.own ? 'stop' : 'watch-end', share: data?.shareId, reason: data?.reason });
         sendToWindow('asscrack:screen-ended', data);
     });
     for (const type of ['screen-viewers', 'screen-encoder', 'screen-config']) onLiveEvent(type, data => sendToWindow(`asscrack:${type}`, data));
@@ -1298,6 +1510,8 @@ handleRoomIpc('asscrack:set-voice', (_event, state) => {
     if (idlePeer && state?.inVoice === true) throw new Error('Idle Peer has left voice');
     const result = node.setVoice(state ?? {});
     inVoice = state?.inVoice === true;
+    journal('voice-state', { in: inVoice, muted: state?.muted === true, deafened: state?.deafened === true,
+        host: node.host()?.peerId === node.peerId });
     updatePttHook(() => pttHook.setInVoice(inVoice));
     return result;
 });
@@ -1611,6 +1825,7 @@ function leaveRoom() {
     if (!node || quitting) return Promise.resolve(false);
     const current = node;
     writeLog('INFO', 'Leave room');
+    journal('room', { event: 'leave' });
     voiceMonitor?.dismiss();
     attention.clear();
     stopFlash();
@@ -1691,6 +1906,7 @@ app.on('before-quit', event => {
         closeArchive();
         clipboardImages.clear();
         downloadScratch?.clear();
+        diag?.quit();
         return;
     }
     event.preventDefault();
@@ -1702,11 +1918,52 @@ app.on('before-quit', event => {
         clipboardImages.clear();
         downloadScratch?.clear();
         node = null;
+        // Diagnostics: the clean end (app.exit skips will-quit).
+        diag?.quit();
         app.exit(0);
     });
 });
 
 app.on('window-all-closed', () => app.quit());
+
+function processRuns(pid) {
+    try { process.kill(pid, 0); return true; } catch (err) { return err?.code !== 'ESRCH'; }
+}
+
+// One data folder: the question of the first start with an empty data folder when %APPDATA%\ASSCRACK has data. This
+// run has a hold folder in %TEMP% as user data: Chromium has not opened the new folder (the safeStorage key is in its
+// "Local State" file, and it moves with the data). After the answer this run starts the app again and stops.
+async function offerMove({ from, to }) {
+    writeLog('INFO', 'Data folder: old data found, asking for the move');
+    const { response } = await dialog.showMessageBox({
+        type: 'question', title: 'ASSCRACK', noLink: true, buttons: ['Move', 'Keep there'], defaultId: 0, cancelId: 1,
+        message: `Move your rooms and history to ${to}?`,
+        detail: 'ASSCRACK now keeps all its data in one folder next to the program. Your rooms, history, friends and ' +
+            `settings are in ${from}.\n\nMove: copy them to the new folder, check the copy, then remove the old folder.\n` +
+            'Keep there: the old folder does not change, and this copy starts with no saved rooms.'
+    });
+    let restart = true;
+    if (response === 0) {
+        const result = moveOldData({ from, to });
+        // The paused partials of the old version in the download folder stay with the moved data.
+        if (result.ok) downloadOwner(to, defaultUserData);
+        writeLog(result.ok ? 'INFO' : 'WARN', `Data folder: move ${result.ok ? `done, ${result.files} files` : `failed (${result.reason})`}`);
+        if (!result.ok) {
+            restart = false;
+            await dialog.showMessageBox({ type: 'warning', title: 'ASSCRACK', noLink: true, buttons: ['OK'],
+                message: 'Your rooms and history did not move.', detail: moveFailedText(result, from) });
+        } else if (result.leftover) {
+            writeLog('WARN', 'Data folder: the old folder was not removed completely');
+            await dialog.showMessageBox({ type: 'info', title: 'ASSCRACK', noLink: true, buttons: ['OK'],
+                message: 'Your rooms and history moved.',
+                detail: `ASSCRACK could not remove all of the old folder. You can delete it: ${result.leftover}` });
+        }
+    } else {
+        try { writeKeptMarker(to, from); } catch (err) { writeLog('WARN', `Data folder: marker not written: ${err?.message ?? err}`); }
+    }
+    if (restart) app.relaunch();
+    app.exit(0);
+}
 
 if (singleInstance && isFirstInstance) {
     // P9B: a second start from the start entry does not open the window.
@@ -1715,7 +1972,16 @@ if (singleInstance && isFirstInstance) {
 
 app.whenReady().then(async () => {
     if (!isFirstInstance) return;
+    if (moveOffer) { await offerMove(moveOffer); return; }
+    cleanHoldFolders(app.getPath('temp'), { alive: processRuns, own: process.pid });
+    if (installedBuild) {
+        try { if (startEntry.repair(readChoice(startChoiceFile))) writeLog('INFO', 'Start at sign-in: the entry now starts this exe'); }
+        catch (err) { writeLog('WARN', `Start at sign-in entry not repaired: ${err?.message ?? err}`); }
+    }
     if (profileIndex === -1) clearLegacyDebugLogs(app.getPath('logs'));
+    diag?.hookPower(powerMonitor);
+    diag?.environment({ screen });
+    diag?.startMetrics();
     powerMonitor.on('resume', () => {
         interfaceCache.clear();
         node?.refreshRoutes();

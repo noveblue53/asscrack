@@ -1769,7 +1769,9 @@ function rowInfo(row) {
         // G7a: friend is 'add', 'open' or null (friends-ui.js knows the friends and the protected room peers).
         return { kind: 'buddy', inspect: Boolean(window.peerInspector), whisper: Boolean(window.whispers), self: false, onMap: true, friend: window.friendsUi?.relation(buddyId(row)) ?? null,
             // P8b: "Watch screen" on the line of a member that shares (screen-view.js).
-            watch: window.screenView?.canWatch(buddyId(row)) === true };
+            watch: window.screenView?.canWatch(buddyId(row)) === true,
+            // Diagnostics (1.0.1): "Ask for diagnostics…" (diagnostics-ui.js).
+            diag: window.diagnosticsUi?.canAsk(buddyId(row)) === true };
     }
     if (row.parentElement === messageList && !row.classList.contains('file-card')) {
         return { kind: 'message', details: Boolean(row.querySelector('.text')), inspect: Boolean(window.peerInspector && peerItems.has(row.dataset.peerId)), quotable: selfLine !== null && row.querySelector('.text') !== null, localOnly: row.classList.contains('local-only'), link: Boolean(window.chatLinks?.firstLink(row)), image: window.chatMedia?.hasImage?.(row) === true };
@@ -1829,6 +1831,7 @@ function runRowAction(action, row) {
         case 'rename-voice-channel': return window.voiceChannels?.rename(row) ?? false;
         case 'delete-voice-channel': return window.voiceChannels?.remove(row) ?? false;
         case 'add-friend': return window.friendsUi?.add(buddyId(row)) ?? false;
+        case 'ask-diagnostics': return Boolean(buddyId(row) && row !== selfLine && window.diagnosticsUi?.ask(buddyId(row)));
         case 'open-friend-chat': return window.friendsUi?.openFor(buddyId(row)) ?? false;
         case 'friend-open': case 'friend-rename': case 'friend-remove': case 'friend-block':
             return window.friendsUi?.run(action, row) ?? false;
@@ -1838,6 +1841,8 @@ function runRowAction(action, row) {
 
 window.roomActions = Object.freeze({
     rowInfo, editAvailability,
+    // Diagnostics (diagnostics-ui.js): the name and the device mark of a buddy for the prompt texts.
+    peerLabel: peerId => ({ name: peerNames.get(peerId) ?? null, mark: peerMarks.get(peerId) ?? null }),
     run: runRowAction,
     notice: text => showNotice(text)
 });

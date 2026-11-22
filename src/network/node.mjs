@@ -3,6 +3,7 @@ import { assertRelayFixed } from './libp2p-relay-fix.mjs'
 import { tcp } from '@libp2p/tcp'
 import { createAttachments, PREVIEW_PROTOCOL } from './attachment.mjs'
 import { createSharedShelf } from './shared-shelf.mjs'
+import { createDiagRequests } from './diag-requests.mjs'
 import { createWhispers } from './whispers.mjs'
 import { createTyping } from './typing.mjs'
 import { createReadyCheck } from './ready-check.mjs'
@@ -628,6 +629,54 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     })
 
     const shelf = createSharedShelf({ self: selfId, name: senderName, peerName: peer => names.get(peer), sessions, files, events })
+    // Diagnostics (1.0.1): the session IDs and the abilities of the hello line of each session. session ->
+    // { sid, peerSid, diag, clock }. Both sides log both IDs, thus two bundles can go on one timeline.
+    const sessionInfo = new WeakMap()
+    const infoOf = peerId => sessionInfo.get(sessions.get(peerId)) ?? null
+    // Diagnostics requests: only proved member devices of a protected room, only peers that announce 'diag'.
+    const diag = createDiagRequests({ sessions, files, events,
+        allowed: peerId => Boolean(membership) && sessions.has(peerId) && memberAllowed(peerId),
+        capable: peerId => infoOf(peerId)?.diag === true })
+    // The clock line: { type: 'clock', v: 1, t0 } and the reply { type: 'clock', v: 1, t0, t1 }. The asker logs the
+    // round trip and the clock offset of the peer (an NTP estimate). Only to peers that announce 'clock'.
+    const pendingClock = new Map()
+    const allowClock = roomRateLimit(12, 256)
+    function sendClock(peerId) {
+        if (infoOf(peerId)?.clock !== true) return
+        const t0 = Date.now()
+        if (sessions.get(peerId)?.send(JSON.stringify({ type: 'clock', v: 1, t0 }))) pendingClock.set(peerId, t0)
+    }
+    function handleClock(peerId, session, control) {
+        if (control.v !== 1 || !Number.isSafeInteger(control.t0) || !allowClock(peerId)) return
+        if (control.t1 === undefined) {
+            session.send(JSON.stringify({ type: 'clock', v: 1, t0: control.t0, t1: Date.now() }))
+            return
+        }
+        if (!Number.isSafeInteger(control.t1) || pendingClock.get(peerId) !== control.t0) return
+        pendingClock.delete(peerId)
+        const t2 = Date.now()
+        events.emit('clock', { peerId, rttMs: t2 - control.t0, offsetMs: Math.round(control.t1 - (control.t0 + t2) / 2) })
+    }
+    // Each 60 s in voice: one clock line to each peer in voice (the voice summary gets a delay value).
+    const clockTimer = setInterval(() => {
+        if (!voiceState.inVoice) return
+        for (const peerId of peerVoice.keys()) sendClock(peerId)
+    }, 60000)
+    clockTimer.unref?.()
+    const SID = /^[0-9a-f]{16}$/
+    // A hello line of the peer: its session ID and its abilities. Emits 'session-ids' when the session is open.
+    function noteHello(peerId, session, control) {
+        const info = sessionInfo.get(session)
+        if (!info || info.peerSid) return
+        info.peerSid = typeof control.sid === 'string' && SID.test(control.sid) ? control.sid : null
+        info.diag = control.diag === 1
+        info.clock = control.clock === 1
+        if (sessions.get(peerId) === session) helloKnown(peerId, info)
+    }
+    function helloKnown(peerId, info) {
+        events.emit('session-ids', { peerId, sid: info.sid, peerSid: info.peerSid ?? undefined, clock: info.clock, diag: info.diag })
+        if (info.clock) sendClock(peerId)
+    }
     const attachments = createAttachments({
         self: node.peerId.toString(), sessions, connections: () => node.getConnections(), files, events, previewProvider, sendRecord,
         canPost(channelId, peer) {
@@ -709,6 +758,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         // A LAN room (no key) opens the session at once. A keyed room waits for a valid proof.
         let open = key === null
         const nonce = randomBytes(16).toString('base64url')
+        // Diagnostics: the ID of this session on this side (both sides log both IDs).
+        const sid = randomBytes(8).toString('hex')
         let peerName = ''
         let peerNonce = null
         let roomProofVerified = false
@@ -721,6 +772,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             if (pendingChats.get(peerId) === session) pendingChats.delete(peerId)
             console.warn(`Room proof from ${peerId} failed: ${cause}`)
             stream.abort(new Error(`Room proof failed: ${cause}`))
+            // Diagnostics (1.0.1): the journal maps the cause text to a code (diag-events.mjs refuseCause).
+            events.emit('session-refused', { peerId, cause })
             settle()
         }
         function finishProof() {
@@ -751,6 +804,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 }
                 if (!membership) peerName = typeof control.name === 'string' ? control.name.trim().slice(0, 64) : ''
                 peerNonce = control.nonce
+                noteHello(peerId, session, control)
                 if (!session.send(JSON.stringify({ type: 'proof', mac: proofMac(peerNonce, selfId, peerId).toString('base64url') }))) {
                     reject('room proof could not be sent')
                 }
@@ -780,6 +834,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 if (!authenticatedMember.hasAdmission) {
                     const signature = membership.admit(authenticatedMember)
                     if (!session.send(JSON.stringify({ type: 'room-admitted', signature }))) return reject('admission could not be sent')
+                    // Diagnostics (1.0.1): the generic admission point. The knock of easy-join part 2 adds its own events.
+                    events.emit('admission', { event: 'admitted', peerId })
                 }
                 finishProof()
             } else if (membership && control.type === 'room-admitted') {
@@ -827,7 +883,10 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                     else if (control.type === 'bye') {
                         if (sessions.get(peerId) === session) byeSessions.add(session)
                     }
+                    else if (control.type === 'diag') diag.handle(peerId, session, control)
+                    else if (control.type === 'clock' && sessions.get(peerId) === session) handleClock(peerId, session, control)
                     else if (control.type === 'hello') {
+                        noteHello(peerId, session, control)
                         const peerName = typeof control.name === 'string' ? control.name.trim().slice(0, 64) : ''
                         if (peerName && sessions.get(peerId) === session) {
                             names.set(peerId, peerName)
@@ -865,9 +924,12 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                     // L9 (P10a): no 'signal' line. The window had no listener for it, and each line went to the window IPC.
                     else if (typeof control.type === 'string' && control.type.startsWith('file-')) {
                         if (sessions.get(peerId) === session) {
-                            const kind = control.type === 'file-offer' ? shelf.classifyOffer(peerId, control) : 'ordinary'
+                            // Diagnostics: the offer of a bundle that this node asked for (diag-requests.mjs).
+                            const diagKind = control.type === 'file-offer' ? diag.classifyOffer(peerId, control) : null
+                            const kind = diagKind ?? (control.type === 'file-offer' ? shelf.classifyOffer(peerId, control) : 'ordinary')
                             if (kind !== 'reject' && files.handleControl(peerId, control) && kind === 'requested') {
-                                shelf.startOffer(peerId, control.offerId)
+                                if (diagKind) diag.startOffer(peerId, control.offerId)
+                                else shelf.startOffer(peerId, control.offerId)
                             }
                         }
                     } else if (control.type === 'voice-channels') {
@@ -934,13 +996,14 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             }
         })
         chatInitiator.set(session, initiator)
+        sessionInfo.set(session, { sid, peerSid: null, diag: false, clock: false })
         if (open) {
             openSession(session, peerId, connection, true, oldSession)
             return
         }
         pendingSettled.set(session, new Promise(resolve => { settle = resolve }))
         pendingChats.set(peerId, session)
-        session.send(JSON.stringify(membership ? { type: 'hello', nonce } : { type: 'hello', name: senderName, nonce }))
+        session.send(JSON.stringify(membership ? { type: 'hello', nonce, sid, diag: 1, clock: 1 } : { type: 'hello', name: senderName, nonce, sid, diag: 1, clock: 1 }))
         timer = setTimeout(() => reject(`no valid proof in ${PROOF_TIMEOUT_MS} ms`), PROOF_TIMEOUT_MS)
         session.done.catch(() => {}).finally(() => {
             clearTimeout(timer)
@@ -962,7 +1025,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             replacedSessions.add(replaced)
             replaced.close()
         }
-        if (sendHello) session.send(JSON.stringify({ type: 'hello', name: senderName }))
+        const info = sessionInfo.get(session)
+        if (sendHello) session.send(JSON.stringify({ type: 'hello', name: senderName, sid: info?.sid, diag: 1, clock: 1 }))
         channels.opened(peerId)
         const voiceCatalog = voiceChannels.opened()
         if (voiceCatalog && memberAllowed(peerId)) session.send(JSON.stringify(voiceCatalog))
@@ -983,11 +1047,14 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         const opened = {
             state: 'session', peer: peerId, type: connType,
             dir: sessionConn?.direction === 'inbound' ? 'in' : sessionConn?.direction === 'outbound' ? 'out' : '?',
-            relay: connType === 'relay' ? (circuitRelay(connAddr) ?? '?') : undefined, addr: connAddr
+            relay: connType === 'relay' ? (circuitRelay(connAddr) ?? '?') : undefined, addr: connAddr,
+            sid: info?.sid, peerSid: info?.peerSid ?? undefined
         }
         if (opened.relay === undefined) delete opened.relay
+        if (opened.peerSid === undefined) delete opened.peerSid
         console.info(connText('conn session', { peer: opened.peer, type: opened.type, dir: opened.dir, relay: opened.relay, addr: opened.addr }))
         events.emit('connection', opened)
+        if (info?.peerSid) helloKnown(peerId, info)
         election.sessionOpened(peerId)
         topic.sessionOpened(peerId)
         if (election.isHost()) sendHistoryTo(peerId, session)
@@ -1010,7 +1077,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 return
             }
             console.info(connText('conn closed', { peer: peerId, type: connType, secs }))
-            events.emit('connection', { state: 'closed', peer: peerId, type: connType, secs })
+            events.emit('connection', { state: 'closed', peer: peerId, type: connType, secs, sid: info?.sid })
             if (sessions.get(peerId) === session) {
                 sessions.delete(peerId)
                 memberPeers.delete(peerId)
@@ -1040,6 +1107,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 channels.closed(peerId)
                 attachments.closed(peerId)
                 shelf.closed(peerId)
+                diag.closed(peerId)
+                pendingClock.delete(peerId)
                 files.peerLeft(peerId)
                 screen.peerLeft(peerId)
                 links.delete(peerId)
@@ -2003,6 +2072,11 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         pauseHeartbeats: paused => election.pauseHeartbeats(paused),
         offerFile: files.offerFile,
         acceptFile: offerId => files.acceptFile(offerId),
+        // Diagnostics requests (diag-requests.mjs). askDiagnostics(peerId), answerDiagnostics(id, bundlePath | null).
+        askDiagnostics: peerId => diag.ask(peerId),
+        answerDiagnostics: (id, filePath) => diag.answer(id, filePath),
+        isDiagOffer: offerId => diag.isDiagOffer(offerId),
+        diagCapable: peerId => infoOf(peerId)?.diag === true,
         retryFile: files.retryFile,
         pauseFile: offerId => files.pauseFile(offerId),
         resumeFile: offerId => files.resumeFile(offerId),
@@ -2029,6 +2103,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             if (settleTimer) clearTimeout(settleTimer)
             attachments.stop()
             shelf.stop()
+            diag.stop()
+            clearInterval(clockTimer)
             await files.stop()
             await screen.stop()
             election.stop()

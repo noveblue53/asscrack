@@ -51,7 +51,9 @@
         'friend-open': 'Open chat',
         'friend-rename': 'Rename…',
         'friend-remove': 'Remove friend…',
-        'friend-block': 'Block…'
+        'friend-block': 'Block…',
+        // Diagnostics (1.0.1, diagnostics-ui.js).
+        'ask-diagnostics': 'Ask for diagnostics…'
     });
 
     // The action names for the data of a row (roomActions.rowInfo). An empty list: no menu.
@@ -68,6 +70,7 @@
                 if (info.availability) actions.push('availability');
                 if (info.friend === 'add') actions.push('add-friend');
                 else if (info.friend === 'open') actions.push('open-friend-chat');
+                if (info.diag === true && info.self === false) actions.push('ask-diagnostics');
                 return actions;
             }
             case 'message':

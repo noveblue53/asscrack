@@ -38,18 +38,19 @@ export function createElection({
     const isHost = () => host === selfId
     const announcement = () => JSON.stringify({ type: 'host', host, term })
 
-    function setHost(h, t) {
+    // reason (diagnostics, 1.0.1): 'self-elect', 'first', 'announce', 'not-allowed' or 'isolated'.
+    function setHost(h, t, reason) {
         const changed = h !== host || t !== term
         host = h
         term = t
         lastHeartbeat = now()
         lost = false
         candidate = null
-        if (changed) onChange({ peerId: host, term })
+        if (changed) onChange({ peerId: host, term, reason })
     }
 
-    function becomeHost() {
-        setHost(selfId, term + 1)
+    function becomeHost(reason = 'self-elect') {
+        setHost(selfId, term + 1, reason)
         broadcast(announcement())
     }
 
@@ -75,7 +76,7 @@ export function createElection({
         if (host !== null || firstSessionTime === null) return
         if (now() - firstSessionTime < electionDelay) return
         const target = lowest([selfId, ...openPeers()])
-        if (target === selfId) becomeHost()
+        if (target === selfId) becomeHost('first')
     }
 
     // Rule 6.
@@ -100,7 +101,7 @@ export function createElection({
     function tick() {
         if (stopped) return
         if (hostAllowed && host !== null && !hostAllowed(host)) {
-            if (isHost()) setHost(null, term)
+            if (isHost()) setHost(null, term, 'not-allowed')
             else hostLost()
         }
         if (isHost()) {
@@ -143,7 +144,9 @@ export function createElection({
                 candidate = null
                 return
             }
-            if (host === null || t > term || (t === term && h < host)) setHost(h, t)
+            if (host === null || t > term || (t === term && h < host)) {
+                setHost(h, t, host === null ? 'announce-first' : t > term ? 'higher-term' : 'tie-break')
+            }
         },
         sessionOpened(peerId) {
             if (stopped) return
@@ -167,7 +170,7 @@ export function createElection({
                 clearTimeout(delayTimer)
                 delayTimer = null
                 firstSessionTime = null
-                setHost(null, term)
+                setHost(null, term, 'isolated')
                 return
             }
             if (peerId === host) hostLost() // rule 5

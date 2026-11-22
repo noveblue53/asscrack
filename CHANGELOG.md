@@ -7,6 +7,78 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased
+
+### Diagnostics from friends with one click
+
+- ASSCRACK keeps a diagnostics journal in the data folder (`diagnostics`). It records what went right and what went
+  wrong. Examples are room starts, sessions with the route and the close cause, failed dials, UPnP and host changes.
+  Also the voice quality each minute, the voice devices, file transfers, screen shares, errors, crashes and hangs. The
+  journal stays on the computer. `docs/DIAGNOSTICS.md` gives the format.
+- The journal is always on. This changes the rule of `42cf3b4` ("persist raw diagnostics only in an explicit run").
+  Reason: the friends of the operator must not need a start option to give a useful report. The writer removes the
+  private data when it writes a line. Each event has a fixed field list, and no line has text of a peer. An address
+  class replaces each IP address, and an error text has no path. A test sends canary strings through two real nodes
+  and finds none of them in the journal or in the bundle (127.0.0.1). The raw log of `--log-dir` does not change.
+- "Ask for diagnostics…" on a buddy line, and "Ask everyone for diagnostics" in the Room options. Only a member device
+  of a protected room can ask. The other person sees "<name> asks for diagnostics" with Send and Not now. The
+  prompt shows what is in the bundle and its summary. Nothing goes out without Send. Limits: one pending request for
+  each person, 1 hour of quiet after Not now, at most 3 prompts each hour.
+- The bundle is a zip file. It has a manifest with the hash of each file and of the program file, and a plain
+  summary. It also has the journal, the system and reach data, and the crash list. The crash memory files go into it
+  only with a second checkbox. The asker gets it in `diagnostics\received`.
+- "Mark a problem…" (Room options and voice controls) writes the time and a category in the journal.
+- "Save diagnostics…" in the About dialog makes the same zip in a folder that the user selects.
+- The crash reporter of Electron writes crash dumps to the data folder. It uploads nothing.
+- Each side of a session sends a session ID and a clock line. Thus the bundles of two computers can go on one
+  timeline. A 1.0.0 peer ignores these lines and cannot get a request.
+- Results: `npm test` and a two-copy check on this PC (127.0.0.1). B asks, and A selects Send. B gets the zip with
+  the expected files and no canary text. Not now sends nothing. No LAN result yet.
+
+### One data folder next to the program
+
+- ASSCRACK keeps all its data in one folder. This includes the settings, the history, the saved rooms and the friends.
+  It also includes the device identity, the window data of Chromium, the logs and the clipboard staging. The portable
+  build uses the folder `ASSCRACK Data` next to the .exe. The installed build uses the folder `data` in the install
+  folder. `npm start` keeps the Electron default. `--profile <folder>` overrides each case.
+- The folder can move on the same PC: move the folder of the .exe, then start the .exe again. The installed build
+  writes the new path into the "Start as Idle Peer when I sign in" entry at the start. The state that the user set in
+  Task Manager does not change.
+- At the first start with an empty data folder, when `%APPDATA%\ASSCRACK` has data, the app asks "Move your rooms and
+  history to <folder>?". Move copies the data, checks each file, then removes the old folder. Keep there does not
+  change the old folder. When an other copy uses the old folder, nothing changes, and the app tells the user.
+- When the app cannot write to the data folder, it shows the path and the reason, and it stops.
+- The paused downloads (in the download folder) stay with a moved data folder. The file `download-owner.json` in the
+  data folder keeps the owner text of the download scratch.
+- The uninstaller of the installer keeps the folder `data` at an update and at an uninstall.
+- Saved rooms from an other Windows user account or an other computer show a plain text. They cannot open there.
+- Some files stay outside the folder. The received files and their download scratch stay in the download folder.
+  The reason: the last step of a received file is a rename on the same drive. The start menu shortcut for
+  notifications stays in the Windows folder for it. The update setup file and the unpack folder of the portable build
+  stay in `%TEMP%`. The start entry stays in the registry.
+- Checks (this PC): `npm test` 936 tests, 918 pass, 0 fail, 18 skipped. New tests: `test/data-folder.test.mjs`, and
+  the entry repair in `test/start-at-sign-in.test.mjs`. On the base, these tests fail. The portable build in a folder
+  `a`: a LAN room on this PC with a second copy, a line, Quit. Then the folder `a` moved to `b`: the saved room and the
+  line are there. `%APPDATA%\ASSCRACK` did not change (names, sizes and times). The move question with a fake
+  `APPDATA`: Move gives the saved room and the line in the new folder. Keep there does not change the old folder. When
+  an other copy uses the old folder, Move does not move the old folder, and the new folder stays empty. A data folder
+  with no write access gives the error box with the path, and the app stops. The installer build passes, and a small
+  NSIS test program keeps the folder `data`. No real install test: this PC has an installed copy of the operator.
+  These are not LAN results.
+
+### The installer asks for the install folder
+
+- The Windows installer (`npm run dist:installer`) is now an assisted installer. It shows a folder page. The user can
+  select the install folder. The install stays per user: the installer does not show the "for all users" choice and
+  does not use administrator rights.
+- The folder page does not accept a folder in Program Files or in the Windows folder: the Next button stays off, and
+  the page text gives the reason. The user must be able to write to the install folder.
+- An upgrade reads the folder of the last install. The silent update installs into the folder of the running app. The
+  "Start as Idle Peer when I sign in" entry uses the path of the running app.
+- Checks (this PC): `npm test` 917 tests, 899 pass, 0 fail, 18 skipped. The installer build passes. A small NSIS test
+  program on this PC refuses Program Files, Program Files (x86) and the Windows folder, and accepts other folders.
+  No real install test: this PC has an installed copy of the operator.
+
 ## 1.0.0 (2026-11-22): the full-featured release
 
 Release 1.0.0 is the full-featured release before the friends get the app (operator, 2026-11-21). The entries below

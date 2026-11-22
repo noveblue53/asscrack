@@ -217,6 +217,25 @@ test('the installer is a per-user nsis build next to the unchanged portable buil
     assert.equal(UNINSTALLER_NAME, `Uninstall ${pkg.build.productName}.exe`);
 });
 
+test('the installer asks for the install folder and stays per user', () => {
+    const pkg = JSON.parse(readFileSync(new URL('package.json', root), 'utf8'));
+    assert.equal(pkg.build.nsis.oneClick, false);
+    assert.equal(pkg.build.nsis.allowToChangeInstallationDirectory, true);
+    assert.equal(pkg.build.nsis.perMachine, false);
+    assert.equal(pkg.build.nsis.allowElevation, false);
+    const nsh = readFileSync(new URL('build/installer.nsh', root), 'utf8');
+    // No install mode page: the installer forces the per-user mode (electron-builder multiUserUi.nsh).
+    const mode = nsh.slice(nsh.indexOf('!macro customInstallMode'));
+    assert.match(mode.slice(0, mode.indexOf('!macroend')), /StrCpy \$isForceCurrentInstall "1"/);
+    // The folder page refuses the folders that need administrator rights, and its text tells the user why.
+    const verify = nsh.slice(nsh.indexOf('Function .onVerifyInstDir'));
+    const body = verify.slice(0, verify.indexOf('FunctionEnd'));
+    for (const root of ['$PROGRAMFILES32', '$PROGRAMFILES64', '$WINDIR']) assert.ok(body.includes(`Push ${root}`), root);
+    assert.match(body, /Abort/);
+    assert.match(nsh, /!define MUI_DIRECTORYPAGE_TEXT_TOP "[^"]*Program Files[^"]*"/);
+    assert.ok(nsh.indexOf('!ifndef BUILD_UNINSTALLER') < nsh.indexOf('Function .onVerifyInstDir'));
+});
+
 test('the bridge sends the start choice as text and plain fields only', async () => {
     const source = readFileSync(new URL('src/application/preload.cjs', root), 'utf8');
     const worlds = {}, invoked = [], listeners = {};
@@ -244,4 +263,27 @@ test('the bridge sends the start choice as text and plain fields only', async ()
     api.onStartRoom(roomId => got.push(roomId));
     for (const fn of listeners['asscrack:start-room']) fn({ sender: 'main' }, 'room-1');
     assert.deepEqual(got, ['room-1']);
+});
+
+// One data folder: the install folder moved on the same PC. The entry gets the new exe path at the next start.
+test('the repair writes the new exe path into a start entry of an other folder and keeps the state of the user', () => {
+    const OLD = 'D:\Old\ASSCRACK\ASSCRACK.exe';
+    const NEW = 'E:\New place\ASSCRACK\ASSCRACK.exe';
+    const calls = [];
+    let item = { name: RUN_VALUE_NAME, path: OLD, args: startArgs(), scope: 'user', enabled: false };
+    const app = {
+        setLoginItemSettings(settings) { calls.push(settings); item = { ...item, path: settings.path, args: settings.args, enabled: settings.enabled }; },
+        getLoginItemSettings() { return { launchItems: item ? [item] : [] }; }
+    };
+    const entry = createStartEntry({ app, execPath: NEW, args: startArgs() });
+    assert.equal(entry.repair({ mode: 'off' }), false, 'choice off: no write');
+    assert.equal(calls.length, 0);
+    assert.equal(entry.repair({ mode: 'friends' }), true);
+    assert.deepEqual(calls[0], { openAtLogin: true, path: NEW, args: startArgs(), name: RUN_VALUE_NAME, enabled: false });
+    assert.equal(entry.repair({ mode: 'friends' }), false, 'the same path: no second write');
+    assert.equal(createStartEntry({ app, execPath: NEW.toLowerCase(), args: startArgs() }).repair({ mode: 'friends' }), false);
+    // The user removed the entry: the repair does not make it again.
+    item = null;
+    assert.equal(entry.repair({ mode: 'friends' }), false);
+    assert.equal(calls.length, 1);
 });
