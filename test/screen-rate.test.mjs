@@ -655,3 +655,26 @@ test('revision 3c: a viewer with an excess of 20 to 35 ms goes to the slow tier 
     both.run(6000)
     assert.equal(both.rate.tiers().length, 1)
 })
+
+test('revision 3d: a viewer in the probe of its return does not lower the fast tier; the probe starts at its keyframe', () => {
+    const s = sim()
+    s.add('a')
+    s.add('b')
+    s.run(6000)
+    s.v('a').rate = 3000000
+    s.rate.forceSlow('b')
+    s.v('b').rate = 2800000
+    s.run(500)
+    while (s.rate.tiers().length === 2 && s.now() < 20000) { s.v('b').rate = Math.max(s.v('b').rate, Math.ceil(0.9 * s.rate.tiers()[0].bitrate)); s.run(100) }
+    assert.equal(s.rate.tiers().length, 1, 'b is back in the fast tier')
+    const probe = s.v('b').mergeProbe
+    assert.ok(probe, 'the return is a probe')
+    // The rate of b goes down in the probe. The fast tier keeps the rate of a.
+    s.v('b').rate = 800000
+    s.run(10)
+    assert.ok(s.rate.tiers()[0].bitrate >= Math.min(s.v('a').rate, 2000000), `fast bitrate ${s.rate.tiers()[0].bitrate}`)
+    assert.ok(probe.at === null || probe.at >= 0)
+    // After the probe, b sets the bitrate again (the lowest rate of the tier).
+    s.run(8000)
+    if (!s.v('b').mergeProbe && s.rate.tiers().length === 1) assert.equal(s.rate.tiers()[0].bitrate, Math.max(300000, Math.min(s.v('a').rate, s.v('b').rate)))
+})

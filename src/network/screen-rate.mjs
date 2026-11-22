@@ -184,7 +184,9 @@ export function createScreenRate({ quality = 'auto', source = null, now, params 
         for (const t of tiers) {
             const members = membersOf(t)
             for (const v of members) v.rate = Math.min(v.rate, targetOf(v))
-            if (members.length) t.bitrate = Math.max(P.minBitrate, Math.min(...members.map(v => v.rate)))
+            // Revision 3d: a viewer in the probe of its return does not set the bitrate of the tier.
+            const setting = members.some(v => !v.mergeProbe) ? members.filter(v => !v.mergeProbe) : members
+            if (members.length) t.bitrate = Math.max(P.minBitrate, Math.min(...setting.map(v => v.rate)))
             t.members = members.length
         }
         // Revision 3b: while a viewer is in the probe of its return, the sum of the tier ceilings of all viewers stays
@@ -344,7 +346,13 @@ export function createScreenRate({ quality = 'auto', source = null, now, params 
                 recoverIfClear(v)
                 continue
             }
-            if (key) { v.needKey = false; v.behindSince = null; v.keys++ }
+            if (key) {
+                v.needKey = false
+                v.behindSince = null
+                v.keys++
+                // Revision 3d: the probe of a return starts with the first keyframe of the new tier.
+                if (v.mergeProbe && v.mergeProbe.at === null) v.mergeProbe.at = t
+            }
             const seq = v.nextSeq
             v.nextSeq = (seq + 1) >>> 0
             const wire = frameRecord({ key, seq, timestampMs, data })
@@ -570,7 +578,7 @@ export function createScreenRate({ quality = 'auto', source = null, now, params 
                 v.mergeBackoff = Math.min(P.upBackoffMaxMs, v.mergeBackoff * 2)
                 regroupNeeded = true
                 history.push({ t, viewer: v.id, why: 'join probe', rate: v.rate })
-            } else if (t - v.mergeProbe.at >= P.probeMs) {
+            } else if (v.mergeProbe.at !== null && t - v.mergeProbe.at >= P.probeMs) {
                 v.mergeProbe = null
                 v.mergeBackoff = P.upBackoffMs
             }
@@ -598,7 +606,7 @@ export function createScreenRate({ quality = 'auto', source = null, now, params 
                 if (v.slow && fast && fast.members > 0 && v.tier !== fast.id && v.rate >= P.mergeFactor * fast.bitrate && v.excess < P.headroomMs &&
                     t >= v.mergeBlockedUntil) {
                     v.slow = false
-                    v.mergeProbe = { at: t }
+                    v.mergeProbe = { at: null }
                     regroupNeeded = true
                     history.push({ t, viewer: v.id, why: 'fast tier', rate: v.rate })
                 }
