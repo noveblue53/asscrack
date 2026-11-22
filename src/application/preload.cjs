@@ -117,6 +117,10 @@ contextBridge.exposeInMainWorld('asscrack', {
     onKnocks: listen('asscrack:knocks'),
     // The state of the own knock during the login: { state: 'looking' | 'waiting' | 'allowed', room }.
     onKnockState: listen('asscrack:knock-state'),
+    // easy-join part 3: "Always allow my friends" (owner only). Returns the value now.
+    setAutoAllowFriends: on => ipcRenderer.invoke('asscrack:auto-allow-friends', on === true),
+    // A friend got in with no prompt: { name, mark }.
+    onKnockAuto: listen('asscrack:knock-auto'),
     onMembership: listen('asscrack:membership'),
     getFullNode: () => ipcRenderer.invoke('asscrack:full-node'),
     onFullNode: listen('asscrack:full-node'),

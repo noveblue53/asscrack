@@ -10,7 +10,13 @@
         const who = typeof view?.mark === 'string' && /^[0-9a-f]{6}$/.test(view.mark) ? `${name} #${view.mark}` : name;
         return `${who} wants to join.` + (more > 0 ? ` ${more} more ${more === 1 ? 'request waits' : 'requests wait'}.` : '');
     }
-    window.knockCore = Object.freeze({ barText });
+    // easy-join part 3: the room line of "Always allow my friends". view: { name, mark } (the name of the Friends list).
+    function autoText(view) {
+        const name = view?.name || 'A friend';
+        const who = typeof view?.mark === 'string' && /^[0-9a-f]{6}$/.test(view.mark) ? `${name} #${view.mark}` : name;
+        return `${who} joined, friend auto-allowed.`;
+    }
+    window.knockCore = Object.freeze({ barText, autoText });
 
     if (typeof document === 'undefined' || typeof document.getElementById !== 'function') return;
     const api = window.asscrack;
@@ -53,5 +59,7 @@
         show();
     }
     api.onKnocks?.(update);
+    // A note row of the chat list (transcript-notes.js): never unread, never saved.
+    api.onKnockAuto?.(view => window.transcriptNotes?.append('presence', autoText(view), Date.now()));
     Promise.resolve(api.getKnocks?.()).then(next => { if (Array.isArray(next) && !list.length) update(next); }).catch(() => {});
 })();

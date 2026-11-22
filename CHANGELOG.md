@@ -7,6 +7,22 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased — "Always allow my friends" (goal easy-join, part 3, 2026-11-22)
+
+The owner of a protected room can let friends in with no request.
+
+- **Setting.** The Invite panel of the owner has the checkbox "Always allow my friends". It is off by default. The
+  setting is for each room, and the saved room of the owner keeps it. A member that is not the owner does not see it.
+- **Allow with no request.** When the setting is on, a knock gets Allow at once if the device is on the Friends list of
+  the owner. The owner checks the device key first, then the device ID. The other checks and limits do not change. A
+  stranger with the room code gets the request as before. A blocked device never gets this Allow.
+- **Room line.** The room of the owner shows "<name> #<mark> joined, friend auto-allowed." The name comes from the
+  Friends list of the owner.
+
+Checks (127.0.0.1 on this PC, not LAN, not internet): `test/friend-auto-allow.test.mjs` has 6 tests. They do the
+setting off and on, a friend with no request, a stranger with the request, and a blocked device with no admission. Two
+app copies on this PC: A sets the checkbox, B selects Join, B gets in with no request, and A sees the room line.
+
 ## Unreleased — Join on a friend row (goal easy-join, part 3, 2026-11-22)
 
 A friend row shows Join when the friend is in a protected room that you are not in. Join asks the owner to let you in.

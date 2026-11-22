@@ -766,7 +766,8 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
         delete options.savedUpnpPort;
         options.updates = updates.hub;
         // easy-join part 2: the owner answers knocks; a relay lets a knock circuit reach the owner.
-        options.knock = true;
+        // Part 3: isFriend for "Always allow my friends" (a friend that is not blocked).
+        options.knock = { isFriend: deviceId => friendLinks.isFriend(deviceId) };
         try {
             node = await createAsscrackNode(options);
         } catch (err) {
@@ -823,6 +824,12 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
         if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
             showTrayBalloon(`${added.name} #${added.mark} wants to join ${roomName ?? 'the room'}. Open ASSCRACK to answer.`);
         }
+    });
+    // easy-join part 3: "Always allow my friends" let a friend in with no prompt. The window shows a line with the name
+    // of the Friends list and the device mark. The log has no name.
+    onLive('knock-auto', ({ name, mark, deviceId }) => {
+        writeLog('INFO', 'Knock auto-allowed (friend)');
+        sendToWindow('asscrack:knock-auto', { name: friendLinks.nameOf(deviceId) ?? name, mark });
     });
     // P7b fix: `live` is a const of the try block above. A ReferenceError here failed each received file at its end
     // ("stream ended" on both ends). This listener keeps its own copy of the live node.
@@ -1046,6 +1053,13 @@ handleRoomIpc('asscrack:knock-answer', (_event, id, allow) => {
     const done = node.answerKnock(id, allow === true);
     writeLog('INFO', `Knock ${allow === true ? 'allowed' : 'denied'}${done ? '' : ' (not waiting now)'}`);
     return done;
+});
+// easy-join part 3: "Always allow my friends" of the owner (the room membership card). Returns the value now.
+handleRoomIpc('asscrack:auto-allow-friends', (_event, on) => {
+    if (!node?.memberState().owner) throw new Error('Only the room owner can change this setting.');
+    const value = node.setAutoAllowFriends(on === true);
+    writeLog('INFO', `Always allow my friends: ${value ? 'on' : 'off'}`);
+    return value;
 });
 // "Copy room code" (renew false) and "New room code" (renew true). The main process copies the code.
 handleRoomIpc('asscrack:room-code', (_event, renew) => {

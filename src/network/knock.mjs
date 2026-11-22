@@ -73,7 +73,11 @@ function rateLimit(clock, limits) {
 
 // The owner side. membership: the owner membership (room-membership.mjs). makeInvite(deviceId): the device invite of
 // Allow (a string). changed({ pending, added }): the prompt list changed; added is the new prompt or null.
-export function createKnockDesk({ membership, makeInvite, limits = {}, clock = realClock, changed = () => {}, log = () => {} }) {
+// easy-join part 3: autoAllow(deviceId) -> true when the owner admits this device with no prompt ("Always allow my
+// friends": the setting is on and the device is a friend that is not blocked). autoAllowed({ name, mark, deviceId }):
+// a knock got Allow with no prompt.
+export function createKnockDesk({ membership, makeInvite, limits = {}, clock = realClock, changed = () => {}, log = () => {},
+    autoAllow = () => false, autoAllowed = () => {} }) {
     if (!membership?.owner) throw new Error('Only the room owner can answer a knock.')
     const L = { ...KNOCK_LIMITS, ...limits }
     const pending = new Map()
@@ -157,6 +161,22 @@ export function createKnockDesk({ membership, makeInvite, limits = {}, clock = r
                 if (membership.issued().some(grant => grant.deviceId === deviceId && grant.canHost)) return finish('refused', { reason: 'role' })
                 if (coolingDown(deviceId)) return finish('denied')
                 if ([...pending.values()].some(other => other.deviceId === deviceId)) return finish('refused', { reason: 'pending' })
+                // easy-join part 3: "Always allow my friends". Only after the device proof and the checks above. The
+                // knock gets Allow with no prompt, thus it does not use a place of the prompt cap.
+                if (autoAllow(deviceId) === true) {
+                    clock.clearTimeout(stepTimer)
+                    state = 'wait'
+                    let invite
+                    try {
+                        invite = makeInvite(deviceId)
+                    } catch (err) {
+                        log(`Knock invite failed: ${err?.message ?? err}`)
+                        return finish('refused', { reason: 'error' })
+                    }
+                    finish('allowed', { invite })
+                    autoAllowed({ name: knockName(message.name), mark: deviceMark(deviceId), deviceId })
+                    return
+                }
                 if (pending.size >= L.maxPending) return finish('refused', { reason: 'busy' })
                 clock.clearTimeout(stepTimer)
                 state = 'wait'

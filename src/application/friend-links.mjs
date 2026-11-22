@@ -952,6 +952,16 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
             }
             return { result: 'allowed', invite: outcome.invite, room: target.name };
         },
+        // easy-join part 3: "Always allow my friends" of the owner: a friend with this device ID that is not blocked.
+        isFriend(deviceId) {
+            const entry = typeof deviceId === 'string' && state === 'open' ? byDevice(deviceId) : null;
+            return Boolean(entry && entry.row.state !== 'removed-you' && !isBlocked(deviceId));
+        },
+        // The nickname of a friend device, or null.
+        nameOf(deviceId) {
+            const entry = typeof deviceId === 'string' && state === 'open' ? byDevice(deviceId) : null;
+            return entry ? entry.row.nickname : null;
+        },
         // The saved lines (pages), with the away mark of each received away line. The first page also has the waiting
         // lines of the outbox (G7b), in time order.
         lines(friendId, before = null) {

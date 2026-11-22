@@ -18,6 +18,8 @@
     const codeBox = get('room-code-box');
     const codeCopy = get('room-code-copy');
     const codeNew = get('room-code-new');
+    // easy-join part 3: "Always allow my friends" (owner only, off by default). Optional as the code box.
+    const autoAllow = get('auto-allow-friends');
     let state = null;
     // The reach state of asscrack:invite (gap A1), or null before the first answer.
     let reach = null;
@@ -26,6 +28,7 @@
     let confirming = null;
     let rendering = '';
     let busy = false;
+    let autoAllowBusy = false;
 
     // Gap A3: the device ID button is below the login button for each room type. After the copy, the window goes to
     // the join type, because the next step of the friend is to paste the invite.
@@ -165,6 +168,7 @@
                 : next.canHost ? 'This device is admitted and can host or relay.' : 'This device is admitted.';
         form.hidden = !next.owner;
         if (codeBox) codeBox.hidden = !next.owner;
+        if (autoAllow && !autoAllowBusy) autoAllow.checked = next.owner && next.autoAllowFriends === true;
         statusBar.querySelector('.net-note').textContent = next.lan ? 'Protected LAN room' : 'Protected internet room';
         // Gap A2: room-link.js writes #waiting-peer from these facts and the peer facts.
         window.roomLink?.membership({ owner: next.owner, admitted: next.admitted, revoked: next.revoked });
@@ -213,6 +217,23 @@
             listDevices();
         }
     }
+    // easy-join part 3: the main process saves the setting with the room of the owner.
+    autoAllow?.addEventListener('change', async () => {
+        if (!state?.owner || autoAllowBusy) return;
+        const wanted = autoAllow.checked;
+        autoAllowBusy = autoAllow.disabled = true;
+        try {
+            autoAllow.checked = (await api.setAutoAllowFriends(wanted)) === true;
+            inviteNote.textContent = autoAllow.checked
+                ? 'Your friends now join with no request. Other people still need your Allow.'
+                : 'Each person now needs your Allow, also your friends.';
+        } catch (error) {
+            autoAllow.checked = !wanted;
+            inviteNote.textContent = error?.message ? errorText(error) : 'Could not change the setting.';
+        } finally {
+            autoAllowBusy = autoAllow.disabled = false;
+        }
+    });
     codeCopy?.addEventListener('click', () => roomCode(false));
     codeNew?.addEventListener('click', () => roomCode(true));
 

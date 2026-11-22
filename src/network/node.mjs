@@ -169,6 +169,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     screen: screenOptions = {},
     // easy-join part 2: true (or an object with test limits) for the room node of the app. The owner answers knocks,
     // and a relay lets a peer that is not admitted open a circuit to the owner peer. The friend link nodes do not set it.
+    // easy-join part 3: knock.isFriend(deviceId) -> true for a friend that is not blocked ("Always allow my friends").
     knock = false,
     // P9C: the update hub of the app (update-spread.mjs), or null: no update lines.
     updates = null } = {}) {
@@ -287,9 +288,10 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         const entries = [...memberPeers.entries()].filter(([peerId]) => sessions.has(peerId) && memberAllowed(peerId))
         const members = membership.owner ? membership.issued() : entries.filter(([, member]) => member.deviceId !== membership.ownerId)
             .map(([, member]) => ({ deviceId: member.deviceId, canHost: member.canHost, revoked: false }))
-        // easy-join part 3: roomId and ownerId for the room announce line of the friend links.
+        // easy-join part 3: roomId and ownerId for the room announce line of the friend links; autoAllowFriends for
+        // the owner setting "Always allow my friends".
         return { protected: true, owner: membership.owner, deviceId: membership.id, lan: membership.lan,
-            roomId: membership.roomId, ownerId: membership.ownerId,
+            roomId: membership.roomId, ownerId: membership.ownerId, autoAllowFriends: membership.autoAllowFriends(),
             admitted: membership.admitted(), canHost: membership.canHost(), revoked: membership.revoked(membership.id),
             members: members.map(member => {
                 const pair = entries.find(([, active]) => active.deviceId === member.deviceId)
@@ -1215,6 +1217,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         makeInvite: deviceId => makeMemberInvite({ room, key, nodes: knockNodes(), membership: membership.issue(deviceId, false) }),
         changed: ({ pending, added }) => events.emit('knocks', { pending, added }),
         log: text => console.info(text),
+        // easy-join part 3: "Always allow my friends". The desk asks only after the device proof.
+        autoAllow: deviceId => membership.autoAllowFriends() && typeof knock?.isFriend === 'function' && knock.isFriend(deviceId) === true,
+        autoAllowed: view => events.emit('knock-auto', view),
         // The tests give other limits: knock: { limits } (knock.mjs).
         limits: typeof knock === 'object' ? knock.limits : undefined
     }) : null
@@ -2078,6 +2083,11 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         answerKnock: (id, allow) => knockDesk?.answer(id, allow === true) ?? false,
         // The knock desk of the owner (knock.mjs), or null. A friend link channel can use it (part 3).
         knockDesk: () => knockDesk,
+        // easy-join part 3: "Always allow my friends" of the owner. Returns the value now.
+        setAutoAllowFriends(on) {
+            if (!membership?.owner) throw new Error('Only the room owner can change this setting.')
+            return membership.setAutoAllowFriends(on === true)
+        },
         // easy-join part 3: an admitted member that is not the owner forwards the knock of a friend to the owner, on a
         // knock stream on the session connection. The member does not change the lines. Resolves a knock channel
         // (knock-stream.mjs) or null: no owner session now, or the owner refused the stream.

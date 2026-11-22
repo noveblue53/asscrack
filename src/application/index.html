@@ -334,6 +334,10 @@
             <p>A room code lets people ask to join. You see each request and select Allow or Deny. A code works for 7 days.</p>
             <button type="button" id="room-code-copy">Copy room code</button>
             <button type="button" id="room-code-new">New room code</button>
+            <!-- easy-join part 3: a friend of the owner joins with no request (Allow / Deny). -->
+            <label class="admission-check" id="auto-allow-label">
+              <input type="checkbox" id="auto-allow-friends"> Always allow my friends
+            </label>
           </div>
           <form id="member-invite-form" hidden>
             <label for="member-device-id">Friend’s device ID</label>

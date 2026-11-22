@@ -146,8 +146,10 @@ export function inspectMembershipDescriptor(room, roomKey, descriptor, { invite 
     }
     // easy-join part 2: only the owner keeps a room code. An older descriptor has none.
     const roomCode = !invite && grant === null ? inspectRoomCode(descriptor.roomCode) : undefined
+    // easy-join part 3: "Always allow my friends", an owner setting. Only the value true is kept (off is the default).
+    const autoAllowFriends = !invite && grant === null && descriptor.autoAllowFriends === true
     return { v: VERSION, owner: access.owner, lan: access.lan, grant, admission, revocations, issued,
-        ...(roomCode ? { roomCode } : {}) }
+        ...(roomCode ? { roomCode } : {}), ...(autoAllowFriends ? { autoAllowFriends: true } : {}) }
 }
 
 export function createRoomMembership({ identity, room, roomKey, lan = false, now = Date.now }) {
@@ -310,6 +312,17 @@ export function restoreRoomMembership({ identity, room, roomKey, descriptor, now
         return identity.sign(access.knockOwnerFields(codeId, nonce))
     }
     const verifyKnock = (deviceId, codeId, nonce, signature) => verified(deviceId, access.knockFields(codeId, nonce), signature)
+    // easy-join part 3: "Always allow my friends" (owner only, off by default). The saved room keeps it.
+    const autoAllowFriends = () => owner && current.autoAllowFriends === true
+    function setAutoAllowFriends(on) {
+        if (!owner) throw new Error('Only the room owner can change this setting.')
+        if ((on === true) === autoAllowFriends()) return autoAllowFriends()
+        const next = { ...current }
+        if (on === true) next.autoAllowFriends = true
+        else delete next.autoAllowFriends
+        update(next)
+        return autoAllowFriends()
+    }
 
     return Object.freeze({ id: identity.id, owner, ownerId: access.owner, lan: access.lan, roomId: access.id,
         hostGrant: owner || current.grant.canHost,
@@ -320,7 +333,7 @@ export function restoreRoomMembership({ identity, room, roomKey, descriptor, now
         issued: () => current.issued.map(({ deviceId, canHost }) => ({ deviceId, canHost, revoked: revoked(deviceId) })),
         revoked, memberProof, verifyMember, observe, admit, acceptAdmission, issue, revoke,
         signVoiceChannels, verifyVoiceChannels,
-        roomCode, checkRoomCode, signRoomCode, knockOwnerProof, verifyKnock,
+        roomCode, checkRoomCode, signRoomCode, knockOwnerProof, verifyKnock, autoAllowFriends, setAutoAllowFriends,
         setPersistence(callback) { persist = callback },
         onChanged(callback) { changed = callback }
     })
