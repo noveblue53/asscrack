@@ -34,6 +34,34 @@ Results (127.0.0.1 and this PC, no LAN, no GitHub upload):
   changed byte, an other key, a wrong SHA-256, a wrong size, an equal version) gives no bar and no file. In voice,
   Restart asks first. No ERROR line. The install state of this PC is the same after the checks.
 
+## Unreleased — screenshare, network part (package P8a, 2026-11-22)
+
+The network layer can now share a screen in a room. The window part (the picker, the share bar and the stage) is
+package P8b. It comes later. Design: `work-orders/astra/P8/DESIGN.md`, revisions 2 and 3 to 3f (local).
+
+- **Protocol.** A `screen` control line tells each member that a member shares. A viewer opens the stream
+  `/asscrack/screen/1.0.0` to the sharer on its session connection (direct TCP or a circuit). The records have a
+  length prefix: WATCH, CONFIG, FRAME, ACK, KEYREQ and END. Only a peer with an open, permitted session can watch.
+  A share has at most 6 viewers. A room has one share at a time: when two members start at the same time, the lower
+  peer ID continues. A share stops at Stop, in Idle Peer, at Quit, and after 10 s with no session.
+- **Rate control and voice first.** The sharer paces its writes, measures the ack delay of each viewer, drops frames
+  for a late viewer and changes the bitrate. Voice keeps its own streams and does not change.
+- **Auto quality.** Five presets from 720p at 15 fps to 1440p at 60 fps. Each viewer has its own rate. There are at
+  most two encoder tiers, thus a slow viewer does not lower the picture of the others. Each step up is a probe that
+  goes back at once when the ack delay rises. A long queue steps a tier down at once.
+- **Result: 127.0.0.1, this PC (revision 3f).** No LAN test and no window test (P8b).
+  - `node --test test/screen-share.test.mjs test/screen-rate.test.mjs`: 42 of 42 pass. `npm test` on the merge
+    result: 788 of 805 pass, 0 fail, 17 skipped. The timed checks skip in `npm test`. Each timed file runs with
+    `node --test` on its file.
+  - Voice: no voice limit failed in run 11 and in the study of 25 runs (load 5 % to 40 %). Voice delay p95 in the
+    judged windows: 17 to 48 ms.
+  - **Failures (screen quality speed, not voice).** Check 18: 2 of 3 runs pass in run 11, 0 of 5 in the study.
+    After a drop of the link, the tier is at Balanced again only at 66.7 to 73.2 s. The limit is 65 s. Check 16: 4 of 5
+    (viewer 1 did not reach Max in one run). Check 20: 4 of 5 (the sum of the tier ceilings was above 5 Mbit/s in
+    one run). Check 19: 2 of 3 runs pass with revision 3d (1 frame missed in 1 s). The study did not measure it.
+  - Checks 17, 19, 21 and 24 (the speed of the quality) are not measured in the merge gate of P8a. P8b measures
+    them with the real encoder. The speed of the return after a drop of the link is a 1.0.x item (field data).
+
 ## Unreleased — Per-user installer and start at sign-in (goal P9B, 2026-11-22)
 
 A per-user installer comes next to the portable build. The installed build can start in the tray when you sign in.
