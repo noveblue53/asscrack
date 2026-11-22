@@ -118,12 +118,12 @@ test('"Always allow my friends": off by default, saved with the room of the owne
     assert.equal('autoAllowFriends' in saved.at(-1), false)
 })
 
-test('window: the room line "<name> #<mark> joined, friend auto-allowed." and the checkbox in the membership card', async () => {
+test('window: the room line "<name> #<mark> joined (friend)" and the checkbox in the membership card', async () => {
     const context = { window: {} }
     vm.createContext(context)
     vm.runInContext(await readFile(new URL('../src/application/knock-ui.js', import.meta.url), 'utf8'), context)
-    assert.equal(context.window.knockCore.autoText({ name: 'Ben', mark: 'a1b2c3' }), 'Ben #a1b2c3 joined, friend auto-allowed.')
-    assert.equal(context.window.knockCore.autoText({ name: 'Ben', mark: 'bad' }), 'Ben joined, friend auto-allowed.')
+    assert.equal(context.window.knockCore.autoText({ name: 'Ben', mark: 'a1b2c3' }), 'Ben #a1b2c3 joined (friend)')
+    assert.equal(context.window.knockCore.autoText({ name: 'Ben', mark: 'bad' }), 'Ben joined (friend)')
     const html = await readFile(new URL('../src/application/index.html', import.meta.url), 'utf8')
     const box = html.slice(html.indexOf('<div id="room-code-box"'), html.indexOf('</div>', html.indexOf('<div id="room-code-box"')))
     assert.match(box, /<input type="checkbox" id="auto-allow-friends"> Always allow my friends/)

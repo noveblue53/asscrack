@@ -1402,7 +1402,7 @@ friendLinks.events.on('invite-sent', ({ result }) => journal('join', { event: 'f
 friendLinks.events.on('invite', ({ name, room }) => {
     journal('join', { event: 'friend-invite-received' });
     if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isVisible()) return;
-    showTrayBalloon(`${name || 'A friend'} invites you to ${room}. Open the chat with ${name || 'your friend'} to join.`);
+    showTrayBalloon(`${name || 'A friend'} invited you to ${room}`);
 });
 // 1.0.1: the Friends window. "Pop out" in the drawer opens it, only in a room. It stays open after Leave room
 // and closes with the room window and at Quit.

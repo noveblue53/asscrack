@@ -13,7 +13,8 @@ const accessControls = [
     { id: 'member-invite-form', tag: 'form' }, { id: 'member-device-id', tag: 'input' },
     { id: 'member-can-host', tag: 'input' }, { id: 'member-invite-create', tag: 'button' },
     { id: 'invite-code-label' }, { id: 'room-members-section' }, { id: 'room-members', tag: 'ul' }, { id: 'waiting-peer' },
-    { id: 'knock-bar', hidden: true, children: [{ id: 'knock-text', tag: 'p' }, { id: 'knock-allow', tag: 'button' }, { id: 'knock-deny', tag: 'button' }] }
+    { id: 'knock-bar', hidden: true, children: [{ id: 'knock-text', tag: 'p' }, { id: 'knock-more', hidden: true },
+        { id: 'knock-allow', tag: 'button' }, { id: 'knock-deny', tag: 'button' }] }
 ];
 
 async function startRoom({ owner = true, api = {} } = {}) {
@@ -55,18 +56,22 @@ test('a member that is not the owner does not see "Copy room code"', async () =>
     assert.ok(!room.calls.some(call => call.name === 'roomCode'));
 });
 
-test('the knock bar: "<name> #<mark> wants to join." with Allow and Deny, one request at a time', async () => {
+// UI copy pass (U16): the count of the other requests is a "+N" tag, and the text has no final period.
+test('the knock bar: "<name> #<mark> wants to join" with Allow and Deny, one request at a time', async () => {
     const answers = [];
     const room = await startRoom({ api: { answerKnock: async (id, allow) => { answers.push([id, allow]); return true; } } });
     assert.equal(room.el('knock-bar').hidden, true);
     room.handlers.onKnocks([{ id: 'k1', name: 'Kim', mark: 'a1b2c3' }, { id: 'k2', name: 'Lee', mark: 'zz' }]);
     assert.equal(room.el('knock-bar').hidden, false);
-    assert.equal(room.el('knock-text').textContent, 'Kim #a1b2c3 wants to join. (+1 more)');
+    assert.equal(room.el('knock-text').textContent, 'Kim #a1b2c3 wants to join');
+    assert.equal(room.el('knock-more').hidden, false);
+    assert.equal(room.el('knock-more').textContent, '+1');
     room.el('knock-allow').click();
     await settle();
     assert.deepEqual(answers, [['k1', true]]);
     assert.equal(room.el('status').textContent, 'Allowed Kim.');
-    assert.equal(room.el('knock-text').textContent, 'Lee wants to join.', 'a mark that is not 6 hex characters does not show');
+    assert.equal(room.el('knock-text').textContent, 'Lee wants to join', 'a mark that is not 6 hex characters does not show');
+    assert.equal(room.el('knock-more').hidden, true);
     room.el('knock-deny').click();
     await settle();
     assert.deepEqual(answers, [['k1', true], ['k2', false]]);
@@ -74,7 +79,8 @@ test('the knock bar: "<name> #<mark> wants to join." with Allow and Deny, one re
     assert.equal(room.el('knock-bar').hidden, true);
     room.handlers.onKnocks([]);
     assert.equal(room.el('knock-bar').hidden, true);
-    assert.equal(room.window.knockCore.barText({ name: 'A', mark: '123abc' }, 2), 'A #123abc wants to join. (+2 more)');
+    assert.equal(room.window.knockCore.barText({ name: 'A', mark: '123abc' }), 'A #123abc wants to join');
+    assert.equal(room.window.knockCore.moreText(2), '+2');
 });
 
 test('the joiner sees the state of its knock while the login waits for the owner', async () => {
