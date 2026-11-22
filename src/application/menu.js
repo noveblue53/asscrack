@@ -38,7 +38,8 @@
         retry: 'Retry',
         'cancel-receiver': 'Cancel for this user',
         'cancel-offer': 'Cancel for all users',
-        reveal: 'Show in Explorer'
+        reveal: 'Show in Explorer',
+        resend: 'Send again'
     });
 
     // The action names for the data of a row (roomActions.rowInfo). An empty list: no menu.
@@ -55,7 +56,8 @@
             }
             case 'message':
                 // quotable: the window can take a quote now (renderer.js rowInfo).
-                return [...(info.quotable ? ['quote', 'copy-message'] : ['copy-message']), ...(info.inspect ? ['inspect-peer'] : []), ...(info.details ? ['message-details'] : [])];
+                // localOnly: the line has "Only on this computer" (gap B3).
+                return [...(info.quotable ? ['quote', 'copy-message'] : ['copy-message']), ...(info.inspect ? ['inspect-peer'] : []), ...(info.details ? ['message-details'] : []), ...(info.localOnly ? ['resend'] : [])];
             case 'offer':
                 return info.active ? ['cancel-offer'] : [];
             case 'transfer':
@@ -354,8 +356,10 @@
 
     const tabStops = new WeakMap(); // list -> the row with tabindex 0
 
+    // A note row of the chat (transcript-notes.js) and a grey buddy line (connection lost) are no stops.
     function rowsOf(listEl) {
-        return Array.from(listEl.children).filter(row => row.tagName === 'LI' && !row.hidden && !row.classList.contains('leaving'));
+        return Array.from(listEl.children).filter(row => row.tagName === 'LI' && !row.hidden && !row.classList.contains('leaving')
+            && !row.classList.contains('note') && !row.classList.contains('lost'));
     }
 
     function setTabStop(listEl, row) {

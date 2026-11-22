@@ -1,6 +1,6 @@
 // Saved rooms (milestone 6): the window part. A classic script. It loads after renderer.js and uses its functions
 // (showChat, roomStarted, addMessage, insertMessage, status, loginButton, roomTypeSelect, peerItems, internetRoom,
-// messageList, savedMessageIds, noteSaved, clearSavedMarks).
+// messageList, savedMessageIds, noteSaved, clearSavedMarks, hasContentRows, roomRole).
 (function () {
     const api = window.asscrack;
     if (!api || typeof api.listSavedRooms !== 'function') return;
@@ -292,7 +292,8 @@
             noteSaved(id);
             return true;
         });
-        const empty = messageList.children.length === 0;
+        // Note rows (transcript-notes.js) do not count: a list with only note rows is empty.
+        const empty = !hasContentRows(messageList);
         const insertPage = () => {
             for (const line of fresh) insertMessage(line.from, line.text, line.time, line.id, line.own === true, line.channelId, line.attachment);
         };
@@ -426,6 +427,8 @@
         try {
             const lines = await readLines(room.roomId);
             if (!lines && archiveChanges.get(room.roomId)?.pending) return;
+            // Gap A2: the room-link texts of a reopened room (renderer.js).
+            roomRole = 'reopen';
             const result = await api.reopenRoom(room.roomId, allowLegacy);
             started = true;
             internetRoom = result?.internet === true;

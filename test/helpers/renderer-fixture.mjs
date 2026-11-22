@@ -1,11 +1,12 @@
-// Load the real classic scripts of the room window (reading.js, find.js, quote.js, renderer.js, menu.js) in node:vm
+// Load the real classic scripts of the room window (reading.js, transcript-notes.js, room-link.js, find.js, quote.js,
+// highlights.js, renderer.js, menu.js) in node:vm
 // with the fake DOM of fake-dom.mjs and a bridge (window.asscrack) that the test controls. voice.js, nodemap.js and
 // layout.js do not load: small stubs take their place. No network, no Electron.
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { createDom } from './fake-dom.mjs';
 
-const SCRIPTS = ['reading.js', 'find.js', 'quote.js', 'highlights.js', 'renderer.js', 'menu.js'];
+const SCRIPTS = ['reading.js', 'transcript-notes.js', 'room-link.js', 'find.js', 'quote.js', 'highlights.js', 'renderer.js', 'menu.js'];
 const sources = await Promise.all(SCRIPTS.map(name =>
     readFile(new URL(`../../src/application/${name}`, import.meta.url), 'utf8')));
 
@@ -101,7 +102,8 @@ function makeBridge(options) {
 }
 
 // options.send: async (text) => peer count, or throw. options.api: bridge calls that must exist before the scripts
-// load. Returns the fixture.
+// load. options.clock: a clock of fake-clock.mjs for the timers and Date of the scripts (default: the real timers,
+// and setInterval does nothing). Returns the fixture.
 export async function loadRoomWindow(options = {}) {
     const { document, window, Event } = createDom([...layout(), ...(options.elements ?? [])]);
     const { bridge, handlers, calls } = makeBridge(options);
@@ -125,10 +127,11 @@ export async function loadRoomWindow(options = {}) {
         window,
         document,
         console: { log() {}, info() {}, warn() {}, error: (...a) => errors.push(a.join(' ')) },
-        setTimeout,
-        clearTimeout,
-        setInterval: () => 0,
-        clearInterval() {},
+        setTimeout: options.clock?.setTimeout ?? setTimeout,
+        clearTimeout: options.clock?.clearTimeout ?? clearTimeout,
+        setInterval: options.clock?.setInterval ?? (() => 0),
+        clearInterval: options.clock?.clearInterval ?? (() => {}),
+        ...(options.clock ? { Date: options.clock.Date } : {}),
         queueMicrotask,
         Promise,
         Event,
@@ -163,7 +166,11 @@ export async function loadRoomWindow(options = {}) {
         history(messages) {
             handlers.onHistory({ messages });
         },
-        rows: () => document.getElementById('messages').children,
+        // The rows of #messages with no note rows (transcript-notes.js: day, presence and link rows).
+        rows: () => document.getElementById('messages').children.filter(row => !row.classList.contains('note')),
+        // The note rows of #messages: [{ kind, text }].
+        notes: () => document.getElementById('messages').children.filter(row => row.classList.contains('note'))
+            .map(row => ({ kind: row.dataset.kind, text: row.textContent })),
         key(target, key, init = {}) {
             const event = new Event('keydown', { key, ...init });
             target.dispatchEvent(event);

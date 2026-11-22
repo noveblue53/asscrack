@@ -161,10 +161,8 @@
                 : next.canHost ? 'This device is admitted and can host or relay.' : 'This device is admitted.';
         form.hidden = !next.owner;
         statusBar.querySelector('.net-note').textContent = next.lan ? 'Protected LAN room' : 'Protected internet room';
-        if (waitingPeer) {
-            waitingPeer.textContent = next.revoked ? 'This device’s access was revoked.'
-                : next.admitted ? 'Waiting for a peer' : 'Waiting for the room owner';
-        }
+        // Gap A2: room-link.js writes #waiting-peer from these facts and the peer facts.
+        window.roomLink?.membership({ owner: next.owner, admitted: next.admitted, revoked: next.revoked });
         listDevices();
         showReach();
     }

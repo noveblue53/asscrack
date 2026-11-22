@@ -19,6 +19,7 @@
   <title>ASSCRACK</title>
   <link rel="stylesheet" href="desktop-controls.css">
   <link rel="stylesheet" href="shared-shelf.css">
+  <link rel="stylesheet" href="transcript-notes.css">
 </head>
 <body>
   <!-- Decoration only: the sky bubbles behind the two screens. -->
@@ -295,7 +296,7 @@
           <button id="find-close" type="button" title="Close and go back (Escape)">Close</button>
         </div>
         <div id="transcript-body">
-          <p id="waiting-peer" role="status" hidden>Waiting for a peer</p>
+          <p id="waiting-peer" role="status" hidden></p>
           <ul id="messages" role="log" tabindex="-1"></ul>
           <!-- reading.js shows this button when the user reads older lines. -->
           <button id="jump-latest" type="button" hidden>Jump to latest <span id="unread-count" class="count"></span></button>
@@ -501,6 +502,8 @@
   <script src="window-frame.js"></script>
   <script src="layout.js"></script>
   <script src="reading.js"></script>
+  <script src="transcript-notes.js"></script>
+  <script src="room-link.js"></script>
   <script src="find.js"></script>
   <script src="quote.js"></script>
   <script src="highlights.js"></script>

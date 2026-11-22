@@ -1,0 +1,46 @@
+/* Note rows of the chat (transcript-notes.js, gaps B1 and D6). They are not messages: no bubble, no name, no menu. */
+#messages > li.note {
+  align-self: stretch;
+  display: block;
+  max-width: none;
+  margin: 3px 10px;
+  text-align: center;
+  font: italic 11.5px var(--font-small);
+  color: var(--ink-soft, #5b7a99);
+  animation: none;
+}
+
+/* A day row: the label between two lines. */
+#messages > li.note[data-kind="day"],
+body.compact-transcript #messages > li.note[data-kind="day"] {
+  display: block;
+  margin-top: 8px;
+  text-align: center;
+  font-style: normal;
+  font-weight: 700;
+}
+
+/* The compact transcript gives each line a grid. A note row is one line of text. */
+body.compact-transcript #messages > li.note {
+  display: block;
+  margin: 1px 0;
+  padding: 1px 4px;
+  text-align: left;
+}
+
+/* Gap B3: "Send again" below "Only on this computer". */
+#messages li .btn-resend { align-self: flex-start; margin-top: 2px; font-size: 0.8em; }
+.compact-transcript #messages .btn-resend { grid-column: 3 / -1; justify-self: start; }
+
+/* Gap B1: a peer that went with no bye stays as a grey line for 10 s. */
+#peers li.lost { opacity: 0.55; filter: grayscale(1); }
+#peers li.lost .voice-state { font-style: italic; }
+
+/* Gap A2: the Details button of #waiting-peer opens Room activity. */
+#waiting-peer .link-details { margin-left: 4px; font-style: normal; }
+
+/* Gap B2: the link key of room-link.js. An error text in #status keeps priority: these rules apply only when it is
+   empty. The color comes from the "Ready" rules of styles.css and themes.css. */
+#statusbar[data-link="connecting"] #status:empty::before { content: 'Connecting…'; }
+#statusbar[data-link="reconnecting"] #status:empty::before { content: 'Reconnecting…'; }
+#statusbar[data-link="reconnected"] #status:empty::before { content: 'Reconnected'; }

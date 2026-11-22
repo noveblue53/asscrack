@@ -61,9 +61,9 @@ new MutationObserver(() => {
     status.title = status.textContent;
 }).observe(status, { childList: true, characterData: true, subtree: true });
 
+// #waiting-peer and the link key of the status bar come from room-link.js (window.roomLink), not from this count.
 function updatePeerCount() {
     peerCount.textContent = String([...peerItems.keys()].filter(id => !idlePeerIds.has(id)).length + (selfLine && !selfIdle ? 1 : 0));
-    if (waitingPeer) waitingPeer.hidden = peerItems.size !== 0;
 }
 
 // The node map panel opens and closes with a CSS transition (body.map-open).
@@ -136,6 +136,8 @@ function makeMessageItem(from, text, time, own = false, id = null, peerId = null
     const timeSpan = document.createElement('span');
     timeSpan.className = 'time';
     timeSpan.textContent = formatTime(time);
+    // Gap D6: the full local date and time.
+    timeSpan.title = new Date(Number(time) || 0).toLocaleString();
     // The visible Quote control. It runs the row action 'quote', as the context menu does. Not a tab stop:
     // the keyboard uses the row menu (Menu key or Shift+F10).
     const quoteButton = makeButton('Quote', () => runRowAction('quote', item), 'quote', 'btn-quote');
@@ -147,14 +149,29 @@ function makeMessageItem(from, text, time, own = false, id = null, peerId = null
 }
 
 // View only: a line that follows a line of the same user gets the class "cont" (no name line).
+// A note row (transcript-notes.js) has no .from: it is never "the same user", thus no line groups over it.
 function groupWithPrevious(item) {
-    if (!item) return;
+    if (!item || item.classList.contains('note')) return;
     const prev = item.previousElementSibling;
-    const same = Boolean(prev) && !prev.classList.contains('file-card') && !item.classList.contains('file-card')
+    const prevFrom = prev?.querySelector('.from');
+    const itemFrom = item.querySelector('.from');
+    const same = Boolean(prevFrom && itemFrom) && !prev.classList.contains('file-card') && !item.classList.contains('file-card')
         && prev.classList.contains('own') === item.classList.contains('own')
-        && prev.querySelector('.from').textContent === item.querySelector('.from').textContent
+        && prevFrom.textContent === itemFrom.textContent
         && Math.abs(Number(item.dataset.time) - Number(prev.dataset.time)) < GROUP_MS;
     item.classList.toggle('cont', same);
+}
+
+// The first row after item that is not a note row, or null.
+function nextContentRow(item) {
+    let next = item?.nextElementSibling ?? null;
+    while (next && next.classList.contains('note')) next = next.nextElementSibling;
+    return next;
+}
+
+// True when the list has a row that is not a note row. A list with only note rows is "empty" for the history code.
+function hasContentRows(list) {
+    return Array.from(list.children).some(row => !row.classList.contains('note'));
 }
 
 // Archive acknowledgements can arrive before the corresponding live row.
@@ -188,14 +205,19 @@ function clearSavedMarks() {
     showArchiveFact();
 }
 // Saved rooms (milestone 6): an own send with no accepting peer. The line is only in this window.
-function markLocalOnly(item) {
+// Gap B3: the line keeps its channel ID and gets "Send again" (row action 'resend', also in the row menu).
+function markLocalOnly(item, channelId = 'general') {
     if (!item || item.classList.contains('local-only')) return;
     item.classList.add('local-only');
+    item.dataset.channelId = String(channelId);
     const mark = document.createElement('span');
     mark.className = 'local-only-mark';
     mark.textContent = 'Only on this computer';
+    // Not a tab stop, as the Quote button: the keyboard uses the row menu.
+    const again = makeButton('Send again', () => runRowAction('resend', item), 'resend', 'btn-resend');
+    again.tabIndex = -1;
     const bubble = item.querySelector('.bubble-text');
-    (bubble ?? item).appendChild(mark);
+    (bubble ?? item).append(mark, again);
 }
 
 // The reading position, the resize behavior and the unread count are in reading.js (window.reading).
@@ -210,7 +232,10 @@ function addMessage(from, text, time, own = false, id = null, peerId = null, cha
         shownMessageIds.add(String(id));
     }
     const item = makeMessageItem(from, text, time, own, id, peerId);
-    (window.roomChannels?.listFor(channelId) ?? messageList).appendChild(item);
+    const list = window.roomChannels?.listFor(channelId) ?? messageList;
+    list.appendChild(item);
+    // Gap D6: a day row before the line when the day changed.
+    window.transcriptNotes?.placed(list, item);
     groupWithPrevious(item);
     if (attachment) window.chatAttachments?.decorate(item, attachment, own);
     return item;
@@ -231,8 +256,10 @@ function insertMessage(from, text, time, id = null, own = null, channelId = 'gen
     const items = Array.from(list.children);
     const next = items[window.readingCore.insertIndex(items.map(li => li.dataset.time), t)] ?? null;
     list.insertBefore(item, next);
+    // Gap D6: the day rows before the line and before the next line.
+    window.transcriptNotes?.placed(list, item);
     groupWithPrevious(item);
-    groupWithPrevious(next);
+    groupWithPrevious(nextContentRow(item));
     if (attachment) window.chatAttachments?.decorate(item, attachment, attachment.source === selfId);
     return item;
 }
@@ -282,19 +309,33 @@ let selfLine = null;
 // The name from the hello line of each peer.
 const peerNames = new Map();
 
+// Gap B1: the grey buddy lines of peers that went with no bye. peer ID -> <li>. A grey line is not in peerItems:
+// it has no menu, it is no file recipient and it does not count.
+const heldItems = new Map();
+
 function addPeer(peerId) {
     if (peerItems.has(peerId)) return;
-    const item = makePeerLine(peerNames.get(peerId) ?? String(peerId).slice(0, 12), peerId);
+    const before = peerItems.size;
+    // A peer that comes back in its grey time gets its old line back.
+    let item = heldItems.get(peerId);
+    if (item) {
+        heldItems.delete(peerId);
+        item.classList.remove('lost');
+    } else {
+        item = makePeerLine(peerNames.get(peerId) ?? String(peerId).slice(0, 12), peerId);
+        peerList.appendChild(item);
+    }
     item.dataset.peerId = String(peerId);
     item.hidden = idlePeerIds.has(peerId);
     peerItems.set(peerId, item);
-    peerList.appendChild(item);
     refreshFileRecipients();
     updatePeerCount();
     updateVoiceView();
+    if (before === 0) noteUnsentLines();
 }
 
-function removePeer(peerId) {
+// hold: keep the line grey with the text "connection lost" (gap B1). Else the line goes away.
+function removePeer(peerId, hold = false) {
     const item = peerItems.get(peerId);
     if (!item) return;
     peerItems.delete(peerId);
@@ -302,6 +343,16 @@ function removePeer(peerId) {
     refreshFileRecipients();
     updatePeerCount();
     updateNodeMap();
+    if (hold) {
+        item.classList.add('lost');
+        setVoiceState(item, 'connection lost');
+        heldItems.set(peerId, item);
+        return;
+    }
+    removePeerLine(item);
+}
+
+function removePeerLine(item) {
     if (reducedMotion.matches) {
         item.remove();
         return;
@@ -311,17 +362,62 @@ function removePeer(peerId) {
     setTimeout(() => item.remove(), PEER_OUT_MS);
 }
 
+// ---- Roster notes and the room link (gaps B1, A2, A4, B2) ----
+// transcript-notes.js (rosterNotesCore) decides the notes and the grey lines. room-link.js shows #waiting-peer and
+// the link key of the status bar. roomRole: 'creator', 'joiner' or 'reopen'; the login and saved-rooms-ui.js set it.
+let roomRole = 'creator';
+let roster = null;
+let rosterTimer = null;
+
+function rosterNow() {
+    if (!roster && window.rosterNotesCore) roster = window.rosterNotesCore.createRoster({ creator: roomRole === 'creator' });
+    return roster;
+}
+
+function applyRoster(actions) {
+    for (const action of actions ?? []) {
+        if (action.type === 'note') window.transcriptNotes?.append(action.kind, action.text, action.time);
+        else if (action.type === 'add' || action.type === 'restore') addPeer(action.peerId);
+        else if (action.type === 'grey') removePeer(action.peerId, true);
+        else if (action.type === 'remove') {
+            const held = heldItems.get(action.peerId);
+            if (held) {
+                heldItems.delete(action.peerId);
+                removePeerLine(held);
+            } else removePeer(action.peerId);
+        }
+    }
+    if (rosterTimer !== null) clearTimeout(rosterTimer);
+    rosterTimer = null;
+    const due = roster?.nextDue() ?? null;
+    if (due !== null) rosterTimer = setTimeout(() => applyRoster(roster.tick(Date.now())), Math.max(0, due - Date.now()));
+    if (roster) window.roomLink?.presence(roster.link());
+}
+
+function peerJoined(peerId) {
+    const notes = rosterNow();
+    if (notes) applyRoster(notes.joined(peerId, Date.now(), peerNames.get(peerId)));
+    else addPeer(peerId);
+}
+
+function peerLeft(peerId, withBye) {
+    const notes = rosterNow();
+    if (notes) applyRoster(notes.left(peerId, withBye === true, Date.now()));
+    else removePeer(peerId);
+}
+
 window.asscrack.onPeerDiscovered(data => console.log('peer-discovered', data));
-window.asscrack.onPeerJoined(data => addPeer(data.peerId));
-window.asscrack.onPeerLeft(data => removePeer(data.peerId));
+window.asscrack.onPeerJoined(data => peerJoined(data.peerId));
+window.asscrack.onPeerLeft(data => peerLeft(data.peerId, data.left));
 window.asscrack.onPeerName(data => {
     if (typeof data.name !== 'string') return;
     peerNames.set(data.peerId, data.name);
-    const item = peerItems.get(data.peerId);
+    const item = peerItems.get(data.peerId) ?? heldItems.get(data.peerId);
     if (item) {
         setPeerName(item, data.name);
         refreshFileRecipients();
     }
+    if (roster) applyRoster(roster.named(data.peerId, data.name, Date.now()));
 });
 window.asscrack.onMessage(data => {
     const item = peerItems.get(data.peerId);
@@ -348,7 +444,7 @@ window.asscrack.onHistory(data => {
     const lines = window.readingCore.newHistoryLines(data?.messages, id => shownMessageIds.has(id));
     const activeChannel = window.roomChannels?.active() ?? 'general';
     const visible = lines.some(line => (line.channelId ?? 'general') === activeChannel);
-    const first = visible && !historyShown.has(activeChannel) && messageList.children.length === 0;
+    const first = visible && !historyShown.has(activeChannel) && !hasContentRows(messageList);
     const state = window.reading.beforeChange();
     let added = 0;
     for (const line of lines) if (insertMessage(line.from, line.text, line.time, line.id, null, line.channelId, line.attachment)) added++;
@@ -480,6 +576,7 @@ async function login() {
     // Saved rooms (milestone 6): the save choice of a keyed room.
     if (window.savedRoomsUi) Object.assign(options, window.savedRoomsUi.loginOptions(type));
     loginBusy = true;
+    roomRole = type === 'join' ? 'joiner' : 'creator';
     loginButton.disabled = true;
     loginButton.textContent = STARTING_TEXT;
     status.textContent = '';
@@ -524,6 +621,11 @@ function showChat(name, room) {
 
 // After the node started: get the room state from the main process.
 function roomStarted(result) {
+    // Gap A2: the room-link state starts before the membership, which can change it.
+    const membership = result?.membership?.protected === true ? result.membership : null;
+    window.roomLink?.start({ role: roomRole, owner: membership?.owner === true,
+        admitted: membership ? membership.admitted !== false : true, revoked: membership?.revoked === true });
+    window.roomLink?.presence(rosterNow()?.link());
     window.roomMembership?.start(result?.membership);
     if (result?.membership?.protected === false && internetRoom) statusBar.querySelector('.net-note').textContent = 'Legacy shared-code room';
     void window.roomChannels?.start();
@@ -662,14 +764,68 @@ async function sendMessage() {
     // Saved rooms (milestone 6): retain the local archive acknowledgement for Message details.
     if (record?.saved === true && record?.id) savedMessageIds.add(String(record.id));
     const line = addMessage(ownName, text, record?.time ?? Date.now(), true, record?.id ?? null, selfId ?? topologySelf, channelId);
-    const count = record?.accepted;
-    const none = typeof count === 'number' ? count === 0 : peerItems.size === 0;
-    if (none) markLocalOnly(line);
+    if (noneAccepted(record)) markLocalOnly(line, channelId);
     if (visible) window.reading.followLatest();
     status.textContent = '';
     if (typeof record?.saveError === 'string' && record.saveError && window.savedRoomsUi) {
         window.savedRoomsUi.saveFailed({ id: record.id, reason: record.saveError });
     }
+}
+
+// True when no peer accepted the send (record of asscrack:send). An old bridge gives no count: the peer count decides.
+function noneAccepted(record) {
+    const count = record?.accepted;
+    return typeof count === 'number' ? count === 0 : peerItems.size === 0;
+}
+
+// Gap B3: Send again of a line with "Only on this computer". The same text goes to the same channel. With 1 or more
+// accepting peers the old row goes and the new line comes at the end. With 0 the row stays. No automatic send.
+async function resendMessage(row) {
+    if (!row || row.parentElement !== messageList || !row.classList.contains('local-only') || sendBusy) return false;
+    const text = row.querySelector('.text')?.textContent ?? '';
+    if (!text.trim()) return false;
+    const channelId = row.dataset.channelId || 'general';
+    sendBusy = true;
+    let record;
+    try {
+        record = channelId === 'general' ? await window.asscrack.send(text) : await window.asscrack.send(text, channelId);
+    } catch (err) {
+        status.textContent = `Not sent: ${errorText(err)}.`;
+        return false;
+    } finally {
+        sendBusy = false;
+    }
+    if (noneAccepted(record)) {
+        status.textContent = 'Not sent: no one is connected.';
+        return false;
+    }
+    // The row can be in a stored channel list now (a change of the channel while the send ran).
+    if (row.parentElement) {
+        if (row.dataset.id) shownMessageIds.delete(row.dataset.id);
+        const next = nextContentRow(row);
+        if (window.transcriptNotes) window.transcriptNotes.remove(row);
+        else row.remove();
+        groupWithPrevious(next);
+    }
+    if (record?.saved === true && record?.id) savedMessageIds.add(String(record.id));
+    // As a new send: the new line is the newest line, and the list goes to it.
+    addMessage(ownName, text, record?.time ?? Date.now(), true, record?.id ?? null, selfId ?? topologySelf, channelId);
+    if (!window.roomChannels || window.roomChannels.isViewing(channelId)) window.reading.followLatest();
+    status.textContent = '';
+    if (typeof record?.saveError === 'string' && record.saveError && window.savedRoomsUi) {
+        window.savedRoomsUi.saveFailed({ id: record.id, reason: record.saveError });
+    }
+    return true;
+}
+
+// Gap B3: when the first peer comes, say how many lines were not sent. The user decides on each one.
+function noteUnsentLines() {
+    const lists = [messageList, ...(window.roomChannels?.storedLists?.() ?? [])].filter((list, i, all) => all.indexOf(list) === i);
+    let count = 0;
+    for (const list of lists) for (const row of Array.from(list.children)) if (row.classList.contains('local-only')) count++;
+    if (count === 0) return;
+    status.textContent = count === 1 ? '1 message was not sent. Select “Send again” on it.'
+        : `${count} messages were not sent. Select “Send again” on each one.`;
 }
 
 loginButton.addEventListener('click', login);
@@ -1114,10 +1270,20 @@ async function revealTransfer(key) {
     return false;
 }
 
+// Gap N4: a notice clears after 6 s when the status still has its text. An error text stays.
+const NOTICE_MS = 6000;
+function showNotice(text) {
+    const value = String(text);
+    status.textContent = value;
+    setTimeout(() => {
+        if (status.textContent === value) status.textContent = '';
+    }, NOTICE_MS);
+}
+
 async function copyToClipboard(text, done) {
     try {
         await window.asscrack.copyText(String(text));
-        status.textContent = done;
+        showNotice(done);
         return true;
     } catch (err) {
         status.textContent = `Copy failed: ${errorText(err)}`;
@@ -1191,13 +1357,14 @@ function copyMessageText(row) {
 
 // The data of a row for menu.js (menuCore.actionsFor), from the state now. null: the row has no menu now.
 function rowInfo(row) {
-    if (!row || !row.isConnected) return null;
+    // A note row (transcript-notes.js) has no menu.
+    if (!row || !row.isConnected || row.classList.contains('note')) return null;
     if (row.parentElement === peerList) {
         if (row === selfLine) return { kind: 'buddy', inspect: Boolean(window.peerInspector), self: true, availability: Boolean(presenceControls), onMap: buddyId(row) !== null };
         return buddyId(row) === null ? null : { kind: 'buddy', inspect: Boolean(window.peerInspector), whisper: Boolean(window.whispers), self: false, onMap: true };
     }
     if (row.parentElement === messageList && !row.classList.contains('file-card')) {
-        return { kind: 'message', details: Boolean(row.querySelector('.text')), inspect: Boolean(window.peerInspector && peerItems.has(row.dataset.peerId)), quotable: selfLine !== null && row.querySelector('.text') !== null };
+        return { kind: 'message', details: Boolean(row.querySelector('.text')), inspect: Boolean(window.peerInspector && peerItems.has(row.dataset.peerId)), quotable: selfLine !== null && row.querySelector('.text') !== null, localOnly: row.classList.contains('local-only') };
     }
     if (row.parentElement === transferList || row.parentElement === messageList) {
         if (row.classList.contains('offer-head')) {
@@ -1233,6 +1400,7 @@ function runRowAction(action, row) {
         case 'show-on-map': return showBuddyOnMap(buddyId(row));
         case 'copy-message': return copyMessageText(row);
         case 'quote': return quoteMessage(row);
+        case 'resend': return resendMessage(row);
         case 'accept': return acceptTransfer(transferKey(row));
         case 'retry': return retryTransfer(transferKey(row));
         case 'refuse': return refuseTransfer(transferKey(row));
@@ -1247,9 +1415,7 @@ function runRowAction(action, row) {
 window.roomActions = Object.freeze({
     rowInfo, editAvailability,
     run: runRowAction,
-    notice: text => {
-        status.textContent = String(text);
-    }
+    notice: text => showNotice(text)
 });
 
 function makeTransferRow(offerId, peerId, direction, info, className) {

@@ -74,7 +74,8 @@ for (const line of [30, 20]) {
     test(`at the end (${line} px lines): Escape goes back to the old last line and the new line stays unread`, async () => {
         const r = await room(line, 10);
         const { list, markers, reading, f } = r;
-        const end = 10 * line - VIEW;
+        // The list has a day row before the first line (gap D6). It is a row of the layout too.
+        const end = list.children.length * line - VIEW;
         assert.equal(list.scrollTop, end);
         assert.equal(reading.isFollowing(), true);
         const { fresh, afterEscape } = await findAndEscape(r);
@@ -96,7 +97,7 @@ for (const line of [30, 20]) {
 test('at the end: Find moves the list to a result, then Escape goes back to the old last line', async () => {
     const r = await room(30, 10);
     const { list, markers, reading } = r;
-    const end = 10 * 30 - VIEW;
+    const end = list.children.length * 30 - VIEW;
     const { fresh, afterEscape } = await findAndEscape(r, 30);
     assert.equal(afterEscape, end);
     assert.equal(list.scrollTop, end);
@@ -108,17 +109,19 @@ test('at the end: Find moves the list to a result, then Escape goes back to the 
 test('at the end with no new line: Escape goes back to the end and the list follows again', async () => {
     const r = await room(30, 10);
     const { f, list, reading, scroll, receive } = r;
+    // The 10 lines and the day row before the first line (gap D6).
+    const rows = list.children.length;
     f.el('message-input').focus();
     assert.equal(f.window.findBar.open(), true);
     scroll(30);
     f.key(f.el('find-input'), 'Escape');
     scroll();
     await settle();
-    assert.equal(list.scrollTop, 10 * 30 - VIEW);
+    assert.equal(list.scrollTop, rows * 30 - VIEW);
     assert.equal(reading.isFollowing(), true);
     assert.equal(reading.unreadCount(), 0);
     receive();
-    assert.equal(list.scrollTop, 11 * 30 - VIEW, 'a following list shows the next line');
+    assert.equal(list.scrollTop, (rows + 1) * 30 - VIEW, 'a following list shows the next line');
     assert.equal(reading.unreadCount(), 0);
 });
 
