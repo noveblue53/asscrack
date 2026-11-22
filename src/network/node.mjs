@@ -21,6 +21,7 @@ import { createChannels } from './channels.mjs'
 import { createRoomTopic } from './room-topic.mjs'
 import { createHistory, HISTORY_LIMIT, MAX_MESSAGE_BYTES, validHistoryItem } from './history.mjs'
 import { createFileTransfer, FILE_PROTOCOL } from './file-transfer.mjs'
+import { createScreenShare, SCREEN_PROTOCOL } from './screen-share.mjs'
 import { createVoiceRelay, VOICE_PROTOCOL, VOICE_DIRECT_PROTOCOL } from './voice-relay.mjs'
 import { makeInvite, makeMemberInvite, validAddr, validPeerId } from './invite.mjs'
 import { DIALBACK_PROTOCOL, handleDialback, requestDialback, isPrivateIp, observedIp, tcpTarget } from './fullnode.mjs'
@@ -129,7 +130,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     heartbeatInterval = 1000, hostTimeout = 5000, electionDelay = 3000, downloadDir, scratchDir, fileAckTimeout,
     previewProvider = null, receiveWhisper = null, fullNode = 'auto', allowPrivateFullNode = false, relayOnly = false, roomKey = null, announce = [], storePath = null,
     redialInterval = 5000, inviteNodes = [], upnp = false, upnpTimeout = 70000, upnpLeaseSeconds = 1800,
-    upnpClient = null, seedHistory = [], seedChannels = [], membership = null } = {}) {
+    upnpClient = null, seedHistory = [], seedChannels = [], membership = null,
+    screen: screenOptions = {} } = {}) {
     if (typeof room !== 'string') throw new TypeError('room must be a string')
     const key = parseRoomKey(roomKey)
     if (membership && !key) throw new TypeError('Protected rooms require a room key')
@@ -477,6 +479,15 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         downloadDir, scratchDir, fileAckTimeout
     })
 
+    // Screen share (P8): the protocol and the rate control are in screen-share.mjs and screen-rate.mjs.
+    const screen = createScreenShare({
+        libp2p: node, selfId, events, allowed: filePeerAllowed, connectionFor: peerId => sessionConns.get(peerId) ?? null,
+        sendLine: (peerId, line) => filePeerAllowed(peerId) && sessions.get(peerId).send(line),
+        broadcast: line => { for (const [peerId, session] of sessions) if (memberAllowed(peerId)) session.send(line) },
+        openPeers: () => [...sessions.keys()].filter(filePeerAllowed), idle: () => selfIdle,
+        canShare: () => !membership || membership.admitted(), options: screenOptions
+    })
+
     const shelf = createSharedShelf({ self: selfId, name: senderName, peerName: peer => names.get(peer), sessions, files, events })
     const attachments = createAttachments({
         self: node.peerId.toString(), sessions, connections: () => node.getConnections(), files, events, previewProvider, sendRecord,
@@ -730,6 +741,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                             streamId: typeof control.streamId === 'string' ? control.streamId : null,
                             muted: control.muted === true
                         })
+                    } else if (control.type === 'screen') {
+                        if (sessions.get(peerId) === session) screen.handleLine(peerId, control)
                     } else if (control.type === 'typing') {
                         if (sessions.get(peerId) === session && control.v === 1 && typeof control.active === 'boolean') {
                             typing.received(peerId, control.active)
@@ -816,6 +829,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         topic.sessionOpened(peerId)
         if (election.isHost()) sendHistoryTo(peerId, session)
         if (voiceState.inVoice) session.send(voiceLine())
+        screen.opened(peerId)
         broadcastLinks()
         emitTopology()
         checkFullNode(peerId)
@@ -858,6 +872,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 attachments.closed(peerId)
                 shelf.closed(peerId)
                 files.peerLeft(peerId)
+                screen.peerLeft(peerId)
                 links.delete(peerId)
                 broadcastLinks()
                 emitTopology()
@@ -923,6 +938,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     }, {
         runOnTransientConnection: true, maxInboundStreams: 4, maxOutboundStreams: 4
     })
+    await node.handle(SCREEN_PROTOCOL, data => screen.handleStream(data),
+        { runOnTransientConnection: true, maxInboundStreams: 8, maxOutboundStreams: 2 })
 
     // In a keyed room, answer a dial-back only for a peer with an open session. The proof of the peer can
     // arrive a short time after the request, so wait for the session for a short time.
@@ -1703,6 +1720,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             if (idle) {
                 typing.edited(false)
                 if (voiceState.inVoice) setVoice({})
+                screen.setIdle(true)
             }
             const line = nodeLine()
             for (const session of sessions.values()) session.send(line)
@@ -1744,6 +1762,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         retryFile: files.retryFile,
         refuseFile: offerId => files.refuseFile(offerId),
         cancelFile: (offerId, peerId) => files.cancelFile(offerId, peerId),
+        ...screen.api,
+        screenTestRate: screen.testRate,
         async stop() {
             stopped = true
             membership?.onChanged(null)
@@ -1758,6 +1778,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             attachments.stop()
             shelf.stop()
             await files.stop()
+            await screen.stop()
             election.stop()
             voiceRelay.stop()
             // Gap B1: tell each peer that this node quits, then give the lines time to go out. close() aborts the
