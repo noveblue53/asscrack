@@ -289,3 +289,47 @@ test('the P7b calls send the offer ID or the partial key as text, and the partia
     }
     assert.deepEqual(b.touched, []);
 });
+
+// P8b (design section 4, IPC): the screen calls send their channel with IDs as text, numbers, and the frame bytes.
+// The voice panel world gets one more event: Stop sharing in the panel.
+test('the P8b screen calls send the channel and the arguments that the main process expects', async () => {
+    const b = loadBridge();
+    b.api.getScreenSources();
+    b.api.pickScreenSource(7, 'auto');
+    b.api.startScreenShare({ preset: 'max', width: '2560', height: 1440 });
+    b.api.watchScreen(42);
+    b.api.getScreenState();
+    b.api.getScreenQuality();
+    assert.deepEqual(JSON.parse(JSON.stringify(b.invoked)), [
+        ['asscrack:screen-sources'],
+        ['asscrack:screen-pick', '7', 'auto'],
+        ['asscrack:screen-start', { preset: 'max', width: 2560, height: 1440 }],
+        ['asscrack:screen-watch', '42'],
+        ['asscrack:screen-state'],
+        ['asscrack:screen-last-quality']
+    ]);
+    const data = new Uint8Array([1, 2, 3]);
+    b.api.sendScreenFrame({ tier: 'fast', key: 1, timestampMs: 12, data });
+    b.api.stopScreenShare();
+    b.api.setScreenSize({ tier: 'slow', width: 1280, height: 720 });
+    b.api.reportScreenEncoder({ tiers: [] });
+    b.api.unwatchScreen();
+    b.api.requestScreenKey();
+    assert.deepEqual(b.sent.map(s => s[0]), ['asscrack:screen-frame', 'asscrack:screen-stop', 'asscrack:screen-size',
+        'asscrack:screen-report', 'asscrack:screen-unwatch', 'asscrack:screen-keyreq']);
+    assert.equal(b.sent[0][1].data, data, 'the frame bytes go as they are');
+    assert.equal(b.sent[0][1].key, false, 'key is a strict true');
+    assert.equal(b.sent[1][1], 'stopped');
+    for (const [name, channel] of [['onScreenState', 'asscrack:screen-state'], ['onScreenViewers', 'asscrack:screen-viewers'],
+        ['onScreenEncoder', 'asscrack:screen-encoder'], ['onScreenConfig', 'asscrack:screen-config'],
+        ['onScreenFrame', 'asscrack:screen-frame'], ['onScreenEnded', 'asscrack:screen-ended']]) {
+        const got = [];
+        b.api[name](value => got.push(value));
+        b.emit(channel, { marker: name });
+        assert.deepEqual(got, [{ marker: name }], name);
+    }
+    const stops = [];
+    b.worlds.roomVoiceMonitor.onStopShare(value => stops.push(value));
+    b.emit('asscrack:voice-monitor-stop-share', true);
+    assert.deepEqual(stops, [true]);
+});

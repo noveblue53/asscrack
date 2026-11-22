@@ -71,3 +71,48 @@ test('the overlay dot is a 16 x 16 BGRA bitmap with a clear edge and an opaque m
     assert.equal(alpha(0, 0), 0);
     assert.equal(alpha(8, 8), 255);
 });
+
+// P8b (goal prompt, the overlay rule): one overlay slot. A share on: the share overlay; else a pending attention:
+// the dot; else none. A focus clears only the dot state.
+test('the share overlay has the slot while a share is on; after the stop the pending dot comes back', () => {
+    const win = Object.assign(new EventEmitter(), {
+        state: { focused: false, minimized: false, visible: true, destroyed: false }, calls: [],
+        isFocused() { return this.state.focused; }, isMinimized() { return this.state.minimized; },
+        isVisible() { return this.state.visible; }, isDestroyed() { return this.state.destroyed; },
+        flashFrame(on) { this.calls.push(['flashFrame', on]); },
+        setOverlayIcon(image, text) { this.calls.push(['setOverlayIcon', image, text]); }
+    });
+    const flash = createTaskbarFlash({ getWindow: () => win, allowed: () => true, enabled: () => true,
+        makeDot: () => 'dot', makeShare: () => 'share', log: () => {} });
+    flash.attach(win);
+    const overlay = () => win.calls.filter(c => c[0] === 'setOverlayIcon').at(-1);
+    flash.setSharing(true);
+    assert.deepEqual(overlay(), ['setOverlayIcon', 'share', 'Sharing your screen']);
+    // A mention while the share is on: the window flashes, and the overlay stays the share overlay.
+    assert.equal(flash.start(), true);
+    assert.deepEqual(overlay(), ['setOverlayIcon', 'share', 'Sharing your screen']);
+    assert.equal(flash.isFlashing(), true);
+    // Stop sharing: the pending dot shows.
+    flash.setSharing(false);
+    assert.deepEqual(overlay(), ['setOverlayIcon', 'dot', 'New mention or private message']);
+    // A share again, then the focus: the focus clears only the dot state; the share overlay stays.
+    flash.setSharing(true);
+    win.state.focused = true;
+    win.emit('focus');
+    assert.equal(flash.isFlashing(), false);
+    assert.deepEqual(overlay(), ['setOverlayIcon', 'share', 'Sharing your screen']);
+    flash.setSharing(false);
+    assert.deepEqual(overlay(), ['setOverlayIcon', null, ''], 'no share and no attention: no overlay');
+    const before = win.calls.length;
+    flash.setSharing(false);
+    assert.equal(win.calls.length, before, 'no change: no call');
+});
+
+test('the share overlay is a 16 x 16 BGRA bitmap, different from the dot', async () => {
+    const { overlayShareBitmap } = await import('../src/application/attention.mjs');
+    const disc = overlayShareBitmap();
+    assert.equal(disc.width, 16);
+    assert.equal(disc.buffer.length, 16 * 16 * 4);
+    assert.equal(disc.buffer[3], 0, 'a clear corner');
+    assert.notDeepEqual(disc.buffer, overlayDotBitmap().buffer);
+});

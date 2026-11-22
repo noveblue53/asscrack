@@ -11,13 +11,21 @@ export function lockDesktopNavigation(webContents) {
     webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 }
 
-export function installRoomPermissions(electronSession, roomWindow, page, isIdle) {
-    function trusted(webContents, permission, details) {
-        return !isIdle() && permission === 'media' && details?.isMainFrame === true &&
+// screenPending(): a screen source selection of the picker is pending (P8, design section 2.1, item 5). With no
+// such function, display-capture is always refused.
+export function installRoomPermissions(electronSession, roomWindow, page, isIdle, screenPending = () => false) {
+    function trusted(webContents, permission, details, wanted = 'media') {
+        return !isIdle() && permission === wanted && details?.isMainFrame === true &&
             details.requestingUrl === page && isDesktopFrame(roomWindow(), webContents, webContents?.mainFrame, page);
     }
     electronSession.setPermissionRequestHandler((contents, permission, callback, details) => {
         const types = details?.mediaTypes;
+        // P8: display-capture only for the room window, not in Idle Peer, with a pending selection, and only video.
+        if (permission === 'display-capture') {
+            callback(Boolean(trusted(contents, permission, details, 'display-capture') && screenPending() === true &&
+                Array.isArray(types) && types.length === 1 && types[0] === 'video'));
+            return;
+        }
         callback(Boolean(trusted(contents, permission, details) && Array.isArray(types) && types.length && types.every(type => type === 'audio')));
     });
     electronSession.setPermissionCheckHandler((contents, permission, _origin, details) =>

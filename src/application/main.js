@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, Notification, nativeImage, protocol, Tray, screen, powerMonitor, clipboard, dialog, ipcMain, safeStorage, session, shell } from 'electron';
+import { app, BrowserWindow, Menu, Notification, nativeImage, protocol, Tray, screen, powerMonitor, clipboard, desktopCapturer, dialog, ipcMain, safeStorage, session, shell } from 'electron';
 import { createRoomMedia } from './room-media.mjs';
 import { createClipboardStaging } from './clipboard-image.mjs';
 import { createDownloadScratch } from './download-scratch.mjs';
@@ -18,7 +18,7 @@ import { createSavedRooms, makeProtector } from './saved-rooms.mjs';
 import { roomFingerprint } from './room-archive.mjs';
 import * as voiceSettings from './voice-settings.mjs';
 import { listeningRoomTag, listeningStore } from './listening-store.mjs';
-import { attentionSettings, createAttention, overlayDotBitmap, registerNotificationShortcut, WINDOWS_APP_ID, WINDOWS_TOAST_ID } from './attention.mjs';
+import { attentionSettings, createAttention, overlayDotBitmap, overlayShareBitmap, registerNotificationShortcut, WINDOWS_APP_ID, WINDOWS_TOAST_ID } from './attention.mjs';
 import { createPttHook } from './ptt-hook.mjs';
 import { createWindowFrame } from './window-frame.mjs';
 import { attachVoiceMonitor } from './voice-monitor.mjs';
@@ -27,6 +27,7 @@ import { isAddressInUse, loginErrorText } from './login-errors.mjs';
 import { createLinkPolicy } from './link-policy.mjs';
 import { fitWindowBounds, MIN_WINDOW, readWindowBounds, saveWindowBounds } from './window-bounds.mjs';
 import { createTaskbarFlash } from './taskbar-flash.mjs';
+import { acceptScreenFrame, createScreenSources } from './screen-sources.mjs';
 import { createFriendLinks } from './friend-links.mjs';
 import { attachFriendWindows, registerFriendIpc } from './friend-windows.mjs';
 import { installInterfaceCache } from '../network/interface-cache.mjs';
@@ -124,7 +125,8 @@ const interfaceCache = installInterfaceCache();
 // One log line for each node event. The chat text does not go into the log.
 // 'voice-frame' comes 50 times each second for each speaker.
 // G7a: 'friend' and 'pm' carry room keys and private text. They never go in the log or to the window as raw events.
-const UNLOGGED_EVENTS = new Set(['signal', 'file-progress', 'voice-frame', 'friend', 'pm']);
+// P8b: 'screen-frame' carries the picture bytes of a screen share (design section 2.9). It never goes in the log.
+const UNLOGGED_EVENTS = new Set(['signal', 'file-progress', 'voice-frame', 'friend', 'pm', 'screen-frame']);
 
 function logEvent(type, data) {
     if (!logFile || UNLOGGED_EVENTS.has(type)) return;
@@ -341,6 +343,11 @@ const taskbarFlash = createTaskbarFlash({
         const dot = overlayDotBitmap();
         return nativeImage.createFromBitmap(dot.buffer, { width: dot.width, height: dot.height });
     },
+    // P8b: the share overlay has the slot while a share is on (taskbar-flash.mjs, updateOverlay).
+    makeShare: () => {
+        const disc = overlayShareBitmap();
+        return nativeImage.createFromBitmap(disc.buffer, { width: disc.width, height: disc.height });
+    },
     log: writeLog
 });
 const stopFlash = taskbarFlash.stop;
@@ -440,6 +447,8 @@ function enterIdlePeer() {
         attention.clear();
         stopFlash();
         node.setIdle(true);
+        // P8b: setIdle stops the own share and the watch (section 2.8). The selection ends too.
+        screenSources.clear();
         friendLinks.setAvailability({ idle: true });
         updatePttHook(() => pttHook.setInVoice(false));
         sendToWindow('asscrack:idle-peer', idleState());
@@ -734,6 +743,8 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
     onLive('typing', data => sendToWindow('asscrack:typing', data));
     // Ready check (milestone 9): straight to the window, not in the event log (the log must not get the text).
     onLive('ready', data => sendToWindow('asscrack:ready', data));
+    // P8b: the screen share events (design section 4, IPC).
+    forwardScreenEvents(onLive);
     for (const type of EVENTS) {
         onLive(type, data => {
             if (type === 'channels') savedRooms?.persistChannels(data.added);
@@ -1126,6 +1137,76 @@ onRoomIpc('asscrack:voice-frame', (_event, bytes) => {
     }
 });
 
+// P8b, screenshare (design work package W3): the source list, the pending selection, the capture permission and
+// the IPC of the share. The node does the protocol (src/network/screen-share.mjs).
+const screenSources = createScreenSources({
+    desktopCapturer,
+    isRoomFrame: frame => !!mainWindow && !mainWindow.isDestroyed() && isDesktopFrame(mainWindow, mainWindow.webContents, frame, ROOM_PAGE),
+    isIdle: () => idlePeer || quitting || !node,
+    log: writeLog
+});
+let screenOwn = false;
+const SCREEN_STOP_REASONS = new Set(['stopped', 'source', 'error']);
+handleRoomIpc('asscrack:screen-sources', () => (node && !idlePeer ? screenSources.list() : []));
+handleRoomIpc('asscrack:screen-pick', (_event, id, quality) => screenSources.pick(String(id ?? ''), String(quality ?? '')));
+handleRoomIpc('asscrack:screen-last-quality', () => screenSources.lastQuality());
+handleRoomIpc('asscrack:screen-start', (_event, options = {}) => {
+    if (!node) throw new Error('Not logged in');
+    const size = n => (Number.isInteger(n) && n > 0 && n <= 16384 ? n : undefined);
+    return node.startScreenShare({ preset: String(options?.preset ?? 'auto'), width: size(options?.width), height: size(options?.height) });
+});
+onRoomIpc('asscrack:screen-stop', (_event, reason) => {
+    node?.stopScreenShare(SCREEN_STOP_REASONS.has(reason) ? reason : 'stopped');
+});
+onRoomIpc('asscrack:screen-frame', (_event, frame) => {
+    if (!node || idlePeer || !acceptScreenFrame(frame, screenOwn)) return;
+    node.sendScreenFrame({ tier: frame.tier, key: frame.key === true, timestampMs: Number(frame.timestampMs), data: frame.data });
+});
+onRoomIpc('asscrack:screen-report', (_event, report) => { if (node && screenOwn) node.reportScreenEncoder(report); });
+onRoomIpc('asscrack:screen-size', (_event, size) => { if (node && screenOwn) node.setScreenSize(size ?? {}); });
+handleRoomIpc('asscrack:screen-watch', (_event, peerId) => {
+    if (!node) throw new Error('Not logged in');
+    if (idlePeer) throw new Error('Watching is not available in Idle Peer.');
+    return node.watchScreen(String(peerId ?? ''));
+});
+onRoomIpc('asscrack:screen-unwatch', () => { node?.unwatchScreen(); });
+onRoomIpc('asscrack:screen-keyreq', () => { node?.requestScreenKey(); });
+handleRoomIpc('asscrack:screen-state', () => {
+    if (!node) return { own: null, peers: {}, watching: null };
+    const state = node.screenState();
+    // The window gets the view, not the internal tier objects of the rate control.
+    return { own: state.own ? { shareId: state.own.shareId, preset: state.own.preset, viewers: state.own.viewers } : null,
+        peers: state.peers, watching: state.watching };
+});
+// The forwarding of the screen events of one node (startRoom). 'screen-frame' does not go to the window in Idle Peer.
+function forwardScreenEvents(onLiveEvent) {
+    onLiveEvent('screen-state', data => {
+        if (data?.own) {
+            screenOwn = data.sharing === true;
+            taskbarFlash.setSharing(screenOwn);
+            if (screenOwn) writeLog('EVENT', `screen share started preset ${data.preset}`);
+        }
+        sendToWindow('asscrack:screen-state', data);
+    });
+    onLiveEvent('screen-ended', data => {
+        writeLog('EVENT', data?.own ? `screen share stopped reason ${data.reason}` : `screen watch ended reason ${data?.reason}`);
+        sendToWindow('asscrack:screen-ended', data);
+    });
+    for (const type of ['screen-viewers', 'screen-encoder', 'screen-config']) onLiveEvent(type, data => sendToWindow(`asscrack:${type}`, data));
+    onLiveEvent('screen-frame', data => { if (!idlePeer) sendToWindow('asscrack:screen-frame', data); });
+}
+function resetScreen(current) {
+    try {
+        current?.stopScreenShare?.('stopped');
+        current?.unwatchScreen?.();
+    } catch (err) {
+        writeLog('WARN', `Screen share stop: ${err?.message ?? err}`);
+    }
+    screenSources.clear();
+    screenOwn = false;
+    taskbarFlash.setSharing(false);
+}
+
 handleRoomIpc('asscrack:set-voice', (_event, state) => {
     if (!node) throw new Error('Not logged in');
     if (idlePeer && state?.inVoice === true) throw new Error('Idle Peer has left voice');
@@ -1447,6 +1528,9 @@ function leaveRoom() {
     // the profile, not to the room. Its in-memory state (the node store and the window rows) ends with the node
     // and the reload. The files stay in the scratch folder, and the next room of this run uses the same folder.
     try { current.resetReady?.(); } catch (err) { writeLog('WARN', `Ready check reset: ${err?.message ?? err}`); }
+    // P8b (conflict table of G5): Leave room stops the capture and the watch, and resets the screen state. The window
+    // stops its capture track at the screen-state event, and the reload resets the window.
+    resetScreen(current);
     leaving = stopNodeWithin(current).then(() => {
         if (node === current) node = null;
         readRoomActivity = () => [];
@@ -1542,7 +1626,9 @@ app.whenReady().then(async () => {
         node?.refreshRoutes();
     });
     protocol.handle('room-media', request => roomMedia.serve(request));
-    installRoomPermissions(session.defaultSession, () => mainWindow, ROOM_PAGE, () => idlePeer);
+    installRoomPermissions(session.defaultSession, () => mainWindow, ROOM_PAGE, () => idlePeer, () => screenSources.hasPending());
+    // P8b: getDisplayMedia of the room window gets only the source of the pending selection (design section 2.1).
+    session.defaultSession.setDisplayMediaRequestHandler((request, callback) => screenSources.handleDisplayMedia(request, callback));
     pttHook.configure(currentVoiceSettings());
     if (attentionPrefs.get().alerts && process.platform === 'win32' && app.isPackaged) {
         try { registerAlerts(); } catch { writeLog('WARN', 'Windows notification registration unavailable'); }

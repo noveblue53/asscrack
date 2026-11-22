@@ -56,3 +56,50 @@ test('desktop windows reject navigation, redirects, embedded webviews and popup 
     }
     assert.deepEqual(contents.open(), { action: 'deny' });
 });
+
+// P8b, design W3 check 1: display-capture only with all of these: the room window frame, not Idle Peer, a pending
+// selection, and mediaTypes exactly ['video']. Each condition alone, when false, gives a refusal.
+test('display-capture needs the room frame, no Idle Peer, a pending selection and exactly video', () => {
+    const page = 'file:///Asscrack/src/application/index.html';
+    const webContents = { mainFrame: { url: page }, isDestroyed: () => false };
+    let idle = false, pending = true, check, request;
+    installRoomPermissions({
+        setPermissionCheckHandler: handler => { check = handler; },
+        setPermissionRequestHandler: handler => { request = handler; }
+    }, () => ({ webContents, isDestroyed: () => false }), page, () => idle, () => pending);
+    const ask = (details = {}, sender = webContents, permission = 'display-capture') => {
+        let granted;
+        request(sender, permission, value => { granted = value; }, { isMainFrame: true, requestingUrl: page, mediaTypes: ['video'], ...details });
+        return granted;
+    };
+    assert.equal(ask(), true);
+    assert.equal(ask({}, { mainFrame: { url: page }, isDestroyed: () => false }), false, 'another window');
+    assert.equal(ask({ isMainFrame: false }), false, 'a subframe');
+    assert.equal(ask({ requestingUrl: 'file:///Other/index.html' }), false, 'another page');
+    assert.equal(ask({ mediaTypes: ['video', 'audio'] }), false, 'video and audio');
+    assert.equal(ask({ mediaTypes: ['audio'] }), false, 'audio');
+    assert.equal(ask({ mediaTypes: [] }), false, 'no media type');
+    assert.equal(ask({ mediaTypes: undefined }), false, 'no media types');
+    assert.equal(ask({ mediaTypes: ['video', 'video'] }), false, 'not exactly one entry');
+    pending = false;
+    assert.equal(ask(), false, 'no pending selection');
+    pending = true;
+    idle = true;
+    assert.equal(ask(), false, 'Idle Peer');
+    idle = false;
+    // The audio rules do not change: media with video stays refused, and the check handler gives no display-capture.
+    assert.equal(ask({ mediaTypes: ['video'] }, webContents, 'media'), false);
+    assert.equal(ask({ mediaTypes: ['audio'] }, webContents, 'media'), true);
+    assert.equal(check(webContents, 'display-capture', 'file://', { isMainFrame: true, requestingUrl: page, mediaType: 'video' }), false);
+});
+
+test('with no screen selection function, display-capture is always refused (the default of installRoomPermissions)', () => {
+    const page = 'file:///Asscrack/src/application/index.html';
+    const webContents = { mainFrame: { url: page }, isDestroyed: () => false };
+    let request;
+    installRoomPermissions({ setPermissionCheckHandler() {}, setPermissionRequestHandler: handler => { request = handler; } },
+        () => ({ webContents, isDestroyed: () => false }), page, () => false);
+    let granted;
+    request(webContents, 'display-capture', value => { granted = value; }, { isMainFrame: true, requestingUrl: page, mediaTypes: ['video'] });
+    assert.equal(granted, false);
+});

@@ -20,7 +20,9 @@ contextBridge.exposeInMainWorld('roomVoiceMonitor', {
     open: () => ipcRenderer.send('asscrack:voice-monitor-open'),
     publish: view => ipcRenderer.send('asscrack:voice-monitor-publish', view),
     onActive: listen('asscrack:voice-monitor-active'),
-    onMute: listen('asscrack:voice-monitor-mute')
+    onMute: listen('asscrack:voice-monitor-mute'),
+    // P8b (design W6): Stop sharing in the voice panel. The room window stops the share with its own handler.
+    onStopShare: listen('asscrack:voice-monitor-stop-share')
 });
 
 // G7a: the Friends panel, the friend request bar and the buddy menu lines. Each call sends only text and true or false.
@@ -215,6 +217,28 @@ contextBridge.exposeInMainWorld('asscrack', {
     onFileDiscarded: listen('asscrack:file-discarded'),
     onFileExpired: listen('asscrack:file-expired'),
     onFilePartials: listen('asscrack:file-partials'),
+    // P8b, screenshare (design section 4, IPC). The window sends only IDs, a quality name, numbers and frame bytes.
+    getScreenSources: () => ipcRenderer.invoke('asscrack:screen-sources'),
+    pickScreenSource: (id, quality) => ipcRenderer.invoke('asscrack:screen-pick', String(id ?? ''), String(quality ?? '')),
+    getScreenQuality: () => ipcRenderer.invoke('asscrack:screen-last-quality'),
+    startScreenShare: ({ preset, width, height } = {}) => ipcRenderer.invoke('asscrack:screen-start',
+        { preset: String(preset ?? 'auto'), width: Number(width), height: Number(height) }),
+    stopScreenShare: reason => ipcRenderer.send('asscrack:screen-stop', String(reason ?? 'stopped')),
+    sendScreenFrame: ({ tier, key, timestampMs, data } = {}) => ipcRenderer.send('asscrack:screen-frame',
+        { tier: String(tier ?? ''), key: key === true, timestampMs: Number(timestampMs), data }),
+    reportScreenEncoder: report => ipcRenderer.send('asscrack:screen-report', report),
+    setScreenSize: ({ tier, width, height } = {}) => ipcRenderer.send('asscrack:screen-size',
+        { tier: String(tier ?? ''), width: Number(width), height: Number(height) }),
+    watchScreen: peerId => ipcRenderer.invoke('asscrack:screen-watch', String(peerId ?? '')),
+    unwatchScreen: () => ipcRenderer.send('asscrack:screen-unwatch'),
+    requestScreenKey: () => ipcRenderer.send('asscrack:screen-keyreq'),
+    getScreenState: () => ipcRenderer.invoke('asscrack:screen-state'),
+    onScreenState: listen('asscrack:screen-state'),
+    onScreenViewers: listen('asscrack:screen-viewers'),
+    onScreenEncoder: listen('asscrack:screen-encoder'),
+    onScreenConfig: listen('asscrack:screen-config'),
+    onScreenFrame: listen('asscrack:screen-frame'),
+    onScreenEnded: listen('asscrack:screen-ended'),
     // Manual status (milestone 3). presence: { state, note }.
     setPresence: ({ state, note } = {}) => ipcRenderer.invoke('asscrack:set-presence', { state, note }),
     getPresence: () => ipcRenderer.invoke('asscrack:presence'),

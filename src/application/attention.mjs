@@ -46,6 +46,23 @@ export function overlayDotBitmap() {
     return { buffer: pixels, width: side, height: side };
 }
 
+// P8b (design section 2.7): the taskbar overlay while a screen share is on. A red 16 x 16 disc with a white centre
+// (the mention dot has a white ring), made in code: the icon files are the work of goal 9.
+export function overlayShareBitmap() {
+    const side = 16;
+    const pixels = Buffer.alloc(side * side * 4);
+    for (let y = 0; y < side; y++) {
+        for (let x = 0; x < side; x++) {
+            const d = Math.hypot(x + 0.5 - side / 2, y + 0.5 - side / 2);
+            const i = (y * side + x) * 4;
+            if (d > 7.5) continue;
+            const [b, g, r] = d < 2.5 ? [255, 255, 255] : [30, 30, 230];
+            pixels[i] = b; pixels[i + 1] = g; pixels[i + 2] = r; pixels[i + 3] = 255;
+        }
+    }
+    return { buffer: pixels, width: side, height: side };
+}
+
 export const WINDOWS_APP_ID = 'com.asscrack.app';
 export const WINDOWS_TOAST_ID = '{6CC57D8B-D0F0-4B19-AF70-A15B20DF2658}';
 
