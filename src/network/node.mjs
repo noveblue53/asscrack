@@ -20,7 +20,7 @@ import { createElection } from './election.mjs'
 import { createChannels } from './channels.mjs'
 import { createRoomTopic } from './room-topic.mjs'
 import { createHistory, HISTORY_LIMIT, MAX_MESSAGE_BYTES, validHistoryItem } from './history.mjs'
-import { createFileTransfer, FILE_PROTOCOL } from './file-transfer.mjs'
+import { createFileTransfer, FILE_PROTOCOLS } from './file-transfer.mjs'
 import { createVoiceRelay, VOICE_PROTOCOL, VOICE_DIRECT_PROTOCOL } from './voice-relay.mjs'
 import { makeInvite, makeMemberInvite, validAddr, validPeerId } from './invite.mjs'
 import { DIALBACK_PROTOCOL, handleDialback, requestDialback, isPrivateIp, observedIp, tcpTarget } from './fullnode.mjs'
@@ -126,7 +126,7 @@ ${text}`).digest('hex')
 }
 
 export async function createAsscrackNode({ room, listen, port = 0, discovery = true, discoveryInterval, name,
-    heartbeatInterval = 1000, hostTimeout = 5000, electionDelay = 3000, downloadDir, scratchDir, fileAckTimeout,
+    heartbeatInterval = 1000, hostTimeout = 5000, electionDelay = 3000, downloadDir, scratchDir, fileAckTimeout, partials,
     previewProvider = null, receiveWhisper = null, fullNode = 'auto', allowPrivateFullNode = false, relayOnly = false, roomKey = null, announce = [], storePath = null,
     redialInterval = 5000, inviteNodes = [], upnp = false, upnpTimeout = 70000, upnpLeaseSeconds = 1800,
     upnpClient = null, seedHistory = [], seedChannels = [], membership = null } = {}) {
@@ -474,7 +474,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         openPeers: () => [...sessions.keys()].filter(filePeerAllowed),
         isPeerOpen: filePeerAllowed,
         peerNames: () => Object.fromEntries([...names].filter(([peerId]) => sessions.has(peerId))),
-        downloadDir, scratchDir, fileAckTimeout
+        downloadDir, scratchDir, fileAckTimeout, partials
     })
 
     const shelf = createSharedShelf({ self: selfId, name: senderName, peerName: peer => names.get(peer), sessions, files, events })
@@ -914,7 +914,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         }
         return attachments.handlePreview(data)
     }, { runOnTransientConnection: true, maxInboundStreams: 2, maxOutboundStreams: 2 })
-    await node.handle(FILE_PROTOCOL, data => {
+    await node.handle(FILE_PROTOCOLS, data => {
         if (!memberAllowed(data.connection.remotePeer.toString())) {
             data.stream.abort?.(new Error('File transfer is not authorized'))
             return
@@ -1742,6 +1742,10 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         offerFile: files.offerFile,
         acceptFile: offerId => files.acceptFile(offerId),
         retryFile: files.retryFile,
+        pauseFile: offerId => files.pauseFile(offerId),
+        resumeFile: offerId => files.resumeFile(offerId),
+        discardPartial: key => files.discardPartial(key),
+        partials: () => files.listPartials(),
         refuseFile: offerId => files.refuseFile(offerId),
         cancelFile: (offerId, peerId) => files.cancelFile(offerId, peerId),
         async stop() {

@@ -7,6 +7,27 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased — resume of large transfers, network part (package P7a, 2026-11-21)
+
+The receiver can pause a large download and continue it later from the same byte, on the same route or on a
+different route. This is the network part. The window part (Pause, Resume and Discard buttons) is package P7b.
+
+- **Pause.** A paused download keeps its partial file. The key of a partial is the SHA-256 and the size of the
+  offer. Thus a later offer of the same content also continues it, also after a restart of the app. Cancel deletes
+  the partial as before. A failed download that the user did not pause deletes its partial as before.
+- **Offset negotiation.** A new protocol version `/asscrack/file/1.1.0` next to 1.0.0. The receiver sends the
+  offset and the SHA-256 of its partial bytes. The sender checks its source file and the partial hash, and sends
+  only the remainder. A corrupted partial starts again from byte 0. A changed source fails with "the source file
+  changed". A peer with only 1.0.0 gives a fresh full transfer and a "restarted" indication. One SHA-256 check of
+  the full output comes before the file is final.
+- **Limits.** All kept partials together have a budget of 8 GiB. Each partial expires 72 hours after its last byte.
+  The expiry and Discard delete the file and free the disk space.
+- **127.0.0.1 result (this PC).** A 64 MiB file paused at 39.9 % on direct TCP and continued over a relay circuit.
+  The sender sent 40,304,640 file bytes, the exact remainder, plus a 20-byte reply line. The wire overhead on the
+  sender upload was 0.2 %. These cases also pass on 127.0.0.1: a corrupted partial, a changed source, no offset
+  negotiation, the budget, the expiry, Discard, Cancel, a receiver restart. No LAN or internet result
+  yet: the 1 GiB measurement on two networks is a field check after 1.0.
+
 ## Unreleased — sound cues for other people and for messages (goal P11, 2026-11-21)
 
 ASSCRACK plays a short local cue when a different person joins or leaves voice, and for a mention or a whisper to
