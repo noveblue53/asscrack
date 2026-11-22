@@ -7,6 +7,23 @@
 // goes over the friend link (friend-links.mjs knock()). The current room stays until the owner selects Allow; then the
 // device invite of Allow takes the same path as the code of a friend invite.
 import { randomUUID } from 'node:crypto';
+import { roomCodeAccess } from '../network/room-membership.mjs';
+
+// easy-join part 3: true when a saved protected room of savedRooms (saved-rooms.mjs) has this room ID. The room line
+// of a friend has the room ID, not the key: the check computes the room ID of each saved protected room.
+export function savedRoomHasId(savedRooms, roomId) {
+    if (typeof roomId !== 'string') return false;
+    for (const row of savedRooms.status().rooms) {
+        if (!row.protected) continue;
+        const saved = savedRooms.getRoom(row.roomId);
+        let membership = saved?.membership;
+        try {
+            if (typeof membership === 'string') membership = JSON.parse(membership);
+            if (membership && roomCodeAccess(saved.name, saved.roomKey, membership.owner, membership.lan).roomId === roomId) return true;
+        } catch { /* a damaged row */ }
+    }
+    return false;
+}
 
 // links: friendLinks. room(): the name of the current room, or null on the login screen. busy(): a login or a Leave
 // room runs now. leave(): Leave room, resolves true when the room ended (main.js leaveRoom()). reload(): reload the main

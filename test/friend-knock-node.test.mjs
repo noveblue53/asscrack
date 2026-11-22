@@ -23,12 +23,13 @@ async function friends(t, labels = ['a', 'b'], names = ['Ann', 'Ben']) {
     const { roomA, roomB } = await protectedRoomPair(t, A, B, names);
     const port = randomBasePort();
     const linksA = await startLinks(t, A, { basePort: port, discovery: false, nodeOptions: { allowPrivateFullNode: true } });
-    const linksB = await startLinks(t, B, { basePort: port + 50, discovery: false });
+    const optionsB = { basePort: port + 50, discovery: false };
+    const linksB = await startLinks(t, B, optionsB);
     linksA.attachRoom(roomA, { name: 'friends-test' });
     linksB.attachRoom(roomB, { name: 'friends-test' });
     const { friendA, friendB } = await befriend(linksA, linksB, roomA, roomB);
     await waitFor(() => linksA.friend(friendA).state === 'online' && linksB.friend(friendB).state === 'online', 'online');
-    return { A, B, roomA, roomB, linksA, linksB, friendA, friendB };
+    return { A, B, roomA, roomB, linksA, linksB, friendA, friendB, optionsB };
 }
 
 // A LAN protected room of an owner identity on 127.0.0.1, with the knock of the app.
@@ -183,4 +184,41 @@ test('127.0.0.1 a knock stream of a peer that is not admitted cannot use the fri
     const outcome = await knockRoom({ code, identity: S.identity, name: 'Sam' });
     assert.deepEqual(outcome, { result: 'refused', reason: 'old-code' });
     assert.equal(prompts.length, 0);
+});
+
+test('127.0.0.1 friend Join: the room line comes on a new friend link session (A is in its room before B starts)', { timeout: 120000 }, async t => {
+    const { A, B, roomB, linksA, linksB, optionsB } = await friends(t);
+    const R = await ownerRoom(t, A.identity);
+    const prompts = answerPrompts(R.node, true);
+    linksA.attachRoom(R.node, { name: R.room });
+    // B stops (Quit) and starts again with no room: the first room line of A comes on the new session.
+    linksB.attachRoom(null);
+    await roomB.stop();
+    await linksB.stop();
+    const again = await startLinks(t, B, optionsB);
+    await waitFor(() => again.list().friends[0]?.state === 'online', 'the friend link of B is back', 40000);
+    const friendB = again.list().friends[0].friendId;
+    await waitFor(() => again.friend(friendB).join?.room === R.room, 'B sees Join on the row of A after its start', 20000);
+    const outcome = await again.knock(friendB, { name: 'Ben' });
+    assert.equal(outcome.result, 'allowed', JSON.stringify(outcome));
+    assert.equal(prompts.length, 1);
+    await joinAndChat(t, B.identity, outcome.invite, R.node);
+});
+
+test('friend Join: a room in the saved rooms is found by its room ID (savedRoomHasId)', async t => {
+    const { savedRoomHasId } = await import('../src/application/friend-join.mjs');
+    const O = makeProfile(t, 'o'), B = makeProfile(t, 'b');
+    t.after(() => { O.rooms.close(); B.rooms.close(); });
+    await B.rooms.open();
+    const room = `saved ${randomUUID().slice(0, 4)}`, roomKey = newRoomKey();
+    const owner = createRoomMembership({ identity: O.identity, room, roomKey, lan: true });
+    const descriptor = owner.issue(B.identity.id, false);
+    descriptor.admission = owner.admit({ deviceId: B.identity.id, grant: descriptor.grant });
+    const member = restoreRoomMembership({ identity: B.identity, room, roomKey, descriptor });
+    assert.equal(savedRoomHasId(B.rooms, owner.roomId), false, 'not saved yet');
+    const saved = B.rooms.afterLogin({ room, roomKey, userName: 'Ben', save: true, membership: member.snapshot() });
+    assert.equal(saved.savedRoom, true);
+    assert.equal(savedRoomHasId(B.rooms, owner.roomId), true);
+    assert.equal(savedRoomHasId(B.rooms, createRoomMembership({ identity: O.identity, room, roomKey: newRoomKey(), lan: true }).roomId), false);
+    assert.equal(savedRoomHasId(B.rooms, null), false);
 });

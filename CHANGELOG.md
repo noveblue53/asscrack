@@ -41,8 +41,9 @@ A friend row shows Join when the friend is in a protected room that you are not 
   has no Join.
 
 Checks (127.0.0.1 on this PC, not LAN, not internet): `test/friend-knock.test.mjs` has 8 tests.
-`test/friend-knock-node.test.mjs` has 5 tests. They do Allow and Deny of a friend that is the owner, and Allow
+`test/friend-knock-node.test.mjs` has 7 tests. They do Allow and Deny of a friend that is the owner, and Allow
 through a member that is not the owner. They also do "Ask", owner offline, and the friend code on a room code knock.
+Two tests check the room line on a new friend link session and a room in the saved rooms.
 Two app copies on this PC:
 B selects Join on the row of A, A selects Allow, then chat in both directions.
 
