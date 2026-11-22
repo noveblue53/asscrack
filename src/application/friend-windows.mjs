@@ -114,9 +114,11 @@ export function attachFriendWindows({ BrowserWindow, ipc, assets, links, warn = 
 
 // The friend IPC of the room window (main window). handle: handleRoomIpc of main.js (the sender check).
 // roomNode(): the node of the room now, or null.
-export function registerFriendIpc(handle, { links, roomNode, openChat }) {
-    handle('asscrack:friends', () => links.list());
-    handle('asscrack:friend-relations', (_event, peerIds) => links.relations(Array.isArray(peerIds) ? peerIds.filter(text128) : []));
+// query: the same check for the two read-only calls, but a call from a window that closes (for example at Quit)
+// gets null and no error line in the terminal.
+export function registerFriendIpc(handle, { links, roomNode, openChat, query = handle }) {
+    query('asscrack:friends', () => links.list());
+    query('asscrack:friend-relations', (_event, peerIds) => links.relations(Array.isArray(peerIds) ? peerIds.filter(text128) : []));
     handle('asscrack:friend-request', (_event, peerId) => {
         const node = roomNode();
         if (!node || !text128(peerId)) return { result: 'unavailable' };

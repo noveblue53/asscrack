@@ -858,7 +858,11 @@ const friendWindows = attachFriendWindows({
     BrowserWindow, ipc: ipcMain, assets: __dirname, links: friendLinks, icon: path.join(__dirname, 'img', 'app.ico'),
     warn: message => writeLog('WARN', message), openLink: value => openCheckedLink(value)
 });
-registerFriendIpc(handleRoomIpc, { links: friendLinks, roomNode: () => node, openChat: friendId => friendWindows.open(friendId) });
+registerFriendIpc(handleRoomIpc, {
+    links: friendLinks, roomNode: () => node, openChat: friendId => friendWindows.open(friendId),
+    query: (channel, handler) => ipcMain.handle(channel, (event, ...args) =>
+        isDesktopFrame(mainWindow, event.sender, event.senderFrame, ROOM_PAGE) ? handler(event, ...args) : null)
+});
 function startFriendLinks() {
     if (friendLinks.state() === 'open' || quitting) return;
     const archive = getSavedRooms().friendArchive();
