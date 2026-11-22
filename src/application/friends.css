@@ -24,6 +24,8 @@
 }
 #friends-panel[hidden] { display: none; }
 .friends-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+/* 1.0.1: Pop out and Close are at the right side of the title. */
+#friends-panel .friends-head h2 { margin-right: auto; }
 #friends-panel h2 { margin: 0 0 6px; font-size: 16px; }
 #friends-panel p { margin: 6px 0; font-size: 12px; }
 

@@ -5,6 +5,8 @@
 // The bridge is window.friends (preload.cjs). The window gets no key and no address of a friend.
 // On the login screen the panel is a column at the side of the login card. In a room the titlebar button "Friends"
 // opens it as a drawer. Escape with the focus in the drawer closes it (this listener is on the panel only).
+// 1.0.1: "Pop out" in the drawer opens the Friends window (friends-window.html, friends-popout.mjs). That window runs
+// this file too: its panel has data-mode="window", and it has no drawer, no Friends button and no Retry call.
 (function () {
     'use strict';
 
@@ -46,6 +48,8 @@
     const unreadBadge = byId('friends-unread');
     const loginScreen = byId('login-screen');
     const confirmDialog = byId('friend-confirm');
+    const windowMode = panel.dataset?.mode === 'window';
+    const popOutButton = byId('friends-popout');
     const nameDialog = byId('friend-name-dialog');
     let view = { state: 'stopped', friends: [], waiting: [], blocked: [] };
     let relations = {};
@@ -61,7 +65,7 @@
         const locked = view.state === 'locked';
         const open = view.state === 'open';
         byId('friends-locked').hidden = !locked;
-        byId('friends-retry').hidden = !locked;
+        byId('friends-retry').hidden = !locked || typeof api.retry !== 'function';
         byId('friends-empty').hidden = !open || view.friends.length > 0 || view.waiting.length > 0;
         byId('friends-settings').hidden = !open;
         const rows = view.friends.map(friend => {
@@ -111,8 +115,10 @@
             }));
         }
         const unread = view.friends.reduce((sum, f) => sum + (f.unread || 0), 0);
-        unreadBadge.textContent = unread ? String(unread) : '';
-        unreadBadge.hidden = unread === 0;
+        if (unreadBadge) {
+            unreadBadge.textContent = unread ? String(unread) : '';
+            unreadBadge.hidden = unread === 0;
+        }
     }
 
     function act(promise, ok = '') {
@@ -139,8 +145,9 @@
     }
 
     // ---- The drawer in a room ----
-    function inRoom() { return Boolean(loginScreen?.hidden); }
+    function inRoom() { return !windowMode && Boolean(loginScreen?.hidden); }
     function refresh() {
+        if (windowMode) return;
         const room = inRoom();
         toggle.hidden = !room;
         if (room && panel.parentElement !== document.body) {
@@ -149,6 +156,7 @@
             panel.hidden = !drawerOpen;
         }
         byId('friends-close').hidden = !room;
+        if (popOutButton) popOutButton.hidden = !room || typeof api.popOut !== 'function';
         refreshRelations();
     }
     function setDrawer(open) {
@@ -160,8 +168,10 @@
         if (open) (list.querySelector('li[tabindex="0"]') ?? byId('friends-close')).focus();
         else toggle.focus();
     }
-    toggle.addEventListener('click', () => setDrawer(!drawerOpen));
-    byId('friends-close').addEventListener('click', () => setDrawer(false));
+    toggle?.addEventListener('click', () => setDrawer(!drawerOpen));
+    byId('friends-close')?.addEventListener('click', () => setDrawer(false));
+    // 1.0.1: the Friends window. The drawer closes when the window opens.
+    popOutButton?.addEventListener('click', () => act(api.popOut()).then(opened => { if (opened === true) setDrawer(false); }));
     panel.addEventListener('keydown', event => {
         if (event.key === 'Escape' && drawerOpen && !event.defaultPrevented && !document.querySelector('dialog[open]')) {
             event.preventDefault();

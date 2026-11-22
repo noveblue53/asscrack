@@ -40,6 +40,8 @@ contextBridge.exposeInMainWorld('friends', {
     setUpnp: on => ipcRenderer.invoke('asscrack:friend-upnp', on === true),
     openChat: friendId => ipcRenderer.invoke('asscrack:friend-open-chat', text(friendId)),
     retry: () => ipcRenderer.invoke('asscrack:unlock-archive'),
+    // 1.0.1: open the Friends window (friends-popout.mjs). Only in a room; true when it opens or gets the focus.
+    popOut: () => ipcRenderer.invoke('asscrack:friends-popout'),
     onChanged: listen('asscrack:friends'),
     onRequest: listen('asscrack:friend-request'),
     // G7b: a friend line for the attention rules (attention.js): { friendId, id, away, focused }. No text, no name.

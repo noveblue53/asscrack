@@ -36,6 +36,7 @@ import { acceptScreenFrame, createScreenSources } from './screen-sources.mjs';
 import { createFriendLinks } from './friend-links.mjs';
 import { withDeviceMarks } from './peer-marks.mjs';
 import { attachFriendWindows, registerFriendIpc } from './friend-windows.mjs';
+import { attachFriendsPopout } from './friends-popout.mjs';
 import { installInterfaceCache } from '../network/interface-cache.mjs';
 import { createUpdateService } from './update-service.mjs';
 import { CHOICE_FILE, choiceAfterForget, createStartEntry, createStartRunner, isInstalledBuild, isStaleChoice, normalizeChoice,
@@ -653,7 +654,7 @@ function createMainWindow() {
         if (!quitting && closeToTray && (enterIdlePeer() || hideForFriends())) event.preventDefault();
     });
     // G7a: the friend chat windows close with the main window (then the app quits as before).
-    mainWindow.on('closed', () => { friendWindows.closeAll(); imageDecoder.close(); });
+    mainWindow.on('closed', () => { friendWindows.closeAll(); friendsPopout.close(); imageDecoder.close(); });
     // Windows shutdown may bypass before-quit. Do not hide or veto session termination.
     mainWindow.on('session-end', () => { quitting = true; });
 
@@ -1020,6 +1021,15 @@ const friendWindows = attachFriendWindows({
     warn: message => writeLog('WARN', message), openLink: value => openCheckedLink(value),
     focused: friendId => attention.read({ kind: 'friend', friendId, id: 'focus' })
 });
+// 1.0.1: the Friends window. "Pop out" in the drawer opens it, only in a room. It stays open after Leave room
+// and closes with the room window and at Quit.
+const friendsPopout = attachFriendsPopout({
+    BrowserWindow, ipc: ipcMain, screen, profile: app.getPath('userData'), assets: __dirname, links: friendLinks,
+    openChat: friendId => friendWindows.open(friendId), icon: path.join(__dirname, 'img', 'app.ico'),
+    nearBounds: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : null),
+    warn: message => writeLog('WARN', message)
+});
+handleRoomIpc('asscrack:friends-popout', () => (node ? friendsPopout.open() : false));
 registerFriendIpc(handleRoomIpc, {
     links: friendLinks, roomNode: () => node, openChat: friendId => friendWindows.open(friendId), query: queryRoomIpc
 });
@@ -1679,6 +1689,7 @@ app.on('before-quit', event => {
     tray = null;
     pttHook.stop();
     friendWindows.closeAll();
+    friendsPopout.close();
     imageDecoder.dispose();
     // Saved rooms (milestone 6): close the archive. G7a: after the friend nodes stop (they write to it).
     const closeArchive = () => {
