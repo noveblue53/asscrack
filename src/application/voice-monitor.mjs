@@ -78,13 +78,18 @@ export function attachVoiceMonitor({ room, roomPage, ipc, BrowserWindow, screen,
     function close(event) {
         if (from(event, monitor, monitorPage)) monitor.close();
     }
+    // P8b (design W6): Stop sharing in the panel uses the path of Mute: the room window stops the share.
+    function stopShare(event) {
+        if (from(event, monitor, monitorPage) && participating()) roomMessage('asscrack:voice-monitor-stop-share', true);
+    }
     function dismiss() {
         returnToRoom = false;
         monitor?.close();
     }
     const handlers = {
         'asscrack:voice-monitor-open': open, 'asscrack:voice-monitor-publish': update,
-        'asscrack:voice-monitor-set-muted': mute, 'asscrack:voice-monitor-close': close
+        'asscrack:voice-monitor-set-muted': mute, 'asscrack:voice-monitor-close': close,
+        'asscrack:voice-monitor-stop-share': stopShare
     };
     for (const [channel, handler] of Object.entries(handlers)) ipc.on(channel, handler);
     room.webContents.once('render-process-gone', dismiss);

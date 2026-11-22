@@ -2,6 +2,7 @@
     const mic = document.getElementById('mic');
     const mute = document.getElementById('mute');
     const speakers = document.getElementById('speakers');
+    const shareRow = document.getElementById('share-row');
     let muted = false;
     window.voiceMonitor.onState(view => {
         muted = view.muted;
@@ -16,7 +17,10 @@
         mute.disabled = !view.inVoice;
         mute.setAttribute('aria-pressed', String(muted));
         speakers.textContent = view.speakers.join(', ') || 'No one speaking';
+        // P8b: the line of the screen share, only while the share is on.
+        if (shareRow) shareRow.hidden = view.sharing !== true;
     });
     mute.addEventListener('click', () => window.voiceMonitor.setMuted(!muted));
+    document.getElementById('stop-share')?.addEventListener('click', () => window.voiceMonitor.stopShare?.());
     document.getElementById('back').addEventListener('click', () => window.voiceMonitor.close());
 })();

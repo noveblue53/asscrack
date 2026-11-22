@@ -1,0 +1,102 @@
+/* P8b, screenshare (work-orders/astra/P8/DESIGN.md, section 2.7): the picker, the share bar, the banner and the
+   stage. The colors come from the theme variables of themes.css. */
+
+#share-bar, #screen-banner {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 6px 4px;
+  padding: 5px 8px;
+  border: 1px solid var(--line, #9fb6cc);
+  border-radius: 6px;
+  background: var(--surface-raised, #f4f8fc);
+  color: var(--ink, #1d2b3a);
+  font: 12px/1.35 var(--font-small);
+}
+#share-bar { border-color: var(--danger, #c0392b); }
+#share-bar[hidden], #screen-banner[hidden], #share-error[hidden], #screen-notice[hidden], #share-bar-notes[hidden] { display: none; }
+#share-bar .share-bar-text { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
+#share-bar-quality, #share-bar-notes { display: flex; flex-direction: column; color: var(--ink-soft, #5b7a99); }
+#share-bar-notes { color: var(--warning, #9a6700); }
+#screen-banner-text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+#share-error, #screen-notice { margin: 0 6px 4px; font: 12px/1.35 var(--font-small); overflow-wrap: anywhere; }
+#share-error { color: var(--danger, #c0392b); }
+#screen-notice { color: var(--ink-soft, #5b7a99); }
+#share-screen[aria-pressed="true"] { color: var(--danger, #c0392b); font-weight: 700; }
+
+/* The stage: at most 60 % of the message panel. The canvas keeps the aspect ratio of the stream. */
+#screen-stage {
+  flex: 0 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 60%;
+  margin: 0 6px 4px;
+  border: 1px solid var(--line, #9fb6cc);
+  border-radius: 6px;
+  background: var(--surface, #ffffff);
+  overflow: hidden;
+}
+#screen-stage[hidden] { display: none; }
+#screen-stage .screen-stage-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 4px 8px;
+  color: var(--ink, #1d2b3a);
+  font: 12px/1.35 var(--font-small);
+}
+#screen-stage-title { margin: 0; font-size: 12px; }
+#screen-stage-info, #screen-stage-note { color: var(--ink-soft, #5b7a99); }
+#screen-stage-note[hidden] { display: none; }
+#screen-fill { margin-left: auto; }
+#screen-canvas {
+  display: block;
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  object-fit: contain;
+  background: #000;
+}
+/* Fill window: the stage covers the window below the title bar. The other parts keep their layout under it, so
+   that the reading position of the transcript does not change. The composer is not visible. */
+body.screen-fill #screen-stage {
+  position: fixed;
+  top: var(--frame-height, 36px);
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 40;
+  max-height: none;
+  margin: 0;
+  border-radius: 0;
+}
+
+/* The picker dialog. */
+#screen-picker { max-width: min(720px, 92vw); max-height: 86vh; overflow-y: auto; }
+#screen-picker h2 { margin: 0 0 4px; }
+#screen-picker h3 { margin: 8px 0 4px; font-size: 13px; }
+#screen-picker-status[hidden] { display: none; }
+.screen-sources { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.screen-source {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 172px;
+  padding: 4px;
+  border: 1px solid var(--line, #9fb6cc);
+  border-radius: 6px;
+  background: var(--surface-raised, #f4f8fc);
+  color: var(--ink, #1d2b3a);
+}
+.screen-source[aria-pressed="true"] { outline: 2px solid var(--accent, #2f7fd0); outline-offset: -2px; font-weight: 700; }
+.screen-source canvas { width: 160px; height: 90px; background: var(--map, #dfe8f0); }
+.screen-source-name { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.screen-picker-note { color: var(--ink-soft, #5b7a99); font-size: 12px; }
+.screen-picker-buttons { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* The buddy line of a member that shares. */
+.screen-state { color: var(--danger, #c0392b); font-size: 11px; }

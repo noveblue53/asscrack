@@ -27,6 +27,7 @@
         'copy-name': 'Copy name',
         'inspect-peer': 'Peer details',
         'listening': 'Listening volume…',
+        'watch-screen': 'Watch screen',
         'show-on-map': 'Show on map',
         'copy-message': 'Copy message',
         'open-link': 'Open link',
@@ -60,6 +61,8 @@
             case 'buddy': {
                 const actions = info.onMap ? ['copy-name', 'show-on-map'] : ['copy-name'];
                 if (info.self === false) actions.push('listening');
+                // P8b: the line of a member that shares a screen.
+                if (info.watch === true) actions.push('watch-screen');
                 if (info.inspect) actions.push('inspect-peer');
                 if (info.whisper) actions.push('whisper');
                 if (info.availability) actions.push('availability');

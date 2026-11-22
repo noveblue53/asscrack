@@ -1001,7 +1001,9 @@ function publishMonitorView(state, speakers) {
     const view = { inVoice: ownInVoice, muted: ownMuted, deafened: ownDeafened, transmitting: state.transmitting === true,
         speakers, theme: document.documentElement.dataset.theme || 'aero-classic',
         // G6: the microphone line of the detached panel starts with the channel name.
-        channel: ownInVoice && window.voiceChannels ? window.voiceChannels.name(state.channel ?? 'general') : '' };
+        channel: ownInVoice && window.voiceChannels ? window.voiceChannels.name(state.channel ?? 'general') : '',
+        // P8b (design W6): the panel shows "Sharing your screen" and Stop sharing while the share is on.
+        sharing: window.screenShare?.isSharing() === true };
     const key = JSON.stringify(view);
     if (key === lastMonitorView) return;
     lastMonitorView = key;
@@ -1669,7 +1671,9 @@ function rowInfo(row) {
         if (row === selfLine) return { kind: 'buddy', inspect: Boolean(window.peerInspector), self: true, availability: Boolean(presenceControls), onMap: buddyId(row) !== null };
         if (buddyId(row) === null) return null;
         // G7a: friend is 'add', 'open' or null (friends-ui.js knows the friends and the protected room peers).
-        return { kind: 'buddy', inspect: Boolean(window.peerInspector), whisper: Boolean(window.whispers), self: false, onMap: true, friend: window.friendsUi?.relation(buddyId(row)) ?? null };
+        return { kind: 'buddy', inspect: Boolean(window.peerInspector), whisper: Boolean(window.whispers), self: false, onMap: true, friend: window.friendsUi?.relation(buddyId(row)) ?? null,
+            // P8b: "Watch screen" on the line of a member that shares (screen-view.js).
+            watch: window.screenView?.canWatch(buddyId(row)) === true };
     }
     if (row.parentElement === messageList && !row.classList.contains('file-card')) {
         return { kind: 'message', details: Boolean(row.querySelector('.text')), inspect: Boolean(window.peerInspector && peerItems.has(row.dataset.peerId)), quotable: selfLine !== null && row.querySelector('.text') !== null, localOnly: row.classList.contains('local-only'), link: Boolean(window.chatLinks?.firstLink(row)), image: window.chatMedia?.hasImage?.(row) === true };
@@ -1709,6 +1713,7 @@ function runRowAction(action, row) {
         }
         case 'copy-name': return copyBuddyName(row);
         case 'listening': return showListening(row);
+        case 'watch-screen': return Boolean(buddyId(row) && window.screenView?.watch(buddyId(row)));
         case 'show-on-map': return showBuddyOnMap(buddyId(row));
         case 'copy-message': return copyMessageText(row);
         case 'open-link': return window.chatLinks?.openFirst(row) ?? false;
@@ -2943,7 +2948,7 @@ window.asscrack.onPeerLeft(data => forgetPresence(data?.peerId));
 
 // ---- The one Escape dispatcher ----
 // Escape closes only the top layer, in this sequence: the context menu (menu.js), the View menu and the Buddies
-// drawer (layout.js), a focused whisper pane, the find bar (find.js, it puts the list back at its old position), the quote chip (only with
+// drawer (layout.js), Fill window of the screen stage (screen-view.js), a focused whisper pane, the find bar (find.js, it puts the list back at its old position), the quote chip (only with
 // the focus in the composer), the voice settings, the invite panel, the map. The View menu and the drawer stop their own Escape when the focus is
 // in them. A separator drag stops its Escape in the capture phase on window. Then this listener gets no event.
 function focusIsIn(element) {
@@ -2960,6 +2965,11 @@ document.addEventListener('keydown', e => {
         return;
     }
     if (window.layout?.closeTopLayer()) {
+        e.preventDefault();
+        return;
+    }
+    // P8b: Fill window of the screen stage (screen-view.js) goes back.
+    if (window.screenView?.unfill()) {
         e.preventDefault();
         return;
     }

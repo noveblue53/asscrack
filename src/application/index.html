@@ -24,6 +24,7 @@
   <link rel="stylesheet" href="voice-channels.css">
   <link rel="stylesheet" href="ready-check.css">
   <link rel="stylesheet" href="friends.css">
+  <link rel="stylesheet" href="screen.css">
 </head>
 <body>
   <!-- Decoration only: the sky bubbles behind the two screens. -->
@@ -266,11 +267,24 @@
           <span id="ptt-state" hidden>PTT released</span>
           <button id="voice-settings-toggle" type="button" aria-expanded="false" aria-controls="voice-settings">Voice settings</button>
           <button id="leave-voice" type="button" hidden>Leave voice</button>
+          <!-- P8b, screen-share.js: a share does not need voice. -->
+          <button id="share-screen" type="button" aria-pressed="false">Share screen</button>
           <span id="voice-error" role="alert"></span>
         </div>
       </section>
       <div id="buddy-sep" class="layout-sep" role="separator" tabindex="0" aria-orientation="vertical" aria-controls="buddy-panel" aria-label="Resize Buddies" aria-valuenow="192" aria-valuemin="120" aria-valuemax="480"></div>
       <section id="message-panel" class="panel">
+        <!-- P8b, screen-share.js: the share bar of the sharer, above the room heading. -->
+        <div id="share-bar" role="status" hidden>
+          <div class="share-bar-text">
+            <strong id="share-bar-source"></strong>
+            <span id="share-bar-viewers"></span>
+            <span id="share-bar-quality"></span>
+            <span id="share-bar-notes" hidden></span>
+          </div>
+          <button id="share-stop" type="button">Stop sharing</button>
+        </div>
+        <p id="share-error" role="alert" hidden></p>
         <header id="room-heading">
           <div class="room-identity">
             <h1 id="chat-room"></h1>
@@ -331,6 +345,12 @@
             <ul id="room-members"></ul>
           </section>
         </div>
+        <!-- P8b, screen-view.js: the banner of a share in the room, and the reason of an end. -->
+        <div id="screen-banner" role="status" hidden>
+          <span id="screen-banner-text"></span>
+          <button id="screen-watch" type="button">Watch</button>
+        </div>
+        <p id="screen-notice" role="status" hidden></p>
         <dialog id="channel-dialog" aria-labelledby="channel-title"><form id="channel-create-form">
           <h2 id="channel-title">Create public channel</h2><label>Channel name <input type="text" id="channel-name" required maxlength="80" autocomplete="off"></label>
           <p id="channel-error" role="status"></p><button id="channel-cancel" type="button">Cancel</button><button>Create channel</button>
@@ -343,6 +363,17 @@
           <button id="find-next" type="button" title="Next result (Enter)" disabled>Next</button>
           <button id="find-close" type="button" title="Close and go back (Escape)">Close</button>
         </div>
+        <!-- P8b, screen-view.js: the stage of the watched share. -->
+        <section id="screen-stage" aria-labelledby="screen-stage-title" hidden>
+          <header class="screen-stage-head">
+            <h2 id="screen-stage-title"></h2>
+            <span id="screen-stage-info"></span>
+            <span id="screen-stage-note" role="status" hidden></span>
+            <button id="screen-fill" type="button" aria-pressed="false">Fill window</button>
+            <button id="screen-unwatch" type="button">Stop watching</button>
+          </header>
+          <canvas id="screen-canvas" width="1280" height="720" aria-label="Shared screen"></canvas>
+        </section>
         <div id="transcript-body">
           <p id="waiting-peer" role="status" hidden></p>
           <ul id="messages" role="log" tabindex="-1"></ul>
@@ -626,6 +657,22 @@
     </form>
   </dialog>
 
+  <!-- P8b, screen-share.js: the picker of the source and the quality (design section 2.7). Escape is Cancel. -->
+  <dialog id="screen-picker" aria-labelledby="screen-picker-title">
+    <h2 id="screen-picker-title">Share your screen</h2>
+    <p id="screen-picker-status" role="status">Loading sources…</p>
+    <h3 id="screen-screens-title">Screens</h3>
+    <ul id="screen-list-screens" class="screen-sources" aria-labelledby="screen-screens-title"></ul>
+    <h3 id="screen-windows-title">Windows</h3>
+    <ul id="screen-list-windows" class="screen-sources" aria-labelledby="screen-windows-title"></ul>
+    <label for="screen-quality">Quality</label>
+    <select id="screen-quality"></select>
+    <p class="screen-picker-note">The share has no sound. The people in your voice channel hear you in voice.</p>
+    <div class="screen-picker-buttons">
+      <button id="screen-share-go" type="button" disabled>Share</button>
+      <button id="screen-cancel" type="button">Cancel</button>
+    </div>
+  </dialog>
   <dialog id="quit-dialog" aria-labelledby="quit-text">
     <p id="quit-text"></p>
     <form method="dialog" class="dialog-buttons">
@@ -660,6 +707,9 @@
   <script src="voice-channels-ui.js"></script>
   <script src="typing.js"></script>
   <script src="ready-check-ui.js"></script>
+  <script src="screen-frame-check.js"></script>
+  <script src="screen-share.js"></script>
+  <script src="screen-view.js"></script>
   <script src="whispers.js"></script>
   <script src="saved-rooms-ui.js"></script>
   <script src="voice-panel.js"></script>
