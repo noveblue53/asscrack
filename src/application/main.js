@@ -27,6 +27,9 @@ import { isAddressInUse, loginErrorText } from './login-errors.mjs';
 import { createLinkPolicy } from './link-policy.mjs';
 import { fitWindowBounds, MIN_WINDOW, readWindowBounds, saveWindowBounds } from './window-bounds.mjs';
 import { createTaskbarFlash } from './taskbar-flash.mjs';
+import { createFriendLinks } from './friend-links.mjs';
+import { attachFriendWindows, registerFriendIpc } from './friend-windows.mjs';
+import { installInterfaceCache } from '../network/interface-cache.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -116,9 +119,12 @@ if (logFile) for (const [method, level] of [['log', 'LOG'], ['info', 'INFO'], ['
 
 
 
+// G7a: one read of the network interfaces each 2 s for all nodes (the mDNS cost of the friend nodes).
+const interfaceCache = installInterfaceCache();
 // One log line for each node event. The chat text does not go into the log.
 // 'voice-frame' comes 50 times each second for each speaker.
-const UNLOGGED_EVENTS = new Set(['signal', 'file-progress', 'voice-frame']);
+// G7a: 'friend' and 'pm' carry room keys and private text. They never go in the log or to the window as raw events.
+const UNLOGGED_EVENTS = new Set(['signal', 'file-progress', 'voice-frame', 'friend', 'pm']);
 
 function logEvent(type, data) {
     if (!logFile || UNLOGGED_EVENTS.has(type)) return;
@@ -506,6 +512,8 @@ function createMainWindow() {
         saveBoundsNow();
         if (!quitting && closeToTray && enterIdlePeer()) event.preventDefault();
     });
+    // G7a: the friend chat windows close with the main window (then the app quits as before).
+    mainWindow.on('closed', () => friendWindows.closeAll());
     // Windows shutdown may bypass before-quit. Do not hide or veto session termination.
     mainWindow.on('session-end', () => { quitting = true; });
 
@@ -675,6 +683,8 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
     });
     // Saved rooms (milestone 6): the archive listener comes before the window listener.
     getSavedRooms().attachNode(node);
+    // G7a: the friend requests of a protected room.
+    friendLinks.attachRoom(node);
     readRoomActivity = observeRoomActivity(node);
     // Typing goes straight to the window; transient controls never enter diagnostics or the archive.
     onLive('whisper-capability', data => sendToWindow('asscrack:whisper-capability', data));
@@ -837,7 +847,38 @@ async function login(options, { name, room, type, invite, publicAddress, allowUp
 // Saved rooms (milestone 6). The window gets no key, no invite and no file path.
 handleRoomIpc('asscrack:saved-rooms', () => getSavedRooms().status());
 
-handleRoomIpc('asscrack:unlock-archive', () => getSavedRooms().unlock());
+handleRoomIpc('asscrack:unlock-archive', async () => {
+    const result = await getSavedRooms().unlock();
+    startFriendLinks();
+    return result;
+});
+
+// G7a: the friend links start after the archive opens (also on the login screen) and stop at Quit. Leave room, a new
+// login and Idle Peer do not stop them. Only the test flags allowPrivateFullNode and fullNode go to the friend nodes.
+const friendLinks = createFriendLinks({
+    createNode: createAsscrackNode, hintFiles: (room, roomKey) => roomHintFiles(room, roomKey), log: writeLog,
+    nodeOptions: Object.fromEntries(Object.entries(nodeFlags).filter(([name]) => name === 'allowPrivateFullNode' || name === 'fullNode'))
+});
+friendLinks.events.on('changed', view => sendToWindow('asscrack:friends', view));
+friendLinks.events.on('request', event => sendToWindow('asscrack:friend-request', event));
+const friendWindows = attachFriendWindows({
+    BrowserWindow, ipc: ipcMain, assets: __dirname, links: friendLinks, icon: path.join(__dirname, 'img', 'app.ico'),
+    warn: message => writeLog('WARN', message), openLink: value => openCheckedLink(value)
+});
+registerFriendIpc(handleRoomIpc, {
+    links: friendLinks, roomNode: () => node, openChat: friendId => friendWindows.open(friendId),
+    query: (channel, handler) => ipcMain.handle(channel, (event, ...args) =>
+        isDesktopFrame(mainWindow, event.sender, event.senderFrame, ROOM_PAGE) ? handler(event, ...args) : null)
+});
+function startFriendLinks() {
+    if (friendLinks.state() === 'open' || quitting) return;
+    const archive = getSavedRooms().friendArchive();
+    let identity = null;
+    if (archive) {
+        try { identity = getAdmissionIdentity(); } catch (err) { writeLog('WARN', `Friend links: ${err?.message ?? err}`); }
+    }
+    friendLinks.start(identity, identity ? archive : null);
+}
 
 handleRoomIpc('asscrack:saved-room-lines', (_event, roomId, opts) => {
     if (!validRoomId(roomId)) return [];
@@ -859,6 +900,8 @@ handleRoomIpc('asscrack:saved-room-lines', (_event, roomId, opts) => {
 handleRoomIpc('asscrack:reopen-room', async (_event, roomId, allowLegacy) => {
     if (loginStarted) throw new Error('Already logged in');
     if (typeof roomId !== 'string' || roomId.length > 128) throw new Error('Saved room not found');
+    // G7a: a friend room is not a saved room of the list. Only its friend link opens it.
+    if (getSavedRooms().isFriendRoom(roomId)) throw new Error('Saved room not found');
     const row = getSavedRooms().getRoom(roomId);
     if (!row) throw new Error('Saved room not found');
     const options = {
@@ -1282,7 +1325,9 @@ handleRoomIpc('asscrack:list-partials', async () => (node ? await node.partials(
 // http: or https: URL of 2048 characters or less with a host and no user name or password, at most one each 500 ms.
 // All other input: no action and one warning in the log.
 const linkPolicy = createLinkPolicy();
-handleRoomIpc('asscrack:open-link', async (_event, value) => {
+handleRoomIpc('asscrack:open-link', (_event, value) => openCheckedLink(value));
+// G7a: the friend chat windows use the same link policy.
+async function openCheckedLink(value) {
     const result = linkPolicy.check(value);
     if (!result.ok) {
         console.warn(`open-link refused: ${result.reason}`);
@@ -1295,7 +1340,7 @@ handleRoomIpc('asscrack:open-link', async (_event, value) => {
     }
     await shell.openExternal(result.href);
     return true;
-});
+}
 
 // Show in Explorer for a received file. The window sends the key `${offerId}|${peerId}` only, never a path.
 // Result: { ok: true }, or { ok: false, reason: 'unknown' } (no received file for the key) or
@@ -1364,6 +1409,8 @@ function leaveRoom() {
         roomName = null;
         idlePeer = false;
         try { savedRooms?.leave(); } catch (err) { writeLog('WARN', `Saved rooms leave: ${err?.message ?? err}`); }
+        // G7a: the friend links stay. Only the friend requests of the room end.
+        friendLinks.attachRoom(null);
         loginStarted = false;
         updateTray();
         return true;
@@ -1396,20 +1443,26 @@ app.on('before-quit', event => {
     tray?.destroy();
     tray = null;
     pttHook.stop();
-    // Saved rooms (milestone 6): close the archive.
-    if (savedRooms) {
+    friendWindows.closeAll();
+    // Saved rooms (milestone 6): close the archive. G7a: after the friend nodes stop (they write to it).
+    const closeArchive = () => {
+        if (!savedRooms) return;
         try { savedRooms.close(); } catch (err) { writeLog('WARN', `Saved rooms archive not closed: ${err?.message ?? err}`); }
-    }
+    };
     if (stopping) return;
-    if (!node && !leaving) {
+    const friends = friendLinks.state() === 'open';
+    if (!node && !leaving && !friends) {
+        closeArchive();
         clipboardImages.clear();
         downloadScratch?.clear();
         return;
     }
     event.preventDefault();
     stopping = true;
-    // A quit during Leave room waits for that stop: the node does not stop two times.
-    (leaving ?? stopNodeWithin(node)).finally(() => {
+    // A quit during Leave room waits for that stop: the node does not stop two times. The friend nodes stop at the
+    // same time, in the same 3 s limit.
+    Promise.all([leaving ?? (node ? stopNodeWithin(node) : null), friends ? stopNodeWithin(friendLinks) : null]).finally(() => {
+        closeArchive();
         clipboardImages.clear();
         downloadScratch?.clear();
         node = null;
@@ -1426,7 +1479,10 @@ if (singleInstance && isFirstInstance) {
 app.whenReady().then(async () => {
     if (!isFirstInstance) return;
     if (profileIndex === -1) clearLegacyDebugLogs(app.getPath('logs'));
-    powerMonitor.on('resume', () => node?.refreshRoutes());
+    powerMonitor.on('resume', () => {
+        interfaceCache.clear();
+        node?.refreshRoutes();
+    });
     protocol.handle('room-media', request => roomMedia.serve(request));
     installRoomPermissions(session.defaultSession, () => mainWindow, ROOM_PAGE, () => idlePeer);
     pttHook.configure(currentVoiceSettings());
@@ -1435,5 +1491,6 @@ app.whenReady().then(async () => {
     }
     // open() never rejects. A failure gives the state locked with the reason open-failed.
     await getSavedRooms().open();
+    startFriendLinks();
     createMainWindow();
 });

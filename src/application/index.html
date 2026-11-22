@@ -23,6 +23,7 @@
   <link rel="stylesheet" href="transcript-notes.css">
   <link rel="stylesheet" href="voice-channels.css">
   <link rel="stylesheet" href="ready-check.css">
+  <link rel="stylesheet" href="friends.css">
 </head>
 <body>
   <!-- Decoration only: the sky bubbles behind the two screens. -->
@@ -98,6 +99,29 @@
       <p id="archive-state" hidden></p>
       <button id="archive-unlock" type="button" hidden>Try again</button>
     </div>
+    <!-- G7a: friends-ui.js fills the Friends panel. On the login screen it is a column at the side of the card; in a
+         room the titlebar button "Friends" opens it as a drawer. -->
+    <aside id="friends-panel" aria-labelledby="friends-title">
+      <div class="friends-head">
+        <h2 id="friends-title">Friends</h2>
+        <button id="friends-close" type="button" hidden>Close</button>
+      </div>
+      <p id="friends-locked" hidden>Friends need the protected storage of this computer.</p>
+      <button id="friends-retry" type="button" hidden>Try again</button>
+      <p id="friends-empty" hidden>No friends yet. In a room, right-click a person and select “Add friend…”.</p>
+      <ul id="friend-list" aria-label="Friends"></ul>
+      <ul id="friend-waiting" aria-label="Friend requests that wait"></ul>
+      <div id="friends-settings" hidden>
+        <p id="friends-reach" role="status"></p>
+        <button id="friends-upnp" type="button" hidden>Ask my router to open ports (UPnP)</button>
+        <p class="friends-name-line">Your name for friends: <span id="friends-name"></span> <button id="friends-name-change" type="button">Change</button></p>
+        <details id="friends-blocked" hidden>
+          <summary>Blocked</summary>
+          <ul id="friend-blocked-list"></ul>
+        </details>
+      </div>
+      <p id="friends-status" role="status"></p>
+    </aside>
   </section>
 
   <header id="titlebar">
@@ -105,6 +129,7 @@
       <span id="window-brand">ASSCRACK</span>
       <button id="frame-transfers" type="button" aria-expanded="false" aria-controls="transfer-panel">Transfers <span id="transfer-count" class="count">0</span></button>
       <button id="map-toggle" type="button" aria-expanded="false" aria-controls="map-panel" hidden>Network map</button>
+      <button id="friends-toggle" type="button" aria-expanded="false" aria-controls="friends-panel" hidden>Friends <span id="friends-unread" class="count" hidden></span></button>
       <button id="view-toggle" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="view-menu">View</button>
       <ul id="view-menu" role="menu" aria-labelledby="view-toggle" hidden>
         <!-- Groups: the panels, the voice, the transcript, the look and the sounds, then the app (Quit is the last line).
@@ -328,6 +353,12 @@
         <!-- ready-check-ui.js: the live ready checks of the room (milestone 9), one block for each check. They are not
              in the transcript. -->
         <section id="ready-bar" aria-label="Ready check" hidden></section>
+        <!-- G7a: friend-requests-ui.js shows a friend request of a person in this room. -->
+        <div id="friend-request-bar" role="group" aria-labelledby="friend-request-text" hidden>
+          <p id="friend-request-text"></p>
+          <button id="friend-request-accept" type="button">Accept</button>
+          <button id="friend-request-decline" type="button">Decline</button>
+        </div>
         <div id="composer">
           <!-- renderer.js: the quote of the next message. The remove button or Escape removes it. -->
           <div id="quote-chip" role="group" aria-labelledby="quote-head" hidden>
@@ -569,6 +600,23 @@
     </form>
   </dialog>
 
+  <!-- G7a: the confirmations and the name dialog of the Friends panel (friends-ui.js). -->
+  <dialog id="friend-confirm" aria-labelledby="friend-confirm-text">
+    <p id="friend-confirm-text"></p>
+    <form method="dialog" class="dialog-buttons">
+      <button id="friend-confirm-yes" type="button"></button>
+      <button value="cancel">Cancel</button>
+    </form>
+  </dialog>
+  <dialog id="friend-name-dialog" aria-labelledby="friend-name-title">
+    <form id="friend-name-form" class="dialog-buttons">
+      <h2 id="friend-name-title"></h2>
+      <label>Name <input type="text" id="friend-name-input" required maxlength="64" autocomplete="off" spellcheck="false"></label>
+      <p id="friend-name-error" role="status"></p>
+      <button id="friend-name-cancel" type="button">Cancel</button>
+      <button id="friend-name-save">Save</button>
+    </form>
+  </dialog>
   <!-- P7b: Discard of the kept part of a paused download. renderer.js sets the text. -->
   <dialog id="discard-dialog" aria-labelledby="discard-text">
     <p id="discard-text"></p>
@@ -615,6 +663,8 @@
   <script src="whispers.js"></script>
   <script src="saved-rooms-ui.js"></script>
   <script src="voice-panel.js"></script>
+  <script src="friends-ui.js"></script>
+  <script src="friend-requests-ui.js"></script>
   <script src="menu.js"></script>
   <script src="shared-shelf.js"></script>
   <script src="title.js"></script>

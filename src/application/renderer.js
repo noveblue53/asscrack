@@ -1667,13 +1667,17 @@ function rowInfo(row) {
     if (!row || !row.isConnected || row.classList.contains('note')) return null;
     if (row.parentElement === peerList) {
         if (row === selfLine) return { kind: 'buddy', inspect: Boolean(window.peerInspector), self: true, availability: Boolean(presenceControls), onMap: buddyId(row) !== null };
-        return buddyId(row) === null ? null : { kind: 'buddy', inspect: Boolean(window.peerInspector), whisper: Boolean(window.whispers), self: false, onMap: true };
+        if (buddyId(row) === null) return null;
+        // G7a: friend is 'add', 'open' or null (friends-ui.js knows the friends and the protected room peers).
+        return { kind: 'buddy', inspect: Boolean(window.peerInspector), whisper: Boolean(window.whispers), self: false, onMap: true, friend: window.friendsUi?.relation(buddyId(row)) ?? null };
     }
     if (row.parentElement === messageList && !row.classList.contains('file-card')) {
         return { kind: 'message', details: Boolean(row.querySelector('.text')), inspect: Boolean(window.peerInspector && peerItems.has(row.dataset.peerId)), quotable: selfLine !== null && row.querySelector('.text') !== null, localOnly: row.classList.contains('local-only'), link: Boolean(window.chatLinks?.firstLink(row)), image: window.chatMedia?.hasImage?.(row) === true };
     }
     // G6: a voice channel row (voice-channels-ui.js).
     if (row.parentElement?.id === 'voice-channel-list') return window.voiceChannels?.rowInfo(row) ?? null;
+    // G7a: a row of the Friends panel (friends-ui.js).
+    if (row.parentElement?.id === 'friend-list') return window.friendsUi?.rowInfo(row) ?? null;
     if (row.parentElement === transferList || row.parentElement === messageList) {
         if (row.classList.contains('offer-head')) {
             const head = offerHeads.get(row.dataset.offerId);
@@ -1723,6 +1727,10 @@ function runRowAction(action, row) {
         case 'discard': return discardTransfer(transferKey(row));
         case 'rename-voice-channel': return window.voiceChannels?.rename(row) ?? false;
         case 'delete-voice-channel': return window.voiceChannels?.remove(row) ?? false;
+        case 'add-friend': return window.friendsUi?.add(buddyId(row)) ?? false;
+        case 'open-friend-chat': return window.friendsUi?.openFor(buddyId(row)) ?? false;
+        case 'friend-open': case 'friend-rename': case 'friend-remove': case 'friend-block':
+            return window.friendsUi?.run(action, row) ?? false;
         default: return false;
     }
 }

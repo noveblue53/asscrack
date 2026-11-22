@@ -43,7 +43,14 @@
         reveal: 'Show in Explorer',
         resend: 'Send again',
         'rename-voice-channel': 'Rename…',
-        'delete-voice-channel': 'Delete…'
+        'delete-voice-channel': 'Delete…',
+        // G7a: the buddy menu of a protected room, and the rows of the Friends panel (friends-ui.js).
+        'add-friend': 'Add friend…',
+        'open-friend-chat': 'Open friend chat',
+        'friend-open': 'Open chat',
+        'friend-rename': 'Rename…',
+        'friend-remove': 'Remove friend…',
+        'friend-block': 'Block…'
     });
 
     // The action names for the data of a row (roomActions.rowInfo). An empty list: no menu.
@@ -56,12 +63,16 @@
                 if (info.inspect) actions.push('inspect-peer');
                 if (info.whisper) actions.push('whisper');
                 if (info.availability) actions.push('availability');
+                if (info.friend === 'add') actions.push('add-friend');
+                else if (info.friend === 'open') actions.push('open-friend-chat');
                 return actions;
             }
             case 'message':
                 // quotable: the window can take a quote now (renderer.js rowInfo).
                 // localOnly: the line has "Only on this computer" (gap B3).
                 return [...(info.quotable ? ['quote', 'copy-message'] : ['copy-message']), ...(info.link ? ['open-link'] : []), ...(info.image ? ['view-image'] : []), ...(info.inspect ? ['inspect-peer'] : []), ...(info.details ? ['message-details'] : []), ...(info.localOnly ? ['resend'] : [])];
+            case 'friend':
+                return ['friend-open', 'friend-rename', 'friend-remove', 'friend-block'];
             case 'offer':
                 return info.active ? ['cancel-offer'] : [];
             // G6: only the room owner renames and deletes a voice channel (not General).
@@ -126,8 +137,8 @@
 
     if (typeof document === 'undefined' || typeof document.getElementById !== 'function') return;
 
-    const lists = ['peers', 'messages', 'transfers', 'voice-channel-list'].map(id => document.getElementById(id)).filter(Boolean);
-    const ROW_SELECTOR = '#peers > li, #messages > li, #transfers > li, #voice-channel-list > li';
+    const lists = ['peers', 'messages', 'transfers', 'voice-channel-list', 'friend-list'].map(id => document.getElementById(id)).filter(Boolean);
+    const ROW_SELECTOR = '#peers > li, #messages > li, #transfers > li, #voice-channel-list > li, #friend-list > li';
     const messageList = document.getElementById('messages');
     const docEl = document.documentElement;
 

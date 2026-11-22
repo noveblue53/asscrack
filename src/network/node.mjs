@@ -704,6 +704,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                     else if (control.type === 'attachment' && sessions.get(peerId) === session) attachments.handle(peerId, control).catch(() => {})
                     else if (control.type === 'shelf' && sessions.get(peerId) === session) shelf.handle(peerId, session, control).catch(() => {})
                     else if (control.type === 'whisper') whispers.handle(peerId, session, control)
+                    // G7a: friend requests (room node) and private messages (friend node). Only a proved member device.
+                    else if (control.type === 'friend' && membership && sessions.get(peerId) === session) events.emit('friend', { peerId, deviceId: memberPeers.get(peerId).deviceId, message: control })
+                    else if (control.type === 'pm' && membership && sessions.get(peerId) === session) events.emit('pm', { peerId, deviceId: memberPeers.get(peerId).deviceId, message: control })
                     else if (control.type === 'topic' && sessions.get(peerId) === session) topic.handle(peerId, control)
                     else if (control.type === 'history' && sessions.get(peerId) === session) handleHistory(peerId, control)
                     else if (control.type === 'ready' && sessions.get(peerId) === session) ready.handle(peerId, control)
@@ -1708,6 +1711,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         // The device ID of the room membership of a peer with an open, admitted session (a stable identity of that
         // person across starts). null in a room with no membership: the libp2p peer ID is new at each start.
         memberDevice: peerId => (membership && memberAllowed(peerId) ? memberPeers.get(peerId).deviceId : null),
+        // G7a: the proved device ID of a peer with an open session (the same value as memberDevice).
+        deviceOf: peerId => (membership && memberAllowed(peerId) && sessions.has(peerId) ? memberPeers.get(peerId).deviceId : null),
         membershipSnapshot: () => membership?.snapshot() ?? null,
         setMembershipPersistence(callback) { membership?.setPersistence(callback) },
         createMemberInvite(deviceId, { canHost = false } = {}) {

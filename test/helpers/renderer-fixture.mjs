@@ -125,7 +125,9 @@ export async function loadRoomWindow(options = {}) {
             setDeafened() {}
         },
         nodeMap: null,
-        layout: { closeTopLayer: () => false }
+        layout: { closeTopLayer: () => false },
+        // options.window: more properties of window before the scripts load (for example the friends bridge of G7a).
+        ...(options.window ?? {})
     });
     const context = {
         window,

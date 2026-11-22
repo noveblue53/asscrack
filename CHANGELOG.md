@@ -39,6 +39,39 @@ Results:
   Resume shows "Waiting for Alice". A starts again, and the download continues with no action: A sent 370,868,224
   bytes (the remainder), and the SHA-256 agrees.
 
+## Unreleased — Friends (goal G7a, 2026-11-21)
+
+Two people in a protected room can agree to be friends. Friends send private messages outside of rooms, from the
+login screen and from inside a room.
+- In a protected room, the buddy menu has "Add friend…". The other person sees a bar above the composer with
+  "Accept" and "Decline". The bar says that a friend knows the internet address of this computer.
+- Each friend is a saved private 2-person room with its own background link. The links start when the protected
+  storage opens and stop at Quit. Leave room and a new login do not stop them.
+- The Friends panel is at the side of the login card. In a room, the titlebar button "Friends" opens it. Each row
+  shows "Online" only when a link is open. The row menu has "Open chat", "Rename…", "Remove friend…" and "Block…".
+- One chat window for each friend, with the marks "Sending", "Delivered" and "Not confirmed". A message to a friend
+  that is not connected is not sent, and the draft stays.
+- Remove and Block remove the friend room and its messages from this computer. The other side shows "Removed you as a
+  friend". A blocked person cannot send a new friend request.
+- At most 32 friends, on the TCP ports 47200 to 47231. When a port is in use, the link uses a free port.
+- Two friends with no open port (UPnP or a forwarded port) and not on the same network cannot connect. The chat
+  window tells the user why.
+- Not in this goal (G7b): messages to a friend that is offline, and Close to the tray on the login screen.
+
+Results:
+- `npm test` passes, 702 tests (127.0.0.1).
+- 20 tests in three new files test the friend requests, the grant, the private messages and the friend links.
+  Most of them use real nodes and a real archive (127.0.0.1 and mDNS on this PC). 5 window tests use a stub bridge.
+- Two copies (this PC): B adds A, A accepts. After a quit and a start with no room, both panels show "Online" in
+  2 s. A message goes each way and shows "Delivered". B makes its own room and the link stays "Online". B removes
+  A and A shows "Removed you as a friend". No error line in the terminal or the developer console.
+- The cost of idle friend links on this PC, in 60 s, more than the run with no link. With no cache, each link used
+  about 1.2 ms of CPU for each mDNS query of the network. 16 links used 2.2 % of one CPU and 32 links used 4.2 %.
+  The cause: for each query, the mDNS library reads the network interfaces before it compares the room tag. The app
+  now keeps one read of the network interfaces for 2 s (interface-cache.mjs). With the cache: 0.37 % for 16 links
+  and 0.47 % for 32 links. The memory of 32 links is about 16 MB.
+- The node, relay and election tests pass with the cache (64 tests, 127.0.0.1).
+
 ## Unreleased — pause and resume of large downloads: the window (package P7b, 2026-11-21)
 
 The window now shows the pause and the resume of a received file (P7a made the network part).

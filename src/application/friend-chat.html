@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en" data-theme="aero-classic">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>ASSCRACK</title>
+  <link rel="stylesheet" href="themes.css">
+  <link rel="stylesheet" href="friend-chat.css">
+</head>
+<body>
+  <!-- G7a: one friend chat window (friend-chat.js). The main process binds it to one friend. -->
+  <main>
+    <header>
+      <h1 id="friend-name"></h1>
+      <p id="friend-state" role="status"></p>
+      <p id="friend-reach" hidden></p>
+    </header>
+    <button id="older" type="button" hidden>Show older messages</button>
+    <ul id="messages" role="log" tabindex="-1"></ul>
+    <p id="send-status" role="status"></p>
+    <form id="composer">
+      <textarea id="message-input" rows="2" maxlength="4096" placeholder="Write a private message" aria-label="Private message"></textarea>
+      <button id="send" type="submit">Send</button>
+    </form>
+  </main>
+  <script src="chat-links.js"></script>
+  <script src="friend-chat.js"></script>
+</body>
+</html>

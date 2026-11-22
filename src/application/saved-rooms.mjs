@@ -384,6 +384,42 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
         releaseReplay();
     }
 
+    // G7a: the friend part of the archive for friend-links.mjs, or null when the archive is not open. Each call
+    // gives the room ID: the friend lines do not use the one active room.
+    function friendArchive() {
+        const a = ensure();
+        if (!a || a.state().state !== 'open') return null;
+        return {
+            isOpen: () => a.state().state === 'open',
+            listFriends: () => a.listFriends(),
+            saveFriendRoom: value => a.saveFriendRoom(value),
+            getRoom: roomId => a.getRoom(roomId),
+            updateFriend: (roomId, fields) => a.updateFriend(roomId, fields),
+            updateMembership: (roomId, membership) => a.updateMembership(roomId, membership),
+            // Forget the friend room: the hint files, the rooms row (the friends row and the lines go with it).
+            removeFriendRoom(roomId) {
+                const row = a.getRoom(roomId);
+                if (row && forgetHints) forgetHints(row);
+                a.removeRoom(roomId);
+                tombstones.delete(roomId);
+            },
+            blocks: () => a.friendBlocks(),
+            block: (deviceId, name) => a.addFriendBlock(deviceId, name),
+            unblock: deviceId => a.removeFriendBlock(deviceId),
+            settings: () => a.friendSettings(),
+            saveSettings: value => a.saveFriendSettings(value),
+            addLine: (roomId, row) => a.addMessage(roomId, row),
+            hasLine: (roomId, id) => a.hasMessage(roomId, id),
+            lines: (roomId, opts) => lines(roomId, opts)
+        };
+    }
+
+    function isFriendRoom(roomId) {
+        const a = ensure();
+        if (!a || a.state().state !== 'open' || typeof roomId !== 'string') return false;
+        return a.isFriendRoom(roomId);
+    }
+
     function close() {
         active = null;
         attachedNode = null;
@@ -393,6 +429,6 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
 
     return {
         open, rememberDownload, getDownload, status, unlock, lines, getRoom, loadChannels, persistChannels, loadVoiceChannels, persistVoiceChannels, prepareReplay, releaseReplay, afterLogin, recordSend, attachNode, setKeepHistory, setUserName, clear, forget, activeInfo,
-        deviceIdentity, isProtectedRoom, persistMembership, leave, close, active: () => active
+        deviceIdentity, isProtectedRoom, persistMembership, leave, close, active: () => active, friendArchive, isFriendRoom
     };
 }
