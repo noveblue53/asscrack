@@ -9,6 +9,24 @@ Each result has one of these labels:
 
 ## Unreleased
 
+### Interface polish: the installer look, a red Leave room button and a Friends window
+
+- The installer has the font, the colors and the art of the app, as far as NSIS allows. All pages use Segoe UI. The
+  header and the Welcome and Finish pages use the Aero Classic colors. A new Welcome page shows the logo and the name
+  at the side, with the title in the title font of the app. The page bodies, the buttons and the fields stay standard
+  Windows controls. NSIS cannot give them the glass, the gradients or the dark themes of the app.
+- In each theme, the Leave room button of the Room menu and of its confirmation has a red fill. The
+  contrast of the text is 4.87:1 or more in each theme, also at hover (WCAG AA: 4.5:1).
+- In a room, the Friends drawer has a "Pop out" button. It opens the Friends list in its own window. The window shows
+  the same live data as the drawer, and a click on a friend opens the friend chat. There is one Friends window at
+  most. It keeps its size and position, follows the theme, and closes with the app. Rename, Remove and Block stay in
+  the drawer.
+- Checks (this PC, 127.0.0.1): `npm test` 926 tests, 908 pass, 0 fail, 18 skipped. The 9 new tests fail on the build
+  before the change and pass after it. A CDP check of one app copy with a fresh profile: 20 of 20 checks pass, with
+  no error line. The check covers the Leave room colors in the 6 themes. It also covers the Friends window: open, one
+  window, live update, theme, close, saved position and Quit. A capture of the first installer page. No real install: this PC has an
+  installed copy of the operator.
+
 ### The installer asks for the install folder
 
 - The Windows installer (`npm run dist:installer`) is now an assisted installer. It shows a folder page. The user can
