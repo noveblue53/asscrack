@@ -1,5 +1,6 @@
 import { app, BrowserWindow, Menu, Notification, nativeImage, protocol, Tray, screen, powerMonitor, clipboard, desktopCapturer, dialog, ipcMain, safeStorage, session, shell } from 'electron';
 import { createRoomMedia } from './room-media.mjs';
+import { createRoomIpc } from './room-ipc.mjs';
 import { createClipboardStaging } from './clipboard-image.mjs';
 import { createDownloadScratch } from './download-scratch.mjs';
 import { clearLegacyDebugLogs } from './local-debug.mjs';
@@ -210,17 +211,18 @@ let voiceMonitor = null;
 let node = null;
 let readRoomActivity = () => [];
 
+const roomIpc = createRoomIpc(ipcMain, event => isDesktopFrame(mainWindow, event.sender, event.senderFrame, ROOM_PAGE));
 function handleRoomIpc(channel, handler) {
-    ipcMain.handle(channel, (event, ...args) => {
-        if (!isDesktopFrame(mainWindow, event.sender, event.senderFrame, ROOM_PAGE)) throw new Error('Unknown room window');
-        return handler(event, ...args);
-    });
+    roomIpc.handle(channel, handler);
 }
 
 function onRoomIpc(channel, listener) {
-    ipcMain.on(channel, (event, ...args) => {
-        if (isDesktopFrame(mainWindow, event.sender, event.senderFrame, ROOM_PAGE)) listener(event, ...args);
-    });
+    roomIpc.on(channel, listener);
+}
+
+// OI2: a read-only call. A window that closes at Quit gets null and no error line.
+function queryRoomIpc(channel, handler) {
+    roomIpc.query(channel, handler);
 }
 // The files that this computer received: `${offerId}|${peerId}` -> the final path (after a rename for a name
 // collision). Only a file-done event with the direction receive adds a path. The window sends only the key.
@@ -1005,9 +1007,7 @@ const friendWindows = attachFriendWindows({
     focused: friendId => attention.read({ kind: 'friend', friendId, id: 'focus' })
 });
 registerFriendIpc(handleRoomIpc, {
-    links: friendLinks, roomNode: () => node, openChat: friendId => friendWindows.open(friendId),
-    query: (channel, handler) => ipcMain.handle(channel, (event, ...args) =>
-        isDesktopFrame(mainWindow, event.sender, event.senderFrame, ROOM_PAGE) ? handler(event, ...args) : null)
+    links: friendLinks, roomNode: () => node, openChat: friendId => friendWindows.open(friendId), query: queryRoomIpc
 });
 function startFriendLinks() {
     if (friendLinks.state() === 'open' || quitting) return;
@@ -1114,7 +1114,7 @@ function roomReach() {
     return { state, reason: state === 'upnp-failed' ? reason : null, proven: node.fullNode() };
 }
 
-handleRoomIpc('asscrack:invite', () => {
+queryRoomIpc('asscrack:invite', () => {
     if (!node) throw new Error('Not logged in');
     const reach = roomReach();
     if (node.memberState().protected) return { membership: node.memberState(), reach };
