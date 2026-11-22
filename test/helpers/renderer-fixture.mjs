@@ -1,12 +1,13 @@
 // Load the real classic scripts of the room window (reading.js, transcript-notes.js, room-link.js, find.js, quote.js,
-// highlights.js, renderer.js, menu.js) in node:vm
+// chat-links.js, highlights.js, renderer.js, composer-keys.js, menu.js) in node:vm
 // with the fake DOM of fake-dom.mjs and a bridge (window.asscrack) that the test controls. voice.js, nodemap.js and
 // layout.js do not load: small stubs take their place. No network, no Electron.
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { createDom } from './fake-dom.mjs';
 
-const SCRIPTS = ['reading.js', 'transcript-notes.js', 'room-link.js', 'find.js', 'quote.js', 'highlights.js', 'renderer.js', 'menu.js'];
+const SCRIPTS = ['reading.js', 'transcript-notes.js', 'room-link.js', 'find.js', 'quote.js', 'chat-links.js', 'highlights.js',
+    'renderer.js', 'composer-keys.js', 'menu.js'];
 const sources = await Promise.all(SCRIPTS.map(name =>
     readFile(new URL(`../../src/application/${name}`, import.meta.url), 'utf8')));
 
@@ -136,6 +137,8 @@ export async function loadRoomWindow(options = {}) {
         queueMicrotask,
         Promise,
         Event,
+        // chat-links.js reads each link with new URL().
+        URL,
         MutationObserver: class {
             observe() {}
             disconnect() {}
