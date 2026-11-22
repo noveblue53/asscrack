@@ -89,11 +89,13 @@ function formatTime(ms) {
 
 // The text of a chat line. A message with a quotation (quote.js) gets a quotation block. The text nodes keep all the
 // characters, thus textContent is the message text (copy and find use it). The marks "> " are in span.qmark.
+// Gap D2: at the end, each http:// or https:// URL becomes a link (chat-links.js). textContent does not change.
 function fillMessageText(span, text) {
     const value = String(text ?? '');
     const parts = window.quoteCore?.split(value) ?? null;
     if (!parts) {
         span.textContent = value;
+        window.chatLinks?.apply(span);
         return;
     }
     const block = document.createElement('span');
@@ -109,6 +111,7 @@ function fillMessageText(span, text) {
     });
     span.append(block);
     if (parts.rest) span.append(parts.rest);
+    window.chatLinks?.apply(span);
 }
 
 // A message line: <li><span.from/><span.bubble-text><span.text/><span.time/><button.btn-quote/></span></li>.
@@ -837,6 +840,37 @@ async function sendMessage() {
     if (typeof record?.saveError === 'string' && record.saveError && window.savedRoomsUi) {
         window.savedRoomsUi.saveFailed({ id: record.id, reason: record.saveError });
     }
+    return true;
+}
+
+// Gap D1: Enter and the Send button. The message box always belongs to the room.
+// - No file draft: sendMessage.
+// - A file for the entire room, a media file: sendFile. The text is the caption.
+// - A file for the entire room, not a media file: sendFile, then sendMessage when the offer had 1 or more peers and
+//   the box has the same text.
+// - A file for one person and an empty box: sendFile (a private offer).
+// - A file for one person and text in the box: sendMessage only. The draft stays: a text for one person must not go
+//   to the room by accident, and the file must not go with a text that the room gets.
+// Gap D3: each text of the box goes into the recall list of composer-keys.js.
+async function submitComposer() {
+    const reply = messageInput.value;
+    if (reply.trim()) window.composerKeys?.remember(reply);
+    if (!pendingFile) return sendMessage();
+    if (fileRecipient.value === 'room') {
+        if (isMediaFile(pendingFile)) return sendFile();
+        const channelId = window.roomChannels?.active() ?? 'general';
+        const result = await sendFile();
+        const sameView = !window.roomChannels || window.roomChannels.isViewing(channelId);
+        if (result && result.peers > 0 && reply.trim() && messageInput.value === reply && sameView) return sendMessage();
+        return Boolean(result);
+    }
+    if (!reply.trim()) return sendFile();
+    const recipientId = fileRecipient.value;
+    const sent = await sendMessage();
+    if (sent === true && pendingFile && fileRecipient.value === recipientId) {
+        status.textContent = `The file for ${transferPeerName(recipientId)} is still attached. Select “Send file” to send it.`;
+    }
+    return sent;
 }
 
 // True when no peer accepted the send (record of asscrack:send). An old bridge gives no count: the peer count decides.
@@ -908,12 +942,12 @@ inviteInput.addEventListener('keydown', e => {
         login();
     }
 });
-sendButton.addEventListener('click', sendMessage);
+sendButton.addEventListener('click', submitComposer);
 // Enter sends. Shift+Enter makes a new line. An IME composition keeps its Enter.
 messageInput.addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
         e.preventDefault();
-        sendMessage();
+        submitComposer();
     }
 });
 
@@ -1178,6 +1212,9 @@ const fileInput = document.getElementById('file-input');
 const attachFileButton = document.getElementById('attach-file');
 const fileDraft = document.getElementById('file-draft');
 const fileDraftName = document.getElementById('file-draft-name');
+// Gap D1: the size of the file, and a small picture for an image.
+const fileDraftSize = document.getElementById('file-draft-size');
+const fileDraftThumb = document.getElementById('file-draft-thumb');
 const removeFileButton = document.getElementById('file-remove');
 const fileRecipient = document.getElementById('file-recipient');
 const sendFileButton = document.getElementById('send-file');
@@ -1544,7 +1581,7 @@ function rowInfo(row) {
         return buddyId(row) === null ? null : { kind: 'buddy', inspect: Boolean(window.peerInspector), whisper: Boolean(window.whispers), self: false, onMap: true };
     }
     if (row.parentElement === messageList && !row.classList.contains('file-card')) {
-        return { kind: 'message', details: Boolean(row.querySelector('.text')), inspect: Boolean(window.peerInspector && peerItems.has(row.dataset.peerId)), quotable: selfLine !== null && row.querySelector('.text') !== null, localOnly: row.classList.contains('local-only') };
+        return { kind: 'message', details: Boolean(row.querySelector('.text')), inspect: Boolean(window.peerInspector && peerItems.has(row.dataset.peerId)), quotable: selfLine !== null && row.querySelector('.text') !== null, localOnly: row.classList.contains('local-only'), link: Boolean(window.chatLinks?.firstLink(row)), image: window.chatMedia?.hasImage?.(row) === true };
     }
     if (row.parentElement === transferList || row.parentElement === messageList) {
         if (row.classList.contains('offer-head')) {
@@ -1579,6 +1616,8 @@ function runRowAction(action, row) {
         case 'listening': return showListening(row);
         case 'show-on-map': return showBuddyOnMap(buddyId(row));
         case 'copy-message': return copyMessageText(row);
+        case 'open-link': return window.chatLinks?.openFirst(row) ?? false;
+        case 'view-image': return window.chatMedia?.viewImage?.(row) ?? false;
         case 'quote': return quoteMessage(row);
         case 'resend': return resendMessage(row);
         case 'accept': return acceptTransfer(transferKey(row));
@@ -1827,10 +1866,50 @@ function addOfferHead(offer, recipientId) {
     transferList.scrollTop = transferList.scrollHeight;
 }
 
+// A media file goes with postMedia (a chat line with a preview).
+function isMediaFile(file) {
+    return /\.(png|jpe?g|webp|gif|mp4|webm|m4v|mov|ogv)$/i.test(file?.name ?? '') || file?.type === 'image/png';
+}
+
+// Gap D1: a 48 px picture of an image file of 16 MiB or less, made with createImageBitmap (no blob: URL: the
+// content security policy has no blob: source). On an error there is no picture.
+const DRAFT_THUMB_PX = 48;
+const DRAFT_THUMB_MAX_BYTES = 16 * 1024 * 1024;
+let thumbFile = null;
+async function drawDraftThumb(file) {
+    if (!fileDraftThumb) return;
+    fileDraftThumb.hidden = true;
+    if (!file || !String(file.type).startsWith('image/') || file.size > DRAFT_THUMB_MAX_BYTES
+        || typeof createImageBitmap !== 'function') return;
+    let bitmap = null;
+    try {
+        bitmap = await createImageBitmap(file);
+        if (thumbFile !== file || !bitmap.width || !bitmap.height) return;
+        const scale = Math.min(DRAFT_THUMB_PX / bitmap.width, DRAFT_THUMB_PX / bitmap.height, 1);
+        const width = Math.max(1, Math.round(bitmap.width * scale));
+        const height = Math.max(1, Math.round(bitmap.height * scale));
+        fileDraftThumb.width = DRAFT_THUMB_PX;
+        fileDraftThumb.height = DRAFT_THUMB_PX;
+        const context = fileDraftThumb.getContext('2d');
+        context.clearRect(0, 0, DRAFT_THUMB_PX, DRAFT_THUMB_PX);
+        context.drawImage(bitmap, (DRAFT_THUMB_PX - width) / 2, (DRAFT_THUMB_PX - height) / 2, width, height);
+        fileDraftThumb.hidden = false;
+    } catch {
+        fileDraftThumb.hidden = true;
+    } finally {
+        bitmap?.close?.();
+    }
+}
+
 function updateFileDraft() {
     fileDraft.hidden = pendingFile === null;
     fileDraftName.textContent = pendingFile?.name ?? '';
     fileDraftName.title = fileDraftName.textContent;
+    if (fileDraftSize) fileDraftSize.textContent = pendingFile ? formatSize(pendingFile.size) : '';
+    if (pendingFile !== thumbFile) {
+        thumbFile = pendingFile;
+        void drawDraftThumb(pendingFile);
+    }
     attachFileButton.disabled = offeringFile;
     removeFileButton.disabled = offeringFile;
     fileRecipient.disabled = offeringFile;
@@ -1867,7 +1946,7 @@ async function sendFile() {
     const caption = window.quoteCore.compose(quote, reply);
     const channelId = window.roomChannels?.active() ?? 'general';
     try {
-        const media = /\.(png|jpe?g|webp|gif|mp4|webm|m4v|mov|ogv)$/i.test(file.name) || file.type === 'image/png';
+        const media = isMediaFile(file);
         let posted;
         if (media && typeof window.asscrack.postMedia === 'function') {
             posted = await window.asscrack.postMedia(file, caption, channelId, recipientId);
@@ -1875,7 +1954,7 @@ async function sendFile() {
         const result = posted?.offer ?? await window.asscrack.offerFile(file, recipientId);
         if (result.peers === 0) {
             status.textContent = 'No peer received the offer. The file is still attached.';
-            return;
+            return null;
         }
         if (posted?.message) {
             const m = posted.message;
@@ -1888,6 +1967,12 @@ async function sendFile() {
             } else window.roomChannels.sent(channelId, reply, quote);
         }
         addOfferHead(result, recipientId);
+        // Gap N5: an offer with no chat line gets a note row in the channel, thus the sender sees it in the chat.
+        if (!posted?.message) {
+            const size = formatSize(Number.isFinite(result.size) ? result.size : file.size);
+            const audience = recipientId === undefined ? 'the room' : transferPeerName(recipientId);
+            window.transcriptNotes?.append('offer', `You offered ${result.name ?? file.name} (${size}) to ${audience}.`, Date.now(), channelId);
+        }
         if (!window.roomChannels || window.roomChannels.isViewing(channelId)) {
             if (pendingFile === file) pendingFile = null;
         } else window.roomChannels.fileSent(channelId, file);
@@ -1895,15 +1980,27 @@ async function sendFile() {
             messageInput.focus({ preventScroll: true });
         }
         status.textContent = '';
+        return result;
     } catch (err) {
         status.textContent = `Error: ${errorText(err)}`;
+        return null;
     } finally {
         offeringFile = false;
         updateFileDraft();
     }
 }
 
+// Gap N7: a paste of exactly one file that has a local path (for example a file copied in Explorer) attaches it.
+// The preload says only true or false (canSendFile), never the path. Else a PNG of the clipboard (a screenshot)
+// attaches as before.
 messageInput.addEventListener('paste', event => {
+    const files = Array.from(event.clipboardData?.files ?? []);
+    if (files.length === 1 && window.asscrack.canSendFile?.(files[0]) === true) {
+        event.preventDefault();
+        attachFile(files[0]);
+        messageInput.focus({ preventScroll: true });
+        return;
+    }
     const item = Array.from(event.clipboardData?.items ?? []).find(item => item.kind === 'file' && item.type === 'image/png');
     const file = item?.getAsFile();
     if (!file) return;

@@ -5,6 +5,10 @@
     const menu = document.getElementById('view-previews');
     if (!api?.getMediaInfo || !menu) return;
     const records = new Map(), queue = new Set();
+    // Gap D7: the image viewer. A click on a chat image, or the row action "View image", opens it.
+    const viewer = document.getElementById('image-viewer');
+    const viewerImage = document.getElementById('image-viewer-image');
+    let viewing = 0;
     const key = 'asscrack.automaticThumbnails.v1';
     let auto = true, active = 0, playing = null;
     try { auto = localStorage.getItem(key) !== 'false'; } catch {}
@@ -118,7 +122,11 @@
             });
             media.addEventListener('pause', () => { if (playing?.entry === entry) playing = null; });
             entry.stop = () => { media.pause(); media.removeAttribute('src'); media.load(); };
-        } else { media.alt = 'Thumbnail of ' + descriptor.name; media.loading = 'lazy'; }
+        } else {
+            media.alt = 'Thumbnail of ' + descriptor.name; media.loading = 'lazy';
+            // Not a tab stop: the keyboard uses the row action "View image".
+            media.addEventListener('click', () => { void view(entry); });
+        }
         media.addEventListener('error', () => {
             if (entry.url === url && box.contains(media)) showError(entry, 'Preview unavailable. The original can still be saved.');
         }, { once: true });
@@ -148,6 +156,24 @@
         }
     }
     function enqueue(entry) { queue.add(entry); drain(); }
+    function imageEntry(row) {
+        for (const entry of records.values()) if (entry.row === row && entry.descriptor.kind === 'image') return entry;
+        return null;
+    }
+    // The original if getMediaInfo gives one, else the thumbnail. Escape closes the dialog (the dialog does that).
+    async function view(entry) {
+        if (!viewer || !viewerImage || !entry) return false;
+        const call = ++viewing;
+        let info = null;
+        try { info = await api.getMediaInfo(entry.descriptor); } catch {}
+        const url = info?.originalUrl || info?.thumbnailUrl || entry.url;
+        if (call !== viewing || !url) return false;
+        viewerImage.src = url;
+        viewerImage.alt = entry.descriptor.name || 'Image';
+        if (!viewer.open) viewer.showModal();
+        return true;
+    }
+    viewer?.addEventListener('close', () => { viewing++; viewerImage?.removeAttribute('src'); });
     function decorate(row, descriptor) {
         if (!row || !descriptor?.id) return;
         const old = records.get(descriptor.id);
@@ -171,7 +197,10 @@
     document.addEventListener('visibilitychange', pauseHidden);
     new MutationObserver(pauseHidden).observe(document.getElementById('messages'), { childList: true });
     window.addEventListener('pagehide', () => { stopPlayback(); for (const e of records.values()) e.stop?.(); });
-    window.chatMedia = { decorate, async clearPreviews() {
+    window.chatMedia = { decorate,
+        hasImage: row => imageEntry(row) !== null,
+        viewImage: row => view(imageEntry(row)),
+        async clearPreviews() {
         for (const entry of records.values()) { entry.attempted = true; entry.manual = false; }
         await api.clearMediaPreviews();
     }, toggleAuto() {

@@ -58,6 +58,16 @@ contextBridge.exposeInMainWorld('asscrack', {
     onFullNodeAddrs: listen('asscrack:full-node-addrs'),
     onUpnp: listen('asscrack:upnp'),
     copyText: text => ipcRenderer.invoke('asscrack:copy-text', text),
+    // Gap D2: open a chat link in the system browser. The main process checks the URL (link-policy.mjs).
+    openLink: href => ipcRenderer.invoke('asscrack:open-link', String(href)),
+    // Gap N7: true when the file has a local path that offerFile can send. The window never gets the path.
+    canSendFile: file => {
+        try {
+            return Boolean(webUtils.getPathForFile(file));
+        } catch {
+            return false;
+        }
+    },
     getRoomActivity: (peerId, transfersOnly) => ipcRenderer.invoke('asscrack:room-activity', peerId, transfersOnly === true),
     getWhisperPeers: () => ipcRenderer.invoke('asscrack:whisper-peers'),
     sendWhisper: (peerId, text, id) => ipcRenderer.invoke('asscrack:whisper-send', peerId, text, id),

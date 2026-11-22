@@ -1,0 +1,54 @@
+/* Goal G3: the links of chat lines (D2), the file draft (D1), the channel count (D5) and the image viewer (D7). */
+
+/* Links in chat lines and whisper lines (chat-links.js). */
+a.chat-link {
+  color: var(--link, var(--blue-dark, #1b5fae));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+a.chat-link:hover { text-decoration-thickness: 2px; }
+
+#messages li.own a.chat-link { color: inherit; }
+
+/* The draft of a file (renderer.js, gap D1): the picture of an image and the size after the name. */
+#file-draft-thumb {
+  flex: none;
+  width: 48px;
+  height: 48px;
+  border-radius: 4px;
+}
+
+#file-draft-thumb[hidden] { display: none; }
+
+#file-draft-size {
+  flex: none;
+  font: 12px var(--font-small);
+  color: var(--ink-soft, #5b7a99);
+}
+
+/* The unread count of the other channels (channels-ui.js, gap D5). */
+#channel-unread { align-self: center; }
+#channel-unread[hidden] { display: none; }
+
+/* The image viewer (chat-media.js, gap D7). */
+#image-viewer {
+  max-width: 96vw;
+  max-height: 96vh;
+  padding: 8px;
+  text-align: center;
+}
+
+#image-viewer img {
+  display: block;
+  max-width: 92vw;
+  max-height: 88vh;
+  margin: 0 auto 6px;
+  object-fit: contain;
+}
+
+#image-viewer form { display: flex; justify-content: center; }
+
+.chat-media img { cursor: zoom-in; }

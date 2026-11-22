@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="activity.css">
   <link rel="stylesheet" href="attention.css">
   <link rel="stylesheet" href="chat-media.css">
+  <link rel="stylesheet" href="chat-tools.css">
   <link rel="stylesheet" href="whispers.css">
   <link rel="stylesheet" href="themes.css">
   <link rel="stylesheet" href="window-frame.css">
@@ -234,6 +235,7 @@
           </div>
           <div class="room-actions">
             <select id="channel-select" aria-label="Public channel"><option value="general">#general</option></select>
+            <span id="channel-unread" class="count" hidden></span>
             <button id="invite-toggle" type="button" aria-expanded="false" aria-controls="invite-panel" hidden>Invite</button>
             <button id="room-options-toggle" type="button" popovertarget="room-options" aria-label="Room options">Room ▾</button>
           </div>
@@ -311,7 +313,9 @@
             <button id="quote-remove" type="button" aria-label="Remove the quote" title="Remove the quote (Escape)">Remove</button>
           </div>
           <div id="file-draft" role="group" aria-label="File to send" hidden>
+            <canvas id="file-draft-thumb" width="48" height="48" aria-hidden="true" hidden></canvas>
             <span id="file-draft-name"></span>
+            <span id="file-draft-size"></span>
             <button id="file-remove" type="button" aria-label="Remove attached file">Remove</button>
             <select id="file-recipient" aria-label="File recipient">
               <option value="room">Entire room</option>
@@ -483,6 +487,12 @@
     <form method="dialog"><button type="button" id="listener-reset">Reset</button> <button>Done</button></form>
   </dialog>
 
+  <!-- Gap D7: a chat image at full size. chat-media.js opens it. Escape closes it (the dialog does that). -->
+  <dialog id="image-viewer" aria-label="Image">
+    <img id="image-viewer-image" alt="">
+    <form method="dialog"><button>Close</button></form>
+  </dialog>
+
   <dialog id="shared-shelf" aria-labelledby="shared-title">
     <header>
       <h2 id="shared-title">Shared</h2>
@@ -511,12 +521,14 @@
   <script src="room-link.js"></script>
   <script src="find.js"></script>
   <script src="quote.js"></script>
+  <script src="chat-links.js"></script>
   <script src="highlights.js"></script>
   <script src="voice-cues.js"></script>
   <script src="attention.js"></script>
   <script src="chat-media.js"></script>
   <script src="chat-attachments.js"></script>
   <script src="renderer.js"></script>
+  <script src="composer-keys.js"></script>
   <script src="room-membership-ui.js"></script>
   <script src="channels-ui.js"></script>
   <script src="typing.js"></script>

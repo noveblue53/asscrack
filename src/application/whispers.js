@@ -78,7 +78,12 @@
             const li = document.createElement('li');
             li.dataset.id = row.id;
             li.dataset.direction = row.mine ? 'out' : 'in';
-            li.textContent = (row.mine ? 'You' : data.name || label(selected)) + ' — ' + row.text;
+            // Gap D2: the links are only in the text of the line, not in the name.
+            const body = document.createElement('span');
+            body.className = 'whisper-text';
+            body.textContent = row.text;
+            li.append((row.mine ? 'You' : data.name || label(selected)) + ' — ', body);
+            window.chatLinks?.apply(body, { focusable: true });
             if (row.mine) li.setAttribute('aria-label', li.textContent + ', received by peer');
             lines.append(li);
         }

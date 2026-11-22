@@ -24,6 +24,7 @@ import { createWindowFrame } from './window-frame.mjs';
 import { attachVoiceMonitor } from './voice-monitor.mjs';
 import { installRoomPermissions, isDesktopFrame, lockDesktopNavigation } from './desktop-boundary.mjs';
 import { isAddressInUse, loginErrorText } from './login-errors.mjs';
+import { createLinkPolicy } from './link-policy.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -156,6 +157,14 @@ const downloadsIndex = process.argv.indexOf('--downloads');
 if (downloadsIndex !== -1 && process.argv[downloadsIndex + 1]) {
     downloadDir = path.resolve(process.argv[downloadsIndex + 1]);
     mkdirSync(downloadDir, { recursive: true });
+}
+
+// Test option: --open-links-to <file>. Each link that the policy accepts goes to the end of the file as one line,
+// and the system browser does not start (the app check of gap D2 needs it).
+let openLinksTo = null;
+const openLinksIndex = process.argv.indexOf('--open-links-to');
+if (openLinksIndex !== -1 && process.argv[openLinksIndex + 1] && !process.argv[openLinksIndex + 1].startsWith('--')) {
+    openLinksTo = path.resolve(process.argv[openLinksIndex + 1]);
 }
 
 // Test options for the check scripts: --port <n>, --full-node <auto|on|off>, --allow-private-full-node, --relay-only.
@@ -1078,6 +1087,25 @@ handleRoomIpc('asscrack:cancel-file', (_event, offerId, peerId) => {
     const peer = typeof peerId === 'string' ? peerId : undefined;
     logAction('cancel-file', peer === undefined ? String(offerId) : `${offerId} peer ${peer}`);
     return node.cancelFile(String(offerId), peer);
+});
+
+// Gap D2: a click on a link in a chat line. The window sends the text of the href only. link-policy.mjs accepts an
+// http: or https: URL of 2048 characters or less with a host and no user name or password, at most one each 500 ms.
+// All other input: no action and one warning in the log.
+const linkPolicy = createLinkPolicy();
+handleRoomIpc('asscrack:open-link', async (_event, value) => {
+    const result = linkPolicy.check(value);
+    if (!result.ok) {
+        console.warn(`open-link refused: ${result.reason}`);
+        return false;
+    }
+    if (openLinksTo) {
+        appendFileSync(openLinksTo, `${result.href}
+`);
+        return true;
+    }
+    await shell.openExternal(result.href);
+    return true;
 });
 
 // Show in Explorer for a received file. The window sends the key `${offerId}|${peerId}` only, never a path.

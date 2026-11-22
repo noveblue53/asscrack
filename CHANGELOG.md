@@ -42,6 +42,54 @@ and the volume of each person stays. Gap IDs C1, N1, C2, C5, C6, C7, C8, C3, C4 
   administrator to turn off a device. No LAN test. A test with real speakers and a real microphone is for the
   operator.
 
+## Unreleased — resume of large transfers, network part (package P7a, 2026-11-21)
+
+The receiver can pause a large download and continue it later from the same byte, on the same route or on a
+different route. This is the network part. The window part (Pause, Resume and Discard buttons) is package P7b.
+
+- **Pause.** A paused download keeps its partial file. The key of a partial is the SHA-256 and the size of the
+  offer. Thus a later offer of the same content also continues it, also after a restart of the app. Cancel deletes
+  the partial as before. A failed download that the user did not pause deletes its partial as before.
+- **Offset negotiation.** A new protocol version `/asscrack/file/1.1.0` next to 1.0.0. The receiver sends the
+  offset and the SHA-256 of its partial bytes. The sender checks its source file and the partial hash, and sends
+  only the remainder. A corrupted partial starts again from byte 0. A changed source fails with "the source file
+  changed". A peer with only 1.0.0 gives a fresh full transfer and a "restarted" indication. One SHA-256 check of
+  the full output comes before the file is final.
+- **Limits.** All kept partials together have a budget of 8 GiB. Each partial expires 72 hours after its last byte.
+  The expiry and Discard delete the file and free the disk space.
+- **127.0.0.1 result (this PC).** A 64 MiB file paused at 39.9 % on direct TCP and continued over a relay circuit.
+  The sender sent 40,304,640 file bytes, the exact remainder, plus a 20-byte reply line. The wire overhead on the
+  sender upload was 0.2 %. These cases also pass on 127.0.0.1: a corrupted partial, a changed source, no offset
+  negotiation, the budget, the expiry, Discard, Cancel, a receiver restart. No LAN or internet result
+  yet: the 1 GiB measurement on two networks is a field check after 1.0.
+
+## Unreleased — chat links, files with text, and keys of the message box (goal G3, 2026-11-21)
+
+Links in the chat open in the system browser. A file and the text of the message box go to the correct people. Gap
+IDs D1, D2, D3, D4, D5, D7, N5, N7 of `work-orders/gaps-1.0-20261121`.
+
+- **Links (D2).** Each `http://` or `https://` URL in a chat line or a whisper line is a link. The punctuation at the
+  end of the URL is not part of the link. A highlight in a URL does not cut the link. A click sends the URL to the
+  main process. The main process opens it in the system browser only if it is `http:` or `https:` with a host and
+  no user name or password. The URL has 2048 characters or less. It opens at most one link each 500 ms. The window
+  itself never goes to the link. A chat link is not a tab stop: the row menu has "Open link".
+- **A file and the text (D1).** The message box always belongs to the room. A media file for the room takes the text
+  as its caption. An ordinary file for the room goes first, then the text goes as a line. A file for one person and
+  a text: only the text goes to the room, and the file stays attached with a status text. The draft shows the size
+  of the file and a small picture of an image.
+- **Offer note (N5).** An offer with no chat line gives a note row: "You offered notes.txt (27 B) to the room."
+- **Paste of a file (N7).** Copy a file in Explorer, then press Ctrl+V in the message box: the file attaches.
+- **Keys (D3, D4).** Up and Down in the message box recall the last 50 sent texts of this run. Tab completes a buddy
+  name at the end of a word. All other Tabs move the focus.
+- **Channels (D5).** A count next to the channel menu shows the unread lines of the other channels.
+- **Image viewer (D7).** A click on a chat image, or "View image" in the row menu, shows the image at full size.
+  Escape closes it.
+- **Result: 127.0.0.1, this PC.** `npm test`: 555 of 555 pass (28 new tests). One start of the app: no error line.
+  App check with two copies on this PC: 9 of 9 checks pass. They check these items: the paste of a copied file,
+  the offer note, the link and its click, and a link with a highlight. They also check the draft picture and the
+  image viewer with Escape. The check
+  used `Set-Clipboard -Path` in place of a copy in Explorer (the same clipboard format). No LAN test.
+
 ## Unreleased — sound cues for other people and for messages (goal P11, 2026-11-21)
 
 ASSCRACK plays a short local cue when a different person joins or leaves voice, and for a mention or a whisper to
