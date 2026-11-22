@@ -30,3 +30,7 @@
 #shared-list .shared-info,
 #shared-list .shared-state { color: var(--ink-soft); font-size: 12px; overflow-wrap: anywhere; }
 #shared-list .shared-action { grid-column: 2; grid-row: 1 / 4; align-self: center; white-space: normal; }
+/* L2: the real type of a file of another person, and the warning for a program file. */
+#shared-list .shared-name[data-ext]::after { content: ' ' attr(data-ext); font-weight: 400; color: var(--ink-soft); }
+#shared-list li.program-file .shared-name[data-ext]::after,
+#shared-list li.program-file .shared-info { color: var(--danger); }

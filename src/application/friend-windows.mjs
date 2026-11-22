@@ -4,7 +4,7 @@
 // The chat window gets no key, no address, no room ID and no file path. The main process binds each window to its
 // friend: the window never sends a friend ID.
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { appPage } from './app-scheme.mjs';
 import { isDesktopFrame, lockDesktopNavigation } from './desktop-boundary.mjs';
 
 const text128 = value => typeof value === 'string' && value.length > 0 && value.length <= 128;
@@ -21,8 +21,8 @@ function chatState(links, friendId) {
 // focused(friendId): G7b, the chat window of that friend got the focus (main.js reads its notification).
 export function attachFriendWindows({ BrowserWindow, ipc, assets, links, warn = () => {}, openLink = async () => false, icon,
     focused = () => {} }) {
-    const pageFile = path.join(assets, 'friend-chat.html');
-    const page = pathToFileURL(pageFile).href;
+    // I4: the page comes from the app scheme (app-scheme.mjs).
+    const page = appPage('friend-chat.html');
     const windows = new Map(); // friendId -> BrowserWindow
 
     function friendOf(event) {
@@ -64,7 +64,7 @@ export function attachFriendWindows({ BrowserWindow, ipc, assets, links, warn = 
         win.on('focus', () => { links.markRead(friendId); focused(friendId); });
         win.once('ready-to-show', () => { if (!win.isDestroyed()) win.show(); });
         win.once('closed', () => { if (windows.get(friendId) === win) windows.delete(friendId); });
-        win.loadFile(pageFile).catch(err => {
+        win.loadURL(page).catch(err => {
             if (!win.isDestroyed()) { warn('Friend chat window could not open: ' + err.message); win.close(); }
         });
         return true;

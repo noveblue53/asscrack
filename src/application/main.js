@@ -1,11 +1,16 @@
 import { app, BrowserWindow, Menu, Notification, nativeImage, protocol, Tray, screen, powerMonitor, clipboard, desktopCapturer, dialog, ipcMain, safeStorage, session, shell } from 'electron';
 import { createRoomMedia } from './room-media.mjs';
+import { createRoomIpc } from './room-ipc.mjs';
+import { createImageDecoder } from './image-decoder.mjs';
+import { checkChosenFile } from './file-choice.mjs';
+import { APP_PRIVILEGES, APP_SCHEME, appPage, createAppHandler } from './app-scheme.mjs';
 import { createClipboardStaging } from './clipboard-image.mjs';
 import { createDownloadScratch } from './download-scratch.mjs';
 import { clearLegacyDebugLogs } from './local-debug.mjs';
-import { fileURLToPath, pathToFileURL } from 'url';
+import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import path from 'path';
+import os from 'os';
 import { mkdirSync, appendFileSync, existsSync, readFileSync, writeFileSync, renameSync, rmSync } from 'fs';
 import { format } from 'util';
 import { createAsscrackNode, keyedServiceTag } from '../network/node.mjs';
@@ -38,12 +43,14 @@ import { CHOICE_FILE, choiceAfterForget, createStartEntry, createStartRunner, is
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const require = createRequire(import.meta.url);
-const ROOM_PAGE = pathToFileURL(path.join(__dirname, 'index.html')).href;
+// I4: the room page comes from the app scheme, not from file:// (app-scheme.mjs).
+const ROOM_PAGE = appPage('index.html');
+const RNNOISE_WORKLET = '/vendor/rnnoiseWorklet.js';
 
 Menu.setApplicationMenu(null);
 protocol.registerSchemesAsPrivileged([{ scheme: 'room-media', privileges: {
     standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true
-} }]);
+} }, { scheme: APP_SCHEME, privileges: APP_PRIVILEGES }]);
 if (process.platform === 'win32') {
     app.setAppUserModelId(WINDOWS_APP_ID);
     app.setToastActivatorCLSID(WINDOWS_TOAST_ID);
@@ -210,17 +217,18 @@ let voiceMonitor = null;
 let node = null;
 let readRoomActivity = () => [];
 
+const roomIpc = createRoomIpc(ipcMain, event => isDesktopFrame(mainWindow, event.sender, event.senderFrame, ROOM_PAGE));
 function handleRoomIpc(channel, handler) {
-    ipcMain.handle(channel, (event, ...args) => {
-        if (!isDesktopFrame(mainWindow, event.sender, event.senderFrame, ROOM_PAGE)) throw new Error('Unknown room window');
-        return handler(event, ...args);
-    });
+    roomIpc.handle(channel, handler);
 }
 
 function onRoomIpc(channel, listener) {
-    ipcMain.on(channel, (event, ...args) => {
-        if (isDesktopFrame(mainWindow, event.sender, event.senderFrame, ROOM_PAGE)) listener(event, ...args);
-    });
+    roomIpc.on(channel, listener);
+}
+
+// OI2: a read-only call. A window that closes at Quit gets null and no error line.
+function queryRoomIpc(channel, handler) {
+    roomIpc.query(channel, handler);
 }
 // The files that this computer received: `${offerId}|${peerId}` -> the final path (after a rename for a name
 // collision). Only a file-done event with the direction receive adds a path. The window sends only the key.
@@ -228,7 +236,13 @@ const clipboardImages = createClipboardStaging(path.join(app.getPath('userData')
 let downloadScratch = null;
 const receivedFiles = new Map();
 const restoringDownloads = new Map();
-const roomMedia = createRoomMedia({ nativeImage, changed: id => sendToWindow('asscrack:media-changed', id) });
+// L7: the previews of peer images are decoded in a hidden sandboxed window (image-decoder.mjs), not here.
+const DECODER_PAGE = appPage('image-decoder.html');
+const imageDecoder = createImageDecoder({ BrowserWindow, ipc: ipcMain, page: DECODER_PAGE,
+    preload: path.join(__dirname, 'image-decoder-preload.cjs'), lock: lockDesktopNavigation,
+    isFrame: (win, event) => isDesktopFrame(win, event.sender, event.senderFrame, DECODER_PAGE) });
+const roomMedia = createRoomMedia({ decodeImage: (info, limit) => imageDecoder.decode(info, limit),
+    changed: id => sendToWindow('asscrack:media-changed', id) });
 let mediaGeneration = 0;
 function clearRoomMedia() { mediaGeneration++; roomMedia.clear(); }
 function savedDownload(messageId, descriptorId) {
@@ -265,7 +279,7 @@ handleRoomIpc('asscrack:media-preview', async (_event, id) => {
     if (!roomMedia.info(id).thumbnailUrl) {
         const result = await node.requestPreviewById(id);
         if (version !== mediaGeneration) return {};
-        if (result) roomMedia.storePreview(result.descriptor, result.bytes);
+        if (result) await roomMedia.storePreview(result.descriptor, result.bytes);
     }
     return roomMedia.info(id);
 });
@@ -638,7 +652,7 @@ function createMainWindow() {
         if (!quitting && closeToTray && (enterIdlePeer() || hideForFriends())) event.preventDefault();
     });
     // G7a: the friend chat windows close with the main window (then the app quits as before).
-    mainWindow.on('closed', () => friendWindows.closeAll());
+    mainWindow.on('closed', () => { friendWindows.closeAll(); imageDecoder.close(); });
     // Windows shutdown may bypass before-quit. Do not hide or veto session termination.
     mainWindow.on('session-end', () => { quitting = true; });
 
@@ -1005,9 +1019,7 @@ const friendWindows = attachFriendWindows({
     focused: friendId => attention.read({ kind: 'friend', friendId, id: 'focus' })
 });
 registerFriendIpc(handleRoomIpc, {
-    links: friendLinks, roomNode: () => node, openChat: friendId => friendWindows.open(friendId),
-    query: (channel, handler) => ipcMain.handle(channel, (event, ...args) =>
-        isDesktopFrame(mainWindow, event.sender, event.senderFrame, ROOM_PAGE) ? handler(event, ...args) : null)
+    links: friendLinks, roomNode: () => node, openChat: friendId => friendWindows.open(friendId), query: queryRoomIpc
 });
 function startFriendLinks() {
     if (friendLinks.state() === 'open' || quitting) return;
@@ -1114,7 +1126,7 @@ function roomReach() {
     return { state, reason: state === 'upnp-failed' ? reason : null, proven: node.fullNode() };
 }
 
-handleRoomIpc('asscrack:invite', () => {
+queryRoomIpc('asscrack:invite', () => {
     if (!node) throw new Error('Not logged in');
     const reach = roomReach();
     if (node.memberState().protected) return { membership: node.memberState(), reach };
@@ -1344,10 +1356,10 @@ handleRoomIpc('asscrack:ptt-status', () => pttHook.status());
 
 // RNNoise (@sapphi-red/web-noise-suppressor): the window gets the worklet URL and the WASM bytes from here.
 // The window cannot fetch file: URLs, and the main process reads only these two fixed files of the package.
+// I4: the app scheme gives the worklet at a fixed path (see protocol.handle of APP_SCHEME).
 handleRoomIpc('asscrack:rnnoise', (_event, simd) => {
     const wasm = require.resolve(`@sapphi-red/web-noise-suppressor/${simd === true ? 'rnnoise_simd.wasm' : 'rnnoise.wasm'}`);
-    const worklet = require.resolve('@sapphi-red/web-noise-suppressor/rnnoiseWorklet.js');
-    return { workletUrl: pathToFileURL(worklet).href, wasm: readFileSync(wasm) };
+    return { workletUrl: appPage(RNNOISE_WORKLET.slice(1)), wasm: readFileSync(wasm) };
 });
 
 handleRoomIpc('asscrack:voice-settings', () => currentVoiceSettings());
@@ -1437,9 +1449,15 @@ handleRoomIpc('asscrack:topology', () => {
 });
 
 handleRoomIpc('asscrack:refresh-shelf', () => node?.refreshShelf());
+// L8: the folders that the room never gets a file from: the profile (archive, key files, logs, partials), the
+// default profile, and the folder of the release key. The window cannot prove the choice of the user (a drop).
+function chosenFile(filePath) {
+    return checkChosenFile(filePath, { blocked: [app.getPath('userData'), path.join(app.getPath('appData'), 'ASSCRACK'),
+        path.join(os.homedir(), '.asscrack-release')] });
+}
 handleRoomIpc('asscrack:share-file', (_event, filePath) => {
     if (!node || typeof filePath !== 'string' || !path.isAbsolute(filePath)) throw new Error('Choose a local file to share');
-    return node.publishShelfFile(filePath);
+    return node.publishShelfFile(chosenFile(filePath));
 });
 handleRoomIpc('asscrack:remove-shared-file', (_event, id) => node?.removeShelfFile(id) === true);
 handleRoomIpc('asscrack:download-shared-file', (_event, peerId, id) => node?.downloadShelfFile(peerId, id) === true);
@@ -1447,7 +1465,7 @@ handleRoomIpc('asscrack:download-shared-file', (_event, peerId, id) => node?.dow
 handleRoomIpc('asscrack:offer-file', (_event, filePath, recipientId) => {
     if (!node) throw new Error('Not logged in');
     if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) throw new Error('The file path is not an absolute path');
-    const result = node.offerFile(filePath, recipientId);
+    const result = node.offerFile(chosenFile(filePath), recipientId);
     Promise.resolve(result).then(offer => logAction('offer-file', offer?.offerId ?? ''), () => {});
     return result;
 });
@@ -1456,7 +1474,8 @@ handleRoomIpc('asscrack:offer-file', (_event, filePath, recipientId) => {
 handleRoomIpc('asscrack:post-media', async (_event, input, caption, channelId, recipientId) => {
     if (!node) throw new Error('Not logged in');
     const staged = input instanceof Uint8Array;
-    const filePath = staged ? clipboardImages.stage(input) : input;
+    // L8: a staged clipboard image is in the profile, and the main process made it. Each other path gets the check.
+    const filePath = staged ? clipboardImages.stage(input) : chosenFile(input);
     try {
         if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) throw new Error('A local file is required');
         if (recipientId !== undefined) {
@@ -1658,6 +1677,7 @@ app.on('before-quit', event => {
     tray = null;
     pttHook.stop();
     friendWindows.closeAll();
+    imageDecoder.dispose();
     // Saved rooms (milestone 6): close the archive. G7a: after the friend nodes stop (they write to it).
     const closeArchive = () => {
         if (!savedRooms) return;
@@ -1700,6 +1720,8 @@ app.whenReady().then(async () => {
         startRunner?.wake();
     });
     protocol.handle('room-media', request => roomMedia.serve(request));
+    protocol.handle(APP_SCHEME, createAppHandler({ root: __dirname,
+        extra: { [RNNOISE_WORKLET]: require.resolve('@sapphi-red/web-noise-suppressor/rnnoiseWorklet.js') } }));
     installRoomPermissions(session.defaultSession, () => mainWindow, ROOM_PAGE, () => idlePeer, () => screenSources.hasPending());
     // P8b: getDisplayMedia of the room window gets only the source of the pending selection (design section 2.1).
     session.defaultSession.setDisplayMediaRequestHandler((request, callback) => screenSources.handleDisplayMedia(request, callback));

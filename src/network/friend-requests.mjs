@@ -9,6 +9,7 @@
 // two steps that make and keep the friend room (makeGrant on A, acceptGrant on B). The timers can be injected.
 import { randomUUID } from 'node:crypto'
 import { validAddr, validPeerId } from './invite.mjs'
+import { displayText } from './text-safety.mjs'
 
 export const FRIEND_REQUEST_MS = 120000
 export const FRIEND_RATE_MS = 60000
@@ -153,13 +154,14 @@ export function createFriendRequests({ send, isBlocked = () => false, makeGrant,
             const out = outgoing.get(peerId)
             switch (msg.op) {
                 case 'request': {
-                    if (!validName(msg.name)) return
+                    if (!validName(msg.name) || !validName(displayText(msg.name))) return
                     if (isBlocked(deviceId)) { line(peerId, 'decline', id); return }
                     const last = lastRequest.get(deviceId)
                     if (last !== undefined && now() - last < rateMs) return
                     if (incomingFrom(peerId) || outgoing.has(peerId) || incoming.has(id)) return
                     lastRequest.set(deviceId, now())
-                    const name = msg.name.trim()
+                    // L2: the name of the request is the default nickname. Remove the bidi controls.
+                    const name = displayText(msg.name).trim()
                     const timer = setTimer(() => endIn(id, 'no-answer'), requestMs)
                     timer?.unref?.()
                     incoming.set(id, { peerId, deviceId, name, state: 'open', timer })

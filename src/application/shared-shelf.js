@@ -17,6 +17,13 @@
         const { own, available, state, name, publisher, peerId, size, reason } = row.data;
         row.name.textContent = name;
         row.info.textContent = `${formatSize(size)} · ${own ? 'You' : `${publisher} (${peerId.slice(-8)})`}`;
+        // L2: the real type of a file of another person, and the warning for a program file (renderer.js).
+        const kind = own ? null : window.fileKind?.(name);
+        if (kind) {
+            row.name.dataset.ext = kind.label;
+            row.item.classList.toggle('program-file', kind.program);
+            if (kind.program) row.info.textContent += ` · ${kind.warning}`;
+        }
         const badges = { requesting: 'Requesting from source…', receiving: 'Downloading', saved: 'Saved',
             failed: reason || 'Download failed', cancelled: 'Cancelled' };
         row.state.textContent = badges[state] ?? (available ? 'Available' : 'Unavailable');

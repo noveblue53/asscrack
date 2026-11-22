@@ -2216,3 +2216,25 @@ body.layout-dragging #buddy-panel {
 #room-storage[hidden], #clear-confirm[hidden], #saved-rooms .forget-confirm[hidden] { display: none; }
 
 #channel-error:empty { display:none; }
+
+/* L2: the real type of a received file, apart from its name, and the warning for a program file. */
+#transfers .file-name[data-ext]::after,
+.file-card .file-name[data-ext]::after {
+  content: ' ' attr(data-ext);
+  font-weight: 400;
+  color: var(--ink-soft);
+}
+
+#transfers li.program-file .file-name[data-ext]::after,
+.file-card.program-file .file-name[data-ext]::after {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+#transfers .file-warning,
+.file-card .file-warning {
+  grid-column: 1 / -1;
+  color: var(--danger);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}

@@ -111,7 +111,8 @@ test('127.0.0.1 named attachment and quote retain canonical IDs on late replay; 
     const hash=b=>createHash('sha256').update(b).digest('hex')
     assert.equal(hash(await readFile(done[0].path)),message.attachment.sha256)
     let decoderCalls = 0
-    const media = createRoomMedia({ nativeImage: { createFromBuffer() { decoderCalls++; throw new Error('unsupported') } } })
+    // L7: the decoder is outside the main process (image-decoder.mjs).
+    const media = createRoomMedia({ decodeImage: async () => { decoderCalls++; throw new Error('unsupported') } })
     await media.verified(message.attachment, done[0].path)
     assert.equal(decoderCalls, 0)
     assert.ok(!media.info(message.attachment).thumbnailUrl)
