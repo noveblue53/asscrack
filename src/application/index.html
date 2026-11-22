@@ -104,28 +104,31 @@
       <button id="map-toggle" type="button" aria-expanded="false" aria-controls="map-panel" hidden>Network map</button>
       <button id="view-toggle" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="view-menu">View</button>
       <ul id="view-menu" role="menu" aria-labelledby="view-toggle" hidden>
-        <!-- Groups: the panels, the voice, the transcript, the look and the sounds, then the app (Quit is the last line). -->
-        <li id="view-buddies" role="menuitemcheckbox" aria-checked="true" tabindex="-1">Buddies</li>
-        <li id="view-buddy-drawer" role="menuitem" tabindex="-1" hidden>Open Buddies</li>
-        <li id="view-side" role="menuitem" tabindex="-1">Move Buddies to the right</li>
-        <li id="view-transfers" role="menuitemcheckbox" aria-checked="false" tabindex="-1">Pin Transfers</li>
-        <li id="view-map" role="menuitemcheckbox" aria-checked="false" tabindex="-1">Network map</li>
-        <li class="view-rule" role="separator"></li>
-        <li id="view-voice" role="menuitem" tabindex="-1">Voice controls</li>
-        <li id="detach-voice" role="menuitem" tabindex="-1">Detach voice panel</li>
-        <li class="view-rule" role="separator"></li>
-        <li id="view-compact" role="menuitemcheckbox" aria-checked="false" tabindex="-1">Compact transcript</li>
-        <li id="view-typing" role="menuitemcheckbox" aria-checked="false" tabindex="-1">Share typing status</li>
-        <li id="view-previews" role="menuitemcheckbox" aria-checked="true" tabindex="-1">Automatic image thumbnails</li>
-        <li id="view-clear-previews" role="menuitem" tabindex="-1">Clear thumbnail cache</li>
-        <li class="view-rule" role="separator"></li>
+        <!-- Groups: the panels, the voice, the transcript, the look and the sounds, then the app (Quit is the last line).
+             The login screen shows only the lines with no data-room-only attribute (layout.js, gap E5). -->
+        <li id="view-buddies" data-room-only hidden role="menuitemcheckbox" aria-checked="true" tabindex="-1">Buddies</li>
+        <li id="view-buddy-drawer" data-room-only role="menuitem" tabindex="-1" hidden>Open Buddies</li>
+        <li id="view-side" data-room-only hidden role="menuitem" tabindex="-1">Move Buddies to the right</li>
+        <li id="view-transfers" data-room-only hidden role="menuitemcheckbox" aria-checked="false" tabindex="-1">Pin Transfers</li>
+        <li id="view-map" data-room-only hidden role="menuitemcheckbox" aria-checked="false" tabindex="-1">Network map</li>
+        <li class="view-rule" role="separator" data-room-only hidden></li>
+        <li id="view-voice" data-room-only hidden role="menuitem" tabindex="-1">Voice controls</li>
+        <li id="detach-voice" data-room-only hidden role="menuitem" tabindex="-1">Detach voice panel</li>
+        <li class="view-rule" role="separator" data-room-only hidden></li>
+        <li id="view-compact" data-room-only hidden role="menuitemcheckbox" aria-checked="false" tabindex="-1">Compact transcript</li>
+        <li id="view-typing" data-room-only hidden role="menuitemcheckbox" aria-checked="false" tabindex="-1">Share typing status</li>
+        <li id="view-previews" data-room-only hidden role="menuitemcheckbox" aria-checked="true" tabindex="-1">Automatic image thumbnails</li>
+        <li id="view-clear-previews" data-room-only hidden role="menuitem" tabindex="-1">Clear thumbnail cache</li>
+        <li class="view-rule" role="separator" data-room-only hidden></li>
         <li id="view-theme" role="menuitem" aria-haspopup="dialog" aria-controls="theme-gallery" tabindex="-1">Theme…</li>
         <li id="view-attention" role="menuitem" aria-haspopup="dialog" aria-controls="attention-settings" tabindex="-1">Sound &amp; notifications…</li>
+        <li id="view-shortcuts" role="menuitem" aria-haspopup="dialog" aria-controls="shortcuts-dialog" aria-keyshortcuts="F1" tabindex="-1">Keyboard shortcuts…</li>
+        <li id="view-about" role="menuitem" aria-haspopup="dialog" aria-controls="about-dialog" tabindex="-1">About ASSCRACK…</li>
         <li id="view-system-buttons" role="menuitemcheckbox" aria-checked="false" tabindex="-1" hidden>Windows system buttons (next launch)</li>
-        <li id="view-reset" role="menuitem" tabindex="-1">Reset layout</li>
+        <li id="view-reset" data-room-only hidden role="menuitem" tabindex="-1">Reset layout</li>
         <li class="view-rule" role="separator"></li>
-        <li id="view-idle" role="menuitem" tabindex="-1">Enter Idle Peer</li>
-        <li id="view-close-idle" role="menuitemcheckbox" aria-checked="true" tabindex="-1">Close to Idle Peer</li>
+        <li id="view-idle" data-room-only hidden role="menuitem" tabindex="-1">Enter Idle Peer</li>
+        <li id="view-close-idle" data-room-only hidden role="menuitemcheckbox" aria-checked="true" tabindex="-1">Close to Idle Peer</li>
         <li id="view-quit" role="menuitem" tabindex="-1">Quit Asscrack</li>
       </ul>
       <div id="window-controls" role="group" aria-label="Window controls" hidden>
@@ -246,6 +249,7 @@
             <button type="button" id="channel-add" disabled>Create channel</button>
             <button type="button" id="openSharedShelf" aria-haspopup="dialog" aria-controls="shared-shelf">Shared</button>
             <button id="activity-open" type="button" aria-haspopup="dialog" aria-controls="room-activity">Room activity</button>
+            <button id="leave-room" type="button" aria-haspopup="dialog" aria-controls="leave-dialog">Leave room…</button>
           </div>
           <span id="topic-unavailable" hidden>Topic editing requires a compatible host.</span>
           <div id="topic-editor" hidden>
@@ -468,6 +472,10 @@
       <label><input id="attention-content" type="checkbox"> Include public message text in notifications</label>
       <label><input id="attention-sound" type="checkbox"> Allow the system notification sound</label>
     </fieldset>
+    <fieldset>
+      <legend>Taskbar</legend>
+      <label><input id="attention-flash" type="checkbox"> Flash the taskbar button for mentions and private messages</label>
+    </fieldset>
     <p id="attention-status" role="status"></p>
     <form method="dialog"><button>Done</button></form>
   </dialog>
@@ -493,6 +501,48 @@
       <button type="button" id="shared-transfers" hidden>View transfers</button>
       <form method="dialog"><button>Done</button></form>
     </footer>
+  </dialog>
+
+  <dialog id="about-dialog" aria-labelledby="about-title">
+    <h2 id="about-title">About ASSCRACK</h2>
+    <p id="about-version"></p>
+    <p id="about-runtime"></p>
+    <div class="about-actions">
+      <button id="about-copy" type="button">Copy version info</button>
+      <button id="about-data" type="button">Open data folder</button>
+    </div>
+    <p>To report a problem: open Room, Room activity, select Copy diagnostics, and send that text with the version info.</p>
+    <p>For a full debug log, start ASSCRACK with --log-dir and a folder. The log can contain network addresses.</p>
+    <p id="about-log" hidden>A debug log is on for this run.</p>
+    <p id="about-status" role="status"></p>
+    <form method="dialog"><button>Done</button></form>
+  </dialog>
+
+  <dialog id="shortcuts-dialog" aria-labelledby="shortcuts-title">
+    <h2 id="shortcuts-title">Keyboard shortcuts</h2>
+    <table id="shortcuts-table">
+      <thead><tr><th scope="col">Key</th><th scope="col">Action</th></tr></thead>
+      <tbody id="shortcuts-list"></tbody>
+    </table>
+    <form method="dialog"><button>Done</button></form>
+  </dialog>
+
+  <dialog id="leave-dialog" aria-labelledby="leave-text">
+    <p id="leave-text"></p>
+    <p id="leave-transfers" hidden></p>
+    <p id="leave-status" role="status"></p>
+    <form method="dialog" class="dialog-buttons">
+      <button id="leave-confirm" type="button">Leave room</button>
+      <button value="cancel">Cancel</button>
+    </form>
+  </dialog>
+
+  <dialog id="quit-dialog" aria-labelledby="quit-text">
+    <p id="quit-text"></p>
+    <form method="dialog" class="dialog-buttons">
+      <button id="quit-confirm" type="button">Quit</button>
+      <button value="cancel">Cancel</button>
+    </form>
   </dialog>
 
   <script src="voice-gate.js"></script>
@@ -522,5 +572,7 @@
   <script src="voice-panel.js"></script>
   <script src="menu.js"></script>
   <script src="shared-shelf.js"></script>
+  <script src="title.js"></script>
+  <script src="app-shell.js"></script>
 </body>
 </html>

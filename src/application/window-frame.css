@@ -29,7 +29,8 @@
   letter-spacing: .025em;
 }
 #window-controls { order: 2; }
-body:not(.chat) #titlebar > :is(button, [role="menu"]) { display: none; }
+/* Gap E5: the login screen shows View (with the login lines only), not the room buttons. */
+body:not(.chat) #titlebar > :is(button:not(#view-toggle), [role="menu"]:not(#view-menu)) { display: none; }
 
 html[data-frame="mac"] #titlebar { padding-left: 82px; }
 html[data-frame="overlay"] #titlebar {

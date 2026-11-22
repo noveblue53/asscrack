@@ -18,7 +18,9 @@ const ATTENTION = [
         { id: 'attention-percent', tag: 'output' }, { id: 'attention-tone', tag: 'select', value: 'join' },
         { id: 'attention-preview', tag: 'button' }, { id: 'attention-alerts', tag: 'input' },
         { id: 'attention-windows', tag: 'p' }, { id: 'attention-content', tag: 'input' },
-        { id: 'attention-sound', tag: 'input' }, { id: 'attention-status', tag: 'p' }
+        { id: 'attention-sound', tag: 'input' }, { id: 'attention-status', tag: 'p' },
+        // G5 (E1): the box of the flash setting is in the dialog.
+        { id: 'attention-flash', tag: 'input' }
     ] }
 ];
 

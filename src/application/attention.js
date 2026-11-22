@@ -45,8 +45,7 @@
     }
 
     // One rule for the attention of a live line (REVIEW.md): a line of a different person, not Idle Peer, not DND, and
-    // the conversation is not in view. The message cue and the native notification use it; G5 (E1) adds the taskbar
-    // flash. target: { kind: 'mention', channelId, id, from } or { kind: 'whisper', peerId, id }.
+    // the conversation is not in view. The message cue, the native notification and the taskbar flash (E1) use it. target: { kind: 'mention', channelId, id, from } or { kind: 'whisper', peerId, id }.
     function wanted(target) {
         if (!target?.id || quiet()) return false;
         const author = target.kind === 'whisper' ? target.peerId : target.from;
@@ -66,10 +65,19 @@
         api.addAttention(from === undefined ? target : { ...route, preview });
     }
 
-    // whispers.js: a live whisper to me. The whisper cue, then the native notification.
+    // Gap E1: the taskbar flash and the overlay dot. main.js flashes only a window with no focus that is not hidden
+    // as Idle Peer. The flash keeps its own setting (default on), not the alerts setting.
+    function flash() {
+        if (prefs?.flash) api.flashAttention?.();
+    }
+
+    // whispers.js: a live whisper to me. The whisper cue and the flash, then the native notification.
     function incoming(target) {
         if (!target?.id) return;
-        if (target.kind === 'whisper' && wanted(target)) cue('whisper', 'message', target);
+        if (target.kind === 'whisper' && wanted(target)) {
+            cue('whisper', 'message', target);
+            flash();
+        }
         notify(target);
     }
 
@@ -87,7 +95,10 @@
     function mention(data) {
         if (!data?.peerId || data.peerId === (selfId ?? topologySelf) || !window.chatHighlights?.matches(data.text)) return;
         const target = { kind: 'mention', channelId: data.channelId || 'general', id: data.id, from: data.peerId };
-        if (wanted(target)) cue('mention', 'message', target);
+        if (wanted(target)) {
+            cue('mention', 'message', target);
+            flash();
+        }
         if (!prefs?.alerts) return;
         const quote = prefs.previews && window.quoteCore.split(data.text);
         notify({ ...target, preview: prefs.previews ? (quote ? quote.rest : data.text).slice(0, 160) : '' });
@@ -138,7 +149,7 @@
     }
 
     const fields = { voiceCues: 'cues', otherVoiceCues: 'other-cues', messageCues: 'message-cues', alerts: 'alerts',
-        sound: 'sound', previews: 'content', volume: 'volume' };
+        sound: 'sound', previews: 'content', volume: 'volume', flash: 'flash' };
     // The class of each cue in the preview list.
     const toneClass = { 'other-join': 'voice-other', 'other-leave': 'voice-other', mention: 'message', whisper: 'message' };
     const previewClass = () => toneClass[byId('attention-tone').value] ?? 'own';

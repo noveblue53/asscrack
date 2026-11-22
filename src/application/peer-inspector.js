@@ -68,13 +68,34 @@
                 const time = document.createElement('time');
                 time.dateTime = stamp;
                 time.title = stamp;
-                time.textContent = stamp.slice(11, 19) + ' UTC';
+                // Gap B5: the local time. The title keeps the UTC text of the line.
+                const at = new Date(stamp);
+                const two = n => String(n).padStart(2, '0');
+                time.textContent = Number.isNaN(at.getTime()) ? stamp.slice(11, 19) + ' UTC'
+                    : two(at.getHours()) + ':' + two(at.getMinutes()) + ':' + two(at.getSeconds());
                 item.append(time, line.slice(divider + 1));
             }
             return item;
         }));
         eventsStatus.textContent = emptyText;
         eventsStatus.hidden = lines.length !== 0;
+    }
+
+    // Gap B5: put the buddy name in place of each known pseudonym ("peer 1a2b3c4d") of the lines. Only this view
+    // changes: the Room activity dialog and Copy diagnostics keep the pseudonyms.
+    async function withNames(lines) {
+        const known = members.filter(member => !member.self && member.id && member.name).slice(0, 64);
+        if (!lines.length || !known.length || !window.asscrack.getActivityAliases) return lines;
+        let aliases;
+        try { aliases = await window.asscrack.getActivityAliases(known.map(member => member.id)); }
+        catch { return lines; }
+        const names = new Map(known.map(member => [member.id, member.name]));
+        let result = lines;
+        for (const { id, alias } of Array.isArray(aliases) ? aliases : []) {
+            const name = names.get(id);
+            if (typeof alias === 'string' && alias && name) result = result.map(line => line.split(alias).join(name));
+        }
+        return result;
     }
 
     function stopEvents() {
@@ -87,7 +108,9 @@
         try {
             const lines = await window.asscrack.getRoomActivity(selected, false);
             if (started !== eventsVersion) return;
-            showEvents(lines.slice(-2).reverse(), 'No recent events');
+            const shown = await withNames(lines.slice(-2).reverse());
+            if (started !== eventsVersion) return;
+            showEvents(shown, 'No recent events');
         } catch {
             if (started !== eventsVersion) return;
             showEvents([], 'Activity unavailable');

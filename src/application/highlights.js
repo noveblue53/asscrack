@@ -10,6 +10,9 @@
     let name = '';
     let pattern = null;
     let selected = null;
+    // Gap E7: one callback for a change of the number of pending highlight rows of all channels (title.js).
+    let countChanged = null;
+    let lastTotal = 0;
 
     function compile() {
         const terms = [name, ...words.value.split(',')].map(s => s.trim()).filter(Boolean);
@@ -33,6 +36,17 @@
         next.hidden = count === 0;
         if (next.hidden && wasFocused) document.getElementById('messages').focus?.({ preventScroll: true });
         next.textContent = count ? `Next highlight (${count})` : 'Next highlight';
+        // The rows of the other channels are in their own lists. A row that left its list does not count.
+        const total = pendingTotal();
+        if (total !== lastTotal) {
+            lastTotal = total;
+            countChanged?.(total);
+        }
+    }
+
+    function pendingTotal() {
+        for (const row of pending) if (!row.parentElement) pending.delete(row);
+        return pending.size;
     }
 
     function replyText(text) {
@@ -99,6 +113,8 @@
         note,
         matches(text) { return pattern !== null && !replyText(text).matchAll(pattern).next().done; },
         updateCount,
+        pendingCount: pendingTotal,
+        onCount(callback) { countChanged = typeof callback === 'function' ? callback : null; },
         clearUnread() {
             for (const row of pending) if (row.parentElement === list) pending.delete(row);
             updateCount();

@@ -303,7 +303,11 @@
         if (items.buddies) items.buddies.setAttribute('aria-checked', String(pref.buddiesShown));
         if (items.transfers) items.transfers.setAttribute('aria-checked', String(pref.transfersPinned));
         if (items.map) items.map.setAttribute('aria-checked', String(mapIsOpen()));
-        if (items.drawer) items.drawer.hidden = !(eff && eff.buddyMode === 'drawer');
+        // Gap E5: on the login screen only the lines with no data-room-only attribute show. menuItems() skips the
+        // lines with the hidden attribute, thus the keys skip them too.
+        const inRoom = body.classList.contains('chat');
+        for (const line of viewMenu.querySelectorAll('[data-room-only]')) line.hidden = !inRoom;
+        if (items.drawer) items.drawer.hidden = !inRoom || !(eff && eff.buddyMode === 'drawer');
         if (items.side) {
             items.side.textContent = pref.buddySide === 'left' ? 'Move Buddies to the right' : 'Move Buddies to the left';
         }
@@ -620,7 +624,9 @@
         else if (item.id === 'view-system-buttons') window.frameControls?.toggleSystemButtons();
         else if (item.id === 'view-idle') window.idlePeer?.enter();
         else if (item.id === 'view-close-idle') window.idlePeer?.toggleClose();
-        else if (item.id === 'view-quit') window.asscrack.quit();
+        else if (item.id === 'view-quit') window.appShell ? window.appShell.quit() : window.asscrack.quit();
+        else if (item.id === 'view-shortcuts') window.appShell?.openShortcuts();
+        else if (item.id === 'view-about') window.appShell?.openAbout();
         else if (item.id === 'view-clear-previews') void window.chatMedia?.clearPreviews();
         else if (item.id === 'view-previews') window.chatMedia?.toggleAuto();
         else if (item.id === 'view-attention') window.roomAttention?.openSettings();

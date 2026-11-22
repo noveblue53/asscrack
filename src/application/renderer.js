@@ -661,6 +661,7 @@ function showChat(name, room) {
     loginScreen.hidden = true;
     chatScreen.hidden = false;
     document.body.classList.add('chat');
+    window.roomTitle?.setRoom(room);
     status.textContent = '';
     // View only: the status text moves to the status band of the chat screen.
     statusBar.prepend(status);
@@ -1848,6 +1849,11 @@ async function refreshTopology() {
         console.warn('Topology query failed:', err?.message ?? err);
     }
 }
+
+// Gaps A7 and N6: the number of transfers of this computer in the state sending or receiving (app-shell.js).
+window.roomTransfers = {
+    activeCount: () => [...transfers.values()].filter(entry => entry.state === 'sending' || entry.state === 'receiving').length
+};
 
 // The nodes are the lines of the buddy list. The voice data is the data of updateVoiceView().
 // The transfers are the rows of this computer with the state sending or receiving.

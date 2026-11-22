@@ -406,6 +406,8 @@
         isOpen: () => !panel.hidden,
         close: () => setOpen(false),
         // Escape while the panel waits for a key: the panel uses it (stops the key capture).
-        capturingKey: () => capturingKey
+        capturingKey: () => capturingKey,
+        // The text of a key code, for the Keyboard shortcuts dialog (app-shell.js).
+        keyName
     };
 })();

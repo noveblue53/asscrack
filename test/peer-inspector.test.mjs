@@ -48,8 +48,11 @@ test('peer details disambiguate names and sample received voice only while inspe
     assert.equal(el('peer-detail-voice').textContent, 'In voice')
     assert.match(el('peer-detail-facts').textContent, /0 sending, 1 receiving/)
     assert.match(el('peer-audio-rate').textContent, /Unavailable/)
+    // G5 (B5): Recent events shows the local time HH:MM:SS. The title keeps the UTC text of the line.
+    const local = stamp => { const d = new Date(stamp); return [d.getHours(), d.getMinutes(), d.getSeconds()].map(n => String(n).padStart(2, '0')).join(':') }
     assert.deepEqual(el('peer-recent-events').children.map(item => item.textContent),
-        ['03:57:00 UTC File saved', '03:56:00 UTC Chat opened'])
+        [local('2026-11-20T03:57:00.000Z') + ' File saved', local('2026-11-20T03:56:00.000Z') + ' Chat opened'])
+    assert.equal(el('peer-recent-events').children[0].children[0].title, '2026-11-20T03:57:00.000Z')
     el('peer-detail-map').click()
     assert.equal(marked, 'two', 'showing map preserves selection')
     bytes = 2000
