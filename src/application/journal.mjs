@@ -184,8 +184,13 @@ export const EVENT_FIELDS = Object.freeze({
     file: { event: oneOf('offer', 'action', 'done', 'failed', 'refused', 'cancelled', 'paused', 'resumed', 'restarted',
         'discarded', 'expired', 'retried'), offer: kinds.id, dir: oneOf('send', 'receive'), by: oneOf('self', 'peer', 'none'),
         size: kinds.int, reason: kinds.code, action: kinds.code, peer: kinds.peer, retryOf: kinds.id },
-    screen: { event: oneOf('start', 'stop', 'watch-end', 'tier', 'stats'), share: kinds.id, preset: kinds.code,
-        reason: kinds.code, tier: kinds.code, why: kinds.code, viewers: kinds.int },
+    // Rank 9: 'tier' (a change of the rate control: tierId role from to why bitrate agoMs, or a viewer step: peer why rate)
+    // and 'stats' (each 10 s for each viewer). 'skipped': count tier lines over the limit of one interval.
+    screen: { event: oneOf('start', 'stop', 'watch-end', 'tier', 'stats', 'skipped'), share: kinds.id, preset: kinds.code,
+        reason: kinds.code, tier: kinds.code, why: kinds.code, viewers: kinds.int, tierId: kinds.int, role: kinds.code,
+        from: kinds.code, to: kinds.code, bitrate: kinds.int, agoMs: kinds.int, peer: kinds.peer, rate: kinds.int,
+        target: kinds.int, excessMs: kinds.int, drops: kinds.int, kframes: kinds.int, congestions: kinds.int,
+        queueBytes: kinds.int, slow: kinds.bool, circuit: kinds.bool, cap: kinds.code, count: kinds.int },
     update: { event: kinds.code, ok: kinds.bool, reason: kinds.code, text: kinds.text },
     crash: { process: kinds.code, reason: kinds.code, exitCode: kinds.int, service: kinds.code },
     hang: { state: oneOf('unresponsive', 'responsive'), ms: kinds.int },
@@ -213,7 +218,7 @@ export const EVENT_FIELDS = Object.freeze({
 // The budget of a type: a burst and a refill each second. A line over the budget is not written; the writer gives one
 // "suppressed" line for each type and window.
 const BUDGETS = { default: [60, 1], log: [200, 4], dial: [60, 0.5], 'voice-summary': [120, 2], error: [30, 0.2],
-    file: [200, 4], session: [120, 2], 'session-refused': [30, 0.5], knock: [60, 0.5] };
+    file: [200, 4], session: [120, 2], 'session-refused': [30, 0.5], knock: [60, 0.5], screen: [120, 2] };
 
 // Gives { type, ...fields } with only the allowed fields, or null for an unknown type.
 export function redact(type, fields = {}) {

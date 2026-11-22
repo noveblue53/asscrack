@@ -24,6 +24,9 @@ export const SCREEN_DEFAULTS = Object.freeze({
     // L11 (P10b): a share line of a peer stops the own share for a conflict only in this time after the own start.
     // At most linesPerPeer screen lines of each peer each minute (linesPerRoom for all peers).
     conflictMs: 3000, linesPerPeer: 30, linesPerRoom: 240,
+    // Diagnostics (1.0.1, REVIEW.md rank 9): each diagMs the sharer gives the new tier changes of the rate control and
+    // the stats of each viewer ('screen-diag' events). At most diagEntries tier changes for each interval.
+    diagMs: 10000, diagEntries: 40,
     rate: {}, // parameters of screen-rate.mjs (for the tests: for example relayLimit)
     beforeRecord: null // test hook at the viewer: a function that can return a promise; the viewer reads no record until it settles
 })
@@ -197,6 +200,29 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
         own.dirty = true
     }
 
+    // Diagnostics (1.0.1, rank 9): the new entries of the history of the rate control (read only, the history does not
+    // change), with agoMs (the age of the entry at this time), then one stats line for each viewer. No line for each
+    // frame. The rate rules do not change.
+    function diagTick(share) {
+        if (!share?.rate) return
+        const history = share.rate.history()
+        const t = clock()
+        const end = Math.min(history.length, share.diagAt + O.diagEntries)
+        for (let i = share.diagAt; i < end; i++) {
+            const h = history[i]
+            events.emit('screen-diag', { kind: 'tier', shareId: share.shareId, agoMs: Math.round(t - h.t), tierId: h.tier,
+                role: h.role, from: h.from, to: h.to, why: h.why, bitrate: h.bitrate, peerId: h.viewer, rate: h.rate })
+        }
+        if (history.length > end) events.emit('screen-diag', { kind: 'skipped', shareId: share.shareId, count: history.length - end })
+        share.diagAt = history.length
+        const stats = share.rate.stats()
+        for (const v of stats.viewers) {
+            events.emit('screen-diag', { kind: 'stats', shareId: share.shareId, peerId: v.peerId, tierId: v.tier, slow: v.slow,
+                circuit: v.circuit, rate: v.rate, target: v.target, excessMs: v.excessMs, drops: v.dropped, kframes: v.keyframes,
+                congestions: v.congestions, queueBytes: v.queueBytes, cap: stats.cap })
+        }
+    }
+
     // Removes a viewer: the rest of a started record, then END, then the stream closes.
     function endViewer(peerId, reason, stream = own?.viewers.get(peerId)?.stream) {
         if (own?.viewers.get(peerId)?.stream === stream) {
@@ -240,6 +266,9 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
             onEnd: (peerId, reason) => { if (own === share) endViewer(peerId, reason) } })
         own.paceTimer = setInterval(pacerTick, O.paceTickMs)
         own.evalTimer = setInterval(evaluateTick, O.evalMs)
+        own.diagAt = 0
+        own.diagTimer = setInterval(() => diagTick(share), O.diagMs)
+        own.diagTimer.unref?.()
         broadcast(screenLine())
         events.emit('screen-state', { peerId: selfId, own: true, sharing: true, shareId, preset })
         emitEncoder()
@@ -256,6 +285,9 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
         const share = own
         clearInterval(share.paceTimer)
         clearInterval(share.evalTimer)
+        clearInterval(share.diagTimer)
+        // The last tier changes and stats of this share, before the viewers go.
+        diagTick(share)
         clearTimeout(isolatedTimer)
         isolatedTimer = null
         for (const [peerId, v] of [...share.viewers]) endViewer(peerId, wire, v.stream)

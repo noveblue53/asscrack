@@ -8,7 +8,7 @@ import { addrClass, ipClass } from './journal.mjs';
 export const JOURNAL_NODE_EVENTS = Object.freeze(['connection', 'dial-failed', 'dial-ok', 'upnp', 'full-node', 'host-changed',
     'peer-left', 'failover', 'session-refused', 'session-ids', 'admission', 'clock', 'file-offer', 'file-done', 'file-failed',
     'file-refused', 'file-cancelled', 'file-paused', 'file-resumed', 'file-restarted', 'file-discarded', 'file-expired',
-    'file-retried', 'diag', 'knock-event']);
+    'file-retried', 'diag', 'knock-event', 'screen-diag']);
 
 // A text of this program (a reason) as a code: lower case, or undefined.
 export function reasonCode(value) {
@@ -95,6 +95,13 @@ export function projectNodeEvent(type, data, selfId = null) {
             return ['clock', { peer: d.peerId, rttMs: d.rttMs, offsetMs: d.offsetMs }];
         case 'diag':
             return ['diag', { event: d.event, peer: d.peerId, id: d.id, reason: reasonCode(d.reason), size: d.size }];
+        // Rank 9 (screen-share.mjs diagTick): the tier changes of the rate control and the viewer stats.
+        case 'screen-diag':
+            return ['screen', { event: d.kind, share: d.shareId, agoMs: d.agoMs, tierId: d.tierId, role: reasonCode(d.role),
+                from: reasonCode(d.from), to: reasonCode(d.to), why: reasonCode(d.why), bitrate: d.bitrate, peer: d.peerId,
+                rate: d.rate, target: d.target, excessMs: d.excessMs, drops: d.drops, kframes: d.kframes,
+                congestions: d.congestions, queueBytes: d.queueBytes, slow: d.slow, circuit: d.circuit, cap: reasonCode(d.cap),
+                count: d.count }];
         // Easy-join (1.0.1, node.mjs knockEvent): the knock steps. The name and the invite are not in the event.
         case 'knock-event':
             return ['knock', { event: d.event, side: d.side, peer: d.peerId, id: d.id, route: d.route, friend: d.friend,

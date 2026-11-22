@@ -109,7 +109,7 @@ the budget. One `suppressed` line (`of`, `count`) follows. A write error writes 
 | `voice-device` | `dir ok kind tag fallback error sampleRate channels ec ns agc suppressor ended` | voice.js |
 | `voice-summary` | `origin frames gaps dups late jitterMs trims decodeErrors secs`, or `own sent gateOpenPct encodeErrors sendErrors` | voice.js, each 60 s in voice |
 | `file` | `event offer dir by size reason action peer retryOf` | file transfer events and the actions of the user |
-| `screen` | `event share preset reason` | screen share start and stop |
+| `screen` | `event share preset reason`: start and stop. `event tier`: each new entry of the history of the rate control, with `tierId role from to why bitrate agoMs` (a tier change; `why`: `new end rate light cap cpu below fast ...`) or `peer why rate` (a viewer step: `slow`, `join probe`, `slow tier`, `fast tier`); `agoMs` is the age of the entry at the line. `event stats`: one line for each viewer, `peer tierId slow circuit rate target excessMs drops kframes congestions queueBytes cap`. `event skipped`: `count` tier lines over 40 in one interval. No line for each frame | screen-share.mjs, each 10 s and at the stop of the own share |
 | `crash` | `process reason exitCode service` | `render-process-gone`, `child-process-gone` |
 | `hang` | `state ms` | `unresponsive`, `responsive` of the room window |
 | `error` | `where kind errorType message stack` | `uncaughtExceptionMonitor`, unhandled rejections (the warning of Node), "Uncaught" lines of the room window |
