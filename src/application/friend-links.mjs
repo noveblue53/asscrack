@@ -1,15 +1,19 @@
 // G7a: the friend links of the main process (design F1 to F9, DECISIONS.md G7a). This module does not import electron.
 // Each friend is a saved protected 2-person room with its own background node. The friend nodes run from the start
 // of the archive to Quit, on the login screen and in a room. The room node, Leave room and a new login do not stop
-// them. The room node gives only the friend requests (attachRoom).
-// Events: 'changed' (list()), 'line' { friendId, line }, 'request' (a request event), 'receipt' { friendId, id, result }.
+// them. The room node gives the friend requests (attachRoom). G7b: a common protected room also carries the private
+// messages (when the friend link has no session) and the 'addrs' line (design F5 item 4); the outbox keeps each message
+// to a friend with no session until the friend acknowledges it (design F10); the friend nodes copy the availability
+// of the person (design F11).
+// Events: 'changed' (list()), 'line' { friendId, line }, 'request' (a request event), 'receipt' { friendId, id, result },
+// 'away' { friendId, batch, count } (G7b: the end of a batch of lines that were sent while this device was away).
 import { EventEmitter } from 'node:events';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { newRoomKey } from '../network/invite.mjs';
 import { createRoomMembership, restoreRoomMembership } from '../network/room-membership.mjs';
-import { createFriendRequests, validName } from '../network/friend-requests.mjs';
+import { addrsLine, createFriendRequests, validName } from '../network/friend-requests.mjs';
 import { createPrivateMessages, validPmText } from '../network/private-messages.mjs';
 import { observedIp } from '../network/fullnode.mjs';
 import { restoreSavedAdmission } from './room-admission.mjs';
@@ -19,6 +23,14 @@ import { isAddressInUse } from './login-errors.mjs';
 export const FRIEND_CAP = 32;
 export const FRIEND_BASE_PORT = 47200;
 export const FRIEND_START_STEP_MS = 500;
+// G7b (operator decision 2, 2026-11-21): at most 200 waiting messages for each friend, no expiry. At most 20 lines with
+// no ack at a time. A batch of away lines ends 1.5 s after its last line.
+export const OUTBOX_CAP = 200;
+export const OUTBOX_WINDOW = 20;
+export const AWAY_BATCH_MS = 1500;
+// The prefix of a route through the room node (a peer ID of the room, not of the friend node).
+const ROOM_ROUTE = 'room:';
+const PRESENCE_STATES = new Set(['available', 'away', 'dnd']);
 const MAX_NODES = 16;
 const MAX_ADDRS = 16;
 
@@ -85,7 +97,9 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
     const friends = new Map(); // roomId -> entry
     const waiting = new Map(); // peerId -> { id, name } (requests of this device that wait)
     const startTimers = new Set();
-    let room = null; // { node, requests, off() }
+    let room = null; // { node, name, requests, off() }
+    // G7b: the availability of this person for the friend nodes (design F11).
+    let availability = { state: 'available', note: '', idle: false };
 
     const emitChanged = () => events.emit('changed', list());
     const blocked = () => { try { return archive?.blocks() ?? []; } catch { return []; } };
@@ -108,13 +122,45 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
         return entry.peerId && entry.node?.peers().includes(entry.peerId) ? entry.peerId : null;
     }
 
+    // G7b: the room peer ID of the friend in the current protected room, or null.
+    function roomPeerOf(entry) {
+        if (!room) return null;
+        return room.node.peers().find(peerId => room.node.deviceOf(peerId) === entry.row.deviceId) ?? null;
+    }
+    // The route of the 'pm' lines: the friend link, else the session of the common room (design F5 item 4).
+    function routePeer(entry) {
+        const direct = sessionPeer(entry);
+        if (direct) return direct;
+        const viaRoom = roomPeerOf(entry);
+        return viaRoom ? ROOM_ROUTE + viaRoom : null;
+    }
+    function routeSend(entry, peer, line) {
+        if (peer.startsWith(ROOM_ROUTE)) return Boolean(room?.node.sendTo(peer.slice(ROOM_ROUTE.length), line));
+        return Boolean(entry.node?.sendTo(peer, line));
+    }
+
+    // The availability of the friend on the friend link: 'idle', 'dnd', 'away' or null (available).
+    function friendAvailability(entry, peerId) {
+        try {
+            if (entry.node.topology().idlePeers.includes(peerId)) return { availability: 'idle', note: '' };
+            const presence = entry.node.peerPresence()[peerId];
+            if (presence?.state === 'dnd' || presence?.state === 'away') return { availability: presence.state, note: presence.note ?? '' };
+        } catch { /* a node that stops */ }
+        return { availability: null, note: '' };
+    }
+
     function friendView(entry) {
-        const online = sessionPeer(entry) !== null;
-        return {
+        const peerId = sessionPeer(entry);
+        const removed = entry.row.state === 'removed-you';
+        const inRoom = !removed && peerId === null && roomPeerOf(entry) !== null;
+        const view = {
             friendId: entry.row.roomId, name: entry.row.nickname, unread: entry.unread,
-            state: entry.row.state === 'removed-you' ? 'removed-you' : online ? 'online' : 'offline',
+            state: removed ? 'removed-you' : peerId ? 'online' : inRoom ? 'room' : 'offline',
             lastSeen: entry.row.lastSeen ?? null
         };
+        if (peerId && !removed) Object.assign(view, friendAvailability(entry, peerId));
+        if (inRoom) view.roomName = room.name ?? '';
+        return view;
     }
 
     function reach() {
@@ -170,13 +216,16 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
         entry.node = node;
         entry.port = node.getMultiaddrs().map(tcpParts).find(p => p && p.port > 0)?.port ?? options.port;
         entry.pm = createPrivateMessages({
-            selfDevice: identity.id, friendDevice: entry.row.deviceId, sessionPeer: () => sessionPeer(entry),
-            sendTo: (peerId, line) => node.sendTo(peerId, line),
+            selfDevice: identity.id, friendDevice: entry.row.deviceId, sessionPeer: () => routePeer(entry),
+            sendTo: (peer, line) => routeSend(entry, peer, line),
             seen: id => { try { return archive.hasLine(entry.row.roomId, id); } catch { return false; } },
             receive: msg => {
                 const line = { id: msg.id, from: entry.row.nickname, text: msg.text, time: msg.time, own: false };
+                if (msg.away) line.away = awayMark(entry);
                 try {
-                    archive.addLine(entry.row.roomId, { ...line, source: 'live', peerId: null });
+                    archive.addLine(entry.row.roomId, { id: line.id, from: line.from, text: line.text, time: line.time,
+                        own: false, source: 'live', peerId: null });
+                    if (line.away) archive.addAwayMark(entry.row.roomId, line.id, line.away.batch);
                 } catch (err) {
                     log('WARN', `Friend line not saved: ${errText(err)}`);
                 }
@@ -184,7 +233,7 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
                 events.emit('line', { friendId: entry.row.roomId, line });
                 emitChanged();
             },
-            acked: (id, result) => events.emit('receipt', { friendId: entry.row.roomId, id, result }),
+            acked: (id, result) => onAcked(entry, id, result),
             unfriended: () => removedYou(entry),
             now, setTimer, clearTimer, ...(ackMs ? { timeoutMs: ackMs } : {})
         });
@@ -194,6 +243,8 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
             entry.row.lastSeen = now();
             save(entry.row.roomId, { lastSeen: entry.row.lastSeen });
             emitChanged();
+            // G7b: a new session sends the waiting lines.
+            flush(entry);
         };
         node.events.on('peer-joined', opened);
         node.events.on('membership', () => { for (const peerId of node.peers()) opened({ peerId }); });
@@ -202,7 +253,14 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
             entry.peerId = null;
             entry.row.lastSeen = now();
             save(entry.row.roomId, { lastSeen: entry.row.lastSeen });
+            routeClosed(entry, peerId);
             emitChanged();
+        });
+        // G7b: the availability of the friend (presence lines and the idle flag of the node line).
+        node.events.on('presence', ({ peerId }) => { if (peerId === entry.peerId) emitChanged(); });
+        node.events.on('topology', () => {
+            const idle = Boolean(entry.peerId && friendAvailability(entry, entry.peerId).availability === 'idle');
+            if (idle !== entry.idle) { entry.idle = idle; emitChanged(); }
         });
         node.events.on('pm', data => entry.pm?.handle(data));
         // A proved address of the friend: keep it for each start (design F5 item 2).
@@ -211,9 +269,119 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
             entry.row.addrs = mergeNodes(entry.row.addrs, [{ id: peerId, addrs: addrs.filter(a => !a.includes('/p2p-circuit')) }]);
             save(entry.row.roomId, { addrs: entry.row.addrs });
         });
-        node.events.on('upnp', emitChanged);
-        node.events.on('full-node', emitChanged);
+        // G7b: changed addresses of the friend node go to the friend in a common room.
+        const addrsChanged = () => { emitChanged(); if (entry.roomPeer) sendAddrs(entry, entry.roomPeer); };
+        node.events.on('upnp', addrsChanged);
+        node.events.on('full-node', addrsChanged);
+        applyAvailability(entry);
         emitChanged();
+        roomScan();
+    }
+
+    // ---- G7b: the outbox (design F10) ----
+
+    // The receipt of a line. A waiting line moves to the messages only with an ack ('delivered'). With no ack it stays
+    // in the outbox and keeps the mark "Waiting" (no receipt).
+    function onAcked(entry, id, result) {
+        const roomId = entry.row.roomId;
+        let waitingRow = false;
+        try { waitingRow = Boolean(archive?.hasOutbox(roomId, id)); } catch { /* a closed archive */ }
+        if (!waitingRow) { events.emit('receipt', { friendId: roomId, id, result }); return; }
+        if (result !== 'delivered') return;
+        let line = null;
+        try { line = archive.deliverOutbox(roomId, id, ownName(archive.getRoom(roomId)?.userName)); }
+        catch (err) { log('WARN', `Friend line not saved: ${errText(err)}`); }
+        if (line) events.emit('receipt', { friendId: roomId, id, result: 'delivered' });
+    }
+
+    // A new session (friend link or common room): send the outbox again from the start.
+    function flush(entry) {
+        entry.tried = new Set();
+        pump(entry);
+    }
+    // Send the waiting lines in seq order with away: true, at most OUTBOX_WINDOW with no ack at a time. Each line goes
+    // one time in each session. A line with no ack waits for the next session.
+    function pump(entry) {
+        const pm = entry.pm;
+        if (stopped || !pm || entry.row.state === 'removed-you' || !routePeer(entry)) return;
+        let rows;
+        try { rows = archive.listOutbox(entry.row.roomId); } catch { return; }
+        for (const row of rows) {
+            if (entry.inflight.size >= OUTBOX_WINDOW) break;
+            if (entry.inflight.has(row.id) || entry.tried.has(row.id)) continue;
+            entry.tried.add(row.id);
+            entry.inflight.add(row.id);
+            pm.send(row.id, row.text, { time: row.time, away: true }).then(result => {
+                entry.inflight.delete(row.id);
+                if (entry.pm === pm && result !== 'unavailable') pump(entry);
+            });
+        }
+    }
+
+    // A route to the friend closed: the lines on it with no ack wait again, and an open batch of away lines ends.
+    function routeClosed(entry, peer) {
+        entry.pm?.closed(peer);
+        endBatch(entry);
+        if (routePeer(entry)) flush(entry);
+    }
+
+    // ---- G7b: the away lines of the receiver ----
+
+    function awayMark(entry) {
+        let batch = entry.batch;
+        if (!batch) batch = entry.batch = { id: randomUUID(), count: 0, timer: null };
+        batch.count += 1;
+        clearTimer(batch.timer);
+        batch.timer = setTimer(() => endBatch(entry), AWAY_BATCH_MS);
+        batch.timer?.unref?.();
+        return { batch: batch.id, count: batch.count };
+    }
+    function endBatch(entry) {
+        const batch = entry.batch;
+        if (!batch) return;
+        entry.batch = null;
+        clearTimer(batch.timer);
+        events.emit('away', { friendId: entry.row.roomId, batch: batch.id, count: batch.count });
+    }
+
+    // ---- G7b: the common room (design F5 item 4) and the availability (design F11) ----
+
+    // The current addresses of the friend node for the friend, on the session of the common room.
+    function sendAddrs(entry, roomPeerId) {
+        if (!candidates || !entry.node || !room || entry.row.state === 'removed-you') return;
+        const addrs = ownCandidates(entry.node, room.node, entry.port);
+        if (addrs.length) room.node.sendTo(roomPeerId, addrsLine(entry.port, [{ id: entry.node.peerId, addrs }]));
+    }
+
+    // Look for each friend in the current room. A new room peer of a friend gets the addrs line and, when the friend
+    // link has no session, the waiting lines. A room peer that left ends that route.
+    function roomScan() {
+        for (const entry of friends.values()) {
+            const peerId = entry.node ? roomPeerOf(entry) : null;
+            if (peerId === entry.roomPeer) continue;
+            const old = entry.roomPeer;
+            entry.roomPeer = peerId;
+            if (old) routeClosed(entry, ROOM_ROUTE + old);
+            if (peerId) {
+                sendAddrs(entry, peerId);
+                if (!sessionPeer(entry)) flush(entry);
+            }
+            emitChanged();
+        }
+    }
+
+    function applyAvailability(entry) {
+        const node = entry.node;
+        if (!node) return;
+        try {
+            const own = node.presence();
+            if (own.state !== availability.state || own.note !== availability.note) {
+                node.setPresence({ state: availability.state, note: availability.note });
+            }
+            node.setIdle(availability.idle);
+        } catch (err) {
+            log('WARN', `Friend availability not set: ${errText(err)}`);
+        }
     }
 
     async function stopNode(entry) {
@@ -222,6 +390,9 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
         entry.peerId = null;
         entry.pm?.stop();
         entry.pm = null;
+        entry.roomPeer = null;
+        clearTimer(entry.batch?.timer);
+        entry.batch = null;
         if (node) await node.stop().catch(err => log('WARN', `Friend node stop failed: ${errText(err)}`));
     }
 
@@ -254,7 +425,8 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
     }
 
     function addEntry(row) {
-        const entry = { row, node: null, pm: null, peerId: null, port: null, unread: 0 };
+        const entry = { row, node: null, pm: null, peerId: null, port: null, unread: 0,
+            roomPeer: null, tried: new Set(), inflight: new Set(), batch: null, idle: false };
         friends.set(row.roomId, entry);
         return entry;
     }
@@ -321,14 +493,16 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
         return { port: entry.port, nodes: own.length ? [{ id: entry.node.peerId, addrs: own }] : [] };
     }
 
-    // A: the done line of B. Keep the candidates of B and dial them one time.
-    function ownerDone(roomNode, peerId, deviceId, port, nodes) {
+    // A: the done line of B. Keep the candidates of B and dial them one time. G7b: the same for the addrs line of a
+    // friend in a common room (always false: the node dials only when the friend link has no session).
+    function ownerDone(roomNode, peerId, deviceId, port, nodes, { always = true } = {}) {
         const entry = byDevice(deviceId);
-        if (!entry || !candidates) return;
+        if (!entry || !candidates || entry.row.state === 'removed-you') return;
         const id = nodes[0]?.id;
         const more = mergeNodes(nodes, id ? [{ id, addrs: connectionCandidates(roomNode, peerId, port) }] : []);
         entry.row.addrs = mergeNodes(entry.row.addrs, more);
         save(entry.row.roomId, { addrs: entry.row.addrs });
+        if (!always && sessionPeer(entry)) return;
         for (const node of more) for (const addr of node.addrs) {
             entry.node?.connect(`${addr}/p2p/${node.id}`).catch(() => {});
         }
@@ -379,12 +553,14 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
         state: () => state,
         list,
         // The room node of the current room, or null (Leave room). Only a protected room gives friend requests.
-        attachRoom(node) {
+        // G7b: info.name is the room name for "Online · in <room name>".
+        attachRoom(node, info = {}) {
             if (room) {
                 room.off();
                 room.requests.stop();
                 room = null;
                 waiting.clear();
+                roomScan();
             }
             if (!node || stopped || !node.memberState?.().protected) { emitChanged(); return; }
             const requests = createFriendRequests({
@@ -395,6 +571,7 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
                 acceptGrant: ({ peerId, deviceId, name, grant }) => receiveGrant(node, peerId, deviceId, name, grant)
                     .catch(err => { log('WARN', `Friend grant refused: ${errText(err)}`); throw err; }),
                 done: ({ peerId, deviceId, port, nodes }) => ownerDone(node, peerId, deviceId, port, nodes),
+                addrs: ({ peerId, deviceId, port, nodes }) => ownerDone(node, peerId, deviceId, port, nodes, { always: false }),
                 undo: ({ deviceId }) => {
                     const entry = byDevice(deviceId);
                     if (entry) stopNode(entry).then(() => { forget(entry); emitChanged(); });
@@ -403,11 +580,27 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
                 now, setTimer, clearTimer, ...(requestMs ? { requestMs } : {}), ...(rateMs ? { rateMs } : {})
             });
             const onFriend = data => requests.handle(data);
-            const onLeft = ({ peerId }) => requests.closed(peerId);
-            node.events.on('friend', onFriend);
-            node.events.on('peer-left', onLeft);
-            room = { node, requests, off() { node.events.off('friend', onFriend); node.events.off('peer-left', onLeft); } };
+            const onLeft = ({ peerId }) => { requests.closed(peerId); roomScan(); };
+            // G7b: a 'pm' line on the room session goes to the conversation of the friend with that proved device ID.
+            const onPm = data => byDevice(data?.deviceId)?.pm?.handle({ ...data, peerId: ROOM_ROUTE + data.peerId });
+            const onScan = () => roomScan();
+            const listeners = [['friend', onFriend], ['peer-left', onLeft], ['pm', onPm], ['peer-joined', onScan], ['membership', onScan]];
+            for (const [name, fn] of listeners) node.events.on(name, fn);
+            room = { node, name: typeof info?.name === 'string' ? info.name : '', requests,
+                off() { for (const [name, fn] of listeners) node.events.off(name, fn); } };
+            roomScan();
             emitChanged();
+        },
+        // G7b: the availability of this person for the friends (design F11): the room presence (state, note) and the
+        // idle flag of Idle Peer. A field that is not given keeps its value.
+        setAvailability({ state, note, idle } = {}) {
+            availability = {
+                state: PRESENCE_STATES.has(state) ? state : availability.state,
+                note: typeof note === 'string' ? note : availability.note,
+                idle: typeof idle === 'boolean' ? idle : availability.idle
+            };
+            for (const entry of friends.values()) applyAvailability(entry);
+            return { ...availability };
         },
         // The buddy menu line for a peer of the room: 'add', 'open' (a friend), or null (no line).
         relation(peerId) {
@@ -489,17 +682,26 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
             emitChanged();
             return settings.upnp;
         },
-        // Send one message. Returns { result: 'sending', line } or { result: 'unavailable' | 'invalid' }.
+        // Send one message. Returns { result: 'sending', line } (a session), { result: 'waiting', line } (G7b: no session,
+        // the line waits in the outbox), or { result: 'full' | 'removed' | 'unavailable' | 'invalid' }.
         // The receipt comes as the event 'receipt'.
         send(friendId, text) {
             const entry = friends.get(friendId);
-            if (!entry?.pm) return { result: 'unavailable' };
+            if (!entry || state !== 'open') return { result: 'unavailable' };
             if (!validPmText(text)) return { result: 'invalid' };
-            if (!sessionPeer(entry)) return { result: 'unavailable' };
-            const id = entry.pm.newId();
+            if (entry.row.state === 'removed-you') return { result: 'removed' };
             const time = now();
-            const saved = archive.getRoom(friendId);
-            const line = { id, from: ownName(saved?.userName), text, time, own: true };
+            const from = ownName(archive.getRoom(friendId)?.userName);
+            if (!entry.pm || !routePeer(entry)) {
+                const id = `${identity.id}.${randomUUID()}`;
+                let seq = null;
+                try { seq = archive.addOutbox(friendId, { id, text, time }, OUTBOX_CAP); }
+                catch (err) { log('WARN', `Friend line not queued: ${errText(err)}`); return { result: 'unavailable' }; }
+                if (seq === null) return { result: 'full' };
+                return { result: 'waiting', line: { id, from, text, time, own: true, waiting: true } };
+            }
+            const id = entry.pm.newId();
+            const line = { id, from, text, time, own: true };
             entry.pm.send(id, text, { time }).then(result => {
                 if (result === 'unavailable' || result === 'invalid') events.emit('receipt', { friendId, id, result });
             });
@@ -507,10 +709,35 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
             catch (err) { log('WARN', `Friend line not saved: ${errText(err)}`); }
             return { result: 'sending', line };
         },
+        // The saved lines (pages), with the away mark of each received away line. The first page also has the waiting
+        // lines of the outbox (G7b), in time order.
         lines(friendId, before = null) {
             if (!friends.has(friendId)) return [];
-            return archive.lines(friendId, { before, limit: before ? 100 : 200 })
+            const page = archive.lines(friendId, { before, limit: before ? 100 : 200 })
                 .map(({ id, from, text, time, own }) => ({ id, from, text, time, own }));
+            let marks = new Map();
+            try { marks = archive.awayMarks(friendId, page.filter(l => !l.own).map(l => l.id)); }
+            catch (err) { log('WARN', `Friend away marks not read: ${errText(err)}`); }
+            for (const line of page) if (marks.has(line.id)) line.away = marks.get(line.id);
+            if (before) return page;
+            let rows = [];
+            try { rows = archive.listOutbox(friendId); } catch (err) { log('WARN', `Friend outbox not read: ${errText(err)}`); }
+            if (!rows.length) return page;
+            const from = ownName(archive.getRoom(friendId)?.userName);
+            return [...page, ...rows.map(r => ({ id: r.id, from, text: r.text, time: r.time, own: true, waiting: true }))]
+                .sort((a, b) => a.time - b.time || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+        },
+        // G7b: Delete of a waiting line. Returns 'deleted', 'sending' (it is on a session now) or 'gone'.
+        deleteWaiting(friendId, id) {
+            const entry = friends.get(friendId);
+            if (!entry || typeof id !== 'string') return 'gone';
+            if (entry.inflight.has(id)) return 'sending';
+            try { return archive.deleteOutbox(friendId, id) ? 'deleted' : 'gone'; }
+            catch (err) { log('WARN', `Friend line not deleted: ${errText(err)}`); return 'gone'; }
+        },
+        // G7b: the number of waiting lines of a friend (test and diagnostic use).
+        waitingCount(friendId) {
+            try { return friends.has(friendId) ? archive.listOutbox(friendId).length : 0; } catch { return 0; }
         },
         friend(friendId) {
             const entry = friends.get(friendId);

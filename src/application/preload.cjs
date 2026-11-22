@@ -39,7 +39,9 @@ contextBridge.exposeInMainWorld('friends', {
     openChat: friendId => ipcRenderer.invoke('asscrack:friend-open-chat', text(friendId)),
     retry: () => ipcRenderer.invoke('asscrack:unlock-archive'),
     onChanged: listen('asscrack:friends'),
-    onRequest: listen('asscrack:friend-request')
+    onRequest: listen('asscrack:friend-request'),
+    // G7b: a friend line for the attention rules (attention.js): { friendId, id, away, focused }. No text, no name.
+    onAttention: listen('asscrack:friend-attention')
 });
 
 contextBridge.exposeInMainWorld('asscrack', {

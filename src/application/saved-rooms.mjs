@@ -410,6 +410,14 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
             saveSettings: value => a.saveFriendSettings(value),
             addLine: (roomId, row) => a.addMessage(roomId, row),
             hasLine: (roomId, id) => a.hasMessage(roomId, id),
+            // G7b: the outbox and the away marks.
+            addOutbox: (roomId, row, cap) => a.addOutbox(roomId, row, cap),
+            listOutbox: roomId => a.listOutbox(roomId),
+            hasOutbox: (roomId, id) => a.hasOutbox(roomId, id),
+            deleteOutbox: (roomId, id) => a.deleteOutbox(roomId, id),
+            deliverOutbox: (roomId, id, from) => a.deliverOutbox(roomId, id, from),
+            addAwayMark: (roomId, id, batch) => a.addAwayMark(roomId, id, batch),
+            awayMarks: (roomId, ids) => a.awayMarks(roomId, ids),
             lines: (roomId, opts) => lines(roomId, opts)
         };
     }

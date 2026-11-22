@@ -118,6 +118,16 @@ CREATE TABLE IF NOT EXISTS friends(room_id TEXT PRIMARY KEY REFERENCES rooms(roo
   last_seen INTEGER, addrs TEXT, state TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS friend_blocks(device_id TEXT PRIMARY KEY, name TEXT, blocked_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS friend_settings(slot INTEGER PRIMARY KEY CHECK(slot=1), name TEXT, upnp INTEGER NOT NULL);
+-- G7b: the offline outbox of each friend (design F10). A row waits until the friend acknowledges it. Then the own line
+-- goes into messages with its original time, in the same transaction.
+CREATE TABLE IF NOT EXISTS friend_outbox(room_id TEXT NOT NULL REFERENCES rooms(room_id) ON DELETE CASCADE,
+  msg_id TEXT NOT NULL, body TEXT NOT NULL, time INTEGER NOT NULL, seq INTEGER NOT NULL, PRIMARY KEY(room_id, msg_id));
+-- G7b: the received friend lines that were sent while this device was away, and the batch of each.
+CREATE TABLE IF NOT EXISTS friend_away(room_id TEXT NOT NULL REFERENCES rooms(room_id) ON DELETE CASCADE,
+  msg_id TEXT NOT NULL, batch TEXT NOT NULL, PRIMARY KEY(room_id, msg_id));
+CREATE TRIGGER IF NOT EXISTS remove_friend_away AFTER DELETE ON messages BEGIN
+  DELETE FROM friend_away WHERE room_id=OLD.room_id AND msg_id=OLD.msg_id;
+END;
 CREATE TRIGGER IF NOT EXISTS remove_public_message INSTEAD OF DELETE ON public_messages BEGIN
   DELETE FROM messages WHERE room_id=OLD.room_id AND msg_id=OLD.msg_id AND OLD.channel_id IS NULL;
   DELETE FROM channel_messages WHERE room_id=OLD.room_id AND msg_id=OLD.msg_id AND OLD.channel_id IS NOT NULL;
@@ -486,6 +496,56 @@ function makeRoomArchive({ dir, protector, limits = null }) {
     saveFriendSettings({ name, upnp }) {
       need().prepare(`INSERT INTO friend_settings(slot,name,upnp) VALUES(1,?,?)
         ON CONFLICT(slot) DO UPDATE SET name=excluded.name, upnp=excluded.upnp`).run(name ?? null, upnp ? 1 : 0);
+    },
+    // G7b: the outbox of one friend. addOutbox returns the seq of the new row, or null when cap rows wait.
+    addOutbox(roomId, { id, text, time }, cap) {
+      const d = need();
+      return d.transaction(() => {
+        const { n, top } = d.prepare('SELECT count(*) AS n, max(seq) AS top FROM friend_outbox WHERE room_id=?').get(roomId);
+        if (n >= cap) return null;
+        const seq = (top ?? 0) + 1;
+        d.prepare('INSERT INTO friend_outbox(room_id,msg_id,body,time,seq) VALUES(?,?,?,?,?)')
+          .run(roomId, String(id), String(text), time, seq);
+        return seq;
+      })();
+    },
+    listOutbox(roomId) {
+      return need().prepare('SELECT msg_id, body, time, seq FROM friend_outbox WHERE room_id=? ORDER BY seq')
+        .all(roomId).map(r => ({ id: r.msg_id, text: r.body, time: r.time, seq: r.seq }));
+    },
+    hasOutbox(roomId, id) {
+      return Boolean(need().prepare('SELECT 1 FROM friend_outbox WHERE room_id=? AND msg_id=?').get(roomId, String(id)));
+    },
+    deleteOutbox(roomId, id) {
+      return need().prepare('DELETE FROM friend_outbox WHERE room_id=? AND msg_id=?').run(roomId, String(id)).changes === 1;
+    },
+    // The friend acknowledged a waiting line: in one transaction, save the own line with its original time and delete
+    // the outbox row. Returns the line, or null when no row waits (a repeated ack).
+    deliverOutbox(roomId, id, from) {
+      const d = need();
+      return d.transaction(() => {
+        const r = d.prepare('SELECT msg_id, body, time FROM friend_outbox WHERE room_id=? AND msg_id=?').get(roomId, String(id));
+        if (!r) return null;
+        const line = { id: r.msg_id, from, text: r.body, time: r.time, own: true };
+        this.addMessage(roomId, { ...line, source: 'send', peerId: null });
+        d.prepare('DELETE FROM friend_outbox WHERE room_id=? AND msg_id=?').run(roomId, r.msg_id);
+        return line;
+      })();
+    },
+    // G7b: a received line that was sent while this device was away, and its batch.
+    addAwayMark(roomId, id, batch) {
+      need().prepare('INSERT INTO friend_away(room_id,msg_id,batch) VALUES(?,?,?) ON CONFLICT DO NOTHING')
+        .run(roomId, String(id), String(batch));
+    },
+    // The away marks of some lines: Map msg_id -> { batch, count } (count: the lines of that batch in the archive).
+    awayMarks(roomId, ids) {
+      const d = need();
+      const rows = d.prepare(`SELECT msg_id, batch FROM friend_away WHERE room_id=? AND msg_id IN
+        (SELECT value FROM json_each(?))`).all(roomId, JSON.stringify(ids.map(String)));
+      const counts = new Map();
+      const count = d.prepare('SELECT count(*) AS n FROM friend_away WHERE room_id=? AND batch=?');
+      for (const r of rows) if (!counts.has(r.batch)) counts.set(r.batch, count.get(roomId, r.batch).n);
+      return new Map(rows.map(r => [r.msg_id, { batch: r.batch, count: counts.get(r.batch) }]));
     },
     hasMessage(roomId, id) {
       return Boolean(need().prepare('SELECT 1 FROM public_messages WHERE room_id=? AND msg_id=?').get(roomId, String(id)));

@@ -182,8 +182,12 @@ for (const withCandidates of [true, false]) {
                 'a session through the candidates only', 15000);
         } else {
             await delay(5000);
-            assert.equal(linksA.friend(friendA).state, 'offline');
-            assert.equal(linksB.friend(friendB).state, 'offline');
+            // G7b: the two are still in a common room, thus the state is 'room' (design F5 item 4), not 'online'. The
+            // friend link itself has no session.
+            assert.equal(linksA.friend(friendA).state, 'room');
+            assert.equal(linksB.friend(friendB).state, 'room');
+            assert.deepEqual(linksA.nodeOf(friendA).peers(), []);
+            assert.deepEqual(linksB.nodeOf(friendB).peers(), []);
         }
     });
 }
