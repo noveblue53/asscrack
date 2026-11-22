@@ -7,6 +7,40 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased — voice (goal G4, 2026-11-21)
+
+Voice tells the user when the microphone or the speakers fail. A user with no microphone can listen. Deafen is new,
+and the volume of each person stays. Gap IDs C1, N1, C2, C5, C6, C7, C8, C3, C4 of `work-orders/gaps-1.0-20261121`.
+
+- **No microphone.** A microphone error does not stop Join voice. The user stays in voice and hears the others. The
+  others see "in voice (muted)", and the own line shows "in voice (no microphone)". When a microphone comes,
+  ASSCRACK uses it.
+- **A device goes away.** When the track of the microphone ends, ASSCRACK opens the capture again. A device change
+  opens a missing capture, and the selected microphone when it comes back. The selected speakers have the same
+  rule. A text under the voice buttons tells each fault, and it goes away when its cause goes away.
+- **Microphone errors.** Each error name has its own text: the Windows privacy setting, a microphone that a
+  different app uses, no microphone. The Voice settings panel uses the same texts.
+- **Deafen.** A new button next to Mute, and Ctrl+Shift+D, while in voice. The voice of the others does not play,
+  and Deafen mutes the microphone. Deafen off gives back the mute state from before. The others see "in voice
+  (deafened)". The detached voice panel shows "Deafened".
+- **Mute.** Mute shows also before Join voice, and Ctrl+Shift+M changes it. The mute state stays through Leave voice
+  and Join voice while the app runs. A new start of the app and Idle Peer set it to off.
+- **Volume of each person.** The line of a person shows "muted for you" and the volume when it is not 100%, also in
+  its tooltip. The volume goes from 0% to 200%, with a mark at 100%. Above 100%, a limiter stops the clipping. A
+  double-click on the label of the slider sets 100%, and "Reset" removes the choice. ASSCRACK keeps the choice of
+  each person in the profile, for each room. The key is the device ID of the room membership (never the name). A
+  room with no membership keeps the choice only while the app runs: its libp2p peer ID is new at each start.
+- **Cues.** A cue of my own action (join, leave, mute, unmute, deafen) plays also in Do not disturb. It is silent in
+  Idle Peer. The cues play on the output device of the voice settings.
+- **Result: 127.0.0.1, this PC.** `npm test`: 545 of 545 pass (22 new G4 tests, in node:vm with fake
+  devices and on 127.0.0.1). `node --test test/voice-gate.test.mjs test/voice-settings.test.mjs`: 16 of 16 pass. The
+  two-copy voice check (its room setup repaired for the protected rooms) gives the same result as on `main`. An app
+  check with two copies: 21 of 21 checks pass (no microphone, a device change, an ended track, the speakers text,
+  Deafen, the keys). A second app check: 8 of 8 pass (the volume of a person stays after a restart, Reset removes
+  it). One start of the app: no error line. The removal of a real device is not tested: Windows needs an
+  administrator to turn off a device. No LAN test. A test with real speakers and a real microphone is for the
+  operator.
+
 ## Unreleased — sound cues for other people and for messages (goal P11, 2026-11-21)
 
 ASSCRACK plays a short local cue when a different person joins or leaves voice, and for a mention or a whisper to
