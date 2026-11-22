@@ -121,9 +121,12 @@ async function readFrames(source, onBody, onOversize) {
 // onDirectChanged(): called when the list of working direct streams of this node changes.
 // channelOf(peerId), selfChannel(): the voice channel of a peer and of this node (G6). The host forwards a frame only
 // to the members in the channel of its origin. While this node is in voice, it delivers only the frames of its channel.
+// M4 (P10b): onReceiversChanged(): called when the set of members with a voice stream to this host changes (the host
+// sends its voice roster). deafened(peerId): true when that member said in its voice line that it is deafened. The
+// host forwards no frame to it.
 export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectionFor, onFrame,
     directCandidates = () => [], directListOf = () => null, onDirectChanged = () => {}, protectedRoom = false,
-    channelOf = () => 'general', selfChannel = () => 'general' }) {
+    channelOf = () => 'general', selfChannel = () => 'general', onReceiversChanged = () => {}, deafened = () => false }) {
     // Host side: peerId -> { stream, queue }. Member side: one entry to the host.
     const members = new Map()
     let upstream = null
@@ -221,6 +224,7 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
         if (old) closeEntry(old)
         const entry = { stream, queue: createQueue(), originWarned: false }
         members.set(peerId, entry)
+        onReceiversChanged()
         attach(stream, entry.queue, body => {
             const frame = decodeBody(body)
             if (!frame) return
@@ -241,7 +245,8 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
             const direct = directListOf(peerId)
             const channel = channelOf(peerId)
             for (const [other, e] of members) {
-                if (other === peerId || (Array.isArray(direct) && direct.includes(other)) || channelOf(other) !== channel) continue
+                if (other === peerId || (Array.isArray(direct) && direct.includes(other)) || channelOf(other) !== channel ||
+                    deafened(other)) continue
                 e.queue.push(wire)
                 forwarded++
                 countForward(peerId, other)
@@ -251,6 +256,7 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
             if (members.get(peerId) === entry) {
                 closedDrops += entry.queue.drops
                 members.delete(peerId)
+                onReceiversChanged()
             }
         })
     }
@@ -572,7 +578,7 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
             const channel = selfChannel()
             let pushed = 0
             for (const [peerId, e] of members) {
-                if (channelOf(peerId) !== channel) continue
+                if (channelOf(peerId) !== channel || deafened(peerId)) continue
                 e.queue.push(wire)
                 pushed++
             }
@@ -594,6 +600,7 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
             members.delete(peerId)
             closedDrops += entry.queue.drops
             closeEntry(entry)
+            onReceiversChanged()
         }
         closeDirectIn(peerId)
     }
@@ -635,5 +642,8 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
         }
     }
 
-    return { handle, handleDirect, directList, sendFrame, hostChanged, channelChanged, closeInboundVoice, peerLeft, stop, stats }
+    // M4 (P10b): the members with a voice stream to this host (the receivers of the forwarded frames).
+    const receivers = () => [...members.keys()]
+
+    return { handle, handleDirect, directList, receivers, sendFrame, hostChanged, channelChanged, closeInboundVoice, peerLeft, stop, stats }
 }

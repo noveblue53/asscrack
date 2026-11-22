@@ -427,6 +427,49 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     const peerVoice = new Map()
     // peerId -> the voice channel ID of the peers in voice. The raw ID, also when it is not in the catalog yet.
     const peerChannel = new Map()
+    // M4 (P10b): the peers that said in their voice line to this node that they are deafened.
+    const peerDeafened = new Set()
+    // M4 (P10b): the voice roster. The host sends the members with a voice stream to it (the members that get the
+    // forwarded frames) and their channels to each session. A changed client can tell the host "in voice" and tell the
+    // other members "not in voice". The roster shows it to the other members. A host that lies is not covered (M1).
+    const MAX_ROSTER = 64
+    let lastRoster = null
+    let peerRoster = { hostId: null, members: [] }
+    function rosterLine() {
+        const members = voiceRelay.receivers().filter(p => sessions.has(p)).sort()
+            .map(p => ({ peerId: p, channel: channelOfPeer(p) })).slice(0, MAX_ROSTER)
+        return JSON.stringify({ type: 'voice-roster', v: 1, members })
+    }
+    function shareRoster() {
+        if (stopped || !voiceRelay || !election.isHost()) {
+            lastRoster = null
+            return
+        }
+        const line = rosterLine()
+        if (line === lastRoster) return
+        lastRoster = line
+        for (const [peerId, session] of sessions) if (memberAllowed(peerId)) session.send(line)
+    }
+    function setPeerRoster(value) {
+        const text = JSON.stringify(value)
+        if (text === JSON.stringify(peerRoster)) return
+        peerRoster = value
+        events.emit('voice-roster', structuredClone(value))
+    }
+    // A roster line from the current host: at most 64 rows of { peerId, channel }.
+    function handleRoster(peerId, control) {
+        const host = election.host()?.peerId
+        if (host !== peerId || (hostAllowed && !hostAllowed(peerId)) || control.v !== 1 || !Array.isArray(control.members) ||
+            control.members.length > MAX_ROSTER) return
+        const members = []
+        for (const row of control.members) {
+            if (typeof row?.peerId !== 'string' || row.peerId.length < 1 || row.peerId.length > 128) return
+            const channel = typeof row.channel === 'string' && row.channel.length > 0 && row.channel.length <= MAX_CHANNEL_ID
+                ? row.channel : GENERAL_VOICE_CHANNEL
+            members.push({ peerId: row.peerId, channel })
+        }
+        setPeerRoster({ hostId: peerId, members })
+    }
     const channelOfPeer = peerId => peerChannel.get(peerId) ?? GENERAL_VOICE_CHANNEL
     const MAX_CHANNEL_ID = 64
     // L9 (P10a): the stream ID of a voice line is a string of at most 64 characters (the window uses a UUID).
@@ -495,6 +538,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             // this election got no history from openSession(). Send after the host announcement.
             if (info.peerId === selfId && !wasHost) queueMicrotask(sendHistoryToAll)
             voiceRelay?.hostChanged()
+            // M4: a new host sends its roster. A roster of the old host is not valid now.
+            if (peerRoster.hostId !== null && peerRoster.hostId !== info.peerId) setPeerRoster({ hostId: null, members: [] })
+            queueMicrotask(shareRoster)
             // Use a history line that arrived before this host was accepted.
             const kept = pendingHistory.get(info.peerId)
             if (kept) {
@@ -533,6 +579,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         }),
         directListOf: peerId => peerDirect.get(peerId) ?? null,
         // Send the voice line again, so that the host knows which peers to forward to.
+        onReceiversChanged: () => queueMicrotask(shareRoster),
+        deafened: peerId => peerDeafened.has(peerId),
         onDirectChanged: () => {
             const line = voiceLine()
             for (const session of sessions.values()) session.send(line)
@@ -828,6 +876,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                         // G6: a missing or non-string channel is General. Update the channel before hostChanged().
                         const channel = typeof control.channel === 'string' && control.channel.length > 0 &&
                             control.channel.length <= MAX_CHANNEL_ID ? control.channel : GENERAL_VOICE_CHANNEL
+                        if (control.inVoice === true && control.deafened === true) peerDeafened.add(peerId)
+                        else peerDeafened.delete(peerId)
                         if (control.inVoice === true) {
                             peerVoice.set(peerId, true)
                             peerChannel.set(peerId, channel)
@@ -840,6 +890,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                         if (direct) peerDirect.set(peerId, direct)
                         else peerDirect.delete(peerId)
                         voiceRelay.hostChanged()
+                        shareRoster()
                         events.emit('voice-state', {
                             peerId,
                             inVoice: control.inVoice === true,
@@ -848,6 +899,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                             deafened: control.deafened === true,
                             channel: control.inVoice === true ? channel : GENERAL_VOICE_CHANNEL
                         })
+                    } else if (control.type === 'voice-roster') {
+                        if (sessions.get(peerId) === session) handleRoster(peerId, control)
                     } else if (control.type === 'screen') {
                         if (sessions.get(peerId) === session) screen.handleLine(peerId, control)
                     } else if (control.type === 'typing') {
@@ -939,6 +992,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         topic.sessionOpened(peerId)
         if (election.isHost()) sendHistoryTo(peerId, session)
         if (voiceState.inVoice) session.send(voiceLine())
+        // M4: the host sends its current roster on a new session.
+        if (election.isHost() && voiceRelay.receivers().length > 0) session.send(rosterLine())
         ready.opened(peerId)
         screen.opened(peerId)
         broadcastLinks()
@@ -977,7 +1032,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 peerPresence.delete(peerId)
                 idlePeers.delete(peerId)
                 peerDirect.delete(peerId)
+                peerDeafened.delete(peerId)
                 voiceRelay.peerLeft(peerId)
+                if (peerRoster.hostId === peerId) setPeerRoster({ hostId: null, members: [] })
                 election.sessionClosed(peerId)
                 topic.sessionClosed(peerId)
                 channels.closed(peerId)
@@ -1935,6 +1992,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         sendVoiceFrame: bytes => !selfIdle && (!membership || (membership.admitted() && voiceState.inVoice)) &&
             voiceRelay.sendFrame(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)),
         voiceStats: () => voiceRelay.stats(),
+        // M4 (P10b): the last voice roster of the current host: { hostId, members: [{ peerId, channel }] }.
+        voiceRoster: () => structuredClone(peerRoster),
         topic: topic.view,
         setTopic: topic.set,
         host: () => election.host(),

@@ -57,7 +57,7 @@ if (process.platform === 'win32') {
     app.setToastActivatorCLSID(WINDOWS_TOAST_ID);
 }
 
-const EVENTS = ['channels', 'peer-discovered', 'peer-joined', 'peer-left', 'message', 'history', 'voice-state', 'host-changed', 'peer-name',
+const EVENTS = ['channels', 'peer-discovered', 'peer-joined', 'peer-left', 'message', 'history', 'voice-state', 'voice-roster', 'host-changed', 'peer-name',
     'file-offer', 'file-retried', 'file-progress', 'file-done', 'file-failed', 'file-refused', 'file-cancelled', 'topology', 'full-node', 'full-node-addrs',
     'voice-frame', 'connection', 'dial-failed', 'upnp', 'presence', 'topic', 'voice-channels',
     // P7b: pause and resume of a received file (P7a). The Partial objects have no path.

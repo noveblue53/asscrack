@@ -169,6 +169,8 @@ contextBridge.exposeInMainWorld('asscrack', {
     onPushToTalkStatus: listen('asscrack:ptt-status'),
     getPushToTalkStatus: () => ipcRenderer.invoke('asscrack:ptt-status'),
     onVoiceState: listen('asscrack:voice-state'),
+    // M4 (P10b): the voice roster of the host: { hostId, members: [{ peerId, channel }] }.
+    onVoiceRoster: listen('asscrack:voice-roster'),
     onHostChanged: listen('asscrack:host-changed'),
     // Ready check (milestone 9).
     getReady: () => ipcRenderer.invoke('asscrack:ready-state'),

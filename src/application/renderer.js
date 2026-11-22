@@ -338,6 +338,8 @@ let selfLine = null;
 const peerNames = new Map();
 // L3 (P10a): the device mark of each peer (the peer-name event).
 const peerMarks = new Map();
+// M4 (P10b): the voice roster of the host: peer ID -> voice channel ID.
+let voiceRoster = new Map();
 
 // L3 (P10a): the device mark beside each name of the peer list, and the mark "same name" when two people in the list
 // (this user included) use the same name.
@@ -1096,6 +1098,12 @@ function voiceStateText(state) {
     return texts.join(' ');
 }
 
+window.asscrack.onVoiceRoster?.(data => {
+    const rows = Array.isArray(data?.members) ? data.members : [];
+    voiceRoster = new Map(rows.filter(row => typeof row?.peerId === 'string').map(row => [row.peerId, row.channel]));
+    updateVoiceView();
+});
+
 function updateVoiceView() {
     const state = window.voice.state();
     const members = state.members ?? {};
@@ -1111,7 +1119,12 @@ function updateVoiceView() {
         let extra = '';
         let talking = false;
         const member = members[peerId];
-        if (member?.inVoice) {
+        // M4 (P10b): the host gets voice for this person, but this person sent no voice line to this computer.
+        const hiddenListener = !member?.inVoice && voiceRoster.has(peerId);
+        if (hiddenListener) {
+            text = 'listening (not in voice for you)';
+            extra = channelSuffix(voiceRoster.get(peerId));
+        } else if (member?.inVoice) {
             const listen = listeningTo(peerId);
             talking = !listen.muted && !member.muted && speaking.has(peerId);
             if (listen.muted) text = 'muted for you';
