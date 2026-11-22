@@ -120,6 +120,12 @@ contextBridge.exposeInMainWorld('asscrack', {
     onSignal: listen('asscrack:signal'),
     onVoiceState: listen('asscrack:voice-state'),
     onHostChanged: listen('asscrack:host-changed'),
+    // Ready check (milestone 9).
+    getReady: () => ipcRenderer.invoke('asscrack:ready-state'),
+    openReady: text => ipcRenderer.invoke('asscrack:ready-open', String(text ?? '')),
+    voteReady: (id, vote) => ipcRenderer.invoke('asscrack:ready-vote', String(id), String(vote)),
+    closeReady: id => ipcRenderer.invoke('asscrack:ready-close', String(id)),
+    onReady: listen('asscrack:ready'),
     getTopic: () => ipcRenderer.invoke('asscrack:topic'),
     setTopic: text => ipcRenderer.invoke('asscrack:set-topic', text),
     onTopic: listen('asscrack:topic'),
