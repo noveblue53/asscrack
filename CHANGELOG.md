@@ -16,7 +16,7 @@ IDs D1, D2, D3, D4, D5, D7, N5, N7 of `work-orders/gaps-1.0-20261121`.
   end of the URL is not part of the link. A highlight in a URL does not cut the link. A click sends the URL to the
   main process. The main process opens it in the system browser only if it is `http:` or `https:` with a host and
   no user name or password. The URL has 2048 characters or less. It opens at most one link each 500 ms. The window
-  itself never goes to the link.
+  itself never goes to the link. A chat link is not a tab stop: the row menu has "Open link".
 - **A file and the text (D1).** The message box always belongs to the room. A media file for the room takes the text
   as its caption. An ordinary file for the room goes first, then the text goes as a line. A file for one person and
   a text: only the text goes to the room, and the file stays attached with a status text. The draft shows the size
