@@ -1645,6 +1645,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         },
         name: senderName,
         memberState,
+        // The device ID of the room membership of a peer with an open, admitted session (a stable identity of that
+        // person across starts). null in a room with no membership: the libp2p peer ID is new at each start.
+        memberDevice: peerId => (membership && memberAllowed(peerId) ? memberPeers.get(peerId).deviceId : null),
         membershipSnapshot: () => membership?.snapshot() ?? null,
         setMembershipPersistence(callback) { membership?.setPersistence(callback) },
         createMemberInvite(deviceId, { canHost = false } = {}) {

@@ -74,6 +74,11 @@ contextBridge.exposeInMainWorld('asscrack', {
     onHistory: listen('asscrack:history'),
     signal: (peerId, data) => ipcRenderer.invoke('asscrack:signal', { peerId, data }),
     setVoice: state => ipcRenderer.invoke('asscrack:set-voice', state),
+    // G4: the saved listening choice (volume, "Mute for me") of a person in this room. The main process finds the
+    // device ID of the peer: the window never gives a name or a device ID.
+    getListening: peerId => ipcRenderer.invoke('asscrack:get-listening', String(peerId)),
+    setListening: (peerId, muted, volume) => ipcRenderer.invoke('asscrack:set-listening', String(peerId), muted === true,
+        Number(volume)),
     // Uint8Array of one Opus frame. A plain send: 50 frames each second.
     sendVoiceFrame: bytes => ipcRenderer.send('asscrack:voice-frame', bytes),
     onVoiceFrame: listen('asscrack:voice-frame'),

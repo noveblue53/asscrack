@@ -30,8 +30,10 @@ function makeTrack(label) {
     };
 }
 
-// settings: the saved voice settings. Returns the room fixture and the fake devices.
-async function voiceRoom(settings = {}) {
+// settings: the saved voice settings. listening: peer ID -> the saved listening choice that the main process gives.
+// Returns the room fixture, the fake devices and saved (the setListening calls).
+async function voiceRoom(settings = {}, listening = {}) {
+    const saved = [];
     const clock = createClock();
     const registered = {};
     vm.runInContext(worklet, vm.createContext({
@@ -93,6 +95,7 @@ async function voiceRoom(settings = {}) {
     const f = await loadRoomWindow({
         clock,
         before: ['voice-gate.js', 'voice.js'],
+        elements: [{ id: 'listener-volume-label', tag: 'label' }, { id: 'listener-reset', tag: 'button' }],
         globals: {
             navigator, AudioContext, AudioWorkletNode, performance,
             AudioEncoder: class {
@@ -112,7 +115,12 @@ async function voiceRoom(settings = {}) {
         },
         api: {
             getHost: async () => ({ self: 'self-peer-id', host: null }),
-            getVoiceSettings: async () => ({ noiseSuppression: 'off', inputDeviceId: '', outputDeviceId: '', ...settings })
+            getVoiceSettings: async () => ({ noiseSuppression: 'off', inputDeviceId: '', outputDeviceId: '', ...settings }),
+            getListening: async peerId => listening[peerId] ?? null,
+            setListening: async (peerId, muted, volume) => {
+                saved.push([peerId, muted, volume]);
+                return true;
+            }
         }
     });
     const dialog = f.el('listening-dialog');
@@ -123,8 +131,19 @@ async function voiceRoom(settings = {}) {
         f.handlers.onPeerJoined({ peerId });
         f.handlers.onPeerName({ peerId, name });
     }
+    await settle();
     Object.assign(f, {
-        clock, devices, mic, sinks, dialog,
+        clock, devices, mic, sinks, dialog, saved,
+        // Open the Listening dialog of a person from the buddy menu.
+        openListening(peerId) {
+            const row = f.el('peers').children.find(item => item.dataset.peerId === peerId);
+            row.focus();
+            assert.equal(f.window.contextMenu.open(row, row), true);
+            const item = f.el('row-menu').children.find(el => el.dataset.action === 'listening');
+            item.focus();
+            f.key(item, 'Enter');
+            assert.equal(f.dialog.open, true);
+        },
         voice: () => f.window.voice.state(),
         async join() {
             f.el('join-voice').click();
@@ -403,4 +422,76 @@ test('"muted for you" and the volume after the state text; no speaking text for 
     volume.dispatchEvent(new f.Event('input'));
     assert.equal(f.line('a'), 'muted for you');
     assert.deepEqual(f.errors, []);
+});
+
+// ---- G4 addition (operator, 2026-11-21): the volume of each person ----
+
+test('the saved choice of a person comes back at the join of that person, and each change is saved; Reset removes it', async () => {
+    const f = await voiceRoom({}, { a: { muted: false, volume: 150 }, b: { muted: true, volume: 30 } });
+    await f.join();
+    f.handlers.onVoiceState({ peerId: 'a', inVoice: true });
+    f.handlers.onVoiceState({ peerId: 'b', inVoice: true });
+    assert.deepEqual({ ...f.window.voice.listeningFor('a') }, { muted: false, volume: 150 });
+    assert.equal(f.line('a'), 'in voice · 150%');
+    assert.equal(f.line('b'), 'muted for you · 30%');
+    // The tooltip of the line gives the percent.
+    const rowA = f.el('peers').children.find(item => item.dataset.peerId === 'a');
+    assert.equal(rowA.title, 'a\nListening volume 150%');
+    assert.equal(f.el('peers').children.find(item => item.dataset.peerId === 'b').title, 'b\nListening volume 30%, muted for you');
+
+    f.openListening('a');
+    const volume = f.el('listener-volume');
+    assert.equal(volume.value, '150');
+    volume.value = '180';
+    volume.dispatchEvent(new f.Event('input'));
+    assert.deepEqual(f.saved, [], 'no save while the slider moves');
+    volume.dispatchEvent(new f.Event('change'));
+    assert.deepEqual(f.saved, [['a', false, 180]]);
+    // A double-click on the label of the slider sets 100 %.
+    f.el('listener-volume-label').dispatchEvent(new f.Event('dblclick'));
+    assert.equal(volume.value, '100');
+    assert.deepEqual(f.saved.at(-1), ['a', false, 100]);
+    assert.equal(rowA.title, 'a', 'the default choice: the tooltip has only the peer ID');
+    f.dialog.close();
+
+    f.openListening('b');
+    f.el('listener-reset').click();
+    assert.deepEqual(f.saved.at(-1), ['b', false, 100]);
+    assert.deepEqual({ ...f.window.voice.listeningFor('b') }, { muted: false, volume: 100 });
+    assert.equal(f.line('b'), 'in voice');
+    assert.deepEqual(f.errors, []);
+});
+
+test('a rejoin of a person gives the saved choice again (the session map of voice.js forgets it at the leave)', async () => {
+    const stored = { a: { muted: false, volume: 60 } };
+    const f = await voiceRoom({}, stored);
+    assert.equal(f.window.voice.listeningFor('a').volume, 60);
+    f.handlers.onPeerLeft({ peerId: 'a' });
+    assert.equal(f.window.voice.listeningFor('a').volume, 100);
+    stored.a = { muted: false, volume: 75 };
+    f.handlers.onPeerJoined({ peerId: 'a' });
+    await settle();
+    assert.equal(f.window.voice.listeningFor('a').volume, 75);
+});
+
+test('200 %: a boost doubles a quiet voice, and the limiter keeps a loud mix below 1 (no clipping)', async () => {
+    const f = await voiceRoom();
+    await f.join();
+    f.openListening('a');
+    const volume = f.el('listener-volume');
+    volume.value = '200';
+    volume.dispatchEvent(new f.Event('input'));
+    // a: 2/8 at 200 % = 0.5, b: 4/8 at 100 % = 0.5. The sum is 1.0: above the start of the limiter (0.9).
+    f.samples();
+    const loud = f.output();
+    assert.ok(loud < 1 && loud > 0.9, `limited: ${loud}`);
+    f.dialog.close();
+    f.openListening('b');
+    f.el('listener-muted').checked = true;
+    f.el('listener-muted').dispatchEvent(new f.Event('change'));
+    f.samples();
+    assert.equal(f.output(), 0.5, 'a quiet voice at 200 %: exactly two times, no limiter');
+    // A value above 200 does not change the choice.
+    f.window.voice.setListening('a', false, 201);
+    assert.equal(f.window.voice.listeningFor('a').volume, 200);
 });

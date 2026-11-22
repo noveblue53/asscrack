@@ -454,6 +454,16 @@ function peerJoined(peerId) {
     const notes = rosterNow();
     if (notes) applyRoster(notes.joined(peerId, Date.now(), peerNames.get(peerId)));
     else addPeer(peerId);
+    restoreListening(peerId);
+}
+
+// G4: the saved listening choice of this person in this room (the main process keys it by the device ID).
+function restoreListening(peerId) {
+    Promise.resolve(window.asscrack.getListening?.(peerId)).then(choice => {
+        if (!choice || !peerItems.has(peerId)) return;
+        window.voice.setListening?.(peerId, choice.muted, choice.volume);
+        updateVoiceView();
+    }).catch(err => console.warn('Listening choice not read:', err?.message ?? err));
 }
 
 function peerLeft(peerId, withBye) {
@@ -986,6 +996,11 @@ function updateVoiceView() {
             else text = talking ? 'speaking' : 'in voice';
             if (listen.volume !== 100) text += ` · ${listen.volume}%`;
         }
+        // G4: the tooltip of the line gives the listening choice when it is not the default.
+        const choice = listeningTo(peerId);
+        const tip = choice.muted || choice.volume !== 100
+            ? `${peerId}\nListening volume ${choice.volume}%${choice.muted ? ', muted for you' : ''}` : peerId;
+        if (item.title !== tip) item.title = tip;
         if (speakers && talking) speakers.push(peerNames.get(peerId) || peerId.slice(-8));
         setVoiceState(item, text);
     }
@@ -1469,8 +1484,31 @@ function changeListening() {
     updateVoiceView();
 }
 
-listenerMuted?.addEventListener('change', changeListening);
+// G4: save the choice when it stops changing (a slider gives many input events). The default removes the entry.
+function saveListening() {
+    const id = listeningDialog.dataset.peerId;
+    if (!listeningDialog.open || !peerItems.has(id)) return;
+    const choice = window.voice.listeningFor(id);
+    Promise.resolve(window.asscrack.setListening?.(id, choice.muted, choice.volume))
+        .catch(err => console.warn('Listening choice not saved:', err?.message ?? err));
+}
+
+// G4: Reset and a double-click on the label of the slider.
+function setListeningVolume(volume, muted = listenerMuted.checked) {
+    listenerMuted.checked = muted;
+    listenerVolume.value = String(volume);
+    changeListening();
+    saveListening();
+}
+
+listenerMuted?.addEventListener('change', () => {
+    changeListening();
+    saveListening();
+});
 listenerVolume?.addEventListener('input', changeListening);
+listenerVolume?.addEventListener('change', saveListening);
+document.getElementById('listener-volume-label')?.addEventListener('dblclick', () => setListeningVolume(100));
+document.getElementById('listener-reset')?.addEventListener('click', () => setListeningVolume(100, false));
 
 // Copy the display name of a buddy. The own line copies the name without "(you)".
 function copyBuddyName(row) {

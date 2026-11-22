@@ -659,7 +659,8 @@
     window.voice = {
         listeningFor,
         setListening(origin, muted, volume) {
-            if (!Number.isInteger(volume) || volume < 0 || volume > 100 || typeof muted !== 'boolean') return;
+            // G4: 0 to 200 %. Above 100 % the playback worklet limits the output, thus it does not clip.
+            if (!Number.isInteger(volume) || volume < 0 || volume > 200 || typeof muted !== 'boolean') return;
             if (!muted && volume === 100) listening.delete(origin);
             else listening.set(origin, { muted, volume });
             applyGain(origin);

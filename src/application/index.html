@@ -476,9 +476,11 @@
   <dialog id="listening-dialog" aria-labelledby="listening-title">
     <h2 id="listening-title">Listening volume</h2>
     <label><input id="listener-muted" type="checkbox"> Mute for me</label>
-    <label for="listener-volume">Playback volume <output id="listener-percent" for="listener-volume">100%</output></label>
-    <input id="listener-volume" type="range" min="0" max="100" step="1" value="100">
-    <form method="dialog"><button>Done</button></form>
+    <label id="listener-volume-label" for="listener-volume" title="Double-click: 100%">Playback volume <output id="listener-percent" for="listener-volume">100%</output></label>
+    <input id="listener-volume" type="range" min="0" max="200" step="1" value="100" list="listener-volume-marks">
+    <datalist id="listener-volume-marks"><option value="100" label="100%"></option></datalist>
+    <p id="listener-note">Above 100% ASSCRACK makes a quiet microphone louder. A limiter stops the clipping.</p>
+    <form method="dialog"><button type="button" id="listener-reset">Reset</button> <button>Done</button></form>
   </dialog>
 
   <dialog id="shared-shelf" aria-labelledby="shared-title">

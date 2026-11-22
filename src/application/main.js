@@ -17,6 +17,7 @@ import { observeRoomActivity } from './room-activity.mjs';
 import { createSavedRooms, makeProtector } from './saved-rooms.mjs';
 import { roomFingerprint } from './room-archive.mjs';
 import * as voiceSettings from './voice-settings.mjs';
+import { listeningRoomTag, listeningStore } from './listening-store.mjs';
 import { attentionSettings, createAttention, registerNotificationShortcut, WINDOWS_APP_ID, WINDOWS_TOAST_ID } from './attention.mjs';
 import { createPttHook } from './ptt-hook.mjs';
 import { createWindowFrame } from './window-frame.mjs';
@@ -873,6 +874,33 @@ handleRoomIpc('asscrack:set-voice', (_event, state) => {
     if (idlePeer && state?.inVoice === true) throw new Error('Idle Peer has left voice');
     node.setVoice(state ?? {});
     updatePttHook(() => pttHook.setInVoice(state?.inVoice === true));
+});
+
+// G4: the listening choice of each person, per room, in the profile. The key is the device ID of the room membership.
+// A room with no membership has no stable identity of a person (the libp2p peer ID is new at each start): no save.
+let listeningChoices = null;
+function listeningKey(peerId) {
+    if (!node || typeof peerId !== 'string' || peerId.length > 128) return null;
+    const tag = listeningRoomTag(node.roomKey());
+    const device = node.memberDevice(peerId);
+    return tag && device ? { tag, device } : null;
+}
+handleRoomIpc('asscrack:get-listening', (_event, peerId) => {
+    const key = listeningKey(peerId);
+    if (!key) return null;
+    listeningChoices ??= listeningStore(path.join(app.getPath('userData'), 'listening.json'));
+    return listeningChoices.get(key.tag, key.device);
+});
+handleRoomIpc('asscrack:set-listening', (_event, peerId, muted, volume) => {
+    const key = listeningKey(peerId);
+    if (!key) return false;
+    listeningChoices ??= listeningStore(path.join(app.getPath('userData'), 'listening.json'));
+    try {
+        return listeningChoices.set(key.tag, key.device, { muted, volume });
+    } catch (err) {
+        writeLog('WARN', `Listening choice not saved: ${err?.message ?? err}`);
+        return false;
+    }
 });
 
 // The voice settings of this profile (voice-settings.mjs checks each value). The file is read one time.

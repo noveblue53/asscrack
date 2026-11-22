@@ -122,3 +122,15 @@ test('the saved-room calls of part 2 send the room ID as text and a strict true 
         ['asscrack:forget-room', 'r']
     ]);
 });
+
+test('the listening calls of G4 send the peer ID as text, a strict true or false, and a number', () => {
+    const b = loadBridge();
+    b.api.getListening(7);
+    b.api.setListening('peer-1', 'yes', '150');
+    b.api.setListening('peer-2', true, 40);
+    assert.deepEqual(b.invoked, [
+        ['asscrack:get-listening', '7'],
+        ['asscrack:set-listening', 'peer-1', false, 150],
+        ['asscrack:set-listening', 'peer-2', true, 40]
+    ]);
+});
