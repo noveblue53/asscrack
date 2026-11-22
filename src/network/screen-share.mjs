@@ -21,6 +21,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export const SCREEN_DEFAULTS = Object.freeze({
     maxViewers: 6, watchRecordMs: 5000, isolatedMs: 10000, watchTimeoutMs: 10000, paceTickMs: 10, evalMs: 500,
     keyRequestMs: 2000, opensPerPeer: 12, opensPerRoom: 48, closeWaitMs: 10000,
+    // L11 (P10b): a share line of a peer stops the own share for a conflict only in this time after the own start.
+    // At most linesPerPeer screen lines of each peer each minute (linesPerRoom for all peers).
+    conflictMs: 3000, linesPerPeer: 30, linesPerRoom: 240,
     rate: {}, // parameters of screen-rate.mjs (for the tests: for example relayLimit)
     beforeRecord: null // test hook at the viewer: a function that can return a promise; the viewer reads no record until it settles
 })
@@ -99,6 +102,7 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
     const O = { ...SCREEN_DEFAULTS, ...options }
     const clock = () => performance.now()
     const allowOpen = roomRateLimit(O.opensPerPeer, O.opensPerRoom)
+    const allowLine = roomRateLimit(O.linesPerPeer, O.linesPerRoom)
     const peers = new Map() // peerId -> { shareId, preset }
     let own = null
     let watch = null
@@ -228,7 +232,8 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
         if (!SCREEN_QUALITIES.includes(preset)) throw new TypeError(`Unknown screen quality: ${preset}`)
         const source = Number.isInteger(width) && Number.isInteger(height) && width > 0 && height > 0 ? { width, height } : null
         const shareId = randomUUID()
-        own = { shareId, quality: preset, viewers: new Map(), pending: new Set(), dirty: true, lastEncoder: null, lastViewers: null, rate: null }
+        own = { shareId, quality: preset, viewers: new Map(), pending: new Set(), dirty: true, lastEncoder: null, lastViewers: null, rate: null,
+            startedAt: clock() }
         const share = own
         own.rate = createScreenRate({ quality: preset, source, now: clock, params: O.rate, configRecord,
             onTiers: () => { share.dirty = true },
@@ -347,6 +352,12 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
         w.done = true
         clearTimeout(w.timer)
         if (watch === w) watch = null
+        // L11 (P10b): a share that sends no CONFIG in watchTimeoutMs goes out of the list. A screen line with no stream
+        // then cannot block Start for ever.
+        if (reason === 'timeout' && !w.configured && peers.get(w.peerId)?.shareId === w.shareId) {
+            peers.delete(w.peerId)
+            events.emit('screen-state', { peerId: w.peerId, sharing: false, shareId: null, preset: null })
+        }
         if (!w.configured) w.reject(new Error(reason === 'unwatched' ? 'Watch stopped.' : `The share is not available (${reason}).`))
         if (reason !== 'unwatched') events.emit('screen-ended', { peerId: w.peerId, reason, own: false })
     }
@@ -432,7 +443,7 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
     // ---- Hooks of node.mjs ----
 
     function handleLine(peerId, control) {
-        if (!validScreenLine(control)) return
+        if (!validScreenLine(control) || !allowLine(peerId)) return
         const old = peers.get(peerId)
         if (control.sharing) {
             const preset = SCREEN_QUALITIES.includes(control.preset) ? control.preset : null
@@ -440,7 +451,8 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
             peers.set(peerId, { shareId: control.shareId, preset })
             events.emit('screen-state', { peerId, sharing: true, shareId: control.shareId, preset })
             // Section 2.6, item 6: two shares at the same time. The member with the lower peer ID continues.
-            if (own && selfId > peerId) {
+            // L11 (P10b): only in conflictMs after the own start. A later share line cannot stop a running share.
+            if (own && selfId > peerId && clock() - own.startedAt <= O.conflictMs) {
                 own.conflictWith = peerId
                 stopScreenShare('conflict')
             }

@@ -499,3 +499,51 @@ test('check 13a: the numbers of each stream have no gap across a tier move; a T2
     assert.ok(gaps.every(f => f.key), 'each frame after a gap is a keyframe')
     assert.ok(A.screenStats().own.viewers.every(v => v.dropped > 0))
 })
+
+// L11 (P10b): a screen line with sharing true needs no stream. One fake line blocked each Start ("Another member shares
+// a screen."), and a fake line of a lower peer ID stopped a running share with the reason conflict. The node had no rate
+// limit for screen lines (2000 lines gave 2001 screen-state events). The fix has three parts. These tests use a node
+// with an unchanged node.mjs that sends the lines with sendTo (a changed client).
+const fakeShare = () => ({ type: 'screen', v: 1, sharing: true, shareId: randomUUID(), preset: 'standard' })
+
+test('L11: a share that sends no CONFIG goes out of the list after the Watch timeout; then Start works', { timeout: 30000 }, async t => {
+    const { nodes: [M, P] } = await directRoom(t, 2, { 1: { screen: { watchTimeoutMs: 500 } } })
+    // M answers no screen stream: the stream opens and no record comes (a changed client).
+    await M.libp2p.unhandle(SCREEN_PROTOCOL)
+    await M.libp2p.handle(SCREEN_PROTOCOL, () => {}, { runOnTransientConnection: true })
+    assert.equal(M.sendTo(P.peerId, fakeShare()), true)
+    await waitFor(() => P.screenState().peers[M.peerId], 5000, 'P has the fake share')
+    assert.throws(() => P.startScreenShare({ preset: 'standard' }), /Another member/)
+    await assert.rejects(P.watchScreen(M.peerId), /not available \(timeout\)/)
+    assert.equal(P.screenState().peers[M.peerId], undefined)
+    P.startScreenShare({ preset: 'standard' })
+    assert.ok(P.screenState().own)
+})
+
+test('L11: a share line of a lower peer ID after the conflict time does not stop a running share', { timeout: 30000 }, async t => {
+    const { nodes } = await directRoom(t, 2, { 0: { screen: { conflictMs: 300 } }, 1: { screen: { conflictMs: 300 } } })
+    const [low, high] = nodes[0].peerId < nodes[1].peerId ? nodes : [nodes[1], nodes[0]]
+    const ended = []
+    high.events.on('screen-ended', e => { if (e.own) ended.push(e) })
+    high.startScreenShare({ preset: 'standard' })
+    await sleep(600)
+    assert.equal(low.sendTo(high.peerId, fakeShare()), true)
+    await waitFor(() => high.screenState().peers[low.peerId], 5000, 'high has the line of low')
+    await sleep(200)
+    assert.ok(high.screenState().own, 'the share of high continues')
+    assert.deepEqual(ended, [])
+})
+
+test('L11: 2000 screen lines of one peer give at most 30 screen-state events', { timeout: 30000 }, async t => {
+    const { nodes: [M, P] } = await directRoom(t, 2)
+    let events = 0
+    P.events.on('screen-state', e => { if (e.peerId === M.peerId) events++ })
+    // The chat queue holds 512 lines: send in parts of 200.
+    for (let i = 0; i < 2000; i++) {
+        assert.equal(M.sendTo(P.peerId, fakeShare()), true)
+        if (i % 200 === 199) await sleep(50)
+    }
+    M.sendTo(P.peerId, { type: 'presence', v: 1, state: 'away', note: 'end of the screen lines' })
+    await waitFor(() => P.peerPresence()[M.peerId]?.note === 'end of the screen lines', 15000, 'P read all lines')
+    assert.ok(events <= 30, `screen-state events: ${events}`)
+})
