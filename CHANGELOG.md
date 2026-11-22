@@ -7,6 +7,28 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased — room link and transcript notes (goal G2, 2026-11-21)
+
+The room tells what the connection does, and the chat shows who came and who went. Gap IDs A2, A4, B1, B2, B3, D6,
+N4 of `work-orders/gaps-1.0-20261121`.
+
+- **Bye line.** A node that stops sends `{"type":"bye"}` on each open session, waits 200 ms, then closes the
+  sessions. The `peer-left` event gets `left: true` after a bye, else `left: false`.
+- **Who came and who went.** The chat gets note rows: "Alice joined the room.", "Alice left the room." and
+  "Alice lost the connection.". A peer that goes with no bye stays as a grey buddy line for 10 s. When this
+  computer loses all its peers, one note "Connection lost at 21:04." comes, and "Reconnected at 21:05." at the return.
+- **Room link.** The text above the chat tells the state. Examples: "Connecting to the room…", "Connection lost at
+  21:04. Reconnecting…" and "Everyone left the room. Waiting for a peer.". After 20 s with no connection, a longer
+  text and a "Details" button come. The status bar says "Connecting…", "Reconnecting…" or, for 5 s, "Reconnected".
+- **Send again.** A line with "Only on this computer" gets "Send again". When the first peer comes, the status tells
+  how many lines were not sent. ASSCRACK does not send them automatically.
+- **Day rows.** "Today", "Yesterday" or the date comes before the first line of each day. Each time has the full
+  date in its tooltip.
+- **Status notices.** "Message copied." and "Name copied." go away after 6 s.
+- **Result: 127.0.0.1, this PC.** `npm test`: 515 of 515 pass. App check with two copies: a quit gives "Bob left
+  the room." and "Everyone left the room.". An ended process gives the grey line, "Connection lost at …" and
+  "Reconnecting…" (11 of 11 checks pass). One start of the app: no error line. No LAN test.
+
 ## Unreleased — behavior tests for the room window (goal P3, 2026-11-21)
 
 Some tests of the room window only read the source text. A change of the code text made them fail, and a broken
