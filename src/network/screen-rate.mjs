@@ -600,7 +600,8 @@ export function createScreenRate({ quality = 'auto', source = null, now, params 
         stats() {
             return {
                 cap: ladder[capIndex()].id, capture: ladder[canon(capture)].id,
-                tiers: tiers.map(t => ({ ...tierView(t), usage: Math.round(t.usage * 100) / 100, skipRatio: t.skipRatio, frames: t.frames })),
+                tiers: tiers.map(t => ({ ...tierView(t), usage: Math.round(t.usage * 100) / 100, skipRatio: t.skipRatio, frames: t.frames,
+                    upBlockedUntil: t.upBlockedUntil, upBackoffMs: t.upBackoff })),
                 viewers: [...viewers.values()].map(v => ({ peerId: v.id, tier: v.tier, slow: v.slow, circuit: v.circuit,
                     rate: v.rate, target: targetOf(v), framesSent: v.sentFrames, bytesSent: v.sentBytes, keyframes: v.keys,
                     dropped: v.drops, congestions: v.congestions, switches: v.switches, deep: v.deep,
