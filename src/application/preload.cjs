@@ -247,7 +247,8 @@ contextBridge.exposeInMainWorld('asscrack', {
     postMedia: async (file, caption, channelId, recipientId) => {
         const filePath = webUtils.getPathForFile(file);
         if (filePath) return ipcRenderer.invoke('asscrack:post-media', filePath, caption, channelId, recipientId);
-        if (file.type !== 'image/png' || file.size < 33 || file.size > 16 * 1024 * 1024) throw new Error('Clipboard images must be PNGs of at most 16 MiB');
+        if (file.type !== 'image/png' || file.size < 33) throw new Error('Can\'t paste this image.');
+        if (file.size > 16 * 1024 * 1024) throw new Error('Image too large (16 MB max).');
         return ipcRenderer.invoke('asscrack:post-media', new Uint8Array(await file.arrayBuffer()), caption, channelId, recipientId);
     },
     attachmentAvailable: id => ipcRenderer.invoke('asscrack:attachment-available', id),

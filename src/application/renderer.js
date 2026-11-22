@@ -54,11 +54,20 @@ function firstLetter(name) {
 // The text of an error for the user. Electron puts "Error invoking remote method '<channel>': Error: " before the
 // message of an error from the main process. That part is for a programmer, not for the user.
 // P4 of the UI copy pass: the guard texts of the main process (only in a race) get one short text in the window.
+// P6 and 4.19: the texts of src/network/ that reach the window get a short window text. The network modules keep their
+// texts (the terminal demo and the tests use them).
 const GUARD_TEXTS = [
     [/^Not logged in/, 'Not in a room.'],
     [/^Saved room not found/, 'Room not found.'],
     [/^(Already logged in|Invalid peer ID|Invalid offer ID|A local file is required|The file path is not an absolute path|The file has no path)/,
-        'Something went wrong. Try again.']
+        'Something went wrong. Try again.'],
+    [/^This device has been removed from the room/, 'You were removed from this room.'],
+    [/^Named channels need a host/, 'Channels aren\'t available right now.'],
+    [/^This channel is read-only/, 'This channel is read-only right now.'],
+    [/^Too many files are being prepared/, 'Too many files at once. Wait a moment.'],
+    [/^Too many (outstanding file offers|recipients have pending file offers)/, 'Too many open offers. Wait for some to finish.'],
+    [/^The selected recipient (is not connected|disconnected before)/, 'Recipient is offline.'],
+    [/^File changed/, 'The file changed. Try again.']
 ];
 function errorText(err) {
     const text = String(err?.message ?? err).replace(/^Error invoking remote method '[^']*': (?:\w*Error: )?/, '');
@@ -194,7 +203,7 @@ function markUnverified(item) {
     if (!from) return;
     item.classList.add('unverified');
     from.classList.add('unverified');
-    from.title = 'The host gave this name. This computer does not know the device of this line.';
+    from.title = 'Name given by the host';
     groupWithPrevious(item);
     groupWithPrevious(nextContentRow(item));
 }
@@ -228,7 +237,7 @@ const messageDetails = document.getElementById('message-details');
 function showArchiveFact() {
     if (!messageDetails?.open) return;
     const saved = savedMessageIds.has(messageDetails.dataset.messageId);
-    document.getElementById('message-detail-archive').textContent = saved ? 'Saved on this device' : 'No local archive copy recorded';
+    document.getElementById('message-detail-archive').textContent = saved ? 'Saved' : 'Not saved';
 }
 
 function showMessageDetails(row) {
@@ -259,7 +268,7 @@ function markLocalOnly(item, channelId = 'general') {
     item.dataset.channelId = String(channelId);
     const mark = document.createElement('span');
     mark.className = 'local-only-mark';
-    mark.textContent = 'Only on this computer';
+    mark.textContent = 'Only on this PC';
     // Not a tab stop, as the Quote button: the keyboard uses the row menu.
     const again = makeButton('Send again', () => runRowAction('resend', item), 'resend', 'btn-resend');
     again.tabIndex = -1;
@@ -319,7 +328,7 @@ function makePeerLine(name, title, colorName = name, self = false) {
     avatar.type = 'button';
     avatar.className = 'avatar';
     if (self) {
-        avatar.setAttribute('aria-label', 'Edit your availability and status note');
+        avatar.setAttribute('aria-label', 'Set status');
         avatar.setAttribute('aria-haspopup', 'dialog');
         avatar.addEventListener('click', editAvailability);
     } else {
@@ -375,7 +384,7 @@ function refreshPeerMarks() {
         const name = peerNames.get(peerId);
         const clash = Boolean(name) && (count.get(String(name).trim().toLowerCase()) ?? 0) > 1;
         item.classList.toggle('name-clash', clash);
-        nameSpan.title = clash ? 'Another person in this room uses the same name. Look at the mark after the name.' : '';
+        nameSpan.title = clash ? 'Same name as another buddy' : '';
     }
 }
 
@@ -938,7 +947,7 @@ async function sendMessage() {
         return;
     }
     if (!reply.trim()) {
-        if (quote) status.textContent = 'Type a reply to the quote.';
+        if (quote) status.textContent = 'Type a reply.';
         return;
     }
     const text = window.quoteCore.compose(quote, reply);
@@ -948,7 +957,7 @@ async function sendMessage() {
     try {
         record = channelId === 'general' ? await window.asscrack.send(text) : await window.asscrack.send(text, channelId);
     } catch (err) {
-        status.textContent = `Not sent: ${errorText(err)}. The message stays in the message box.`;
+        showStatusError(`Not sent: ${errorText(err)}`);
         return;
     } finally {
         sendBusy = false;
@@ -997,7 +1006,7 @@ async function submitComposer() {
     const recipientId = fileRecipient.value;
     const sent = await sendMessage();
     if (sent === true && pendingFile && fileRecipient.value === recipientId) {
-        status.textContent = `The file for ${transferPeerName(recipientId)} is still attached. Select “Send file” to send it.`;
+        status.textContent = `File for ${transferPeerName(recipientId)} is still attached.`;
     }
     return sent;
 }
@@ -1026,7 +1035,7 @@ async function resendMessage(row) {
         sendBusy = false;
     }
     if (noneAccepted(record)) {
-        status.textContent = 'Not sent: no one is connected.';
+        status.textContent = 'Not sent: no one is here.';
         return false;
     }
     // The row can be in a stored channel list now (a change of the channel while the send ran).
@@ -1054,8 +1063,7 @@ function noteUnsentLines() {
     let count = 0;
     for (const list of lists) for (const row of Array.from(list.children)) if (row.classList.contains('local-only')) count++;
     if (count === 0) return;
-    status.textContent = count === 1 ? '1 message was not sent. Select “Send again” on it.'
-        : `${count} messages were not sent. Select “Send again” on each one.`;
+    status.textContent = count === 1 ? '1 message not sent.' : `${count} messages not sent.`;
 }
 
 loginButton.addEventListener('click', login);
@@ -1804,7 +1812,7 @@ function showBuddyOnMap(peerId) {
     updateNodeMap();
     if (peerId !== self && window.peerInspector?.open(peerId)) return true;
     if (window.nodeMap?.highlight?.(peerId)) return true;
-    status.textContent = 'This buddy is not on the network map yet.';
+    status.textContent = 'Not on the map yet.';
     return false;
 }
 
@@ -2514,7 +2522,7 @@ async function sendFile() {
     if (handleWhisperCommand(messageInput.value)) return;
     const recipientId = fileRecipient.value === 'room' ? undefined : fileRecipient.value;
     if (recipientId !== undefined && !peerItems.has(recipientId)) {
-        status.textContent = 'The selected recipient is disconnected. Choose a recipient before sending.';
+        status.textContent = 'Recipient is offline. Choose another.';
         return;
     }
     offeringFile = true;
@@ -2530,7 +2538,7 @@ async function sendFile() {
         }
         const result = posted?.offer ?? await window.asscrack.offerFile(file, recipientId);
         if (result.peers === 0) {
-            status.textContent = 'No peer received the offer. The file is still attached.';
+            status.textContent = 'No one received the file.';
             return null;
         }
         if (posted?.message) {
@@ -2582,7 +2590,7 @@ messageInput.addEventListener('paste', event => {
     const file = item?.getAsFile();
     if (!file) return;
     event.preventDefault();
-    if (file.size > 16 * 1024 * 1024) { status.textContent = 'Clipboard PNG exceeds 16 MiB.'; return; }
+    if (file.size > 16 * 1024 * 1024) { status.textContent = 'Image too large (16 MB max).'; return; }
     attachFile(file);
     messageInput.focus({ preventScroll: true });
 });
@@ -2607,7 +2615,7 @@ for (const type of ['dragover', 'drop']) {
         composer.classList.toggle('file-drop-active', acceptsDrop && type === 'dragover');
         if (type !== 'drop' || !acceptsDrop) return;
         if (data.files.length !== 1 || data.items?.[0]?.webkitGetAsEntry?.()?.isDirectory) {
-            status.textContent = 'Choose one file to attach.';
+            status.textContent = 'Attach one file at a time.';
             return;
         }
         attachFile(data.files[0]);
@@ -2878,7 +2886,7 @@ async function refreshRoomTopic() {
 
 async function submitTopic(text) {
     if (!currentTopic.available || !hasApi('setTopic')) {
-        status.textContent = 'Topic unavailable until a host with topic support is connected.';
+        status.textContent = 'Can\'t edit the topic right now.';
         return false;
     }
     try {
@@ -2886,7 +2894,7 @@ async function submitTopic(text) {
         status.textContent = '';
         return true;
     } catch (err) {
-        status.textContent = err?.message ? errorText(err) : 'Topic change failed.';
+        status.textContent = err?.message ? errorText(err) : 'Couldn\'t change the topic.';
         return false;
     }
 }
@@ -3026,7 +3034,7 @@ function makePresenceControls() {
     note.id = 'presence-note';
     note.type = 'text';
     note.placeholder = 'Status note';
-    note.setAttribute('aria-label', 'Status note (80 characters or less)');
+    note.setAttribute('aria-label', 'Status note');
     note.autocomplete = 'off';
     const button = document.createElement('button');
     button.id = 'presence-set';

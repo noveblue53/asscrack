@@ -39,6 +39,9 @@
         add.disabled = !available;
         sendButton.disabled = selected !== 'general' && !available;
         note.hidden = !sendButton.disabled;
+        // UI copy pass: the message box names the channel.
+        const current = catalog.find(row => row.id === selected);
+        messageInput.placeholder = 'Message #' + (selected === 'general' || !current ? 'general' : current.name);
     }
     function update(snapshot) {
         if (!Array.isArray(snapshot?.channels)) return;

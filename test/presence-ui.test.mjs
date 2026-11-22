@@ -122,7 +122,7 @@ test('a failed set shows the error and keeps the old own badge', async () => {
     f.el('presence-set').click();
     await settle();
     assert.equal(selfBadge(f).textContent, 'Available');
-    assert.match(f.el('status').textContent, /^Status not set: Not logged in/);
+    assert.match(f.el('status').textContent, /^Status not set: Not in a room\./);
 });
 
 test('the state read after login applies to the own line and the buddies', async () => {

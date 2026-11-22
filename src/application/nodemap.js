@@ -244,7 +244,7 @@
         if (data.linkToYou) facts.push('Chat link to you · ' + data.linkToYou);
         if (data.inVoice) facts.push((data.speaking ? 'speaks now' : data.muted ? 'in voice (muted)' : 'in voice') + (data.channel ? ' · ' + data.channel : ''));
         else facts.push('not in voice');
-        node.group.setAttribute('aria-label', data.self ? 'Edit your availability and status note' : 'Inspect ' + data.name);
+        node.group.setAttribute('aria-label', data.self ? 'Set status' : 'Inspect ' + data.name);
         node.title.textContent = facts.join('\n');
         if (node.host !== data.host) {
             node.host = data.host;

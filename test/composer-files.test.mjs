@@ -112,7 +112,7 @@ test('an ordinary file for the entire room with 0 peers: no text goes, the text 
     assert.deepEqual(t.calls, [['offerFile', 'setup.zip', undefined]]);
     assert.equal(t.input.value, 'the installer');
     assert.equal(t.draft(), 'setup.zip');
-    assert.match(t.status(), /No peer received the offer/);
+    assert.match(t.status(), /No one received the file/);
     assert.deepEqual(t.offerNotes(), []);
 });
 
@@ -144,7 +144,7 @@ test('a file for one person and text in the box: only the text goes to the room,
     assert.equal(t.input.value, '');
     assert.equal(t.draft(), 'secret.pdf');
     assert.equal(t.room.el('file-recipient').value, 'peer-bob');
-    assert.equal(t.status(), 'The file for bob is still attached. Select “Send file” to send it.');
+    assert.equal(t.status(), 'File for bob is still attached.');
     // The button "Send file" then sends the file.
     t.room.el('send-file').click();
     await settle();

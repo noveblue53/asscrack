@@ -39,7 +39,7 @@
                 setEnabled(await api.setShareTyping(next));
             } catch {
                 setEnabled(false);
-                status.textContent = 'Could not save the typing preference. Sharing is off in this window.';
+                status.textContent = 'Couldn\'t save. Typing status is off.';
             } finally {
                 busy = false;
             }

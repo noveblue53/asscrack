@@ -68,7 +68,7 @@
         draft.disabled = !data;
         send.disabled = !data || data.busy || !data.draft.trim() || (!capable.has(selected) && !whisperPrefix.test(data.draft));
         if (!data) status.textContent = chooser?.note || '';
-        else if (data.busy) status.textContent = 'Waiting for receipt…';
+        else if (data.busy) status.textContent = 'Sending…';
         else if (!data.online) status.textContent = 'Offline';
         else if (!capable.has(selected)) status.textContent = 'Whispers unavailable';
         else status.textContent = data.note;
@@ -93,7 +93,7 @@
             body.textContent = row.text;
             li.append((row.mine ? 'You' : data.name || label(selected)) + ' — ', body);
             window.chatLinks?.apply(body, { focusable: true });
-            if (row.mine) li.setAttribute('aria-label', li.textContent + ', received by peer');
+            if (row.mine) li.setAttribute('aria-label', li.textContent + ', delivered');
             lines.append(li);
         }
         lines.scrollTop = lines.scrollHeight;
@@ -181,7 +181,7 @@
             message = quoted ? quoted[2] || '' : args.slice((fullName || word).length).trimStart();
         }
         if (ids.length !== 1) {
-            choose(ids.length ? { ids, raw, message, origin, note: 'Choose the intended buddy.' } : { note: 'No matching buddy.' });
+            choose(ids.length ? { ids, raw, message, origin, note: 'Choose a recipient.' } : { note: 'No match.' });
             return false;
         }
         return openAddressed(ids[0], message, origin === ids[0] ? raw : null);

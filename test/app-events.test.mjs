@@ -198,7 +198,7 @@ test('the file picker keeps the selected buddy distinct from the room after a di
     assert.equal(recipient.value, selected);
     await send();
     assert.deepEqual(sent, [selected]);
-    assert.match(room.el('status').textContent, /disconnected/);
+    assert.match(room.el('status').textContent, /Recipient is offline/);
     assert.equal(room.el('file-draft-name').textContent, 'plans.txt');
     recipient.value = 'room';
     await send();
@@ -229,7 +229,7 @@ test('a dropped file waits for Send file, survives offer failure, and can be rem
         if (calls.length === 1) throw new Error('File could not be read');
         return { offerId: 'offer', peers: 0, name: f.name, size: f.size };
     };
-    for (const message of [/could not be read/, /still attached/]) {
+    for (const message of [/could not be read/, /No one received the file/]) {
         room.el('send-file').click();
         room.el('send-file').click();
         await settle();
@@ -411,7 +411,7 @@ test('message details show the local archive fact for the selected message only'
     await settle();
     const saved = room.rows()[0];
     const other = room.receive({ from: 'Sam', text: 'other', peerId: 'sam', id: 'other' });
-    for (const [row, fact] of [[saved, 'Saved on this device'], [other, 'No local archive copy recorded']]) {
+    for (const [row, fact] of [[saved, 'Saved'], [other, 'Not saved']]) {
         const info = room.window.roomActions.rowInfo(row);
         assert.ok(room.window.menuCore.actionsFor(info).includes('message-details'));
         assert.equal(row.querySelector('.saved-mark'), null);

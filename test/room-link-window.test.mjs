@@ -181,12 +181,12 @@ test('Send again: 0 accepting peers keeps the row; 1 moves the line to the end',
 
     button.click();
     await settle();
-    assert.equal(f.el('status').textContent, 'Not sent: no one is connected.');
+    assert.equal(f.el('status').textContent, 'Not sent: no one is here.');
     assert.equal(row.isConnected, true);
 
     // A peer comes: one line was not sent.
     peer(f, 'peer-bob', 'Bob');
-    assert.equal(f.el('status').textContent, '1 message was not sent. Select “Send again” on it.');
+    assert.equal(f.el('status').textContent, '1 message not sent.');
     f.receive({ id: 'p1', from: 'Bob', text: 'hi', peerId: 'peer-bob', time: 2500 });
 
     assert.equal(await f.window.roomActions.run('resend', row), true);
@@ -209,7 +209,7 @@ test('the count of lines that were not sent, with 2 lines', async () => {
         await settle();
     }
     peer(f, 'peer-bob', 'Bob');
-    assert.equal(f.el('status').textContent, '2 messages were not sent. Select “Send again” on each one.');
+    assert.equal(f.el('status').textContent, '2 messages not sent.');
 });
 
 test('"Message copied." clears after 6 s; an error text stays', async () => {

@@ -31,7 +31,7 @@ export function checkChosenFile(filePath, { blocked = [], platform = process.pla
         throw new Error('Choose a local file');
     }
     if ([filePath, real].some(p => blocked.some(dir => dir && inside(dir, path.resolve(p), platform)))) {
-        throw new Error('This file is in a private folder of ASSCRACK and cannot go to the room');
+        throw new Error("Can't share files from the app's private folder.");
     }
     return filePath;
 }

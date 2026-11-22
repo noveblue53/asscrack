@@ -182,7 +182,7 @@
             button.addEventListener('click', () => open(member.id));
             return button;
         }));
-        if (!matches.length) choices.textContent = 'No matching buddy';
+        if (!matches.length) choices.textContent = 'No match';
     }
     function show() {
         if (!document.body.classList.contains('map-open')) byId('map-toggle').click();
@@ -229,7 +229,7 @@
     activity.addEventListener('click', () => {
         if (!selected) return;
         const member = members.find(item => item.id === selected);
-        window.roomActivity.openPeer(selected, member?.name || 'disconnected buddy', activity);
+        window.roomActivity.openPeer(selected, member?.name || 'offline buddy', activity);
     });
     byId('peer-detail-close').addEventListener('click', () => { close(); byId('map-close').focus({ preventScroll: true }); });
     mapTab.addEventListener('click', () => showMapTab(true));

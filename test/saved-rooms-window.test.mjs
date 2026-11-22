@@ -44,7 +44,7 @@ test('an own line that no peer accepted gets the local-only mark; an accepted li
     const alone = await sendLine(f, 'nobody is here');
     const seen = await sendLine(f, 'two peers got this');
     assert.equal(alone.classList.contains('local-only'), true);
-    assert.equal(alone.querySelector('.local-only-mark').textContent, 'Only on this computer');
+    assert.equal(alone.querySelector('.local-only-mark').textContent, 'Only on this PC');
     assert.equal(seen.querySelector('.local-only-mark'), null);
     assert.equal(seen.classList.contains('local-only'), false);
     assert.doesNotMatch(f.el('messages').textContent, /No peer got this message/);
@@ -55,10 +55,10 @@ test('the line-saved event marks the line as saved; the save-failed event shows 
     const f = await savedRoomWindow({ send: async () => ({ id: 'm1', time: 1000, accepted: 1 }) });
     await f.login('Me');
     const row = await sendLine(f, 'keep me');
-    assert.equal(archiveFact(f, row), 'No local archive copy recorded');
+    assert.equal(archiveFact(f, row), 'Not saved');
     // The dialog stays open: the fact changes when the main process reports the archive write.
     f.handlers.onLineSaved({ id: 'm1' });
-    assert.equal(f.el('message-detail-archive').textContent, 'Saved on this device');
+    assert.equal(f.el('message-detail-archive').textContent, 'Saved');
     f.handlers.onSaveFailed({ id: 'm2', reason: 'disk full' });
     assert.equal(f.el('status').textContent, 'Not saved: disk full');
     assert.equal(f.el('history-state').textContent, 'Not saved: disk full');

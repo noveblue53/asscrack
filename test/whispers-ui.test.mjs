@@ -66,7 +66,7 @@ test('private composer binds drafts, acknowledgements and notification clicks to
     window.whispers.open('identity-b')
     assert.equal(el('draft').value, '')
     assert.equal(el('lines').textContent, 'You — only for B')
-    assert.match(el('lines').children[0].getAttribute('aria-label'), /received by peer/)
+    assert.match(el('lines').children[0].getAttribute('aria-label'), /, delivered$/)
     window.whispers.close()
     const id = randomUUID()
     events.Whisper({ peerId: 'identity-c', text: 'private incoming marker', id })

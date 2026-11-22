@@ -889,9 +889,14 @@ body.layout-map-docked.layout-buddy-off #chat-body {
 
 /* M1 (P10a): a history line of a device that this computer does not know (renderer.js, markUnverified). */
 .from.unverified::after {
-  content: " (not verified)";
-  font-weight: 400;
-  opacity: 0.75;
+  content: "Unverified";
+  margin-left: 5px;
+  padding: 0 5px;
+  border: 1px solid currentColor;
+  border-radius: 7px;
+  font-size: 10px;
+  font-weight: 600;
+  opacity: 0.85;
 }
 
 /* L3 (P10a): the device mark beside a name (renderer.js, applyMark and refreshPeerMarks). */
@@ -903,7 +908,7 @@ body.layout-map-docked.layout-buddy-off #chat-body {
 }
 
 .from.unverified[data-mark]::after {
-  content: " #" attr(data-mark) " (not verified)";
+  content: "#" attr(data-mark) " · Unverified";
 }
 
 #peers .name-clash .name::after {
