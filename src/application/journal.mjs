@@ -161,7 +161,7 @@ export const EVENT_FIELDS = Object.freeze({
     'session-refused': { peer: kinds.peer, cause: kinds.code },
     'peer-left': { peer: kinds.peer, left: oneOf('bye', 'lost') },
     dial: { peer: kinds.peer, via: kinds.code, result: oneOf('ok', 'failed'), reason: kinds.code, ...where,
-        error: kinds.text, count: kinds.int },
+        error: kinds.text, count: kinds.int, ms: kinds.int },
     upnp: { state: kinds.code, reason: kinds.code, port: kinds.int, external: ADDR, renew: kinds.bool },
     'full-node': { peer: kinds.peer, on: kinds.bool, self: kinds.bool },
     host: { host: kinds.peer, term: kinds.int, reason: kinds.code, self: kinds.bool, none: kinds.bool },

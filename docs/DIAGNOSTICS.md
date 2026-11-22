@@ -97,7 +97,7 @@ the budget. One `suppressed` line (`of`, `count`) follows. A write error writes 
 | `session-ids` | `peer sid peerSid clock diag` | the hello line of the peer |
 | `session-refused` | `peer cause` (`timeout wrong-proof not-member needs-owner revoked duplicate ...`) | room proof |
 | `peer-left` | `peer left` (`bye lost`) | node |
-| `dial` | `peer via result reason addr transport port error count` | failed dials (coalesced for 60 s) |
+| `dial` | `peer via result reason addr transport port error count ms`. `via`: `connect discovery full-node address relay reserve dial-back`. `result`: `ok` or `failed`. `ms`: the time of the attempt. `dial-back` is the reach attempt (`failed` with `no-dial-back` when the peer could not dial back) | each dial and reach attempt, also the successes (each kind coalesced for 60 s for the same site, target and address) |
 | `upnp` | `state reason port external renew` | UPnP |
 | `full-node` | `peer on self` | node |
 | `host` | `host none term reason self` (`first self-elect announce-first higher-term tie-break not-allowed isolated`) | election |
