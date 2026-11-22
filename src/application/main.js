@@ -39,6 +39,7 @@ import { createFriendLinks } from './friend-links.mjs';
 import { withDeviceMarks } from './peer-marks.mjs';
 import { attachFriendWindows, registerFriendIpc } from './friend-windows.mjs';
 import { createFriendJoins, savedRoomHasId } from './friend-join.mjs';
+import { createClipboardJoin, createAskedStore, ASKED_FILE } from './clipboard-join.mjs';
 import { installInterfaceCache } from '../network/interface-cache.mjs';
 import { createUpdateService } from './update-service.mjs';
 import { CHOICE_FILE, choiceAfterForget, createStartEntry, createStartRunner, isInstalledBuild, isStaleChoice, normalizeChoice,
@@ -652,6 +653,7 @@ function createMainWindow() {
     for (const type of ['resize', 'move', 'maximize', 'unmaximize']) mainWindow.on(type, saveBoundsSoon);
     // Gap E1: the focus ends the taskbar flash and removes the dot.
     taskbarFlash.attach(mainWindow);
+    attachClipboardJoin(mainWindow);
 
     mainWindow.on('close', event => {
         saveBoundsNow();
@@ -1141,6 +1143,38 @@ handleRoomIpc('asscrack:friend-knock', async (_event, friendId, leave) => {
     if (answer.result !== 'knock') return answer;
     return { result: 'knock', room: answer.room, denied: answer.outcome.result === 'denied', text: knockResultText(answer.outcome) };
 });
+// easy-join part 3: a device invite in the clipboard (clipboard-join.mjs). Main reads the clipboard text only when the
+// main window opens or gets the focus. The window gets { id, room }, never the code.
+const clipboardJoin = createClipboardJoin({
+    readText: () => clipboard.readText(),
+    selfId: clipboardSelfId,
+    currentRoom: () => (node && roomName !== null ? { room: roomName, roomKey: node.roomKey() } : null),
+    busy: () => Boolean(leaving) || (loginStarted && !node) || knocking || quitting,
+    store: createAskedStore(path.join(app.getPath('userData'), ASKED_FILE), { log: writeLog }),
+    notify: () => sendToWindow('asscrack:clipboard-join', null),
+    join: (code, room, leave) => friendJoins.joinCode(code, room, leave),
+    log: writeLog
+});
+// The device ID only when the protected storage is open and has an identity. This read makes no identity.
+function clipboardSelfId() {
+    if (friendLinks.state() !== 'open') return null;
+    try {
+        return importDeviceIdentity(getSavedRooms().deviceIdentity(() => { throw new Error('no identity'); })).id;
+    } catch {
+        return null;
+    }
+}
+function attachClipboardJoin(win) {
+    const check = () => {
+        // The window takes the prompt at its start (clipboard-join-ui.js), thus a check during the load is no loss.
+        if (!win.isDestroyed() && win.isVisible()) clipboardJoin.check().catch(() => {});
+    };
+    win.on('focus', check);
+    win.webContents.on('did-finish-load', check);
+}
+handleRoomIpc('asscrack:clipboard-join-take', () => clipboardJoin.take());
+handleRoomIpc('asscrack:clipboard-join', (_event, id, leave) => clipboardJoin.join(typeof id === 'string' ? id : '', leave === true));
+handleRoomIpc('asscrack:clipboard-join-dismiss', (_event, id) => { clipboardJoin.dismiss(typeof id === 'string' ? id : ''); });
 friendLinks.events.on('invite', ({ name, room }) => {
     if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isVisible()) return;
     showTrayBalloon(`${name || 'A friend'} invites you to ${room}. Open the chat with ${name || 'your friend'} to join.`);

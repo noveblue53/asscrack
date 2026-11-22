@@ -93,6 +93,13 @@ export function createFriendJoins({ links, room, busy = () => false, leave, relo
             // The room can have ended during the wait (Leave room): then there is nothing to leave.
             return start(answer.invite, answer.room, room());
         },
+        // easy-join part 3 (clipboard-join.mjs): the same Join for a code that the main process checked.
+        async joinCode(code, codeRoom, leaveFirst = false) {
+            const current = room();
+            if (current !== null && !leaveFirst) return { result: 'confirm', room: codeRoom, current };
+            if (busy() || knockBusy) return { result: 'busy', room: codeRoom };
+            return start(code, codeRoom, current);
+        },
         // The main window takes the waiting Join one time: { token, room, name }, or null.
         take() {
             if (!waiting || waiting.taken) return null;

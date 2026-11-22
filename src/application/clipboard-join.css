@@ -1,0 +1,23 @@
+/* easy-join part 3: the prompt for a device invite in the clipboard (clipboard-join-ui.js). It shows on the login
+   screen and on the chat screen, thus it is a fixed bar at the top of the window. */
+#clipboard-join-bar {
+  position: fixed;
+  top: 44px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  box-sizing: border-box;
+  max-width: min(560px, calc(100% - 24px));
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: var(--surface-raised);
+  box-shadow: 0 8px 24px rgba(6, 50, 120, 0.3);
+}
+#clipboard-join-bar[hidden] { display: none; }
+#clipboard-join-bar p { flex: 1 1 200px; margin: 0; overflow-wrap: anywhere; }

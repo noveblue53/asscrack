@@ -54,9 +54,26 @@ function loadBridge() {
 test('the bridge exposes the room API and uses only ipcRenderer, contextBridge and webUtils of electron', () => {
     const b = loadBridge();
     // G7a adds the world 'friends' (the Friends panel, the request bar and the buddy menu lines).
-    assert.deepEqual(Object.keys(b.worlds).sort(), ['asscrack', 'desktopFrame', 'friends', 'roomVoiceMonitor']);
+    // easy-join part 3 adds the world 'clipboardJoin' (the prompt for a device invite in the clipboard).
+    assert.deepEqual(Object.keys(b.worlds).sort(), ['asscrack', 'clipboardJoin', 'desktopFrame', 'friends', 'roomVoiceMonitor']);
     assert.deepEqual(b.touched, []);
     for (const [name, fn] of Object.entries(b.api)) assert.equal(typeof fn, 'function', name);
+});
+
+test('the clipboardJoin world sends only the prompt id and true or false', async () => {
+    const b = loadBridge();
+    const api = b.worlds.clipboardJoin;
+    assert.deepEqual(Object.keys(api).sort(), ['dismiss', 'join', 'onPrompt', 'take']);
+    await api.take();
+    await api.join('p1', 'yes');
+    await api.join({ code: 'x' }, true);
+    await api.dismiss('p1');
+    assert.deepEqual(b.invoked, [['asscrack:clipboard-join-take'], ['asscrack:clipboard-join', 'p1', false],
+        ['asscrack:clipboard-join', '[object Object]', true], ['asscrack:clipboard-join-dismiss', 'p1']]);
+    const got = [];
+    api.onPrompt(data => got.push(data));
+    b.emit('asscrack:clipboard-join', null);
+    assert.deepEqual(got, [null]);
 });
 
 test('each on* function of the bridge gives the data of its event to the callback, with no IPC event object', () => {

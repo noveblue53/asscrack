@@ -7,6 +7,22 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased — code in the clipboard (goal easy-join, part 3, item 3, 2026-11-22)
+
+When the main window opens or gets the focus, the app reads the clipboard text one time.
+
+- **Prompt.** If the text is a room code or a device invite for this computer, the window shows "Join <room>?" with
+  Join and Not now. The app parses the text only. It uses no network before Join. It asks one time for each code, also
+  after a restart.
+- **No prompt.** The app does not ask for an expired code, a damaged text, an invite for a different device, a room
+  code of a room that this computer owns, or the room that is open now. The log and the window never get the text.
+- **Join.** Join of a room code sends a knock to the owner, the same as a pasted room code. Join of a device invite
+  uses the invite with no paste. In a room, Join asks "Leave <room> and join <room>?" first.
+
+Checks (127.0.0.1 and pure logic on this PC, not LAN, not internet): `test/clipboard-join.test.mjs` has 7 tests. Two app
+copies on this PC: A copies the room code, B shows the prompt and selects Join, A selects Allow, then chat in both
+directions. The same check with a device invite: B shows the prompt, selects Join, and is in the room of A.
+
 ## Unreleased — "Always allow my friends" (goal easy-join, part 3, 2026-11-22)
 
 The owner of a protected room can let friends in with no request.
