@@ -7,6 +7,41 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased
+
+### UI copy pass: short texts, and state marks in place of sentences (1.0.2)
+
+The operator asked for a window that speaks for itself. The window, the dialogs of the main process, the tray and the
+installer now show short labels, verbs on buttons and short error texts. A sentence that only gave a state is now a
+control with a tooltip. The source of the texts is the proposal `work-orders/ui-copy-20261122/PROPOSAL.md` (local to
+this PC). The panel name "Buddies" stays.
+
+Changes:
+- New state marks (`src/application/ui-state.css`, the icons `img/state-*.svg`). The colors come from the theme
+  variables.
+  - The Invite (Access) panel has a role badge: Owner, Member, Member · Host, Waiting for approval or Removed.
+  - The Invite panel, the status bar and the Friends panel show the reach as a dot and a short label.
+  - The Buddies lines show the voice state as an icon. The words are the tooltip, and they stay for screen readers.
+  - A push-to-talk icon lights while the key is down.
+  - New tags: "+N" in the knock bar, "Pending" for a friend request and "Unverified" after a name.
+  - More tags: "No audio" in the screen picker and "Debug log on" in About. A queued friend message has a clock icon.
+- The note about version 0.7.0 is gone. The paragraphs of the invite forms, the voice meter, the history panel, the
+  start-at-sign-in dialog and About are gone or are tooltips.
+- An error in the status line has no "Error:" prefix. The class `error` makes it red.
+- The window shows short texts for the guard texts of the main process and for the known error texts of
+  `src/network/`. The network modules keep their texts, thus the terminal demo does not change.
+
+Checks:
+- **127.0.0.1 and this PC only.** `npm test`: 1045 tests, 1027 pass, 0 fail, 18 skipped.
+- The 3 tests less than at 1.0.1 come from `test/old-version-note.test.mjs`. It now checks only that the note is absent.
+- One app start with a fresh profile: no error line in the terminal and no error in the developer console.
+- Two copies on 127.0.0.1: knock, Allow, chat in both directions, voice with mute and deafen, Leave room. All steps
+  passed. No console error.
+- The voice check of the regression map (127.0.0.1, the virtual audio devices of this PC) passed. Voice activity
+  sends, and push to talk sends only while the key is down.
+- The contrast of the new marks in each of the 6 themes: text 4.5:1 or more, icons and dots 3:1 or more.
+- No LAN test and no internet test occurred.
+
 ## 1.0.1 (2026-11-22): easy joins, one data folder and diagnostics
 
 Release 1.0.1 is the first update of 1.0.0. A 1.0.0 app gets it with the signed update (View, About ASSCRACK, Check
