@@ -7,7 +7,24 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
-## Unreleased
+## 1.0.2 (2026-11-22): short texts and state marks
+
+Release 1.0.2 is the second update of 1.0.0. A 1.0.0 or 1.0.1 app gets it with the signed update (View, About
+ASSCRACK, Check now). It has one change: the UI copy pass below. The window shows short texts, and marks (the owner
+badge, the reach dot, the voice icons) with tooltips replace the sentences that gave a state. `src/network/` has no
+change.
+
+Build:
+- `npm run dist` makes `ASSCRACK-1.0.2-portable.exe`. `npm run dist:installer` makes `ASSCRACK-1.0.2-setup.exe`.
+- The source of the two files is the commit of this entry. The signed `update.json` of the release gives the byte size
+  and the SHA-256 of each file. The files have no code signature.
+
+Results:
+- **127.0.0.1 and this PC only.** The entry below gives the checks of the UI copy pass with their labels.
+- Known failures: the same as 1.0.1 (check 19 of P8b, check 18 of P8a, the timed screen check 16 of
+  `test/screen-auto.test.mjs`). One case of `test/transfer-resume-restart.test.mjs` can fail under load and passes
+  alone.
+- No LAN test and no internet test of 1.0.2 occurred.
 
 ### UI copy pass: short texts, and state marks in place of sentences (1.0.2)
 
