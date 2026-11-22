@@ -11,11 +11,12 @@ import { EventEmitter } from 'node:events';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
+import { multiaddr } from '@multiformats/multiaddr';
 import { newRoomKey } from '../network/invite.mjs';
 import { createRoomMembership, restoreRoomMembership } from '../network/room-membership.mjs';
 import { addrsLine, createFriendRequests, validName } from '../network/friend-requests.mjs';
 import { createPrivateMessages, validPmText } from '../network/private-messages.mjs';
-import { observedIp } from '../network/fullnode.mjs';
+import { observedIp, peerAddrAllowed } from '../network/fullnode.mjs';
 import { restoreSavedAdmission } from './room-admission.mjs';
 import { isAddressInUse } from './login-errors.mjs';
 
@@ -102,6 +103,12 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
     let availability = { state: 'available', note: '', idle: false };
 
     const emitChanged = () => events.emit('changed', list());
+    // L1 (P10a): the addresses of a friend from a grant, a done line or an addrs line. Only TCP addresses with an IP: no
+    // /dns* and no /unix. A LAN address is good (a friend on the same network). A loopback address only with the test
+    // flag allowPrivateFullNode.
+    const addrOk = addr => peerAddrAllowed(addr, { allowLan: true, allowPrivate: nodeOptions.allowPrivateFullNode === true });
+    const friendNodes = nodes => (Array.isArray(nodes) ? nodes : [])
+        .map(n => ({ id: n?.id, addrs: Array.isArray(n?.addrs) ? n.addrs.filter(addrOk) : [] }));
     const blocked = () => { try { return archive?.blocks() ?? []; } catch { return []; } };
     const isBlocked = deviceId => blocked().some(b => b.deviceId === deviceId);
     const byDevice = deviceId => [...friends.values()].find(e => e.row.deviceId === deviceId) ?? null;
@@ -475,7 +482,7 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
         }
         const id = grant.nodes[0]?.id;
         const fromRoom = candidates && id ? [{ id, addrs: connectionCandidates(roomNode, peerId, grant.port) }] : [];
-        const addrs = candidates ? mergeNodes(grant.nodes, fromRoom) : [];
+        const addrs = candidates ? mergeNodes(friendNodes(grant.nodes), friendNodes(fromRoom)) : [];
         const { roomId } = archive.saveFriendRoom({ name: grant.room, roomKey: grant.key, userName: ownName(roomNode.name),
             membership: membership.snapshot(), friend: { deviceId, nickname: validName(name) ? name.trim() : 'Friend', slot, addrs } });
         const entry = addEntry(archive.listFriends().find(f => f.roomId === roomId));
@@ -493,19 +500,36 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
         return { port: entry.port, nodes: own.length ? [{ id: entry.node.peerId, addrs: own }] : [] };
     }
 
-    // A: the done line of B. Keep the candidates of B and dial them one time. G7b: the same for the addrs line of a
-    // friend in a common room (always false: the node dials only when the friend link has no session).
-    function ownerDone(roomNode, peerId, deviceId, port, nodes, { always = true } = {}) {
+    // A: the done line of B. Dial the candidates of B one time. G7b: the same for the addrs line of a friend in a
+    // common room. L1 (P10a): save a candidate only after a connection to that peer ID (tryFriendAddr). The friend node
+    // opens the friend link on that connection when the link has no session.
+    function ownerDone(roomNode, peerId, deviceId, port, nodes) {
         const entry = byDevice(deviceId);
         if (!entry || !candidates || entry.row.state === 'removed-you') return;
         const id = nodes[0]?.id;
-        const more = mergeNodes(nodes, id ? [{ id, addrs: connectionCandidates(roomNode, peerId, port) }] : []);
-        entry.row.addrs = mergeNodes(entry.row.addrs, more);
-        save(entry.row.roomId, { addrs: entry.row.addrs });
-        if (!always && sessionPeer(entry)) return;
-        for (const node of more) for (const addr of node.addrs) {
-            entry.node?.connect(`${addr}/p2p/${node.id}`).catch(() => {});
+        const more = mergeNodes(friendNodes(nodes), friendNodes(id ? [{ id, addrs: connectionCandidates(roomNode, peerId, port) }] : []));
+        for (const node of more) for (const addr of node.addrs) tryFriendAddr(entry, node.id, addr);
+    }
+
+    // L1 (P10a): one dial of an address of the friend node. A new connection (force), also when a connection exists.
+    async function tryFriendAddr(entry, id, addr) {
+        const node = entry.node;
+        if (stopped || !node?.libp2p) return;
+        const target = `${addr}/p2p/${id}`;
+        let conn;
+        try {
+            conn = await node.libp2p.dial(multiaddr(target), { force: true });
+        } catch {
+            return;
         }
+        if (stopped || entry.node !== node || !friends.has(entry.row.roomId) || conn.remotePeer.toString() !== id) {
+            conn.close().catch(() => {});
+            return;
+        }
+        entry.row.addrs = mergeNodes(entry.row.addrs, [{ id, addrs: [addr] }]);
+        save(entry.row.roomId, { addrs: entry.row.addrs });
+        if (!sessionPeer(entry)) node.connect(target).catch(() => {});
+        else if (!conn.streams.some(stream => stream.protocol?.startsWith('/asscrack/chat'))) conn.close().catch(() => {});
     }
 
     function requestEvent(event) {
@@ -571,7 +595,7 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
                 acceptGrant: ({ peerId, deviceId, name, grant }) => receiveGrant(node, peerId, deviceId, name, grant)
                     .catch(err => { log('WARN', `Friend grant refused: ${errText(err)}`); throw err; }),
                 done: ({ peerId, deviceId, port, nodes }) => ownerDone(node, peerId, deviceId, port, nodes),
-                addrs: ({ peerId, deviceId, port, nodes }) => ownerDone(node, peerId, deviceId, port, nodes, { always: false }),
+                addrs: ({ peerId, deviceId, port, nodes }) => ownerDone(node, peerId, deviceId, port, nodes),
                 undo: ({ deviceId }) => {
                     const entry = byDevice(deviceId);
                     if (entry) stopNode(entry).then(() => { forget(entry); emitChanged(); });

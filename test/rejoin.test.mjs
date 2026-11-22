@@ -8,7 +8,9 @@ import { makeInvite, readInvite, newRoomKey } from '../src/network/invite.mjs'
 
 // All results of this file are 127.0.0.1 results, not LAN results.
 const LOCAL = ['/ip4/127.0.0.1/tcp/0']
-const fast = { heartbeatInterval: 200, hostTimeout: 1000, electionDelay: 500, redialInterval: 500 }
+// L1 (P10a): a node now refuses the private and loopback addresses of a node line, except with allowPrivateFullNode.
+// These 127.0.0.1 tests give it to each node.
+const fast = { heartbeatInterval: 200, hostTimeout: 1000, electionDelay: 500, redialInterval: 500, allowPrivateFullNode: true }
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
 async function waitFor(fn, timeoutMs, what) {

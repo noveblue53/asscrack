@@ -28,7 +28,7 @@ import { createFileTransfer, FILE_PROTOCOLS } from './file-transfer.mjs'
 import { createScreenShare, SCREEN_PROTOCOL } from './screen-share.mjs'
 import { createVoiceRelay, VOICE_PROTOCOL, VOICE_DIRECT_PROTOCOL } from './voice-relay.mjs'
 import { makeInvite, makeMemberInvite, validAddr, validPeerId } from './invite.mjs'
-import { DIALBACK_PROTOCOL, handleDialback, requestDialback, isPrivateIp, observedIp, tcpTarget } from './fullnode.mjs'
+import { DIALBACK_PROTOCOL, handleDialback, requestDialback, isPrivateIp, observedIp, peerAddrAllowed, tcpTarget } from './fullnode.mjs'
 
 export { FILE_PROTOCOL, safeFileName } from './file-transfer.mjs'
 export { VOICE_PROTOCOL, VOICE_DIRECT_PROTOCOL } from './voice-relay.mjs'
@@ -788,7 +788,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                                 else idlePeers.delete(peerId)
                                 emitTopology()
                             }
-                            setPeerFull(peerId, control.fullNode, control.fullNode ? validAddrList(control.addrs) : null)
+                            setPeerFull(peerId, control.fullNode, control.fullNode ? peerAddrList(control.addrs) : null)
                         }
                     }
                     // L9 (P10a): no 'signal' line. The window had no listener for it, and each line went to the window IPC.
@@ -1094,6 +1094,33 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         if (!Array.isArray(addrs) || addrs.length < 1 || addrs.length > MAX_ADDRS || !addrs.every(validAddr)) return null
         return [...new Set(addrs)]
     }
+    // L1 (P10a): the addresses of the node line of a peer. Only TCP addresses with a public IP (peerAddrAllowed), or each
+    // IP with allowPrivateFullNode (the 127.0.0.1 tests). null when no address is left.
+    function peerAddrList(addrs) {
+        const list = validAddrList(addrs)?.filter(addr => peerAddrAllowed(addr, { allowPrivate: allowPrivateFullNode }))
+        return list?.length ? list : null
+    }
+    // L1 (P10a): the addresses (with no /p2p/ part) of each full node that a connection to that peer ID reached. Only
+    // these go to the store file, to the 'full-node-addrs' event and to the invite code. The other known addresses
+    // stay in memory, and the node dials them when it has no direct session to that peer.
+    const verifiedAddrs = new Map()
+    const publishedAddrs = new Map()
+    const bareAddr = addr => addr.replace(/\/p2p\/[^/]+$/, '')
+    const verifiedList = id => (knownFullNodes.get(id) ?? []).filter(addr => verifiedAddrs.get(id)?.has(bareAddr(addr)))
+    function addVerified(id, addr) {
+        let set = verifiedAddrs.get(id)
+        if (!set) verifiedAddrs.set(id, set = new Set())
+        set.add(bareAddr(addr))
+    }
+    // Save the store and send the event when the verified list of the peer changed.
+    function publishVerified(id) {
+        const list = verifiedList(id)
+        const text = JSON.stringify(list)
+        if ((publishedAddrs.get(id) ?? '[]') === text) return
+        publishedAddrs.set(id, text)
+        saveStore()
+        if (list.length) events.emit('full-node-addrs', { peerId: id, addrs: list })
+    }
     function learnFullNode(peerId, addrs) {
         if (peerId === selfId || !validPeerId(peerId)) return
         const bare = addr => addr.replace(/\/p2p\/[^/]+$/, '')
@@ -1106,6 +1133,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         const wasHint = reached && [...hintIds()].some(id => hintAddrs(id).some(addr => bare(addr) === reached))
         const working = addrs.find(addr => bare(addr) === reached) ?? (wasHint ? reached : null)
         if (working) addrs = [working, ...addrs.filter(addr => bare(addr) !== reached)].slice(0, MAX_ADDRS)
+        // L1: the outbound session connection to this peer ID reached this address.
+        if (working) addVerified(peerId, working)
         const old = knownFullNodes.get(peerId)
         let changed = !old || old.length !== addrs.length || old.some((a, i) => a !== addrs[i])
         knownFullNodes.set(peerId, addrs)
@@ -1121,17 +1150,20 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 changed = true
             }
         }
-        if (changed) {
-            saveStore()
-            events.emit('full-node-addrs', { peerId, addrs: [...addrs] })
-        }
+        if (changed) saveStore()
+        publishVerified(peerId)
         dialFullNode(peerId)
     }
     function saveStore() {
         if (!storePath) return
         try {
             const tmp = `${storePath}.tmp`
-            writeFileSync(tmp, JSON.stringify({ fullNodes: Object.fromEntries(knownFullNodes) }, null, 2), { mode: 0o600 })
+            const fullNodes = {}
+            for (const id of knownFullNodes.keys()) {
+                const list = verifiedList(id)
+                if (list.length) fullNodes[id] = list
+            }
+            writeFileSync(tmp, JSON.stringify({ fullNodes }, null, 2), { mode: 0o600 })
             renameSync(tmp, storePath)
         } catch (err) {
             console.warn(`Store write to ${storePath} failed:`, err?.message ?? err)
@@ -1153,7 +1185,12 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         }
         for (const [peerId, addrs] of Object.entries(list)) {
             const valid = validAddrList(addrs)
-            if (valid && peerId !== selfId && validPeerId(peerId)) knownFullNodes.set(peerId, valid)
+            if (valid && peerId !== selfId && validPeerId(peerId)) {
+                knownFullNodes.set(peerId, valid)
+                // A saved address was verified before it was saved.
+                for (const addr of valid) addVerified(peerId, addr)
+                publishedAddrs.set(peerId, JSON.stringify(valid))
+            }
         }
     }
     // One line and one event for each failed dial. Repeated failures (same site, target, address and reason) are
@@ -1205,6 +1242,11 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 try {
                     const conn = await node.dial(multiaddr(target))
                     await openHintChat(conn)
+                    // L1: the connection to this peer ID has this address (libp2p can give a connection that exists).
+                    if (bareAddr(conn.remoteAddr.toString()) === bareAddr(a)) {
+                        addVerified(peerId, a)
+                        publishVerified(peerId)
+                    }
                     return
                 } catch (err) {
                     dialFailed({ peer: peerId, addr: target, via: 'full-node', err })
@@ -1811,7 +1853,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             if (own.length > 0) nodes.push({ id: selfId, addrs: own })
             // Put currently connected full nodes before offline candidates in the bounded v1 invite.
             for (const id of new Set([...sessions.keys(), ...hintIds()])) {
-                const addrs = hintAddrs(id).slice(0, MAX_ADDRS)
+                // L1: only verified addresses and the addresses of the invite code.
+                const addrs = [...new Set([...verifiedList(id), ...(invitedFullNodes.get(id) ?? [])])].slice(0, MAX_ADDRS)
                 if (addrs.length) nodes.push({ id, addrs })
                 if (nodes.length >= MAX_ADDRS) break
             }

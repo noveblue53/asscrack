@@ -123,7 +123,8 @@ test('store: A joins R again after a restart with no connect()', { timeout: 6000
         await probe.stop()
         const R = await createAsscrackNode({ room, roomKey: key, listen: [addr], announce: [addr], discovery: false, fullNode: true, ...fast })
         nodes.push(R)
-        let A = await createAsscrackNode({ room, roomKey: key, relayOnly: true, fullNode: false, storePath, ...fast })
+        // L1 (P10a): allowPrivateFullNode, because the address of R is a 127.0.0.1 address.
+        let A = await createAsscrackNode({ room, roomKey: key, relayOnly: true, fullNode: false, storePath, allowPrivateFullNode: true, ...fast })
         nodes.push(A)
         const seen = []
         A.events.on('full-node-addrs', e => seen.push(e))
@@ -136,7 +137,7 @@ test('store: A joins R again after a restart with no connect()', { timeout: 6000
         await A.stop()
         await waitFor(() => !R.peers().includes(A.peerId), 5000, 'R sees A leave')
 
-        A = await createAsscrackNode({ room, roomKey: key, relayOnly: true, fullNode: false, storePath, ...fast })
+        A = await createAsscrackNode({ room, roomKey: key, relayOnly: true, fullNode: false, storePath, allowPrivateFullNode: true, ...fast })
         nodes.push(A)
         await waitFor(() => A.peers().includes(R.peerId) && R.peers().includes(A.peerId), 10000, 'A joins R from the store')
     } finally {

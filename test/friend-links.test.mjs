@@ -53,7 +53,9 @@ test('127.0.0.1 remove deletes the room, the row and the hint files; the other s
     const { roomA, roomB } = await protectedRoomPair(t, A, B);
     const port = randomBasePort();
     const linksA = await startLinks(t, A, { basePort: port, nodeOptions: { allowPrivateFullNode: true } });
-    const linksB = await startLinks(t, B, { basePort: port + 50 });
+    // L1 (P10a): B keeps the 127.0.0.1 addresses of the full node of A (and writes the hint file) only with
+    // allowPrivateFullNode.
+    const linksB = await startLinks(t, B, { basePort: port + 50, nodeOptions: { allowPrivateFullNode: true } });
     linksA.attachRoom(roomA);
     linksB.attachRoom(roomB);
     const { friendA, friendB } = await befriend(linksA, linksB, roomA, roomB);
