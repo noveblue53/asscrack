@@ -17,6 +17,8 @@ export const READY_RESULT_MS = 10000
 export const READY_GRACE_MS = 10000
 // Votes for a check that is not known yet (the vote came before the open line): kept for this time, at most
 // PENDING_MAX of them.
+import { displayText } from './text-safety.mjs'
+
 export const READY_PENDING_MS = 30000
 const PENDING_MAX = 256
 const CLOSED_MAX = 20000
@@ -28,7 +30,8 @@ const CONTROL = new RegExp('[\u0000-\u001f\u007f-\u009f' + String.fromCharCode(0
 export function readyText(text) {
     if (text === undefined || text === null) return READY_DEFAULT_TEXT
     if (typeof text !== 'string' || text.length > READY_TEXT_MAX * 4) return null
-    const trimmed = text.trim()
+    // L2: no bidi controls and no zero width space in the shown text.
+    const trimmed = displayText(text).trim()
     if ([...trimmed].length > READY_TEXT_MAX || CONTROL.test(trimmed)) return null
     return trimmed || READY_DEFAULT_TEXT
 }

@@ -14,6 +14,7 @@ import path from 'node:path';
 import { newRoomKey } from '../network/invite.mjs';
 import { createRoomMembership, restoreRoomMembership } from '../network/room-membership.mjs';
 import { addrsLine, createFriendRequests, validName } from '../network/friend-requests.mjs';
+import { displayText } from '../network/text-safety.mjs';
 import { createPrivateMessages, validPmText } from '../network/private-messages.mjs';
 import { observedIp } from '../network/fullnode.mjs';
 import { restoreSavedAdmission } from './room-admission.mjs';
@@ -437,6 +438,12 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
         catch (err) { log('WARN', `Friend room not removed: ${errText(err)}`); }
     }
 
+    // L2: the default nickname of a new friend. The name comes from a peer: remove the bidi controls.
+    function friendNickname(name) {
+        const clean = typeof name === 'string' ? displayText(name).trim() : '';
+        return validName(clean) ? clean : 'Friend';
+    }
+
     // A (the device that sent the request): make, save and start the friend room, then give the grant.
     async function ownerGrant(roomNode, peerId, deviceId, name) {
         const slot = checkRoomForNew(deviceId);
@@ -447,7 +454,7 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
         descriptor.admission = membership.admit({ deviceId, grant: descriptor.grant });
         const userName = ownName(roomNode.name);
         const { roomId } = archive.saveFriendRoom({ name: roomName, roomKey, userName, membership: membership.snapshot(),
-            friend: { deviceId, nickname: validName(name) ? name.trim() : 'Friend', slot, addrs: [] } });
+            friend: { deviceId, nickname: friendNickname(name), slot, addrs: [] } });
         const entry = addEntry(archive.listFriends().find(f => f.roomId === roomId));
         try {
             await startNode(entry, membership);
@@ -477,7 +484,7 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
         const fromRoom = candidates && id ? [{ id, addrs: connectionCandidates(roomNode, peerId, grant.port) }] : [];
         const addrs = candidates ? mergeNodes(grant.nodes, fromRoom) : [];
         const { roomId } = archive.saveFriendRoom({ name: grant.room, roomKey: grant.key, userName: ownName(roomNode.name),
-            membership: membership.snapshot(), friend: { deviceId, nickname: validName(name) ? name.trim() : 'Friend', slot, addrs } });
+            membership: membership.snapshot(), friend: { deviceId, nickname: friendNickname(name), slot, addrs } });
         const entry = addEntry(archive.listFriends().find(f => f.roomId === roomId));
         try {
             await startNode(entry, membership);

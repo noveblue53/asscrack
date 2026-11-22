@@ -6,6 +6,7 @@ import { roomRateLimit } from './room-rate-limit.mjs'
 import { createPartialStore, partialKey, PARTIAL_TTL_MS } from './partial-store.mjs'
 import { createGrantStore, GRANT_LIMIT } from './send-grants.mjs'
 import { markFromInternet } from './zone-mark.mjs'
+import { noFormatCharacters } from './text-safety.mjs'
 
 export const FILE_PROTOCOL = '/asscrack/file/1.0.0'
 // Version 1.1.0 adds the offset negotiation for a paused partial. The receiver asks for 1.1.0 only when it has a
@@ -43,7 +44,8 @@ const RESERVED_RE = /^(CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|COM[1-9¹²³]|LPT[1-9¹
 
 export function safeFileName(name) {
     if (typeof name !== 'string') name = 'file'
-    let n = name.split(/[\\/]/).pop()
+    // L2: no format characters (bidi controls, zero width characters) in a saved or a shown file name.
+    let n = noFormatCharacters(name).split(/[\\/]/).pop()
     n = n.replace(/[\x00-\x1f\x7f<>:"/\\|?*]/g, '_')
     n = n.replace(/[ .]+$/, '').replace(/^ +/, '')
     if (RESERVED_RE.test(n.split('.')[0].trimEnd())) n = '_' + n

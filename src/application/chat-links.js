@@ -15,7 +15,9 @@
     const BRACKETS = { ')': '(', ']': '[', '}': '{' };
     // The scheme must not follow a letter or a digit ("xhttp://" is not a link). The URL ends at a space or at a
     // character that the chat text cannot have in a URL.
-    const URL_PATTERN = /(?<![\p{L}\p{N}])https?:\/\/[^\s<>"]+/giu;
+    // L2: a bidi control or a zero width character also ends the URL. Thus the link has none of them and its text
+    // shows the real order of the address.
+    const URL_PATTERN = /(?<![\p{L}\p{N}])https?:\/\/[^\s<>"\u061c\u200b\u200e\u200f\u202a-\u202e\u2066-\u2069\ufeff]+/giu;
 
     // Cut the punctuation at the end. A closing bracket at the end goes when the URL has no opening bracket of that
     // kind. Repeat until nothing changes ("…/x)." loses the full stop and the bracket).

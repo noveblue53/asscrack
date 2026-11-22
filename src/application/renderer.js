@@ -1347,6 +1347,32 @@ function makeSpan(className, text) {
     return span;
 }
 
+// L2: the real type of a file from a peer. The window shows the extension apart from the name, and a warning for a
+// file type that can run a program on Windows when the user opens it.
+const PROGRAM_EXTENSIONS = new Set(['exe', 'scr', 'com', 'pif', 'bat', 'cmd', 'msi', 'msp', 'msix', 'appx',
+    'appinstaller', 'application', 'appref-ms', 'lnk', 'url', 'scf', 'vbs', 'vbe', 'js', 'jse', 'wsf', 'wsh', 'ps1',
+    'psm1', 'hta', 'cpl', 'msc', 'jar', 'reg', 'inf', 'chm', 'dll', 'gadget', 'settingcontent-ms', 'library-ms',
+    'iso', 'img', 'vhd', 'vhdx']);
+function fileKind(name) {
+    const text = String(name ?? '');
+    const dot = text.lastIndexOf('.');
+    const ext = dot > 0 && dot < text.length - 1 ? text.slice(dot + 1).toLowerCase() : '';
+    const program = PROGRAM_EXTENSIONS.has(ext);
+    return { ext, program, label: ext ? `.${ext}` : 'no extension',
+        warning: program ? `Program file (.${ext}). Open it only if you trust the sender.` : '' };
+}
+window.fileKind = fileKind;
+
+// Shows the type of a received file on its name element, and the warning on the row.
+function showFileKind(item, fileName, name) {
+    const kind = fileKind(name);
+    fileName.dataset.ext = kind.label;
+    fileName.title = kind.warning ? `${name}\n${kind.warning}` : `${name}\nType: ${kind.label}`;
+    item.classList.toggle('program-file', kind.program);
+    for (const old of [...item.children]) if (old.classList.contains('file-warning')) old.remove();
+    if (kind.program) item.append(makeSpan('file-warning', kind.warning));
+}
+
 // action: the data-action value (an action name of menu.js). className: optional, else btn-<text>.
 function makeButton(text, onClick, action = null, className = null) {
     const button = document.createElement('button');
@@ -1772,6 +1798,7 @@ function makeTransferRow(offerId, peerId, direction, info, className) {
         makeSpan('state-text', ''),
         makeSpan('buttons', '')
     );
+    if (direction === 'receive') showFileKind(item, fileName, info.name);
     return item;
 }
 
