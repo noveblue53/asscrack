@@ -7,6 +7,35 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased — Friends offline (goal G7b, 2026-11-21)
+
+A message to a friend that is not connected waits on this computer. It goes out when both apps run and connect.
+- The chat window shows a waiting line with "Waiting: ASSCRACK sends it when you are both online" and "Delete".
+  When the friend gets the line, the mark changes to "Delivered".
+- At most 200 lines wait for each friend. The next line gets "200 messages wait for Sam. Wait until Sam is online."
+  A waiting line has no expiry.
+- The receiver sees the lines with their original times. One note comes before each batch: "Sam sent 3 messages
+  while you were away." Each line of the batch has the mark "sent while you were away". One notification comes for
+  each batch, by the attention rules. There is no notification in Do not disturb, in Idle Peer, or when that chat
+  window has the focus. A live friend line uses the same rules for the notification and the message sound.
+- Two friends in one protected room can send private messages through the room, also when the friend link has no
+  connection. The panel then shows "Online · in <room name>". The room also gives the current addresses of the friend
+  link, and the friend link connects at once when it can.
+- Friends see "Online · Away", "Online · Do not disturb" or "Online · Idle Peer".
+- With 1 or more friends and "Close to Idle Peer" on, Close on the login screen puts ASSCRACK in the tray. The tray
+  tooltip is "ASSCRACK – online for friends". The first time, a note tells the user how to open and quit it.
+- When a friend ends the friendship, each waiting line shows "Not delivered" and the reason.
+
+Results:
+- `npm test` passes, 715 tests (127.0.0.1).
+- 13 new tests. 7 use real friend nodes and a real archive in a temp folder (127.0.0.1 on this PC). 6 test the
+  window part with a stub bridge or the room window fixture.
+- Two copies (this PC, 127.0.0.1), 3 runs: B quits, A writes 3 lines ("Waiting"). B starts: A shows "Delivered" for
+  the 3 lines, B shows the note and the 3 lines once, and B logs one notification. A closes the window on the login
+  screen: A stays in the tray as "online for friends", and B still shows A as "Online". In 2 of 3 runs, A logged the
+  older `asscrack:invite` "Unknown room window" line at the Quit of the room part (the G7a flow). It is not a G7b
+  change.
+
 ## Unreleased — Friends (goal G7a, 2026-11-21)
 
 Two people in a protected room can agree to be friends. Friends send private messages outside of rooms, from the

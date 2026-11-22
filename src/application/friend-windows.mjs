@@ -13,10 +13,14 @@ const text128 = value => typeof value === 'string' && value.length > 0 && value.
 function chatState(links, friendId) {
     const friend = links.friend(friendId);
     if (!friend) return { name: '', state: 'gone', lastSeen: null, reach: 'local' };
-    return { name: friend.name, state: friend.state, lastSeen: friend.lastSeen, reach: links.list().reach };
+    // G7b: also the availability of the friend, and the room name of a common room (state 'room').
+    return { name: friend.name, state: friend.state, lastSeen: friend.lastSeen, reach: links.list().reach,
+        availability: friend.availability ?? null, note: friend.note ?? '', roomName: friend.roomName ?? '' };
 }
 
-export function attachFriendWindows({ BrowserWindow, ipc, assets, links, warn = () => {}, openLink = async () => false, icon }) {
+// focused(friendId): G7b, the chat window of that friend got the focus (main.js reads its notification).
+export function attachFriendWindows({ BrowserWindow, ipc, assets, links, warn = () => {}, openLink = async () => false, icon,
+    focused = () => {} }) {
     const pageFile = path.join(assets, 'friend-chat.html');
     const page = pathToFileURL(pageFile).href;
     const windows = new Map(); // friendId -> BrowserWindow
@@ -57,7 +61,7 @@ export function attachFriendWindows({ BrowserWindow, ipc, assets, links, warn = 
         windows.set(friendId, win);
         // The page sets the title "<name> – ASSCRACK" (friend-chat.js). Until then the window has the same title.
         win.on('page-title-updated', (event, value) => { if (!/ – ASSCRACK$/.test(value)) event.preventDefault(); });
-        win.on('focus', () => links.markRead(friendId));
+        win.on('focus', () => { links.markRead(friendId); focused(friendId); });
         win.once('ready-to-show', () => { if (!win.isDestroyed()) win.show(); });
         win.once('closed', () => { if (windows.get(friendId) === win) windows.delete(friendId); });
         win.loadFile(pageFile).catch(err => {
@@ -85,6 +89,11 @@ export function attachFriendWindows({ BrowserWindow, ipc, assets, links, warn = 
             if (typeof text !== 'string') return { result: 'invalid' };
             return links.send(friendId, text);
         },
+        // G7b: Delete of a waiting line: 'deleted', 'sending' or 'gone'.
+        'asscrack:friend-chat-delete': (event, id) => {
+            const friendId = need(event);
+            return text128(id) ? links.deleteWaiting(friendId, id) : 'gone';
+        },
         'asscrack:friend-chat-open-link': (event, href) => {
             need(event);
             return openLink(href);
@@ -108,6 +117,11 @@ export function attachFriendWindows({ BrowserWindow, ipc, assets, links, warn = 
 
     return {
         open,
+        // G7b: true when the chat window of that friend has the focus (the attention rule of a friend line).
+        isFocused(friendId) {
+            const win = windows.get(friendId);
+            return Boolean(win && !win.isDestroyed() && win.isFocused());
+        },
         closeAll() { for (const win of windows.values()) if (!win.isDestroyed()) win.close(); }
     };
 }

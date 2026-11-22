@@ -40,6 +40,8 @@
     }
 
     function viewing(target) {
+        // G7b: a friend line is in view only when the chat window of that friend has the focus (main.js tells it).
+        if (target.kind === 'friend') return target.focused === true;
         if (!document.hasFocus() || document.visibilityState !== 'visible' || byId('chat-screen').hidden) return false;
         if (target.kind === 'whisper') return !!window.whispers?.isViewing(target.peerId);
         if (window.whispers?.isOpen()) return false;
@@ -48,9 +50,10 @@
 
     // One rule for the attention of a live line (REVIEW.md): a line of a different person, not Idle Peer, not DND, and
     // the conversation is not in view. The message cue, the native notification and the taskbar flash (E1) use it. target: { kind: 'mention', channelId, id, from } or { kind: 'whisper', peerId, id }.
+    // G7b: { kind: 'friend', friendId, id, away, focused } (a friend line, always of a different person).
     function wanted(target) {
         if (!target?.id || quiet()) return false;
-        const author = target.kind === 'whisper' ? target.peerId : target.from;
+        const author = target.kind === 'whisper' ? target.peerId : target.kind === 'friend' ? target.friendId : target.from;
         if (!author || author === (selfId ?? topologySelf)) return false;
         return !viewing(target);
     }
@@ -58,13 +61,13 @@
     // The native notification. It keeps its own alerts setting.
     function notify(target) {
         if (!prefs?.alerts || !wanted(target)) return;
-        const key = target.kind + '/' + (target.peerId ?? target.channelId);
+        const key = target.kind + '/' + (target.friendId ?? target.peerId ?? target.channelId);
         // Keep only a routing reference here, even when public previews are enabled.
-        const { preview, from, ...route } = target;
+        const { preview, from, focused, ...route } = target;
         pending.delete(key);
         pending.set(key, route);
         if (pending.size > 64) pending.delete(pending.keys().next().value);
-        api.addAttention(from === undefined ? target : { ...route, preview });
+        api.addAttention(from === undefined ? route : { ...route, preview });
     }
 
     // Gap E1: the taskbar flash and the overlay dot. main.js flashes only a window with no focus that is not hidden
@@ -80,12 +83,15 @@
             cue('whisper', 'message', target);
             flash();
         }
+        // G7b: a friend line (live, or one batch of away lines) gets the message cue of P11 and the notification, as a
+        // whisper. No taskbar flash: the line is in its own chat window, not in this window.
+        if (target.kind === 'friend' && wanted(target)) cue('whisper', 'message', target);
         notify(target);
     }
 
     function viewChanged() {
         for (const [key, target] of pending) {
-            if (viewing(target)) {
+            if (target.kind !== 'friend' && viewing(target)) {
                 api.readAttention(target);
                 pending.delete(key);
             }
@@ -222,6 +228,8 @@
     });
     byId('attention-windows').hidden = !navigator.userAgent.includes('Windows');
     api.onAttentionOpen(openTarget);
+    // G7b: the friend lines come from the main process (friend-links.mjs), not from the room.
+    window.friends?.onAttention?.(target => incoming(target && typeof target === 'object' ? { ...target, kind: 'friend' } : null));
     document.addEventListener('visibilitychange', viewChanged);
     window.addEventListener('focus', viewChanged);
     window.roomAttention = {

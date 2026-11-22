@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld('friendChat', {
     lines: before => ipcRenderer.invoke('asscrack:friend-chat-lines',
         before ? { time: Number(before.time), id: String(before.id ?? '') } : null),
     send: text => ipcRenderer.invoke('asscrack:friend-chat-send', String(text ?? '')),
+    // G7b: Delete of a waiting line (the line ID only).
+    deleteWaiting: id => ipcRenderer.invoke('asscrack:friend-chat-delete', String(id ?? '')),
     onLine: listen('asscrack:friend-chat-line'),
     onReceipt: listen('asscrack:friend-chat-receipt'),
     onState: listen('asscrack:friend-chat-state')

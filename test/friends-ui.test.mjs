@@ -172,7 +172,9 @@ test('the friend chat window: the state line, the marks and the text when the fr
     window.window = window;
     vm.runInNewContext(source, context);
     await window.friendChatReady;
-    assert.equal(document.getElementById('friend-state').textContent, 'Not connected. You can send when Ben is online.');
+    // G7b: a message to a friend with no session waits in the outbox, thus the state line says so (the old text "You can
+    // send when Ben is online" is not true any more).
+    assert.equal(document.getElementById('friend-state').textContent, 'Not connected. ASSCRACK sends your messages when you are both online.');
     assert.equal(document.getElementById('friend-reach').hidden, false);
     assert.equal(document.getElementById('messages').children.length, 1);
     assert.equal(document.documentElement.dataset.theme, 'aero-night');
