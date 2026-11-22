@@ -323,3 +323,42 @@ test('127.0.0.1: a delete moves the members of that channel to General; a late j
     assert.deepEqual(legacy.voiceChannels().channels, [{ id: 'general', name: 'General' }])
     assert.throws(() => legacy.createVoiceChannel('Raid'), { message: ERRORS.legacy })
 })
+
+// L12 (P10b): each voice-channels line with a valid structure cost one Ed25519 check, with no rate limit. 5000 bad
+// lines took 1031 ms of CPU. The fix: the seq check before the signature check, and at most 30 failed signature checks
+// each minute for each peer. A valid catalog does not count.
+test('L12: 127.0.0.1: 200 bad catalog lines of one member give at most 30 signature checks; 40 fast owner edits still arrive', { timeout: 60000 }, async t => {
+    const roomKey = newRoomKey()
+    const ownerMembership = createRoomMembership({ identity: createDeviceIdentity(), room, roomKey, lan: true })
+    let checks = 0
+    const counted = { ...ownerMembership, verifyVoiceChannels: catalog => { checks++; return ownerMembership.verifyVoiceChannels(catalog) } }
+    const nodes = []
+    t.after(() => Promise.allSettled(nodes.map(node => node.stop())))
+    const start = async membership => {
+        const node = await createAsscrackNode({ room, roomKey, membership, discovery: false,
+            listen: ['/ip4/127.0.0.1/tcp/0'], fullNode: false, ...fast })
+        nodes.push(node)
+        return node
+    }
+    const O = await start(counted)
+    const identity = createDeviceIdentity()
+    const invitation = readInvite(O.createMemberInvite(identity.id, { canHost: false }))
+    const M = await start(restoreRoomMembership({ identity, room, roomKey, descriptor: invitation.membership }))
+    await M.connect(localAddress(O))
+    await waitFor(() => M.peers().includes(O.peerId) && M.memberState().admitted && O.peers().includes(M.peerId), 10000, 'M admitted')
+    const channels = [{ id: randomUUID(), name: 'Fake' }]
+    const bad = { type: 'voice-channels', v: 1, catalog: { v: 1, seq: 99, channels, signature: 'A'.repeat(86) } }
+    for (let i = 0; i < 200; i++) assert.equal(M.sendTo(O.peerId, bad), true)
+    M.sendTo(O.peerId, { type: 'presence', v: 1, state: 'away', note: 'end of the bad lines' })
+    await waitFor(() => O.peerPresence()[M.peerId]?.note === 'end of the bad lines', 10000, 'O read all lines')
+    assert.ok(checks <= 30, `signature checks: ${checks}`)
+    assert.equal(O.voiceChannels().seq, 0)
+    assert.ok(O.peers().includes(M.peerId), 'the session stays open')
+
+    for (let i = 0; i < 20; i++) {
+        const id = O.createVoiceChannel(`Room ${i}`)
+        O.deleteVoiceChannel(id)
+    }
+    await waitFor(() => M.voiceChannels().seq === O.voiceChannels().seq, 10000, 'the last owner edit reaches M')
+    assert.equal(O.voiceChannels().seq, 40)
+})

@@ -51,7 +51,11 @@ function cleanName(input) {
 // membership: the room membership or null (legacy room). seed: a saved catalog or null.
 // changed({ view, catalog, removed }): after each accepted change. removed: the channels that went away ([{ id, name }]).
 // send(msg, exceptPeerId): to all sessions (except one).
-export function createVoiceChannels({ membership = null, seed = null, send = () => {}, changed = () => {} } = {}) {
+// checkLimit: L12 (P10b), the limit of the failed signature checks of each peer ({ allowed(peerId), failed(peerId) },
+// see peerFailureLimit). A peer over the limit gets no signature check. The structure and the seq check come first and
+// cost no signature check. A valid catalog never counts, thus an owner edit always arrives.
+export function createVoiceChannels({ membership = null, seed = null, send = () => {}, changed = () => {},
+    checkLimit = null } = {}) {
     let catalog = null
 
     function valid(value) {
@@ -96,8 +100,13 @@ export function createVoiceChannels({ membership = null, seed = null, send = () 
         // A 'voice-channels' line from a peer. Returns true when the catalog was kept.
         receive(msg, source) {
             if (!membership || msg?.v !== 1) return false
-            const next = valid(msg.catalog)
-            if (!next || next.seq <= seq()) return false
+            const shape = checkVoiceCatalog(msg.catalog)
+            if (!shape || shape.seq <= seq() || (checkLimit && !checkLimit.allowed(source))) return false
+            const next = valid(shape)
+            if (!next) {
+                checkLimit?.failed(source)
+                return false
+            }
             apply(next, source)
             return true
         },

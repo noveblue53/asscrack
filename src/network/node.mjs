@@ -7,7 +7,7 @@ import { createWhispers } from './whispers.mjs'
 import { createTyping } from './typing.mjs'
 import { createReadyCheck } from './ready-check.mjs'
 import { createUpdateSpread } from './update-spread.mjs'
-import { roomRateLimit } from './room-rate-limit.mjs'
+import { peerFailureLimit, roomRateLimit } from './room-rate-limit.mjs'
 import { mdns } from '@libp2p/mdns'
 import { yamux } from '@chainsafe/libp2p-yamux'
 import { noise } from '@chainsafe/libp2p-noise'
@@ -501,6 +501,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     const voiceChannels = createVoiceChannels({
         membership,
         seed: seedVoiceChannels,
+        // L12 (P10b): after 30 failed signature checks in one minute, a peer gets no more checks in that minute.
+        checkLimit: peerFailureLimit(30),
         send: (msg, except) => {
             const line = JSON.stringify(msg)
             for (const [peerId, session] of sessions) if (peerId !== except && memberAllowed(peerId)) session.send(line)
