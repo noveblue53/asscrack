@@ -308,7 +308,7 @@
             <button type="button" id="channel-add" disabled>Create channel</button>
             <button type="button" id="openSharedShelf" aria-haspopup="dialog" aria-controls="shared-shelf">Shared</button>
             <button id="activity-open" type="button" aria-haspopup="dialog" aria-controls="room-activity">Room activity</button>
-            <button id="leave-room" type="button" aria-haspopup="dialog" aria-controls="leave-dialog">Leave room…</button>
+            <button id="leave-room" class="btn-danger" type="button" aria-haspopup="dialog" aria-controls="leave-dialog">Leave room…</button>
             <button id="ready-open" type="button" title="Ask the room: Ready? (or type /ready and a text)">Ready check</button>
           </div>
           <span id="topic-unavailable" hidden>Topic editing requires a compatible host.</span>
@@ -670,7 +670,7 @@
     <p id="leave-transfers" hidden></p>
     <p id="leave-status" role="status"></p>
     <form method="dialog" class="dialog-buttons">
-      <button id="leave-confirm" type="button">Leave room</button>
+      <button id="leave-confirm" class="btn-danger" type="button">Leave room</button>
       <button value="cancel">Cancel</button>
     </form>
   </dialog>

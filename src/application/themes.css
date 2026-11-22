@@ -93,6 +93,16 @@
   color: var(--frame-ink); background: var(--glass); border-color: var(--line); box-shadow: var(--relief);
 }
 :root[data-theme] :is(#voice-controls, #transfers, .file-card) :is(.btn-refuse, .btn-cancel, #leave-voice, #mute[aria-pressed="true"], #deafen[aria-pressed="true"]) { color: var(--danger); }
+/* 1.0.1: a button that ends something for this user (Leave room and its confirmation) has the danger color as its
+   fill. The text has the chat color: the contrast is 4.5:1 or more in each theme, also at each stop of the
+   gradient and with the hover filter (test/danger-button.test.mjs). */
+:root[data-theme] button.btn-danger {
+  color: var(--chat);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--danger) 86%, var(--chat)), var(--danger) 48%,
+    color-mix(in srgb, var(--danger) 86%, var(--ink)) 52%, var(--danger));
+  border-color: color-mix(in srgb, var(--danger) 70%, var(--ink));
+  box-shadow: var(--relief);
+}
 :root[data-theme] :is(input[type="text"], select, textarea, #message-input, #invite-code, #voice-settings select, #vs-ptt-key) {
   color: var(--ink); background: var(--chat); border-color: var(--line); box-shadow: inset 0 1px 2px rgb(0 0 0 / .1);
 }
