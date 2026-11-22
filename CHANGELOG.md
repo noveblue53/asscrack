@@ -7,6 +7,24 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased — behavior tests for the room window (goal P3, 2026-11-21)
+
+Some tests of the room window only read the source text. A change of the code text made them fail, and a broken
+behavior with the same text did not. P3 replaces the most important of these checks with tests that run the real
+scripts in the fake DOM. No change in `src/`.
+
+- **Escape (`test/room-escape.test.mjs`).** All the layers are open. Each Escape closes only the top layer, in the
+  sequence of the dispatcher. The quote chip goes only with the focus in the composer. An open dialog stops Escape.
+- **Bridge (`test/preload-bridge.test.mjs`).** `preload.cjs` runs with a fake electron module. The tests check the
+  IPC channel and the arguments of each call. `revealFile` sends only a text key. The bridge does not use `shell`.
+- **Saved rooms (`test/saved-rooms-window.test.mjs`).** The local-only mark, the line-saved and save-failed events,
+  Forget with a confirmation, and the paging of older lines.
+- **Removed.** 12 text checks in `test/app-events.test.mjs` and `test/saved-rooms-ui.test.mjs`. A behavior test now
+  covers each one. The three code rules stay: one Escape listener in `renderer.js`, no inline style, and the debug
+  log text of `main.js`. The checks of `main.js` stay, because `main.js` does not load with no Electron.
+- **Result: 127.0.0.1, this PC.** `npm test`: 476 of 476 pass. 28 breaks in a copy of the code: each break makes a
+  test fail. One start of the app: no error line. No LAN test.
+
 ## Unreleased — getting in: room reach and clear login texts (goal G1, 2026-11-21)
 
 A room owner can see if friends on the internet can join, and can repair it in the room. A friend gets plain texts
