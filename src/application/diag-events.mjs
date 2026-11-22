@@ -8,7 +8,7 @@ import { addrClass, ipClass } from './journal.mjs';
 export const JOURNAL_NODE_EVENTS = Object.freeze(['connection', 'dial-failed', 'upnp', 'full-node', 'host-changed',
     'peer-left', 'session-refused', 'session-ids', 'admission', 'clock', 'file-offer', 'file-done', 'file-failed',
     'file-refused', 'file-cancelled', 'file-paused', 'file-resumed', 'file-restarted', 'file-discarded', 'file-expired',
-    'file-retried', 'diag']);
+    'file-retried', 'diag', 'knock-event']);
 
 // A text of this program (a reason) as a code: lower case, or undefined.
 export function reasonCode(value) {
@@ -89,6 +89,10 @@ export function projectNodeEvent(type, data, selfId = null) {
             return ['clock', { peer: d.peerId, rttMs: d.rttMs, offsetMs: d.offsetMs }];
         case 'diag':
             return ['diag', { event: d.event, peer: d.peerId, id: d.id, reason: reasonCode(d.reason), size: d.size }];
+        // Easy-join (1.0.1, node.mjs knockEvent): the knock steps. The name and the invite are not in the event.
+        case 'knock-event':
+            return ['knock', { event: d.event, side: d.side, peer: d.peerId, id: d.id, route: d.route, friend: d.friend,
+                cause: reasonCode(d.cause) }];
         default: {
             const event = FILE_EVENTS[type];
             if (!event) return null;

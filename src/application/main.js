@@ -1236,6 +1236,7 @@ async function knockForInvite(text, name) {
         const outcome = await knockRoom({ code: roomCode, identity, name, serviceTag: keyedServiceTag(roomCode.room, roomCode.key),
             onState: state, log: line => writeLog('INFO', line) });
         writeLog('INFO', `Knock result: ${outcome.result}${outcome.reason ? ` (${outcome.reason})` : ''}`);
+        journal('knock', { event: 'result', side: 'knocker', route: 'room-code', result: outcome.result, cause: outcome.reason });
         if (outcome.result !== 'allowed') throw new Error(knockResultText(outcome));
         checkAllowedInvite(roomCode, identity, outcome.invite);
         state('allowed');
@@ -1312,7 +1313,12 @@ const friendWindows = attachFriendWindows({
     BrowserWindow, ipc: ipcMain, assets: __dirname, links: friendLinks, icon: path.join(__dirname, 'img', 'app.ico'),
     warn: message => writeLog('WARN', message), openLink: value => openCheckedLink(value),
     focused: friendId => attention.read({ kind: 'friend', friendId, id: 'focus' }),
-    join: (friendId, id, leave) => friendJoins.join(friendId, id, leave)
+    join: async (friendId, id, leave) => {
+        const answer = await friendJoins.join(friendId, id, leave);
+        // Diagnostics: the Join of a friend invite with its result code (no code, no room name).
+        journal('join', { event: 'friend-invite-used', result: answer?.result });
+        return answer;
+    }
 });
 // easy-join part 1: Join of a friend invite (friend-join.mjs), and the tray balloon of a new invite.
 const friendJoins = createFriendJoins({
@@ -1341,6 +1347,11 @@ handleRoomIpc('asscrack:friend-knock', async (_event, friendId, leave) => {
         onState: state => sendToWindow('asscrack:friend-knock-state', { state, room: friendLinks.joinTarget(friendId).room })
     });
     writeLog('INFO', `Friend Join: ${answer.result}${answer.outcome ? ` (${answer.outcome.result}${answer.outcome.reason ? `, ${answer.outcome.reason}` : ''})` : ''}`);
+    // Diagnostics: the result of a friend knock. 'joining' and 'failed' come after Allow.
+    if (['knock', 'joining', 'failed'].includes(answer.result)) {
+        journal('knock', { event: 'result', side: 'knocker', route: 'friend', result: answer.result === 'knock' ? answer.outcome.result : 'allowed',
+            cause: answer.result === 'knock' ? answer.outcome.reason : answer.result === 'failed' ? 'leave-failed' : undefined });
+    }
     if (answer.result !== 'knock') return answer;
     return { result: 'knock', room: answer.room, denied: answer.outcome.result === 'denied', text: knockResultText(answer.outcome) };
 });
@@ -1352,7 +1363,10 @@ const clipboardJoin = createClipboardJoin({
     currentRoom: () => (node && roomName !== null ? { room: roomName, roomKey: node.roomKey() } : null),
     busy: () => Boolean(leaving) || (loginStarted && !node) || knocking || quitting,
     store: createAskedStore(path.join(app.getPath('userData'), ASKED_FILE), { log: writeLog }),
-    notify: () => sendToWindow('asscrack:clipboard-join', null),
+    notify: kind => {
+        journal('join', { event: 'clipboard-prompt', kind });
+        sendToWindow('asscrack:clipboard-join', null);
+    },
     join: (code, room, leave) => friendJoins.joinCode(code, room, leave),
     log: writeLog
 });
@@ -1374,9 +1388,19 @@ function attachClipboardJoin(win) {
     win.webContents.on('did-finish-load', check);
 }
 handleRoomIpc('asscrack:clipboard-join-take', () => clipboardJoin.take());
-handleRoomIpc('asscrack:clipboard-join', (_event, id, leave) => clipboardJoin.join(typeof id === 'string' ? id : '', leave === true));
-handleRoomIpc('asscrack:clipboard-join-dismiss', (_event, id) => { clipboardJoin.dismiss(typeof id === 'string' ? id : ''); });
+handleRoomIpc('asscrack:clipboard-join', async (_event, id, leave) => {
+    const answer = await clipboardJoin.join(typeof id === 'string' ? id : '', leave === true);
+    journal('join', { event: 'clipboard-join', result: answer?.result });
+    return answer;
+});
+handleRoomIpc('asscrack:clipboard-join-dismiss', (_event, id) => {
+    journal('join', { event: 'clipboard-dismiss' });
+    clipboardJoin.dismiss(typeof id === 'string' ? id : '');
+});
+// Diagnostics: a friend invite sent (or queued) and a valid friend invite received. No code, no name, no room name.
+friendLinks.events.on('invite-sent', ({ result }) => journal('join', { event: 'friend-invite-sent', result }));
 friendLinks.events.on('invite', ({ name, room }) => {
+    journal('join', { event: 'friend-invite-received' });
     if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isVisible()) return;
     showTrayBalloon(`${name || 'A friend'} invites you to ${room}. Open the chat with ${name || 'your friend'} to join.`);
 });

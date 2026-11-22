@@ -356,16 +356,33 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         const connections = node.getConnections(source)
         const hops = connections.flatMap(connection => connection.streams.filter(stream =>
             stream.direction === 'inbound' && stream.protocol === RELAY_V2_HOP_CODEC && !knockCircuits.has(stream)))
-        if (!hops.length || knockCircuits.size + hops.length > KNOCK_CIRCUITS) return false
+        if (!hops.length) return false
+        if (knockCircuits.size + hops.length > KNOCK_CIRCUITS) {
+            knockEvent({ event: 'circuit-refused', side: 'relay', peerId: sourceId, cause: 'full' })
+            return false
+        }
         const ip = ipOf(connections[0]?.remoteAddr?.toString() ?? '') ?? '?'
         if (!knockSourceRate(sourceId) || !knockIpRate(ip)) {
             console.info(connText('knock circuit-refused', { peer: sourceId, reason: 'rate' }))
+            knockEvent({ event: 'circuit-refused', side: 'relay', peerId: sourceId, cause: 'rate' })
             return false
         }
         for (const stream of hops) watchKnockCircuit(stream, sourceId)
         markKnockSource(sourceId)
         console.info(connText('knock circuit', { peer: sourceId, owner: destination.toString() }))
+        knockEvent({ event: 'circuit', side: 'relay', peerId: sourceId })
         return true
+    }
+    // Diagnostics (1.0.1): one 'knock-event' for each knock step of the owner desk and of the relay. The event has no
+    // name, no invite, no device ID and no address: route is a class ('relay', 'direct', 'friend-link', 'forward').
+    function knockEvent(data) {
+        events.emit('knock-event', data)
+    }
+    function knockReport({ event, source, via, friend, id, cause }) {
+        const route = friend ? (via === 'friend' ? 'friend-link' : 'forward')
+            : validPeerId(via) ? 'relay' : via === '?' ? 'unknown' : 'direct'
+        knockEvent({ event, side: 'owner', peerId: validPeerId(source) ? source : undefined, route, friend: friend === true,
+            id, cause })
     }
     function watchKnockCircuit(stream, sourceId) {
         let bytes = 0
@@ -378,6 +395,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         const end = cause => {
             cleanup()
             console.info(connText('knock circuit-end', { peer: sourceId, reason: cause }))
+            knockEvent({ event: 'circuit-end', side: 'relay', peerId: sourceId, cause: cause.replace(' ', '-') })
             stream.abort(new Error(`Knock circuit ${cause}`))
         }
         function count(event) {
@@ -1289,6 +1307,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         // easy-join part 3: "Always allow my friends". The desk asks only after the device proof.
         autoAllow: deviceId => membership.autoAllowFriends() && typeof knock?.isFriend === 'function' && knock.isFriend(deviceId) === true,
         autoAllowed: view => events.emit('knock-auto', view),
+        report: knockReport,
         // The tests give other limits: knock: { limits } (knock.mjs).
         limits: typeof knock === 'object' ? knock.limits : undefined
     }) : null

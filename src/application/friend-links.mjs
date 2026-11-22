@@ -8,6 +8,7 @@
 // Events: 'changed' (list()), 'line' { friendId, line }, 'request' (a request event), 'receipt' { friendId, id, result },
 // 'away' { friendId, batch, count } (G7b: the end of a batch of lines that were sent while this device was away),
 // 'invite' { friendId, id, name, room } (easy-join: a valid room invite of a friend arrived; friend-invite.mjs).
+// 'invite-sent' { result } (diagnostics, 1.0.1: the result of "Invite to room", no code).
 // easy-join part 3: each friend link carries the room announce line and the friend knock (friend-knock.mjs).
 // A line of an event or of lines() never has the code of an invite: an invite line has text '' and invite { state, room }.
 import { EventEmitter } from 'node:events';
@@ -900,6 +901,8 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
             if (!validInviteCode(code)) { log('WARN', 'Friend invite not made: the code is too large'); return { result: 'failed' }; }
             const answer = post(entry, inviteText(code));
             if (answer.line) log('INFO', `Friend invite ${answer.result === 'waiting' ? 'queued' : 'sent'}`);
+            // Diagnostics (main.js journal): the result code only.
+            events.emit('invite-sent', { result: answer.result });
             return answer;
         },
         // easy-join: Join of a received invite. Checks the invite again now (the expiry). Returns { state, room, code }:

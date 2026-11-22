@@ -115,6 +115,8 @@ the budget. One `suppressed` line (`of`, `count`) follows. A write error writes 
 | `metrics` | `loopP50 loopP99 loopMax cpuPct sysCpuPct memMb rendererMb gpuMb` | main process, each 60 s |
 | `mark` | `category inVoice sharing peers` | "Mark a problem" |
 | `diag` | `event peer id reason size crashDumps` | the requests and the bundles |
+| `knock` | `event side peer id route friend result cause`. Owner (`side owner`): `received` (the prompt shows), `allowed`, `denied`, `auto-allowed`, `timeout`, `gone` (the knocker closed), `refused` (`cause`: `rate busy pending room old-code expired owner removed role error cool-down`), `dropped` (`cause`: `bad-hello bad-knock wrong-proof no-line`). Relay (`side relay`): `circuit`, `circuit-refused` (`rate full`), `circuit-end` (`time-limit data-limit`). Knocker (`side knocker`): `result` with `result` and `cause`. `route`: `relay direct friend-link forward room-code friend`. No name, invite, room code, device ID or address | easy-join knock desk (knock.mjs `report`), node.mjs, main.js |
+| `join` | `event kind result`: `friend-invite-sent`, `friend-invite-received`, `friend-invite-used` (the Join of an invite card), `clipboard-prompt` (`kind`: `room-code device-invite`), `clipboard-join`, `clipboard-dismiss`. No code, no name, no room name | main.js |
 
 The voice summary has a limit. The gate of the sender stops the frames at each pause, and a frame has no mark for
 the start of a talk spurt. Thus the summary has no underrun count, and `jitterMs` uses only the intervals of 100 ms

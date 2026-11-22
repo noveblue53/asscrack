@@ -45,7 +45,8 @@ async function controller(t, { text, file = profile(t), current = null, busy = f
         currentRoom: () => current,
         busy: () => busy,
         store: createAskedStore(file, { log }),
-        notify: (...args) => { state.notified++; assert.equal(args.length, 0); },
+        // 1.0.1: notify gives only the kind of the code (for the diagnostics journal), never the code text.
+        notify: (...args) => { state.notified++; assert.ok(args.length === 1 && ['room-code', 'device-invite'].includes(args[0])); },
         join: async (code, room, leave) => { state.joins.push({ code, room, leave }); return { result: 'joining', room }; },
         log
     });

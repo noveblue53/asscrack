@@ -194,13 +194,22 @@ export const EVENT_FIELDS = Object.freeze({
     diag: { event: oneOf('ask', 'asked', 'prompt', 'sent', 'declined', 'refused', 'expired', 'granted', 'received', 'saved',
         'failed', 'save-failed', 'saved-own'), peer: kinds.peer, id: kinds.id, reason: kinds.code, size: kinds.int,
         crashDumps: kinds.bool },
+    // Easy-join (1.0.1): the knock steps of the owner desk, the relay and the knocker. No name, no invite, no device ID,
+    // no address (route is a class).
+    knock: { event: oneOf('received', 'allowed', 'denied', 'auto-allowed', 'timeout', 'gone', 'refused', 'dropped', 'circuit',
+        'circuit-refused', 'circuit-end', 'result'), side: oneOf('owner', 'relay', 'knocker'), peer: kinds.peer, id: kinds.id,
+        route: oneOf('relay', 'direct', 'friend-link', 'forward', 'room-code', 'friend', 'unknown'), friend: kinds.bool,
+        result: kinds.code, cause: kinds.code },
+    // Easy-join (1.0.1): the friend invite and the code in the clipboard. No code and no room name.
+    join: { event: oneOf('friend-invite-sent', 'friend-invite-received', 'friend-invite-used',
+        'clipboard-prompt', 'clipboard-join', 'clipboard-dismiss'), kind: oneOf('room-code', 'device-invite'), result: kinds.code },
     'writer-error': { code: kinds.code }
 });
 
 // The budget of a type: a burst and a refill each second. A line over the budget is not written; the writer gives one
 // "suppressed" line for each type and window.
 const BUDGETS = { default: [60, 1], log: [200, 4], dial: [60, 0.5], 'voice-summary': [120, 2], error: [30, 0.2],
-    file: [200, 4], session: [120, 2], 'session-refused': [30, 0.5] };
+    file: [200, 4], session: [120, 2], 'session-refused': [30, 0.5], knock: [60, 0.5] };
 
 // Gives { type, ...fields } with only the allowed fields, or null for an unknown type.
 export function redact(type, fields = {}) {

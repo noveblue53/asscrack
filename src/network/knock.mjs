@@ -76,8 +76,13 @@ function rateLimit(clock, limits) {
 // easy-join part 3: autoAllow(deviceId) -> true when the owner admits this device with no prompt ("Always allow my
 // friends": the setting is on and the device is a friend that is not blocked). autoAllowed({ name, mark, deviceId }):
 // a knock got Allow with no prompt.
+// report({ event, source, via, friend, id?, cause? }) (diagnostics, 1.0.1): each knock step of the desk. event: 'received'
+// (the prompt shows), 'allowed', 'denied' (the answer of the owner), 'auto-allowed', 'timeout', 'gone' (the knocker
+// closed the channel), 'refused' (a check or a limit, cause: the reason code of the answer, or 'cool-down') and
+// 'dropped' (no answer, cause: 'bad-hello', 'bad-knock', 'wrong-proof' or 'no-line'). The report has no name and no
+// invite.
 export function createKnockDesk({ membership, makeInvite, limits = {}, clock = realClock, changed = () => {}, log = () => {},
-    autoAllow = () => false, autoAllowed = () => {} }) {
+    autoAllow = () => false, autoAllowed = () => {}, report = () => {} }) {
     if (!membership?.owner) throw new Error('Only the room owner can answer a knock.')
     const L = { ...KNOCK_LIMITS, ...limits }
     const pending = new Map()
@@ -86,12 +91,18 @@ export function createKnockDesk({ membership, makeInvite, limits = {}, clock = r
     let stopped = false
     const view = entry => ({ id: entry.id, name: entry.name, mark: entry.mark, deviceId: entry.deviceId, at: entry.at })
     const list = () => [...pending.values()].map(view)
+    // A report error must not change the answer of a knock.
+    function note(event, context, extra = {}) {
+        try { report({ event, ...context, ...extra }) } catch { /* diagnostics only */ }
+    }
 
-    function settle(entry, result, extra = {}) {
+    // event: the report event of this end (diagnostics); cause: its cause code.
+    function settle(entry, result, extra = {}, event = result, cause = undefined) {
         if (!pending.delete(entry.id)) return
         clock.clearTimeout(entry.timer)
         clock.clearInterval(entry.keep)
         entry.finish(result, extra)
+        note(event, entry.context, { id: entry.id, ...(cause ? { cause } : {}) })
         changed({ pending: list(), added: null })
     }
 
@@ -107,6 +118,7 @@ export function createKnockDesk({ membership, makeInvite, limits = {}, clock = r
     // friend: true for a friend knock (part 3); the hello must then have FRIEND_KNOCK_CODE, and no room code is checked.
     // Returns { receive(message), closed() }.
     function open(channel, { source = '?', via = '?', friend = false } = {}) {
+        const context = { source, via, friend: friend === true }
         let state = 'hello'
         let done = false
         let codeId = null
@@ -120,28 +132,35 @@ export function createKnockDesk({ membership, makeInvite, limits = {}, clock = r
             channel.send({ type: 'knock-result', result, ...extra })
             channel.end()
         }
-        // A wrong line or no line in time: close with no answer and no prompt.
-        function drop(cause) {
+        // A refusal before a prompt: the answer, and its report with the cause code.
+        function refuse(reason) {
+            if (done) return
+            finish('refused', { reason })
+            note('refused', context, { cause: reason })
+        }
+        // A wrong line or no line in time: close with no answer and no prompt. code: the cause code of the report.
+        function drop(cause, code) {
             if (done) return
             done = true
             clock.clearTimeout(stepTimer)
             log(`Knock from ${source} closed: ${cause}`)
+            note('dropped', context, { cause: code })
             channel.end()
         }
         const step = () => {
             clock.clearTimeout(stepTimer)
-            stepTimer = clock.setTimeout(() => drop('no line in time'), L.stepMs)
+            stepTimer = clock.setTimeout(() => drop('no line in time', 'no-line'), L.stepMs)
         }
         const handler = {
             receive(message) {
                 if (done || state === 'wait') return
                 if (state === 'hello') {
                     if (message?.type !== 'knock-hello' || message.v !== 1 || typeof message.room !== 'string' ||
-                        typeof message.code !== 'string' || typeof message.nonce !== 'string' || !NONCE.test(message.nonce)) return drop('bad hello')
-                    if (message.room !== membership.roomId) return finish('refused', { reason: 'room' })
+                        typeof message.code !== 'string' || typeof message.nonce !== 'string' || !NONCE.test(message.nonce)) return drop('bad hello', 'bad-hello')
+                    if (message.room !== membership.roomId) return refuse('room')
                     const check = friend === true ? (message.code === FRIEND_KNOCK_CODE ? 'ok' : 'old-code')
                         : membership.checkRoomCode(message.code)
-                    if (check !== 'ok') return finish('refused', { reason: check })
+                    if (check !== 'ok') return refuse(check)
                     codeId = message.code
                     ownerNonce = newNonce()
                     state = 'proof'
@@ -150,17 +169,21 @@ export function createKnockDesk({ membership, makeInvite, limits = {}, clock = r
                     return
                 }
                 if (message?.type !== 'knock' || !validDeviceId(message.device) || typeof message.signature !== 'string' ||
-                    !SIGNATURE.test(message.signature)) return drop('bad knock')
+                    !SIGNATURE.test(message.signature)) return drop('bad knock', 'bad-knock')
                 // The proof of the device key before any other check: the owner shows no prompt for a device that
                 // did not prove its key.
-                if (!membership.verifyKnock(message.device, codeId, ownerNonce, message.signature)) return drop('wrong device proof')
+                if (!membership.verifyKnock(message.device, codeId, ownerNonce, message.signature)) return drop('wrong device proof', 'wrong-proof')
                 const deviceId = message.device
-                if (deviceId === membership.ownerId) return finish('refused', { reason: 'owner' })
-                if (membership.revoked(deviceId)) return finish('refused', { reason: 'removed' })
+                if (deviceId === membership.ownerId) return refuse('owner')
+                if (membership.revoked(deviceId)) return refuse('removed')
                 // issue() refuses a device that has a different role (a grant that can host).
-                if (membership.issued().some(grant => grant.deviceId === deviceId && grant.canHost)) return finish('refused', { reason: 'role' })
-                if (coolingDown(deviceId)) return finish('denied')
-                if ([...pending.values()].some(other => other.deviceId === deviceId)) return finish('refused', { reason: 'pending' })
+                if (membership.issued().some(grant => grant.deviceId === deviceId && grant.canHost)) return refuse('role')
+                if (coolingDown(deviceId)) {
+                    finish('denied')
+                    note('refused', context, { cause: 'cool-down' })
+                    return
+                }
+                if ([...pending.values()].some(other => other.deviceId === deviceId)) return refuse('pending')
                 // easy-join part 3: "Always allow my friends". Only after the device proof and the checks above. The
                 // knock gets Allow with no prompt, thus it does not use a place of the prompt cap.
                 if (autoAllow(deviceId) === true) {
@@ -171,20 +194,22 @@ export function createKnockDesk({ membership, makeInvite, limits = {}, clock = r
                         invite = makeInvite(deviceId)
                     } catch (err) {
                         log(`Knock invite failed: ${err?.message ?? err}`)
-                        return finish('refused', { reason: 'error' })
+                        return refuse('error')
                     }
                     finish('allowed', { invite })
+                    note('auto-allowed', context)
                     autoAllowed({ name: knockName(message.name), mark: deviceMark(deviceId), deviceId })
                     return
                 }
-                if (pending.size >= L.maxPending) return finish('refused', { reason: 'busy' })
+                if (pending.size >= L.maxPending) return refuse('busy')
                 clock.clearTimeout(stepTimer)
                 state = 'wait'
-                entry = { id: randomUUID(), deviceId, name: knockName(message.name), mark: deviceMark(deviceId), at: clock.now(), finish }
+                entry = { id: randomUUID(), deviceId, name: knockName(message.name), mark: deviceMark(deviceId), at: clock.now(), finish, context }
                 entry.timer = clock.setTimeout(() => settle(entry, 'timeout'), L.promptMs)
                 entry.keep = clock.setInterval(() => channel.send({ type: 'knock-wait' }), L.keepAliveMs)
                 pending.set(entry.id, entry)
                 channel.send({ type: 'knock-wait' })
+                note('received', context, { id: entry.id })
                 changed({ pending: list(), added: view(entry) })
             },
             // The channel closed (the knocker left, or the connection ended): the prompt goes away.
@@ -195,13 +220,14 @@ export function createKnockDesk({ membership, makeInvite, limits = {}, clock = r
                     pending.delete(entry.id)
                     clock.clearTimeout(entry.timer)
                     clock.clearInterval(entry.keep)
+                    note('gone', context, { id: entry.id })
                     changed({ pending: list(), added: null })
                 }
                 done = true
             }
         }
         if (stopped || !allowRate(source, via)) {
-            finish('refused', { reason: stopped ? 'busy' : 'rate' })
+            refuse(stopped ? 'busy' : 'rate')
             return handler
         }
         step()
@@ -223,7 +249,7 @@ export function createKnockDesk({ membership, makeInvite, limits = {}, clock = r
             invite = makeInvite(entry.deviceId)
         } catch (err) {
             log(`Knock invite failed: ${err?.message ?? err}`)
-            settle(entry, 'refused', { reason: 'error' })
+            settle(entry, 'refused', { reason: 'error' }, 'refused', 'error')
             throw err
         }
         settle(entry, 'allowed', { invite })
@@ -232,7 +258,7 @@ export function createKnockDesk({ membership, makeInvite, limits = {}, clock = r
 
     function stop() {
         stopped = true
-        for (const entry of [...pending.values()]) settle(entry, 'timeout')
+        for (const entry of [...pending.values()]) settle(entry, 'timeout', {}, 'timeout', 'stopped')
     }
 
     return Object.freeze({ open, answer, list, stop, limits: Object.freeze({ ...L }) })

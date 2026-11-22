@@ -84,7 +84,8 @@ export function createAskedStore(file, { cap = ASKED_CAP, log = () => {} } = {})
 // readText(): the clipboard text, or a promise of it (Electron 45: clipboard.readText() gives a promise). selfId(): the
 // device ID, or null when the protected
 // storage is locked or has no identity. currentRoom(): { room, roomKey } of the running room, or null. busy(): a login
-// or a Leave room runs now. store: createAskedStore(). notify(): tell the window that a prompt waits.
+// or a Leave room runs now. store: createAskedStore(). notify(kind): tell the window that a prompt waits (kind:
+// 'room-code' or 'device-invite', for the diagnostics journal).
 // join(code, room, leave): friend-join.mjs joinCode().
 export function createClipboardJoin({ readText, selfId, currentRoom = () => null, busy = () => false, store,
     notify = () => {}, join, log = () => {} }) {
@@ -112,7 +113,7 @@ export function createClipboardJoin({ readText, selfId, currentRoom = () => null
             pending = { id: randomUUID(), code: found.code, room: found.room };
             log('INFO', found.kind === 'room-code' ? 'Clipboard join: a room code, prompt shown'
                 : 'Clipboard join: a room invite for this device, prompt shown');
-            notify();
+            notify(found.kind);
             return true;
         },
         // The prompt for the window: { id, room }, or null. It stays until Join or Not now.
