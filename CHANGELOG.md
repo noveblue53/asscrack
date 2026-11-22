@@ -29,7 +29,7 @@ when the sender offered the same file again.
   part stays, and a new offer of the same file continues it.
 
 Results:
-- `npm test` passes, 687 of 687 (127.0.0.1).
+- `npm test` passes, 717 of 717 after the merge with G7a (127.0.0.1).
 - One `npm start` gives no error line in the terminal or the developer console (this PC).
 - Two copies (127.0.0.1): A offers a 600 MiB file (629,145,600 bytes) to B. B pauses at 258,605,056 bytes (41.1 %),
   quits and starts again, and selects Resume on the kept row. B got no new offer. A sent 370,540,544 bytes after the
@@ -38,6 +38,8 @@ Results:
 - Two copies (127.0.0.1), the sender offline: B pauses at 258,277,376 bytes, then B and A quit. B starts alone, and
   Resume shows "Waiting for Alice". A starts again, and the download continues with no action: A sent 370,868,224
   bytes (the remainder), and the SHA-256 agrees.
+- The two checks again after the merge with G7a (127.0.0.1): A sent 373,948,416 and 375,062,528 bytes, each the
+  remainder exactly, and the SHA-256 agrees in both.
 
 ## Unreleased — Friends (goal G7a, 2026-11-21)
 
