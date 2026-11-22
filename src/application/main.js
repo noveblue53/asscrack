@@ -850,6 +850,8 @@ handleRoomIpc('asscrack:saved-room-lines', (_event, roomId, opts) => {
 handleRoomIpc('asscrack:reopen-room', async (_event, roomId, allowLegacy) => {
     if (loginStarted) throw new Error('Already logged in');
     if (typeof roomId !== 'string' || roomId.length > 128) throw new Error('Saved room not found');
+    // G7a: a friend room is not a saved room of the list. Only its friend link opens it.
+    if (getSavedRooms().isFriendRoom(roomId)) throw new Error('Saved room not found');
     const row = getSavedRooms().getRoom(roomId);
     if (!row) throw new Error('Saved room not found');
     const options = {
