@@ -87,7 +87,10 @@ body.screen-fill #screen-stage {
   align-items: center;
   gap: 2px;
   width: 172px;
+  /* The tile is a button. The global button rule gives a pill of 30 px height with no wrap: a card needs its own box. */
+  height: auto;
   padding: 4px;
+  white-space: normal;
   border: 1px solid var(--line, #9fb6cc);
   border-radius: 6px;
   background: var(--surface-raised, #f4f8fc);
