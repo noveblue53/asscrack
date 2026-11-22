@@ -17,3 +17,32 @@
 .state-tag.bad { color: var(--danger); }
 .state-tag.ok { color: var(--voice-line); }
 .state-tag[hidden] { display: none; }
+
+/* U2, U13: the reach of the room or of the friend links, as a dot and a short label. The tooltip has the reason.
+   data-reach: ok (green), warn (amber), bad (red), none (grey), busy (a spinner). */
+.reach-dot::before {
+  content: ''; display: inline-block; flex: none; box-sizing: border-box; width: 9px; height: 9px; margin-right: 6px;
+  border-radius: 50%; background: var(--ink-soft); vertical-align: 0;
+}
+.reach-dot:empty::before { display: none; }
+.reach-dot[data-reach="ok"]::before { background: var(--voice-line); }
+.reach-dot[data-reach="warn"]::before { background: var(--warning); }
+.reach-dot[data-reach="bad"]::before { background: var(--danger); }
+.reach-dot[data-reach="busy"]::before {
+  background: transparent; border: 2px solid var(--ink-soft); border-top-color: transparent;
+  animation: state-spin .9s linear infinite;
+}
+@keyframes state-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .reach-dot[data-reach="busy"]::before { animation: none; } }
+
+/* A small icon drawn with the color of the text (a mask, as the icons of the voice buttons). */
+.state-icon {
+  display: inline-block; flex: none; width: 14px; height: 14px; background: currentColor; vertical-align: -2px;
+  mask: var(--state-glyph) center / contain no-repeat;
+}
+
+/* U14: a line in the outbox of a friend chat has a clock icon. */
+#messages .mark[data-mark="waiting"]::before {
+  content: ''; display: inline-block; width: 12px; height: 12px; background: currentColor; vertical-align: -2px;
+  mask: url('img/state-clock.svg') center / contain no-repeat;
+}

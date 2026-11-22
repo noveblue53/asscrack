@@ -579,7 +579,7 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
     // ---- The grant (design F3 steps 3 and 4) ----
 
     function checkRoomForNew(deviceId) {
-        if (state !== 'open') throw new Error('Friends need the protected storage of this computer.');
+        if (state !== 'open') throw new Error('Friends are locked: secure storage is unavailable.');
         if (byDevice(deviceId)) throw new Error('already a friend');
         if (isBlocked(deviceId)) throw new Error('blocked');
         const slot = freeSlot();
@@ -838,7 +838,7 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
             const entry = friends.get(friendId);
             if (!entry) return false;
             try { archive.block(entry.row.deviceId, entry.row.nickname); }
-            catch (err) { log('WARN', `Block not saved: ${errText(err)}`); throw new Error('Could not save the block.'); }
+            catch (err) { log('WARN', `Block not saved: ${errText(err)}`); throw new Error('Couldn\'t block. Try again.'); }
             return this.remove(friendId);
         },
         unblock(deviceId) {

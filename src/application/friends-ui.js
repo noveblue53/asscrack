@@ -29,25 +29,33 @@
         }
         if (friend.state === 'room') return `Online · in ${friend.roomName}`;
         if (friend.state === 'removed-you') return 'Removed you as a friend';
-        return Number.isFinite(friend.lastSeen) ? `Not connected · last connected ${timeText(friend.lastSeen, now)}` : 'Not connected yet';
+        return Number.isFinite(friend.lastSeen) ? `Offline · last seen ${timeText(friend.lastSeen, now)}` : 'Offline';
     }
+    // U13 of the UI copy pass: the reach line is a dot and a short label. The tooltip has the reason.
     function reachText(reach) {
-        if (reach === 'reachable') return 'Friends can reach this computer.';
-        if (reach === 'asking') return 'Asking the router…';
-        return 'Friends can reach you only on this network, or when they have an open port.';
+        if (reach === 'reachable') return 'Reachable';
+        if (reach === 'asking') return 'Opening port…';
+        return 'LAN only';
     }
-    const waitingText = name => `Waiting for ${name || 'your friend'} to accept…`;
+    function reachTip(reach) {
+        if (reach === 'reachable') return 'Friends can connect to this PC';
+        if (reach === 'asking') return 'Asking your router to open a port';
+        return 'Friends elsewhere need an open port on one side';
+    }
+    const reachKind = reach => (reach === 'reachable' ? 'ok' : reach === 'asking' ? 'busy' : 'warn');
+    // U15: a request that waits is a row with the name and a "Pending" tag. This text is the tooltip of the tag.
+    const waitingText = name => `Waiting for ${name || 'your friend'} to accept`;
     // easy-join: the result of "Invite to room" (friend-links.mjs invite()).
     function inviteText(result, name) {
         switch (result) {
             case 'sending': return `Invite sent to ${name}.`;
             case 'waiting': return `Invite queued. ${name} gets it when you are both online.`;
             case 'not-owner': return 'Only the room owner can invite.';
-            case 'no-room': return 'Open your protected room first.';
+            case 'no-room': return 'Open your room first.';
             case 'no-address': return 'This room cannot be reached from the internet. See Invite for details.';
             case 'full': return `Too many unsent messages for ${name}. Try again when ${name} is online.`;
             case 'removed': return `${name} removed you as a friend.`;
-            default: return 'Could not send the invite.';
+            default: return 'Couldn\'t send the invite.';
         }
     }
     // easy-join part 3: Join of a friend row. The status while the knock waits, and the result (main.js
@@ -63,10 +71,10 @@
             case 'gone': return `${name} is not in a room you can join.`;
             case 'saved': return 'This room is in your saved rooms. Open it there.';
             case 'busy': return 'Try again in a moment.';
-            default: return 'Could not join the room. Try again.';
+            default: return 'Couldn\'t join the room. Try again.';
         }
     }
-    window.friendsCore = Object.freeze({ stateText, reachText, waitingText, timeText, inviteText, knockStateText, askText, joinText });
+    window.friendsCore = Object.freeze({ stateText, reachText, reachTip, reachKind, waitingText, timeText, inviteText, knockStateText, askText, joinText });
 
     if (typeof document === 'undefined' || typeof document.getElementById !== 'function') return;
     const api = window.friends;
@@ -148,11 +156,18 @@
         if (rows[0]) rows[0].tabIndex = 0;
         waitingList.replaceChildren(...view.waiting.map(w => {
             const row = document.createElement('li');
-            row.textContent = waitingText(w.name);
+            const tag = document.createElement('span');
+            tag.className = 'state-tag';
+            tag.textContent = 'Pending';
+            tag.title = waitingText(w.name);
+            row.append(w.name || 'Your friend', ' ', tag);
             return row;
         }));
         if (open) {
-            byId('friends-reach').textContent = reachText(view.reach);
+            const reach = byId('friends-reach');
+            reach.textContent = reachText(view.reach);
+            reach.title = reachTip(view.reach);
+            reach.dataset.reach = reachKind(view.reach);
             byId('friends-upnp').hidden = view.reach !== 'local' || view.upnp === true;
             byId('friends-name').textContent = view.name || 'your room name';
             const blocked = byId('friends-blocked');
@@ -329,11 +344,11 @@
             case 'friend-open': return openChat(friend.friendId);
             case 'friend-rename': askName(`Rename ${name}`, name, value => api.rename(friend.friendId, value)); return true;
             case 'friend-remove':
-                ask(`Remove ${name} as a friend? The private messages with ${name} are deleted from this computer.`, 'Remove friend',
+                ask(`Remove ${name}? Your messages with ${name} are deleted from this PC.`, 'Remove friend',
                     () => api.remove(friend.friendId));
                 return true;
             case 'friend-block':
-                ask(`Block ${name}? ${name} is removed as a friend and cannot send you friend requests.`, 'Block',
+                ask(`Block ${name}? They're removed and can't send you requests.`, 'Block',
                     () => api.block(friend.friendId));
                 return true;
             case 'friend-join':
@@ -355,11 +370,11 @@
 
     // ---- Add friend (the buddy menu of a protected room) ----
     const NOT_SENT = {
-        busy: name => `A friend request to ${name} is open.`,
-        cap: () => `You have the maximum number of friends (${view.cap ?? 32}).`,
+        busy: name => `Request to ${name} already sent.`,
+        cap: () => `Friend limit reached (${view.cap ?? 32}).`,
         friend: name => `${name} is already your friend.`,
-        blocked: name => `You blocked ${name}. Unblock ${name} in the Friends panel first.`,
-        locked: () => 'Friends need the protected storage of this computer.'
+        blocked: name => `${name} is blocked. Unblock them first.`,
+        locked: () => 'Friends are locked: secure storage is unavailable.'
     };
     async function add(peerId) {
         if (!peerId) return false;
@@ -367,7 +382,7 @@
         try { answer = await api.request(peerId); } catch { answer = null; }
         const name = answer?.name || 'this person';
         if (answer?.result === 'sent') roomStatus(`Friend request sent to ${name}.`);
-        else roomStatus((NOT_SENT[answer?.result] ?? (() => 'This action is not available now.'))(name));
+        else roomStatus((NOT_SENT[answer?.result] ?? (() => 'Not available right now.'))(name));
         refreshRelations();
         return answer?.result === 'sent';
     }

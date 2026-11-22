@@ -4,8 +4,7 @@
 (function () {
     'use strict';
 
-    const barText = name => `${name} wants to add you as a friend. Friends can send private messages outside of rooms. ` +
-        `${name} will know the internet address of this computer.`;
+    const barText = name => `${name} wants to be friends. Accepting shares your IP address with ${name}.`;
     // The status text at the end of a request, or '' (no text).
     function endText(event) {
         const name = event.name || 'This person';
@@ -13,8 +12,8 @@
             case 'friend': return `${name} is now your friend.`;
             case 'declined': return event.side === 'out' ? `${name} declined.` : '';
             case 'no-answer': return event.side === 'out' ? `No answer from ${name}.` : '';
-            case 'failed': return `Could not add ${name} as a friend. Try again.`;
-            case 'closed': return event.side === 'out' ? `The friend request to ${name} ended: ${name} is not in the room now.` : '';
+            case 'failed': return `Couldn't add ${name}. Try again.`;
+            case 'closed': return event.side === 'out' ? `Request to ${name} cancelled: ${name} left the room.` : '';
             default: return '';
         }
     }

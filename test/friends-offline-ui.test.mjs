@@ -81,9 +81,11 @@ test('chat window: a waiting line shows "Waiting" and Delete; Delivered removes 
         state: { name: 'Ben', state: 'offline', lastSeen: null, reach: 'local' },
         lines: [{ id: 'me.0', from: 'Ann', text: 'old waiting', time: 1000, own: true, waiting: true }]
     });
-    const WAITING = 'Waiting: ASSCRACK sends it when you are both online';
-    assert.equal(w.document.getElementById('friend-state').textContent, 'Not connected. ASSCRACK sends your messages when you are both online.');
+    // UI copy pass (U14): a waiting line shows a clock icon; the words are the tooltip of the mark.
+    const WAITING = '';
+    assert.equal(w.document.getElementById('friend-state').textContent, 'Offline. Messages send when you\'re both online.');
     assert.deepEqual(w.rows().map(r => [r.text, r.mark, r.button]), [['old waiting', WAITING, 'Delete']]);
+    assert.equal(w.list.children[0].querySelector('.mark').title, "Queued. Sends when you're both online");
     // A new line with no session waits too; the composer is empty.
     w.box.send = { result: 'waiting', line: { id: 'me.1', from: 'Ann', text: 'new waiting', time: 2000, own: true, waiting: true } };
     await w.type('new waiting');
@@ -101,7 +103,7 @@ test('chat window: a waiting line shows "Waiting" and Delete; Delivered removes 
     // 200 lines wait: the 201st is refused and the draft stays.
     w.box.send = { result: 'full' };
     await w.type('number 201');
-    assert.equal(w.status(), '200 messages wait for Ben. Wait until Ben is online.');
+    assert.equal(w.status(), 'Too many unsent messages for Ben. Try again when Ben is online.');
     assert.equal(w.document.getElementById('message-input').value, 'number 201');
     // After 'unfriend' from the other side, a waiting line is not delivered.
     w.box.send = { result: 'waiting', line: { id: 'me.2', from: 'Ann', text: 'too late', time: 3000, own: true, waiting: true } };
@@ -111,7 +113,7 @@ test('chat window: a waiting line shows "Waiting" and Delete; Delivered removes 
     assert.equal(w.rows().at(-1).button, 'Delete');
     w.box.send = { result: 'removed' };
     await w.type('again');
-    assert.equal(w.status(), 'Ben removed you as a friend. The message was not sent.');
+    assert.equal(w.status(), 'Not sent: Ben removed you as a friend.');
 });
 
 test('chat window: Delete of a line that goes out now keeps the row and says why', async () => {
@@ -122,7 +124,7 @@ test('chat window: Delete of a line that goes out now keeps the row and says why
     w.list.children[0].querySelector('button').click();
     await tick();
     assert.equal(w.rows().length, 1);
-    assert.equal(w.status(), 'ASSCRACK sends this message now. It cannot be deleted.');
+    assert.equal(w.status(), 'Already sending. Can\'t delete.');
 });
 
 test('the availability texts of the Friends panel and of the chat window', async () => {

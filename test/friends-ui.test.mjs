@@ -57,9 +57,12 @@ test('Friends panel: the empty, the locked and the list states, the reach line a
     assert.equal(room.el('friends-empty').hidden, false);
     // The fixed texts are in index.html.
     const html = await readFile(new URL('../src/application/index.html', import.meta.url), 'utf8');
-    assert.ok(html.includes('No friends yet. In a room, right-click a person and select “Add friend…”.'));
-    assert.ok(html.includes('Friends need the protected storage of this computer.'));
-    assert.equal(room.el('friends-reach').textContent, 'Friends can reach you only on this network, or when they have an open port.');
+    assert.ok(html.includes('No friends yet. Right-click someone in a room to add them.'));
+    assert.ok(html.includes('Friends are locked: secure storage is unavailable.'));
+    // UI copy pass (U13): a dot and a short label; the tooltip has the reason.
+    assert.equal(room.el('friends-reach').textContent, 'LAN only');
+    assert.equal(room.el('friends-reach').title, 'Friends elsewhere need an open port on one side');
+    assert.equal(room.el('friends-reach').dataset.reach, 'warn');
     assert.equal(room.el('friends-upnp').hidden, false);
     assert.equal(room.el('friends-name').textContent, 'your room name');
     on.changed({ state: 'locked' });
@@ -78,17 +81,20 @@ test('Friends panel: the empty, the locked and the list states, the reach line a
     assert.equal(room.el('friends-empty').hidden, true);
     const states = rowTexts(room);
     assert.equal(states[0], 'Online');
-    assert.match(states[1], /^Not connected · last connected (21:04|\d+ \w+ 21:04)$/);
-    assert.equal(states[2], 'Not connected yet');
+    assert.match(states[1], /^Offline · last seen (21:04|\d+ \w+ 21:04)$/);
+    assert.equal(states[2], 'Offline');
     assert.equal(states[3], 'Removed you as a friend');
-    assert.equal(room.el('friend-waiting').children[0].textContent, 'Waiting for Sam to accept…');
-    assert.equal(room.el('friends-reach').textContent, 'Friends can reach this computer.');
+    // U15: the name and a "Pending" tag; the tooltip of the tag has the sentence.
+    assert.equal(room.el('friend-waiting').children[0].textContent, 'Sam Pending');
+    assert.equal(room.el('friend-waiting').children[0].querySelector('.state-tag').title, 'Waiting for Sam to accept');
+    assert.equal(room.el('friends-reach').textContent, 'Reachable');
+    assert.equal(room.el('friends-reach').dataset.reach, 'ok');
     assert.equal(room.el('friends-upnp').hidden, true);
     assert.equal(room.el('friends-name').textContent, 'Ann');
     assert.equal(room.el('friends-blocked').hidden, false);
     assert.equal(room.el('friend-blocked-list').children[0].textContent.includes('Zed'), true);
     assert.equal(room.el('friends-unread').textContent, '2');
-    assert.equal(room.window.friendsCore.reachText('asking'), 'Asking the router…');
+    assert.equal(room.window.friendsCore.reachText('asking'), 'Opening port…');
 });
 
 test('Friends panel: a click opens the chat; the row menu asks before Remove and Block', async () => {
@@ -104,12 +110,12 @@ test('Friends panel: a click opens the chat; the row menu asks before Remove and
         ['Open chat', 'Rename…', 'Remove friend…', 'Block…']);
     room.window.roomActions.run('friend-remove', row);
     assert.equal(room.el('friend-confirm-text').textContent,
-        'Remove Ben as a friend? The private messages with Ben are deleted from this computer.');
+        'Remove Ben? Your messages with Ben are deleted from this PC.');
     room.el('friend-confirm-yes').click();
     await settle();
     assert.deepEqual(calls.at(-1), ['remove', 'f1']);
     room.window.roomActions.run('friend-block', row);
-    assert.equal(room.el('friend-confirm-text').textContent, 'Block Ben? Ben is removed as a friend and cannot send you friend requests.');
+    assert.equal(room.el('friend-confirm-text').textContent, 'Block Ben? They\'re removed and can\'t send you requests.');
 });
 
 test('the friend request bar: the text, Accept and the end texts in the status line', async () => {
@@ -117,8 +123,7 @@ test('the friend request bar: the text, Accept and the end texts in the status l
     await room.login('Me');
     on.request({ kind: 'incoming', id: 'r1', name: 'Sam' });
     assert.equal(room.el('friend-request-bar').hidden, false);
-    assert.equal(room.el('friend-request-text').textContent, 'Sam wants to add you as a friend. Friends can send private ' +
-        'messages outside of rooms. Sam will know the internet address of this computer.');
+    assert.equal(room.el('friend-request-text').textContent, 'Sam wants to be friends. Accepting shares your IP address with Sam.');
     room.el('friend-request-accept').click();
     await settle();
     assert.deepEqual(calls.at(-1), ['respond', 'r1', true]);
@@ -174,7 +179,7 @@ test('the friend chat window: the state line, the marks and the text when the fr
     await window.friendChatReady;
     // G7b: a message to a friend with no session waits in the outbox, thus the state line says so (the old text "You can
     // send when Ben is online" is not true any more).
-    assert.equal(document.getElementById('friend-state').textContent, 'Not connected. ASSCRACK sends your messages when you are both online.');
+    assert.equal(document.getElementById('friend-state').textContent, 'Offline. Messages send when you\'re both online.');
     assert.equal(document.getElementById('friend-reach').hidden, false);
     assert.equal(document.getElementById('messages').children.length, 1);
     assert.equal(document.documentElement.dataset.theme, 'aero-night');
@@ -182,7 +187,7 @@ test('the friend chat window: the state line, the marks and the text when the fr
     input.value = 'draft';
     input.dispatchEvent(new Event('keydown', { key: 'Enter' }));
     await new Promise(r => setTimeout(r, 0));
-    assert.equal(document.getElementById('send-status').textContent, 'Ben is not connected. The message was not sent.');
+    assert.equal(document.getElementById('send-status').textContent, 'Not sent: Ben is offline.');
     assert.equal(input.value, 'draft', 'the draft stays');
     on.state({ name: 'Ben', state: 'online', lastSeen: 1, reach: 'local' });
     assert.equal(document.getElementById('friend-state').textContent, 'Online');
@@ -211,5 +216,5 @@ test('L3: the friend request bar shows the device mark beside the name', async (
     const { room, on } = await load(open())
     await room.login('Me')
     on.request({ kind: 'incoming', id: 'r1', name: 'Sam', mark: 'a1b2c3' })
-    assert.match(room.el('friend-request-text').textContent, /^Sam #a1b2c3 wants to add you as a friend\./)
+    assert.match(room.el('friend-request-text').textContent, /^Sam #a1b2c3 wants to be friends\./)
 })

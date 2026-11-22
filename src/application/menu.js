@@ -253,7 +253,7 @@
         const api = actions();
         if (!api) return;
         if (!allowed(action, api.rowInfo(row))) {
-            api.notice('This action is not available now.');
+            api.notice('Not available right now.');
             return;
         }
         Promise.resolve(api.run(action, row))

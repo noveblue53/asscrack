@@ -6,7 +6,9 @@
 (function () {
     'use strict';
     const MARKS = { sending: 'Sending', delivered: 'Delivered', unconfirmed: 'Not confirmed',
-        waiting: 'Waiting: ASSCRACK sends it when you are both online' };
+        waiting: '' };
+    // U14 of the UI copy pass: a queued line has a clock icon. The words are its tooltip.
+    const WAITING_TIP = 'Queued. Sends when you\'re both online';
     const AWAY_MARK = 'sent while you were away';
     const pad = n => String(n).padStart(2, '0');
     const clock = time => { const d = new Date(time); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
@@ -18,15 +20,15 @@
         }
         if (state.state === 'room') return `Online · in ${state.roomName}`;
         if (state.state === 'removed-you') return `${state.name} removed you as a friend.`;
-        return 'Not connected. ASSCRACK sends your messages when you are both online.';
+        return 'Offline. Messages send when you\'re both online.';
     }
     const awayNoteText = (name, count) => count === 1 ? `${name} sent a message while you were away.`
         : `${name} sent ${count} messages while you were away.`;
     const notDeliveredText = name => `Not delivered: ${name} removed you as a friend.`;
-    const fullText = name => `200 messages wait for ${name}. Wait until ${name} is online.`;
+    const fullText = name => `Too many unsent messages for ${name}. Try again when ${name} is online.`;
     // Operator decision 3 (2026-11-21): the app tells why the friend cannot be reached.
-    const REACH_NOTE = 'A link needs one computer with an open port (UPnP or a forwarded port), or the same network. ' +
-        'Two computers with no open port cannot connect.';
+    // UI copy pass: a tag "No open port" with this tooltip.
+    const REACH_NOTE = 'One of you needs an open port, or the same network';
     // easy-join: the text of an invite card. invite: { state, room } from the main process (never the code).
     function inviteCardText(invite, own, name) {
         const who = name || 'Your friend';
@@ -35,7 +37,7 @@
             if (invite.state === 'expired') return 'Invite expired';
             return 'Room invite sent';
         }
-        if (invite.state === 'ok') return `${who} invites you to ${invite.room}.`;
+        if (invite.state === 'ok') return `${who} invited you to ${invite.room}.`;
         if (invite.state === 'expired') return `Invite expired. Ask ${name || 'your friend'} for a new one.`;
         return 'This invite is for a different device.';
     }
@@ -43,14 +45,14 @@
     function joinNoteText(answer) {
         switch (answer?.result) {
             case 'joining': return `Joining ${answer.room}…`;
-            case 'busy': return 'ASSCRACK opens or leaves a room now. Try again in a moment.';
+            case 'busy': return 'Already joining or leaving a room. Try again in a moment.';
             case 'expired': return 'Invite expired.';
             case 'gone': return 'Invite no longer available.';
             case 'wrong-device': case 'wrong-owner': case 'invalid': return 'This invite is for a different device.';
-            default: return 'Could not join the room.';
+            default: return 'Couldn\'t join the room.';
         }
     }
-    window.friendChatCore = Object.freeze({ stateText, MARKS, REACH_NOTE, AWAY_MARK, awayNoteText, notDeliveredText, fullText,
+    window.friendChatCore = Object.freeze({ stateText, MARKS, WAITING_TIP, REACH_NOTE, AWAY_MARK, awayNoteText, notDeliveredText, fullText,
         inviteCardText, joinNoteText });
 
     if (typeof document === 'undefined' || !window.friendChat) return;
@@ -114,6 +116,9 @@
         }
         el.dataset.mark = mark;
         el.textContent = mark === 'not-delivered' ? notDeliveredText(state.name) : MARKS[mark] ?? '';
+        el.title = mark === 'waiting' ? WAITING_TIP : '';
+        if (mark === 'waiting') el.setAttribute('aria-label', WAITING_TIP);
+        else el.removeAttribute('aria-label');
         // G7b: a waiting line (also one that is not delivered) has Delete. The other marks have no button.
         const waiting = mark === 'waiting' || mark === 'not-delivered';
         let button = row.querySelector('.delete');
@@ -167,7 +172,7 @@
             rows.delete(id);
             status.textContent = '';
         } else if (result === 'sending') {
-            status.textContent = 'ASSCRACK sends this message now. It cannot be deleted.';
+            status.textContent = 'Already sending. Can\'t delete.';
         }
     }
     // G7b: one note row (kind 'away', no button, never unread) before the first line of each away batch in the list.
@@ -210,7 +215,9 @@
         line.dataset.online = String(state.state === 'online' || state.state === 'room');
         const reach = byId('friend-reach');
         reach.hidden = state.state === 'online' || state.state === 'room' || state.state === 'removed-you' || state.reach !== 'local';
-        reach.textContent = REACH_NOTE;
+        reach.textContent = 'No open port';
+        reach.title = REACH_NOTE;
+        input.placeholder = state.name ? `Message ${state.name}` : 'Message';
         // G7b: after 'unfriend' from the other side, the waiting lines are not delivered.
         if (state.state === 'removed-you') {
             for (const [id, row] of rows) if (row.querySelector('.mark')?.dataset.mark === 'waiting') setMark(id, 'not-delivered');
@@ -245,15 +252,15 @@
             if (answer.result === 'sending') setMark(answer.line.id, 'sending');
             list.scrollTop = list.scrollHeight;
         } else if (answer?.result === 'invalid') {
-            status.textContent = 'The message must have 1 to 4096 characters.';
+            status.textContent = 'Messages can be up to 4096 characters.';
         } else if (answer?.result === 'full') {
             // The draft stays.
             status.textContent = fullText(state.name);
         } else if (answer?.result === 'removed') {
-            status.textContent = `${state.name} removed you as a friend. The message was not sent.`;
+            status.textContent = `Not sent: ${state.name} removed you as a friend.`;
         } else {
             // The draft stays.
-            status.textContent = `${state.name} is not connected. The message was not sent.`;
+            status.textContent = `Not sent: ${state.name} is offline.`;
         }
     }
     byId('composer').addEventListener('submit', event => {

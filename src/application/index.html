@@ -109,18 +109,18 @@
     <aside id="friends-panel" aria-labelledby="friends-title">
       <div class="friends-head">
         <h2 id="friends-title">Friends</h2>
-        <button id="friends-popout" type="button" hidden title="Open the Friends list in its own window">Pop out</button>
+        <button id="friends-popout" type="button" hidden title="Open in new window">Pop out</button>
         <button id="friends-close" type="button" hidden>Close</button>
       </div>
-      <p id="friends-locked" hidden>Friends need the protected storage of this computer.</p>
+      <p id="friends-locked" hidden>Friends are locked: secure storage is unavailable.</p>
       <button id="friends-retry" type="button" hidden>Try again</button>
-      <p id="friends-empty" hidden>No friends yet. In a room, right-click a person and select “Add friend…”.</p>
+      <p id="friends-empty" hidden>No friends yet. Right-click someone in a room to add them.</p>
       <ul id="friend-list" aria-label="Friends"></ul>
-      <ul id="friend-waiting" aria-label="Friend requests that wait"></ul>
+      <ul id="friend-waiting" aria-label="Pending requests"></ul>
       <div id="friends-settings" hidden>
-        <p id="friends-reach" role="status"></p>
-        <button id="friends-upnp" type="button" hidden>Ask my router to open ports (UPnP)</button>
-        <p class="friends-name-line">Your name for friends: <span id="friends-name"></span> <button id="friends-name-change" type="button">Change</button></p>
+        <p id="friends-reach" class="reach-dot" role="status"></p>
+        <button id="friends-upnp" type="button" hidden>Open port (UPnP)</button>
+        <p class="friends-name-line">Your name: <span id="friends-name"></span> <button id="friends-name-change" type="button">Change</button></p>
         <details id="friends-blocked" hidden>
           <summary>Blocked</summary>
           <ul id="friend-blocked-list"></ul>

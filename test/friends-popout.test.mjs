@@ -157,8 +157,8 @@ test('the Friends window runs friends-ui.js with no drawer: the list, live chang
     assert.equal(el('friends-panel').hidden, false);
     changed(view({ friends: [{ friendId: 'f1', name: 'Ben', state: 'online', lastSeen: null, unread: 2 },
         { friendId: 'f2', name: 'Cat', state: 'offline', lastSeen: null, unread: 0 }], waiting: [{ name: 'Dan' }] }));
-    assert.deepEqual(el('friend-list').children.map(row => row.querySelector('.friend-state').textContent), ['Online', 'Not connected yet']);
-    assert.equal(el('friend-waiting').children[0].textContent, 'Waiting for Dan to accept…');
+    assert.deepEqual(el('friend-list').children.map(row => row.querySelector('.friend-state').textContent), ['Online', 'Offline']);
+    assert.equal(el('friend-waiting').children[0].textContent, 'Dan Pending');
     el('friend-list').children[1].click();
     await settle();
     assert.deepEqual(calls, [['chat', 'f2']]);
