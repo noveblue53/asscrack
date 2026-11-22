@@ -678,3 +678,25 @@ test('revision 3d: a viewer in the probe of its return does not lower the fast t
     s.run(8000)
     if (!s.v('b').mergeProbe && s.rate.tiers().length === 1) assert.equal(s.rate.tiers()[0].bitrate, Math.max(300000, Math.min(s.v('a').rate, s.v('b').rate)))
 })
+
+test('rule U5 (revision 3e): an excess above 70 ms for 1 s steps the tier down at once, to 0.8 x the delivered rate', () => {
+    const s = autoAt(2400000)
+    s.run(12500, { frameBytes: () => 2000 })
+    assert.equal(s.tier().preset, 'smooth')
+    // After the probe: the link becomes slow (ack delay 150 ms).
+    s.run(6000, { frameBytes: () => 2000 })
+    s.conf.get('a').delay = 150
+    const slowAt = s.now()
+    while (s.tier().preset === 'smooth' && s.now() < slowAt + 4000) s.run(50, { frameBytes: () => 2000 })
+    const down = s.rate.history().at(-1)
+    assert.equal(down.why, 'fast down')
+    assert.ok(down.t - slowAt <= 1600, `the step came ${down.t - slowAt} ms after the link became slow`)
+    // One viewer of two with the excess: no fast step of the shared tier (rule A7 makes that viewer slow).
+    const two = sim()
+    two.add('a')
+    two.add('b')
+    two.run(6000)
+    two.conf.get('b').delay = 150
+    two.run(3000)
+    assert.ok(!two.rate.history().some(h => h.why === 'fast down' && h.role === 'fast'))
+})

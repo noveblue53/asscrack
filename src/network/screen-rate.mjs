@@ -32,6 +32,8 @@ export const RATE_DEFAULTS = Object.freeze({
     // Revision 3b (DECISIONS.md P8a-21): the use of rule U2 over 2 s, no split in the first 5 s of a viewer, the
     // return to the fast tier as a probe, and one late keyframe each 10 s with no effect on U1 and A4.
     usedWindowMs: 2000, slowGraceMs: 5000, deliveredWindowMs: 10000,
+    // Revision 3e (DECISIONS.md P8a-25): rule U5, the fast step down.
+    fastDownEvals: 2, fastDownFactor: 0.8,
     slowHoldMs: 3000, deepMs: 140, deepFactor: 0.7, mergeFactor: 0.9, maxEncoders: 2,
     overloadDrop: 0.02, overloadEncode: 0.8, overloadReports: 4, cpuRecoverMs: 60000, cpuRaisesMax: 2
 })
@@ -619,6 +621,23 @@ export function createScreenRate({ quality = 'auto', source = null, now, params 
         if (fixed === null) for (const tier of tiers) {
             const members = membersOf(tier)
             if (!members.length) continue
+            // Rule U5 (revision 3e): when each viewer of the tier has an excess above 70 ms or a late frame in 2
+            // evaluations in sequence (1 s), the tier steps down one preset at once, and the rate of each viewer goes
+            // to 0.8 x its delivered rate. Rule A5 stays as the slow backup.
+            tier.highEvals = members.every(v => v.lateNow || v.excess > P.highMs) ? (tier.highEvals ?? 0) + 1 : 0
+            if (tier.highEvals >= P.fastDownEvals && !tier.probe) {
+                tier.highEvals = 0
+                for (const v of members) if (v.delivered > 0) v.rate = Math.max(P.minBitrate, Math.min(v.rate, Math.round(P.fastDownFactor * v.delivered)))
+                setBitrates()
+                if (tier.preset > 0) {
+                    if (t - tier.lastUpAt <= P.upFailWindowMs) failedUp(tier, t)
+                    setPreset(tier, canon(tier.preset - 1), 'fast down')
+                    for (const v of members) v.lates = []
+                    tier.upSince = null
+                    tier.downSince = null
+                    continue
+                }
+            }
             // Rule U3: an up step is a probe of 5 s. An excess above 70 ms or a late viewer sends the tier back at once.
             if (tier.probe) {
                 if (members.some(v => v.lateNow || v.excess > P.highMs)) {
