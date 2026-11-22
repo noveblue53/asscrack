@@ -60,9 +60,7 @@ export function probeWritable(dir, fsx = fs) {
 }
 
 export function notWritableText(dir, error) {
-    return `ASSCRACK keeps its rooms, history and settings in this folder:\n\n${dir}\n\n` +
-        `ASSCRACK cannot write to it (${error}). Put ASSCRACK in a folder that your user account can write to, ` +
-        'for example a folder in your user folder, and start it again.';
+    return `Can't write to the data folder:\n\n${dir}\n\n(${error})\n\nMove the app to a folder you can write to, then start it again.`;
 }
 
 // The folder of the old versions. env.APPDATA first: a test process can give a fake folder (Electron reads the
@@ -160,11 +158,10 @@ export function writeKeptMarker(dir, legacy, fsx = fs, now = Date.now()) {
 
 export function moveFailedText(result, from) {
     if (result.reason === 'in-use') {
-        return `An other ASSCRACK copy uses the old folder ${from}. Close each ASSCRACK copy, then start this one again.`;
+        return `Another copy of the app is using ${from}. Close it, then start again.`;
     }
-    if (result.reason === 'gone') return `The old folder ${from} is not there now. Start ASSCRACK again.`;
-    return `The move did not complete (${result.error ?? result.reason}). The old folder ${from} did not change. ` +
-        'Start ASSCRACK again to try again.';
+    if (result.reason === 'gone') return `${from} no longer exists. Start the app again.`;
+    return `Move failed (${result.error ?? result.reason}). Nothing was changed. Start the app again to retry.`;
 }
 
 // The download scratch (download-scratch.mjs) is in the download folder, and the hash of an owner text gives its

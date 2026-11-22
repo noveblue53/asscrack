@@ -2134,9 +2134,8 @@ async function offerMove({ from, to }) {
     const { response } = await dialog.showMessageBox({
         type: 'question', title: 'ASSCRACK', noLink: true, buttons: ['Move', 'Keep there'], defaultId: 0, cancelId: 1,
         message: `Move your rooms and history to ${to}?`,
-        detail: 'ASSCRACK now keeps all its data in one folder next to the program. Your rooms, history, friends and ' +
-            `settings are in ${from}.\n\nMove: copy them to the new folder, check the copy, then remove the old folder.\n` +
-            'Keep there: the old folder does not change, and this copy starts with no saved rooms.'
+        detail: `Your rooms, history, friends and settings are in ${from}.\n\n` +
+            'Move: copies them here and removes the old folder.\nKeep there: leaves them, and this copy starts empty.'
     });
     let restart = true;
     if (response === 0) {
@@ -2152,7 +2151,7 @@ async function offerMove({ from, to }) {
             writeLog('WARN', 'Data folder: the old folder was not removed completely');
             await dialog.showMessageBox({ type: 'info', title: 'ASSCRACK', noLink: true, buttons: ['OK'],
                 message: 'Your rooms and history moved.',
-                detail: `ASSCRACK could not remove all of the old folder. You can delete it: ${result.leftover}` });
+                detail: `Some old files are left. You can delete: ${result.leftover}` });
         }
     } else {
         try { writeKeptMarker(to, from); } catch (err) { writeLog('WARN', `Data folder: marker not written: ${err?.message ?? err}`); }

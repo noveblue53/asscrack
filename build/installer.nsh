@@ -1,5 +1,5 @@
 ; P9B: the per-user installer (electron-builder nsis target, package.json "dist:installer").
-; At uninstall, delete the start entry of "Start as Idle Peer when I sign in" (src/application/start-at-sign-in.mjs,
+; At uninstall, delete the start entry of "Start in the tray when I sign in" (src/application/start-at-sign-in.mjs,
 ; RUN_VALUE_NAME) and its Startup apps state. An upgrade runs the old uninstaller with --updated: then the entry stays,
 ; because the installed path and the arguments do not change.
 !macro customUnInstall
@@ -44,7 +44,7 @@
 !macroend
 
 !ifndef BUILD_UNINSTALLER
-  !define MUI_DIRECTORYPAGE_TEXT_TOP "Select a folder that your user account can write to, for example a folder in your user folder. This installer does not use administrator rights. Thus the Next button stays off for Program Files and the Windows folder."
+  !define MUI_DIRECTORYPAGE_TEXT_TOP "Choose a folder you can write to. Program Files and the Windows folder aren't allowed (no admin rights)."
 
   ; Push the folder, then the root. Pushes "1" if the folder is the root or is in the root, else "0".
   Function asscrackInRoot
@@ -120,7 +120,7 @@ SetFont "Segoe UI" 9
   !macro customWelcomePage
     !insertmacro skipPageIfUpdated
     !define MUI_WELCOMEPAGE_TITLE "Welcome to ASSCRACK"
-    !define MUI_WELCOMEPAGE_TEXT "ASSCRACK lets people on the same network or on the internet meet in rooms. They can chat, talk, share files and share a screen, with no central server.$\r$\n$\r$\nThis installer installs ASSCRACK for your user account only. It does not use administrator rights.$\r$\n$\r$\nClick Next to continue."
+    !define MUI_WELCOMEPAGE_TEXT "Chat, talk, share files and screens with friends on your network or over the internet. No central server.$\r$\n$\r$\nInstalls for your account only. No admin rights needed.$\r$\n$\r$\nClick Next to continue."
     !define MUI_PAGE_CUSTOMFUNCTION_SHOW asscrackWelcomeShow
     !insertmacro MUI_PAGE_WELCOME
 
@@ -135,5 +135,5 @@ SetFont "Segoe UI" 9
   !macroend
 
   !define MUI_FINISHPAGE_TITLE "ASSCRACK is installed"
-  !define MUI_FINISHPAGE_TEXT "ASSCRACK is on this computer now. Start it from the Start menu or from the shortcut on your desktop.$\r$\n$\r$\nClick Finish to close this installer."
+  !define MUI_FINISHPAGE_TEXT "Start it from the Start menu or the desktop shortcut.$\r$\n$\r$\nClick Finish to close."
 !endif

@@ -171,9 +171,9 @@ test('the uninstaller keeps the data folder at an update and at an uninstall', (
     assert.match(nsh, /StrCmp \$R2 "data"/);
 });
 
-test('saved rooms of an other Windows account or computer show a plain text, not a reason code', () => {
+test('saved rooms of another Windows account or PC show a plain text, not a reason code', () => {
     const source = readFileSync(new URL('src/application/saved-rooms-ui.js', root), 'utf8');
-    assert.match(source, /result\.reason === 'key-unwrap-failed'[\s\S]{0,200}an other Windows user account or an other computer/);
+    assert.match(source, /result\.reason === 'key-unwrap-failed'[\s\S]{0,200}another Windows account or PC/);
 });
 
 test('the move works with the cpSync of Electron 45, which refuses an existing empty target folder', t => {
