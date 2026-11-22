@@ -5,6 +5,7 @@ import * as path from 'node:path'
 import { roomRateLimit } from './room-rate-limit.mjs'
 import { createPartialStore, partialKey, PARTIAL_TTL_MS } from './partial-store.mjs'
 import { createGrantStore, GRANT_LIMIT } from './send-grants.mjs'
+import { markFromInternet } from './zone-mark.mjs'
 
 export const FILE_PROTOCOL = '/asscrack/file/1.0.0'
 // Version 1.1.0 adds the offset negotiation for a paused partial. The receiver asks for 1.1.0 only when it has a
@@ -971,6 +972,8 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
             if (t.disconnected) throw new TransferFailure('peer left')
             // Once publishing starts, cancellation can no longer recall a verified saved file.
             t.finalizing = true
+            // M3: mark the file as a file from the internet before it gets its final name.
+            await markFromInternet(temp)
             const finalPath = await moveToFreeName(temp, downloadDir, offer.name)
             tempCreated = false
             if (claimed) await store.finish(claimed.key)
