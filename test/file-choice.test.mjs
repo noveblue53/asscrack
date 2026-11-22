@@ -6,9 +6,9 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm, readFile, symlink } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { checkChosenFile } from '../src/application/file-choice.mjs';
 
 test('a file of the user passes, and a file in a private folder or a folder or a device path is refused', async t => {
+    const { checkChosenFile } = await import('../src/application/file-choice.mjs');
     const dir = await mkdtemp(path.join(os.tmpdir(), 'ac-choice-'));
     t.after(() => rm(dir, { recursive: true, force: true }));
     const profile = path.join(dir, 'Profile');
