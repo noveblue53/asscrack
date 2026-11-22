@@ -406,7 +406,8 @@ test('check A6a, rule A7: the slow tier', () => {
     const s = sim()
     s.add('a')
     s.add('b')
-    s.run(2000)
+    // Revision 3b: no split in the first 5 s of a viewer.
+    s.run(5000)
     s.conf.get('b').delay = 120
     s.run(1500)
     const tiers = s.rate.tiers()
@@ -425,7 +426,7 @@ test('check A6a, rule A7: the slow tier', () => {
     const t2 = sim()
     t2.add('a')
     t2.add('b')
-    t2.run(2000)
+    t2.run(5000)
     t2.conf.get('a').delay = 120
     t2.conf.get('b').delay = 120
     t2.run(3000)
@@ -435,7 +436,7 @@ test('check A6a, rule A7: the slow tier', () => {
     t3.add('a')
     t3.add('b')
     t3.add('c')
-    t3.run(2000)
+    t3.run(5000)
     t3.conf.get('b').delay = 120
     t3.run(1000)
     t3.conf.get('c').delay = 150
@@ -561,24 +562,71 @@ test('rule U3 (revision 3): an up step is a probe of 5 s; an excess goes back at
     assert.equal(s.rate.stats().tiers[0].upBackoffMs, 30000)
 })
 
-test('rule U2 (revision 3): the rate goes up only when the stream used 70 % of the bitrate in this period', () => {
-    // Period 1: the stream uses 100 % of 500 kbit/s. Period 2: 60 %. The smoothed use is then 80 %, the use of the
-    // period 60 %. The second calm period is the time of the increase of rule R4.
+test('rule U2 (revisions 3 and 3b): the rate stops near the use / 0.7, also with 7 or 8 frames in a period', () => {
+    // A stream of at most 1.6 Mbit/s at 15 frames each second ("motion" at Standard). The rate ladder from
+    // 500 kbit/s has 2384 kbit/s (use 0.67) and then 2980 kbit/s. Rule U2 over 2 s stops at 2384 kbit/s. The smoothed
+    // use alone goes to 2980 kbit/s.
     const final = usedNow => {
-        let t = 0
-        const rate = createScreenRate({ quality: 'max', now: () => t, params: { usedNow }, configRecord: () => Uint8Array.of(0, 0, 0, 1, 2) })
-        rate.addViewer('a', { send: () => true })
-        const tier = rate.tiers()[0].tier
-        rate.setSize(tier, 1280, 720)
-        const period = 500000 * 0.5 / 8
-        rate.pushFrame(tier, { key: true, timestampMs: 0, data: new Uint8Array(period - 14) })
-        t = 500
-        rate.evaluate()
-        rate.pushFrame(tier, { key: false, timestampMs: t, data: new Uint8Array(0.6 * period - 14) })
-        t = 1000
-        rate.evaluate()
-        return rate.viewer('a').rate
+        const s = sim({ quality: 'max', params: { usedNow } })
+        s.add('a')
+        s.run(30000, { frameBytes: tier => Math.round(Math.min(1600000, tier.bitrate) / 8 / 15) })
+        return s.v('a').rate
     }
-    assert.equal(final(false), 625000, 'the smoothed use alone permits the increase')
-    assert.equal(final(true), 500000, 'rule U2 stops it')
+    assert.ok(final(true) <= 2400000, `rule U2: ${final(true)}`)
+    assert.ok(final(false) > 2400000, `the smoothed use alone: ${final(false)}`)
+})
+
+test('revision 3b: no split in the first 5 s of a viewer', () => {
+    const s = sim()
+    s.add('a')
+    s.add('b', { delay: t => t > 600 && t < 2500 ? 150 : 5 })
+    s.run(4900)
+    assert.equal(s.rate.tiers().length, 1, 'no split in the first 5 s')
+    assert.ok(s.rate.history().every(h => h.why !== 'slow tier'))
+})
+
+test('revision 3b: the return to the fast tier is a probe of 5 s with the wait of rule U4', () => {
+    const s = sim()
+    s.add('a')
+    s.add('b')
+    s.run(6000)
+    s.rate.forceSlow('b')
+    assert.equal(s.rate.tiers().length, 2)
+    // Viewer b is calm and its rate is the fast bitrate: it goes back. In the probe, an excess sends it back at once.
+    s.v('b').rate = s.rate.tiers()[0].bitrate
+    while (s.rate.tiers().length === 2 && s.now() < 20000) s.run(100)
+    assert.equal(s.rate.tiers().length, 1, 'b is back in the fast tier')
+    assert.ok(s.v('b').mergeProbe, 'the return is a probe')
+    const back = s.now()
+    s.conf.get('b').delay = 200
+    while (s.rate.tiers().length === 1 && s.now() < back + 5000) s.run(50)
+    assert.equal(s.rate.tiers().length, 2, 'back in the slow tier in the probe')
+    const h = s.rate.history().filter(x => x.why === 'join probe')
+    assert.equal(h.length, 1)
+    assert.equal(s.v('b').mergeBlockedUntil - h[0].t, 30000, 'a wait of 30 s')
+})
+
+test('revision 3b: one late keyframe each 10 s does not stop the headroom of rule U1', () => {
+    // A large keyframe on a slow link: rule T1 sees a late frame while the keyframe is on the way.
+    const s = sim()
+    s.add('a', { delay: 5 })
+    let bigKey = false
+    s.run(9000)
+    const before = s.v('a').noHeadroomAt
+    s.conf.get('a').delay = t => bigKey ? 400 : 5
+    bigKey = true
+    s.rate.requestKey(s.tier().tier)
+    s.run(600, { frameBytes: (tier, key) => key ? 60000 : 500 })
+    bigKey = false
+    s.run(1400, { frameBytes: () => 500 })
+    assert.ok(s.v('a').congestions >= 1, 'the keyframe made a late frame')
+    assert.equal(s.v('a').noHeadroomAt, before, 'the headroom of U1 did not start again')
+    // A second late keyframe in the same 10 s counts.
+    s.conf.get('a').delay = t => bigKey ? 400 : 5
+    bigKey = true
+    s.rate.requestKey(s.tier().tier)
+    s.run(2500, { frameBytes: (tier, key) => key ? 60000 : 500 })
+    bigKey = false
+    s.run(1000, { frameBytes: () => 500 })
+    assert.ok(s.v('a').noHeadroomAt > before, 'the second late keyframe stops the headroom')
 })
