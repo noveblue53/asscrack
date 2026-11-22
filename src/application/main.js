@@ -29,6 +29,7 @@ import { fitWindowBounds, MIN_WINDOW, readWindowBounds, saveWindowBounds } from 
 import { createTaskbarFlash } from './taskbar-flash.mjs';
 import { createFriendLinks } from './friend-links.mjs';
 import { attachFriendWindows, registerFriendIpc } from './friend-windows.mjs';
+import { installInterfaceCache } from '../network/interface-cache.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -118,6 +119,8 @@ if (logFile) for (const [method, level] of [['log', 'LOG'], ['info', 'INFO'], ['
 
 
 
+// G7a: one read of the network interfaces each 2 s for all nodes (the mDNS cost of the friend nodes).
+const interfaceCache = installInterfaceCache();
 // One log line for each node event. The chat text does not go into the log.
 // 'voice-frame' comes 50 times each second for each speaker.
 // G7a: 'friend' and 'pm' carry room keys and private text. They never go in the log or to the window as raw events.
@@ -1472,7 +1475,10 @@ if (singleInstance && isFirstInstance) {
 app.whenReady().then(async () => {
     if (!isFirstInstance) return;
     if (profileIndex === -1) clearLegacyDebugLogs(app.getPath('logs'));
-    powerMonitor.on('resume', () => node?.refreshRoutes());
+    powerMonitor.on('resume', () => {
+        interfaceCache.clear();
+        node?.refreshRoutes();
+    });
     protocol.handle('room-media', request => roomMedia.serve(request));
     installRoomPermissions(session.defaultSession, () => mainWindow, ROOM_PAGE, () => idlePeer);
     pttHook.configure(currentVoiceSettings());

@@ -15,8 +15,8 @@ import { observedIp } from '../network/fullnode.mjs';
 import { restoreSavedAdmission } from './room-admission.mjs';
 import { isAddressInUse } from './login-errors.mjs';
 
-// The cap and the ports (design F2). 16, not 32: the measured idle CPU (DECISIONS.md G7a, the measurement).
-export const FRIEND_CAP = 16;
+// The cap and the ports (design F2). 32 needs the interface cache of main.js (interface-cache.mjs, DECISIONS.md G7a).
+export const FRIEND_CAP = 32;
 export const FRIEND_BASE_PORT = 47200;
 export const FRIEND_START_STEP_MS = 500;
 const MAX_NODES = 16;

@@ -243,7 +243,7 @@
     // ---- Add friend (the buddy menu of a protected room) ----
     const NOT_SENT = {
         busy: name => `A friend request to ${name} is open.`,
-        cap: () => `You have the maximum number of friends (${view.cap ?? 16}).`,
+        cap: () => `You have the maximum number of friends (${view.cap ?? 32}).`,
         friend: name => `${name} is already your friend.`,
         blocked: name => `You blocked ${name}. Unblock ${name} in the Friends panel first.`,
         locked: () => 'Friends need the protected storage of this computer.'

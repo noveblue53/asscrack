@@ -21,20 +21,24 @@ login screen and from inside a room.
   that is not connected is not sent, and the draft stays.
 - Remove and Block remove the friend room and its messages from this computer. The other side shows "Removed you as a
   friend". A blocked person cannot send a new friend request.
-- At most 16 friends, on the TCP ports 47200 to 47215. When a port is in use, the link uses a free port.
+- At most 32 friends, on the TCP ports 47200 to 47231. When a port is in use, the link uses a free port.
 - Two friends with no open port (UPnP or a forwarded port) and not on the same network cannot connect. The chat
   window tells the user why.
 - Not in this goal (G7b): messages to a friend that is offline, and Close to the tray on the login screen.
 
 Results:
-- `npm test` passes, 685 tests (127.0.0.1).
+- `npm test` passes, 702 tests (127.0.0.1).
 - 20 tests in three new files test the friend requests, the grant, the private messages and the friend links.
   Most of them use real nodes and a real archive (127.0.0.1 and mDNS on this PC). 5 window tests use a stub bridge.
 - Two copies (this PC): B adds A, A accepts. After a quit and a start with no room, both panels show "Online" in
   2 s. A message goes each way and shows "Delivered". B makes its own room and the link stays "Online". B removes
   A and A shows "Removed you as a friend". No error line in the terminal or the developer console.
-- The cost of idle friend links (this PC): about 1.2 ms of CPU for each link and each mDNS query of the network.
-  16 links used 2.5 % of one CPU and 32 links used 4.5 %. The memory of 32 links is about 19 MB.
+- The cost of idle friend links on this PC, in 60 s, more than the run with no link. With no cache, each link used
+  about 1.2 ms of CPU for each mDNS query of the network. 16 links used 2.2 % of one CPU and 32 links used 4.2 %.
+  The cause: for each query, the mDNS library reads the network interfaces before it compares the room tag. The app
+  now keeps one read of the network interfaces for 2 s (interface-cache.mjs). With the cache: 0.37 % for 16 links
+  and 0.47 % for 32 links. The memory of 32 links is about 16 MB.
+- The node, relay and election tests pass with the cache (64 tests, 127.0.0.1).
 
 ## Unreleased — pause and resume of large downloads: the window (package P7b, 2026-11-21)
 
