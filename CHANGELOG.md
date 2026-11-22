@@ -15,11 +15,12 @@ Each result has one of these labels:
   prompt, a timeout, and each refusal by a check or a limit. It also records the result for the person that knocks,
   the friend invite (sent, received, Join) and the code in the clipboard (prompt, Join, Not now). No name, invite,
   room code, device ID or address goes in.
-- Each dial and reach attempt goes in with its route, its result and its time in ms, also the successes.
+- Each dial and reach attempt goes in with its route, its result and its time in ms, also the successes. A dial-back
+  with a negative answer goes only into the journal, not into the terminal or Room activity.
 - Each loss of the host gives one line: the time to the next host, to the first voice frame and to the first chat line.
 - The sharer of a screen records each tier change of the rate control with its reason, and the stats of each viewer
   each 10 s. There is no line for each frame. The rate rules do not change.
-- Results (127.0.0.1 and this PC, no LAN result): `npm test` 1047 tests, 1029 pass, 0 fail, 18 skipped, in a fresh
+- Results (127.0.0.1 and this PC, no LAN result): `npm test` 1048 tests, 1030 pass, 0 fail, 18 skipped, in a fresh
   worktree. The new tests `diag-knock`, `diag-dial`, `diag-failover` and `diag-screen` fail before their change. A
   two-copy check: a room code in the clipboard, a knock, Allow, chat in both directions, then a diagnostics request
   with Send. The zip has the knock events of the owner and no canary text. 21 of 21 steps pass.
