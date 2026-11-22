@@ -236,7 +236,12 @@ test('a member with zero sessions waits for the live host announcement after rec
     t.mock.timers.tick(1000)
     assert.equal(c.e.host(), null)
     assert.deepEqual(c.sent, [])
+    // L6 (P10a): C does not accept the announcement of the host 'a' from the member 'z'. Only 'a' announces itself.
     c.e.handleAnnouncement('z', { type: 'host', host: 'a', term: 1 })
+    assert.equal(c.e.host(), null)
+    c.setOpen(['z', 'a'])
+    c.e.sessionOpened('a')
+    c.e.handleAnnouncement('a', { type: 'host', host: 'a', term: 1 })
     assert.deepEqual(c.e.host(), { peerId: 'a', term: 1 })
 })
 
@@ -353,5 +358,40 @@ test('rank: with no full node the lowest ID becomes host', () => {
         for (const u of units) u.e.stop()
     } finally {
         mock.timers.reset()
+    }
+})
+
+// L6 (P10a): in a legacy room (no hostAllowed), any member could send a host line for any ID and any integer term.
+// A term of 1e300 made the term fixed, and a member kept a host that is not a peer. The fix applies the host rules of a
+// protected room: the sender announces only itself, with a safe-integer term.
+test('L6: a legacy election refuses a host line for another ID and a term that is not a safe integer', t => {
+    const { e, sent } = unit('m', ['b', 'x'], [])
+    t.after(() => e.stop())
+    e.sessionOpened('b')
+    e.handleAnnouncement('b', { host: '1', term: 1e300 })
+    e.handleAnnouncement('b', { host: 'x', term: 5 })
+    assert.equal(e.host(), null)
+    e.handleAnnouncement('b', { host: 'b', term: 1e300 })
+    e.handleAnnouncement('b', { host: 'b', term: Number.MAX_SAFE_INTEGER })
+    e.handleAnnouncement('b', { host: 'b', term: 0 })
+    assert.equal(e.host(), null)
+    e.handleAnnouncement('b', { host: 'b', term: 3 })
+    assert.deepEqual(e.host(), { peerId: 'b', term: 3 })
+    // A member does not send the announcement of another host on a new session.
+    e.sessionOpened('x')
+    assert.deepEqual(sent.filter(([peer]) => peer === 'x'), [])
+})
+
+test('L6: 127.0.0.1: a live line in a legacy room shows the name of the session, not its from field', { timeout: 20000 }, async () => {
+    const roomKey = (await import('../src/network/invite.mjs')).newRoomKey()
+    const bob = await createAsscrackNode({ ...base, roomKey, name: 'Bob' })
+    const mallory = await createAsscrackNode({ ...base, roomKey, name: 'Mallory' })
+    try {
+        await connectPair(bob, mallory)
+        assert.equal(mallory.sendTo(bob.peerId, { from: 'Alice', text: 'I am Alice', time: Date.now() }), true)
+        await waitUntil(() => bob.history().some(m => m.text === 'I am Alice'), 5000)
+        assert.equal(bob.history().find(m => m.text === 'I am Alice').from, 'Mallory')
+    } finally {
+        await stopAll([bob, mallory])
     }
 })

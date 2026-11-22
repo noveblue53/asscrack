@@ -233,7 +233,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     })
     events.on('peer-left', ({ peerId, left }) => ready.left(peerId, left))
     const memberMessageId = (peerId, id) => !membership || id.startsWith(`${memberPeers.get(peerId).deviceId}.`)
-    const memberName = (peerId, displayName) => membership ? names.get(peerId) ?? peerId.slice(-8) : displayName
+    // L6 (P10a): a live line shows the name of the session (the hello or member-proof line), also in a legacy room.
+    // The from field of the line is not used.
+    const memberName = peerId => names.get(peerId) ?? peerId.slice(-8)
     const hostAllowed = membership ? peerId => peerId === selfId ? membership.canHost() :
         memberAllowed(peerId) && memberPeers.get(peerId).canHost : null
     function memberState() {
@@ -717,8 +719,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                     else if (control.type === 'channel-post' && sessions.get(peerId) === session && channels.capable(peerId) &&
                         control.v === 1 && channels.known(control.message?.channelId) && validHistoryItem(control.message) &&
                         memberMessageId(peerId, control.message.id)) {
-                        const { id, from, text, time, channelId } = control.message
-                        const record = attachments.remember({ peerId, id, from: memberName(peerId, from), text, time, channelId,
+                        const { id, text, time, channelId } = control.message
+                        const record = attachments.remember({ peerId, id, from: memberName(peerId), text, time, channelId,
                             attachment: control.message.attachment }, peerId)
                         if (history.add(record)) events.emit('message', record)
                         events.emit('live', record)
@@ -826,7 +828,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 }
                 const message = parseMessage(line, peerId)
                 if (message && memberMessageId(peerId, message.id)) {
-                    message.from = memberName(peerId, message.from)
+                    message.from = memberName(peerId)
                     attachments.remember(message, peerId)
                     if (sessions.get(peerId) === session) typing.remove(peerId)
                     if (history.add(message)) events.emit('message', { peerId, ...message })

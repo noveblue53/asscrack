@@ -157,7 +157,9 @@ test('a node ignores lines that are not valid and keeps the session open', { tim
         outgoing.push(Buffer.from(JSON.stringify({ from: 'raw', text: 'valid', time: 123 }) + '\n'))
         await waitFor(() => logA.messages.length === 1)
         await delay(200)
-        assert.deepEqual(withoutId(logA.messages), [{ peerId: b.peerId, from: 'raw', text: 'valid', time: 123 }])
+        // L6 (P10a): a live line shows the name of the session. This raw stream sent no hello line, thus the name is
+        // the end of the peer ID, not the from field 'raw'.
+        assert.deepEqual(withoutId(logA.messages), [{ peerId: b.peerId, from: b.peerId.slice(-8), text: 'valid', time: 123 }])
         assert.equal(warnings.filter(w => w.includes(b.peerId)).length, 2)
         assert.deepEqual(a.peers(), [b.peerId])
         assert.deepEqual(logA.left, [])

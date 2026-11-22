@@ -129,8 +129,10 @@ export function createElection({
         handleAnnouncement(fromPeerId, message) {
             if (stopped) return
             const { host: h, term: t } = message
-            if (typeof h !== 'string' || !Number.isInteger(t)) return
-            if (hostAllowed && (h !== fromPeerId || !hostAllowed(h) || !Number.isSafeInteger(t) || t < 1 || t >= Number.MAX_SAFE_INTEGER)) return
+            // L6 (P10a): the host rules of a protected room also apply to a legacy room. A peer announces only itself,
+            // with a safe-integer term. A term of 1e300 cannot be fixed (1e300 + 1 is 1e300).
+            if (typeof h !== 'string' || h !== fromPeerId || !Number.isSafeInteger(t) || t < 1 || t >= Number.MAX_SAFE_INTEGER) return
+            if (hostAllowed && !hostAllowed(h)) return
             // Rule 7.
             suspected.delete(fromPeerId)
             suspected.delete(h)
@@ -146,9 +148,9 @@ export function createElection({
         sessionOpened(peerId) {
             if (stopped) return
             suspected.delete(peerId) // rule 7
-            // Rule 3, extended: each member that knows a live host sends the
-            // announcement of that host on the new session.
-            if (host !== null && !lost && (!hostAllowed || isHost())) sendTo(peerId, announcement())
+            // Rule 3: the host sends its announcement on the new session. L6 (P10a): a member does not send the
+            // announcement of another host, because a peer accepts only the announcement of the sender itself.
+            if (host !== null && !lost && isHost()) sendTo(peerId, announcement())
             if (firstSessionTime === null) {
                 firstSessionTime = now()
                 delayTimer = setTimeout(() => {
