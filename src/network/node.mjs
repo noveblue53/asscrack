@@ -6,6 +6,7 @@ import { createSharedShelf } from './shared-shelf.mjs'
 import { createWhispers } from './whispers.mjs'
 import { createTyping } from './typing.mjs'
 import { createReadyCheck } from './ready-check.mjs'
+import { createUpdateSpread } from './update-spread.mjs'
 import { roomRateLimit } from './room-rate-limit.mjs'
 import { mdns } from '@libp2p/mdns'
 import { yamux } from '@chainsafe/libp2p-yamux'
@@ -134,7 +135,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     previewProvider = null, receiveWhisper = null, fullNode = 'auto', allowPrivateFullNode = false, relayOnly = false, roomKey = null, announce = [], storePath = null,
     redialInterval = 5000, inviteNodes = [], upnp = false, upnpTimeout = 70000, upnpLeaseSeconds = 1800,
     upnpClient = null, seedHistory = [], seedChannels = [], seedVoiceChannels = null, membership = null,
-    screen: screenOptions = {} } = {}) {
+    screen: screenOptions = {},
+    // P9C: the update hub of the app (update-spread.mjs), or null: no update lines.
+    updates = null } = {}) {
     if (typeof room !== 'string') throw new TypeError('room must be a string')
     const key = parseRoomKey(roomKey)
     if (membership && !key) throw new TypeError('Protected rooms require a room key')
@@ -210,6 +213,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     })
     // The name that each open session sent in its hello line.
     const names = new Map()
+    // P9C: the app version line and the signed update manifest for an older peer (update-spread.mjs).
+    const updateSpread = createUpdateSpread(updates)
+    const stopUpdateShare = updateSpread.subscribe(() => updateSpread.share(sessions.values()))
     const history = createHistory()
     const HISTORY_KEEP_MS = 10000
     // Up to one replay window per peer, in case history arrives just before host acceptance.
@@ -721,6 +727,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                     else if (control.type === 'topic' && sessions.get(peerId) === session) topic.handle(peerId, control)
                     else if (control.type === 'history' && sessions.get(peerId) === session) handleHistory(peerId, control)
                     else if (control.type === 'ready' && sessions.get(peerId) === session) ready.handle(peerId, control)
+                    else if ((control.type === 'app-version' || control.type === 'update-manifest') && sessions.get(peerId) === session) updateSpread.handle(peerId, session, control)
                     else if (control.type === 'bye') {
                         if (sessions.get(peerId) === session) byeSessions.add(session)
                     }
@@ -864,6 +871,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         session.send(nodeLine())
         // Always send the own presence, also when it is 'available'.
         session.send(presenceLine())
+        updateSpread.opened(peerId, session)
         // A replacement session gets no second peer-joined: the peer did not leave.
         if (!replaced) events.emit('peer-joined', { peerId })
         if (membership) events.emit('membership', memberState())
@@ -1846,11 +1854,14 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         partials: () => files.listPartials(),
         refuseFile: offerId => files.refuseFile(offerId),
         cancelFile: (offerId, peerId) => files.cancelFile(offerId, peerId),
+        // P9C: the number of transfers that move data now (an update restart asks first).
+        activeTransfers: () => files.activeCount(),
         ...screen.api,
         screenTestRate: screen.testRate,
         async stop() {
             stopped = true
             membership?.onChanged(null)
+            stopUpdateShare()
             whispers.stop()
             typing.stop()
             ready.stop()

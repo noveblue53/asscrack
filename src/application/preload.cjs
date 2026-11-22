@@ -63,6 +63,15 @@ contextBridge.exposeInMainWorld('asscrack', {
     leaveRoomInfo: () => ipcRenderer.invoke('asscrack:leave-room-info'),
     getAbout: () => ipcRenderer.invoke('asscrack:about'),
     openDataFolder: () => ipcRenderer.invoke('asscrack:open-data-folder'),
+    // P9C: the updates. The window gets the versions, the note text and the state. It gives no path and no URL.
+    getUpdate: () => ipcRenderer.invoke('asscrack:update'),
+    checkUpdate: () => ipcRenderer.invoke('asscrack:update-check'),
+    setUpdateCheck: on => ipcRenderer.invoke('asscrack:update-auto', on === true),
+    downloadUpdate: () => ipcRenderer.invoke('asscrack:update-download'),
+    updateLater: () => ipcRenderer.invoke('asscrack:update-later'),
+    // force true: restart also in voice or during a transfer (the window asked the user first).
+    restartToUpdate: force => ipcRenderer.invoke('asscrack:update-restart', force === true),
+    onUpdate: listen('asscrack:update'),
     flashAttention: () => ipcRenderer.send('asscrack:attention-flash'),
     // ids: up to 64 peer IDs. Returns [{ id, alias }] with the pseudonym of the Room activity lines.
     getActivityAliases: ids => ipcRenderer.invoke('asscrack:activity-aliases', Array.isArray(ids) ? ids.slice(0, 64).map(String) : []),
