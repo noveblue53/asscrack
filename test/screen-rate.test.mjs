@@ -700,3 +700,27 @@ test('rule U5 (revision 3e): an excess above 70 ms for 1 s steps the tier down a
     two.run(3000)
     assert.ok(!two.rate.history().some(h => h.why === 'fast down' && h.role === 'fast'))
 })
+
+test('revision 3e: the 10 s conditions of U1 and A4 hold for 90 % of the last 10 s; a step down resets them', () => {
+    // One period with an excess of 30 ms in 10 s does not stop the up step. Three periods do.
+    const run = bad => {
+        const s = autoAt(2400000)
+        s.run(4000, { frameBytes: () => 2000 })
+        let n = 0
+        s.conf.get('a').delay = t => (t > 5000 && n < bad && t % 2000 < 300) ? 35 : 5
+        const probe = s.run
+        for (let i = 0; i < 60 && s.tier().preset === 'standard'; i++) {
+            probe(250, { frameBytes: () => 2000 })
+            if (s.now() % 2000 < 300 && s.now() > 5000) n++
+        }
+        return s.tier().preset
+    }
+    assert.equal(run(0), 'smooth')
+    assert.equal(run(1), 'smooth', 'one bad period in 10 s: the step comes')
+    const s = autoAt(2400000)
+    s.run(12500, { frameBytes: () => 2000 })
+    assert.equal(s.tier().preset, 'smooth')
+    assert.ok(s.v('a').hist.length > 0)
+    s.rate.setCap('standard')
+    assert.equal(s.v('a').hist.length, 0, 'a step down resets the window')
+})

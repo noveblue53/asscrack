@@ -34,6 +34,8 @@ export const RATE_DEFAULTS = Object.freeze({
     usedWindowMs: 2000, slowGraceMs: 5000, deliveredWindowMs: 10000,
     // Revision 3e (DECISIONS.md P8a-25): rule U5, the fast step down.
     fastDownEvals: 2, fastDownFactor: 0.8,
+    // Revision 3e: the 10 s conditions of U1 and A4 hold when they were true in 90 % of the last 10 s.
+    windowShare: 0.9,
     slowHoldMs: 3000, deepMs: 140, deepFactor: 0.7, mergeFactor: 0.9, maxEncoders: 2,
     overloadDrop: 0.02, overloadEncode: 0.8, overloadReports: 4, cpuRecoverMs: 60000, cpuRaisesMax: 2
 })
@@ -203,6 +205,8 @@ export function createScreenRate({ quality = 'auto', source = null, now, params 
     // Rules A3, A5 and A9: a new preset needs a new configuration of the encoder, a new size and a keyframe (rule E7).
     function setPreset(t, preset, why) {
         if (t.preset === preset) return
+        // Revision 3e: a step down resets the sliding windows of U1 and A4 of the viewers of the tier.
+        if (preset < t.preset) for (const v of membersOf(t)) { v.hist = []; v.histStart = now() }
         history.push({ t: now(), tier: t.id, role: t.role, from: ladder[t.preset].id, to: ladder[preset].id, why, bitrate: t.bitrate })
         t.preset = preset
         if (why !== 'rate' && why !== 'light') t.probe = null
@@ -236,7 +240,7 @@ export function createScreenRate({ quality = 'auto', source = null, now, params 
             congestions: 0, rate: P.startBitrate, limit: null, calm: 0, noIncreaseUntil: 0, noDecreaseUntil: 0, excess: 0,
             lates: [], calmSince: t, queueSince: null, tier: null, switches: 0, slow: false, decreased: false, acked: [],
             deep: 0, lastDecreaseAt: -Infinity, nextSeq: 0, lastSeq: null, addedAt: t, lastNewFrameAt: t,
-            noHeadroomAt: t, mildSince: null, lateNow: false, keyLate: false, otherLate: false, keyExemptAt: -Infinity,
+            noHeadroomAt: t, hist: [], histStart: t, mildSince: null, lateNow: false, keyLate: false, otherLate: false, keyExemptAt: -Infinity,
             keyExemptUntil: -Infinity, delivered: 0, mergeProbe: null, mergeBlockedUntil: 0, mergeBackoff: P.upBackoffMs }
         // Rule A2: a new viewer starts at max(start, bitrate of the fast tier), at most its target (R5).
         v.rate = Math.min(targetOf(v), tiers[0] ? Math.max(P.startBitrate, tiers[0].bitrate) : P.startBitrate)
@@ -468,6 +472,7 @@ export function createScreenRate({ quality = 'auto', source = null, now, params 
         onTiers()
     }
 
+    const windowOk = (v, key) => !v.hist.length || v.hist.filter(h => h[key]).length / v.hist.length >= P.windowShare
     // Rule U4: after a failed up step, wait 30 s, then two times the last wait, at most 240 s.
     function failedUp(tier, t) {
         tier.upBlockedUntil = t + tier.upBackoff
@@ -563,6 +568,9 @@ export function createScreenRate({ quality = 'auto', source = null, now, params 
             if (v.excess >= P.headroomMs || v.decreased) v.mildSince ??= t
             else v.mildSince = null
             v.lates = v.lates.filter(x => t - x <= P.lateDownMs)
+            // Revision 3e: the evaluations of the last 10 s for the sliding windows of U1 and A4.
+            v.hist.push({ t, headroom: exempt || !(congested || v.excess >= P.headroomMs), noDecrease: exempt || !v.decreased })
+            while (v.hist.length && t - v.hist[0].t >= P.headroomHoldMs) v.hist.shift()
         }
         // Rule A7: slow viewers and the return to the fast tier.
         let regroupNeeded = false
@@ -657,10 +665,10 @@ export function createScreenRate({ quality = 'auto', source = null, now, params 
             const next = up === null ? null : ladder[up]
             const allCalm = members.every(v => v.calmSince !== null)
             const light = tier.lightSince !== null && t - tier.lightSince >= P.lightHoldMs && members.every(v =>
-                v.calmSince !== null && t - v.calmSince >= P.lightHoldMs && t - v.lastDecreaseAt >= P.lightNoDecreaseMs)
+                v.calmSince !== null && t - v.calmSince >= P.lightHoldMs && windowOk(v, 'noDecrease'))
             const ceiling = tier.role === 'slow' && tiers[0] ? Math.min(capIndex(), tiers[0].preset) : capIndex()
             // Rule U1: each viewer of the tier had headroom for the last 10 s.
-            const headroom = members.every(v => t - v.noHeadroomAt >= P.headroomHoldMs)
+            const headroom = members.every(v => t - v.histStart >= P.headroomHoldMs && windowOk(v, 'headroom'))
             const upOk = next !== null && up <= ceiling && t >= tier.upBlockedUntil && allCalm && headroom &&
                 (tier.bitrate >= P.upFactor * next.bitrate || light)
             tier.upSince = upOk ? (tier.upSince ?? t) : null
