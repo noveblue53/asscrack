@@ -7,6 +7,33 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased — screenshare in the app (package P8b, 2026-11-22)
+
+A member can share a screen or a window with the room. Design: `work-orders/astra/P8/DESIGN.md`, W3 to W7 (local).
+
+- **Share.** Share screen is in the voice controls. A share does not need voice. The picker shows the screens and
+  the windows with a small picture, and a Quality select. Auto is the default. The fixed presets are Standard
+  (720p, 15 fps), Smooth (720p, 30 fps), Balanced (1080p, 30 fps), High (1080p, 60 fps) and Max (1440p, 60 fps).
+  The share bar shows the source, the viewers and the quality of each viewer group. Stop sharing stops the capture at once.
+- **No sound.** The share has no audio. A viewer hears the sharer in voice, and only in the same voice channel.
+- **Who can watch.** Only a member with an open, permitted session of the room. No member watches automatically: a
+  member clicks Watch on the banner or Watch screen in the buddy menu. A share has at most 6 viewers.
+- **Bitrate for each viewer.** At most 1.5 Mbit/s (Standard) to 12 Mbit/s (Max). The rate control can give less.
+  The sum of all viewers behind a relay is at most 6 Mbit/s.
+- **The viewer.** A stage above the transcript with the picture, the size and the frame rate, Fill window and Stop
+  watching. The viewer checks each CONFIG and each VP8 keyframe header before the decoder.
+- **Signs outside the window.** The buddy line shows "sharing screen". The detached voice panel shows the line
+  "Sharing your screen" and Stop sharing. The taskbar button has a red overlay while the share is on. A pending
+  mention dot comes back after the stop.
+- **Result: 127.0.0.1, this PC.** No LAN test and no internet test.
+  - `npm test`: 817 tests, 800 pass, 0 fail, 17 skipped (the timed checks of P8a).
+  - The app check has three app copies (`work-orders/astra/P8/checks/screen-check.mjs`, local). 15 of 15 checks
+    pass: W3 check 6, W4 checks 4 to 10, W5 checks 5, 6 and 8 to 11. It found two faults that are now fixed: the
+    tier ID type in the bridge, and Fill window inside an animated panel.
+  - The timed checks (frame rates, latency, CPU and Auto steps of W7, and check 19 three times) wait for a calm PC.
+  - Known gaps: the return from Idle Peer was not driven (it needs the tray). The two-copy voice check did not
+    connect its copies on this PC, on this branch and on `origin/main`.
+
 ## Unreleased — screenshare, network part (package P8a, 2026-11-21)
 
 The network layer can now share a screen in a room. The window part (the picker, the share bar and the stage) is
