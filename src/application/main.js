@@ -824,7 +824,7 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
         if (!added) return;
         writeLog('INFO', `Knock prompt shown (${pending.length} waiting)`);
         if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
-            showTrayBalloon(`${added.name} #${added.mark} wants to join ${roomName ?? 'the room'}. Open ASSCRACK to answer.`);
+            showTrayBalloon(`${added.name} #${added.mark} wants to join ${roomName ?? 'the room'}.`);
         }
     });
     // easy-join part 3: "Always allow my friends" let a friend in with no prompt. The window shows a line with the name
@@ -976,7 +976,7 @@ async function withLoginErrors(what, options, start) {
 
 handleRoomIpc('asscrack:login', async (_event, fields = {}) => {
     if (loginStarted) throw new Error('Already logged in');
-    if (knocking) throw new Error('ASSCRACK is waiting for the room owner. Wait for the answer.');
+    if (knocking) throw new Error('Wait for the room owner to answer first.');
     const options = { downloadDir: downloadDir ?? app.getPath('downloads'), ...nodeFlags };
     return withLoginErrors('Login', options, () => login(options, fields));
 });
@@ -990,7 +990,7 @@ async function login(options, { name, room, type, invite, friendInvite, publicAd
         // easy-join: a Join from a friend invite gives a token. The code stays in the main process.
         if (typeof friendInvite === 'string') {
             invite = friendJoins.code(friendInvite);
-            if (!invite) throw new Error('This invite is not available any more. Select Join in the friend chat again.');
+            if (!invite) throw new Error('Invite no longer available. Select Join in the friend chat again.');
         }
         if (typeof invite !== 'string' || !invite.trim()) throw new Error('Enter an invite code.');
         if (invite.length > 128 * 1024 + 10) throw new Error('The invite code is too large.');
@@ -1026,7 +1026,7 @@ async function login(options, { name, room, type, invite, friendInvite, publicAd
 async function knockForInvite(text, name) {
     const roomCode = readRoomCode(text);
     const saved = getSavedRooms().getRoom(roomFingerprint(roomCode.room, roomCode.key));
-    if (saved?.protected) throw new Error('This room is in your saved rooms. Select it there to open it.');
+    if (saved?.protected) throw new Error('This room is in your saved rooms. Open it there.');
     const identity = getAdmissionIdentity();
     const state = value => sendToWindow('asscrack:knock-state', { state: value, room: roomCode.room });
     knocking = true;
@@ -1071,7 +1071,7 @@ handleRoomIpc('asscrack:room-code', (_event, renew) => {
         made = node.roomCode({ renew: renew === true });
     } catch (err) {
         if (/reachable owner address/.test(String(err?.message))) {
-            throw new Error('No room code: this room has no address that the internet can reach. Open Invite for the reason.');
+            throw new Error('This room cannot be reached from the internet. See Invite for details.');
         }
         throw err;
     }
@@ -1212,7 +1212,7 @@ handleRoomIpc('asscrack:saved-room-lines', (_event, roomId, opts) => {
 handleRoomIpc('asscrack:reopen-room', async (_event, roomId, allowLegacy) => {
     if (loginStarted) throw new Error('Already logged in');
     // easy-join part 2: a knock waits for the owner. A reopen now would make the Allow of the owner fail.
-    if (knocking) throw new Error('ASSCRACK is waiting for the room owner. Wait for the answer.');
+    if (knocking) throw new Error('Wait for the room owner to answer first.');
     if (typeof roomId !== 'string' || roomId.length > 128) throw new Error('Saved room not found');
     // G7a: a friend room is not a saved room of the list. Only its friend link opens it.
     if (getSavedRooms().isFriendRoom(roomId)) throw new Error('Saved room not found');

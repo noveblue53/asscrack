@@ -683,7 +683,7 @@ async function login(friendJoin = null) {
     const invite = join ? '' : inviteInput.value.trim();
     const publicAddress = join ? '' : publicAddressInput.value.trim();
     if (join && !name) {
-        status.textContent = `Enter a username, then select Join in the friend chat again to join ${join.room}.`;
+        status.textContent = `Enter a username, then select Join again to join ${join.room}.`;
         return;
     }
     if (!name || (type !== 'join' && !room)) {
@@ -740,8 +740,8 @@ async function login(friendJoin = null) {
 // easy-join part 2: the state of a knock with a room code. The login waits for the owner (up to 2.5 minutes).
 const KNOCK_STATE_TEXTS = {
     looking: room => `Looking for the owner of ${room}…`,
-    waiting: room => `Asking the owner of ${room} to let you in. Wait for the answer…`,
-    allowed: room => `The owner let you in. Joining ${room}…`
+    waiting: room => `Waiting for the owner of ${room}…`,
+    allowed: room => `Allowed. Joining ${room}…`
 };
 window.asscrack.onKnockState?.(data => {
     const text = KNOCK_STATE_TEXTS[data?.state];

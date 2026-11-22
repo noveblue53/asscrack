@@ -35,12 +35,12 @@ test('the owner has "Copy room code" and "New room code"; the code shows in the 
     await settle();
     assert.deepEqual(asked, [false]);
     assert.equal(room.el('invite-code').value, 'asscrack3:gQroomcode');
-    assert.equal(room.el('invite-code-label').textContent, 'Room code of this room');
-    assert.match(room.el('invite-note').textContent, /^Room code copied\. It works until .+\. A person with the code can ask to join\. You select Allow or Deny\.$/);
+    assert.equal(room.el('invite-code-label').textContent, 'Room code');
+    assert.match(room.el('invite-note').textContent, /^Room code copied\. Valid until .+\.$/);
     room.el('room-code-new').click();
     await settle();
     assert.deepEqual(asked, [false, true]);
-    assert.match(room.el('invite-note').textContent, /^New room code copied\. The old room code does not work now\./);
+    assert.match(room.el('invite-note').textContent, /^New room code copied\. The old code no longer works\. Valid until .+\.$/);
 });
 
 test('a member that is not the owner does not see "Copy room code"', async () => {
@@ -57,20 +57,20 @@ test('the knock bar: "<name> #<mark> wants to join." with Allow and Deny, one re
     assert.equal(room.el('knock-bar').hidden, true);
     room.handlers.onKnocks([{ id: 'k1', name: 'Kim', mark: 'a1b2c3' }, { id: 'k2', name: 'Lee', mark: 'zz' }]);
     assert.equal(room.el('knock-bar').hidden, false);
-    assert.equal(room.el('knock-text').textContent, 'Kim #a1b2c3 wants to join. 1 more request waits.');
+    assert.equal(room.el('knock-text').textContent, 'Kim #a1b2c3 wants to join. (+1 more)');
     room.el('knock-allow').click();
     await settle();
     assert.deepEqual(answers, [['k1', true]]);
-    assert.equal(room.el('status').textContent, 'Kim can join now.');
+    assert.equal(room.el('status').textContent, 'Allowed Kim.');
     assert.equal(room.el('knock-text').textContent, 'Lee wants to join.', 'a mark that is not 6 hex characters does not show');
     room.el('knock-deny').click();
     await settle();
     assert.deepEqual(answers, [['k1', true], ['k2', false]]);
-    assert.equal(room.el('status').textContent, 'You did not let Lee in.');
+    assert.equal(room.el('status').textContent, 'Denied Lee.');
     assert.equal(room.el('knock-bar').hidden, true);
     room.handlers.onKnocks([]);
     assert.equal(room.el('knock-bar').hidden, true);
-    assert.equal(room.window.knockCore.barText({ name: 'A', mark: '123abc' }, 2), 'A #123abc wants to join. 2 more requests wait.');
+    assert.equal(room.window.knockCore.barText({ name: 'A', mark: '123abc' }, 2), 'A #123abc wants to join. (+2 more)');
 });
 
 test('the joiner sees the state of its knock while the login waits for the owner', async () => {
@@ -88,7 +88,7 @@ test('the joiner sees the state of its knock while the login waits for the owner
     room.handlers.onKnockState({ state: 'looking', room: 'Game night' });
     assert.equal(room.el('status').textContent, 'Looking for the owner of Game night…');
     room.handlers.onKnockState({ state: 'waiting', room: 'Game night' });
-    assert.equal(room.el('status').textContent, 'Asking the owner of Game night to let you in. Wait for the answer…');
+    assert.equal(room.el('status').textContent, 'Waiting for the owner of Game night…');
     finish.reject(new Error('The owner did not let you in.'));
     await settle();
     assert.equal(room.el('status').textContent, 'Error: The owner did not let you in.');

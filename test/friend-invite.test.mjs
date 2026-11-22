@@ -334,8 +334,8 @@ test('chat window: the invite card with Join / Not now, "Leave <room> and join?"
     await window.friendChatReady;
     const rows = document.getElementById('messages').children;
     const texts = rows.map(r => r.querySelector('.text').textContent);
-    assert.deepEqual(texts, ['Ann invites you to Game night.', 'This invite expired. Ask Ann for a new invite.',
-        'This room invite is not for this computer. You cannot join with it.', 'You invited Ann to Ben room.']);
+    assert.deepEqual(texts, ['Ann invites you to Game night.', 'Invite expired. Ask Ann for a new one.',
+        'This invite is for a different device.', 'Invite to Ben room sent']);
     const buttons = row => row.querySelectorAll('button').map(b => b.textContent);
     assert.deepEqual(buttons(rows[0]), ['Join', 'Not now']);
     assert.deepEqual([rows[1], rows[2], rows[3]].map(buttons), [[], [], []]);

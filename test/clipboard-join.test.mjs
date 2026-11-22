@@ -214,7 +214,7 @@ test('clipboard window: "Join <room>?" with Join and Not now, the username step 
     // No username on the login screen: no Join call.
     buttons()[0].click();
     await tick();
-    assert.equal(text(), 'Enter a username, then select Join.');
+    assert.equal(text(), 'Enter a username first.');
     assert.deepEqual(calls, []);
     document.getElementById('username').value = 'Ben';
     buttons()[0].click();

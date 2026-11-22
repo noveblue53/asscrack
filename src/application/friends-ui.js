@@ -39,11 +39,11 @@
     function inviteText(result, name) {
         switch (result) {
             case 'sending': return `Invite sent to ${name}.`;
-            case 'waiting': return `${name} is not connected. ASSCRACK sends the invite when you are both online.`;
+            case 'waiting': return `Invite queued. ${name} gets it when you are both online.`;
             case 'not-owner': return 'Only the room owner can invite.';
             case 'no-room': return 'Open your protected room first.';
-            case 'no-address': return 'No invite: this room has no address that the internet can reach. Open Invite for the reason.';
-            case 'full': return `200 messages wait for ${name}. Wait until ${name} is online.`;
+            case 'no-address': return 'This room cannot be reached from the internet. See Invite for details.';
+            case 'full': return `Too many unsent messages for ${name}. Try again when ${name} is online.`;
             case 'removed': return `${name} removed you as a friend.`;
             default: return 'Could not send the invite.';
         }
@@ -51,15 +51,15 @@
     // easy-join part 3: Join of a friend row. The status while the knock waits, and the result (main.js
     // 'asscrack:friend-knock'; answer.text is the knock result text of login-errors.mjs).
     const knockStateText = (state, room) => (state === 'waiting'
-        ? `Asking the owner of ${room} to let you in. Wait for the answer…` : `Looking for the owner of ${room}…`);
+        ? `Waiting for the owner of ${room}…` : `Looking for the owner of ${room}…`);
     const askText = name => `Ask ${name} for an invite`;
     function joinText(answer, name) {
         switch (answer?.result) {
-            case 'joining': return `The owner let you in. Joining ${answer.room}…`;
+            case 'joining': return `Allowed. Joining ${answer.room}…`;
             case 'knock': return answer.text || 'The owner is not online. Try again later.';
             case 'ask': return `${askText(name)}.`;
-            case 'gone': return `${name} is not in a room that you can join now.`;
-            case 'saved': return 'This room is in your saved rooms. Select it there to open it.';
+            case 'gone': return `${name} is not in a room you can join.`;
+            case 'saved': return 'This room is in your saved rooms. Open it there.';
             case 'busy': return 'Try again in a moment.';
             default: return 'Could not join the room. Try again.';
         }

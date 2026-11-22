@@ -16,7 +16,7 @@
             default: return 'Could not join the room.';
         }
     }
-    const NAME_TEXT = 'Enter a username, then select Join.';
+    const NAME_TEXT = 'Enter a username first.';
     window.clipboardJoinCore = Object.freeze({ promptText, confirmText, answerText, NAME_TEXT });
 
     if (typeof document === 'undefined' || typeof document.getElementById !== 'function') return;

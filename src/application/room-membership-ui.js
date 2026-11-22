@@ -201,15 +201,15 @@
         clearCode();
         try {
             const made = await api.roomCode(renew);
-            if (typeof made?.code !== 'string' || made.code.length === 0) throw new Error('No room code was made.');
-            codeLabel.textContent = 'Room code of this room';
+            if (typeof made?.code !== 'string' || made.code.length === 0) throw new Error('Could not make the room code.');
+            codeLabel.textContent = 'Room code';
             inviteCode.value = made.code;
             codeLabel.hidden = inviteCode.hidden = copyInviteButton.hidden = false;
             copyInviteButton.disabled = false;
             const until = new Date(made.expires).toLocaleDateString(undefined, { day: 'numeric', month: 'long' });
             inviteNote.textContent = renew
-                ? `New room code copied. The old room code does not work now. The new code works until ${until}.`
-                : `Room code copied. It works until ${until}. A person with the code can ask to join. You select Allow or Deny.`;
+                ? `New room code copied. The old code no longer works. Valid until ${until}.`
+                : `Room code copied. Valid until ${until}.`;
         } catch (error) {
             inviteNote.textContent = error?.message ? errorText(error) : 'Could not make the room code.';
         } finally {
@@ -224,9 +224,8 @@
         autoAllowBusy = autoAllow.disabled = true;
         try {
             autoAllow.checked = (await api.setAutoAllowFriends(wanted)) === true;
-            inviteNote.textContent = autoAllow.checked
-                ? 'Your friends now join with no request. Other people still need your Allow.'
-                : 'Each person now needs your Allow, also your friends.';
+            // The checkbox shows the state; its tooltip has the detail (index.html).
+            inviteNote.textContent = '';
         } catch (error) {
             autoAllow.checked = !wanted;
             inviteNote.textContent = error?.message ? errorText(error) : 'Could not change the setting.';

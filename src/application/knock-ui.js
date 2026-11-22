@@ -8,7 +8,7 @@
     function barText(view, more = 0) {
         const name = view?.name || 'Someone';
         const who = typeof view?.mark === 'string' && /^[0-9a-f]{6}$/.test(view.mark) ? `${name} #${view.mark}` : name;
-        return `${who} wants to join.` + (more > 0 ? ` ${more} more ${more === 1 ? 'request waits' : 'requests wait'}.` : '');
+        return `${who} wants to join.` + (more > 0 ? ` (+${more} more)` : '');
     }
     // easy-join part 3: the room line of "Always allow my friends". view: { name, mark } (the name of the Friends list).
     function autoText(view) {
@@ -44,8 +44,8 @@
         try {
             const done = await api.answerKnock(current.id, yes);
             const status = document.getElementById('status');
-            if (status) status.textContent = !done ? `The request of ${current.name || 'this person'} ended before your answer.`
-                : yes ? `${current.name || 'The person'} can join now.` : `You did not let ${current.name || 'the person'} in.`;
+            const who = current.name || 'Someone';
+            if (status) status.textContent = !done ? `Request from ${who} ended.` : yes ? `Allowed ${who}.` : `Denied ${who}.`;
         } catch { /* the list event shows the state */ }
         finally {
             busy = false;

@@ -18,6 +18,8 @@ When the main window opens or gets the focus, the app reads the clipboard text o
   code of a room that this computer owns, or the room that is open now. The log and the window never get the text.
 - **Join.** Join of a room code sends a knock to the owner, the same as a pasted room code. Join of a device invite
   uses the invite with no paste. In a room, Join asks "Leave <room> and join <room>?" first.
+- **Shorter texts.** The new texts of easy-join (friend invite, knock, room code, friend Join, clipboard) are now short
+  labels and short error texts, by the new UI text rule of the operator. Example: "Waiting for the owner of <room>…".
 
 Checks (127.0.0.1 and pure logic on this PC, not LAN, not internet): `test/clipboard-join.test.mjs` has 7 tests. Two app
 copies on this PC: A copies the room code, B shows the prompt and selects Join, A selects Allow, then chat in both

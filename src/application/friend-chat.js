@@ -31,22 +31,22 @@
     function inviteCardText(invite, own, name) {
         const who = name || 'Your friend';
         if (own) {
-            if (invite.state === 'sent') return `You invited ${name || 'your friend'} to ${invite.room}.`;
-            if (invite.state === 'expired') return `You invited ${name || 'your friend'} to a room. This invite expired.`;
-            return 'You sent a room invite.';
+            if (invite.state === 'sent') return `Invite to ${invite.room} sent`;
+            if (invite.state === 'expired') return 'Invite expired';
+            return 'Room invite sent';
         }
         if (invite.state === 'ok') return `${who} invites you to ${invite.room}.`;
-        if (invite.state === 'expired') return `This invite expired. Ask ${name || 'your friend'} for a new invite.`;
-        return 'This room invite is not for this computer. You cannot join with it.';
+        if (invite.state === 'expired') return `Invite expired. Ask ${name || 'your friend'} for a new one.`;
+        return 'This invite is for a different device.';
     }
     // The answer of Join (friend-join.mjs), as a note of the card. null: no note.
     function joinNoteText(answer) {
         switch (answer?.result) {
             case 'joining': return `Joining ${answer.room}…`;
             case 'busy': return 'ASSCRACK opens or leaves a room now. Try again in a moment.';
-            case 'expired': return 'This invite expired.';
-            case 'gone': return 'This invite is not available any more.';
-            case 'wrong-device': case 'wrong-owner': case 'invalid': return 'This room invite is not for this computer.';
+            case 'expired': return 'Invite expired.';
+            case 'gone': return 'Invite no longer available.';
+            case 'wrong-device': case 'wrong-owner': case 'invalid': return 'This invite is for a different device.';
             default: return 'Could not join the room.';
         }
     }
