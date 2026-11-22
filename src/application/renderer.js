@@ -708,6 +708,7 @@ function roomStarted(result) {
     void window.voiceChannels?.start();
     window.whispers?.refresh();
     refreshRoomTopic();
+    void refreshKeptPartials();
     startPresence();
     updatePeerCount();
     refreshHostInfo();
@@ -1373,7 +1374,7 @@ function renderTransferActions(entry, row) {
     const hadFocus = buttons.contains(document.activeElement);
     buttons.replaceChildren();
     const key = transferKey(entry.item);
-    if (entry.cancelRequested) {
+    if (entry.cancelRequested || entry.pauseRequested) {
         if (hadFocus) row.focus({ preventScroll: true });
         return;
     }
@@ -1385,12 +1386,22 @@ function renderTransferActions(entry, row) {
             makeButton('Refuse', () => refuseTransfer(key), 'refuse')
         );
     } else if (entry.state === 'receiving') {
+        // P7b: Pause keeps the received part (P7a). A row of the shared shelf or of a chat attachment can also pause.
+        if (hasApi('pauseFile')) buttons.append(makeButton('Pause', () => pauseTransfer(key), 'pause'));
         buttons.append(makeButton('Cancel', () => cancelReceive(key), 'cancel-receive'));
+    } else if (entry.direction === 'receive' && (entry.state === 'paused' || entry.state === 'waiting')) {
+        if (entry.state === 'paused' && entry.resumable && hasApi('resumeFile')) {
+            buttons.append(makeButton('Resume', () => resumeTransfer(key), 'resume'));
+        }
+        if (canDiscardTransfer(entry)) buttons.append(makeButton('Discard', () => discardTransfer(key), 'discard'));
     } else if (entry.state === 'failed' && entry.retryable && hasApi('retryFile')) {
         const online = canRetryTransfer(entry);
         const retry = makeButton(online ? 'Retry' : 'Sender offline', () => retryTransfer(key), 'retry', 'btn-retry');
         retry.disabled = !online;
         buttons.append(retry);
+        if (canDiscardTransfer(entry)) buttons.append(makeButton('Discard', () => discardTransfer(key), 'discard'));
+    } else if (entry.state === 'failed' && canDiscardTransfer(entry)) {
+        buttons.append(makeButton('Discard', () => discardTransfer(key), 'discard'));
     } else if (entry.state === 'done' && entry.revealable && hasApi('revealFile')) {
         buttons.append(makeButton('Show in Explorer', () => revealTransfer(key), 'reveal', 'btn-reveal'));
     }
@@ -1408,7 +1419,7 @@ function setTransferState(entry, state, text) {
     };
     render(entry.item);
     if (entry.card) window.reading.keepPosition(() => render(entry.card));
-    if (entry.direction === 'send') updateOfferSummary(entry.item.dataset.offerId);
+    if (entry.direction === 'send') updateOfferSummary(entry.headId ?? entry.item.dataset.offerId);
     if (entry.richOffer) window.chatAttachments?.changed(entry.richOffer);
     updateNodeMap();
 }
@@ -1707,6 +1718,9 @@ function runRowAction(action, row) {
         case 'cancel-receiver': return cancelToReceiver(transferKey(row));
         case 'cancel-offer': return cancelWholeOffer(row.dataset.offerId);
         case 'reveal': return revealTransfer(transferKey(row));
+        case 'pause': return pauseTransfer(transferKey(row));
+        case 'resume': return resumeTransfer(transferKey(row));
+        case 'discard': return discardTransfer(transferKey(row));
         case 'rename-voice-channel': return window.voiceChannels?.rename(row) ?? false;
         case 'delete-voice-channel': return window.voiceChannels?.remove(row) ?? false;
         default: return false;
@@ -1797,6 +1811,7 @@ function transferForEvent(data) {
 function setTransferResult(entry, state, text) {
     if (RESULT_STATES.has(entry.state)) return;
     entry.cancelRequested = false;
+    entry.pauseRequested = false;
     setTransferState(entry, state, text);
 }
 
@@ -1844,6 +1859,13 @@ window.asscrack.onFileOffer(data => {
 });
 
 window.asscrack.onFileRetried?.(data => {
+    // P7b: the row that the receiver paused continues as the new attempt.
+    const paused = liveTransfer(`${data.retryOf}|${data.peerId}`);
+    if (paused && paused.direction === 'send' && paused.state === 'paused') {
+        moveTransfer(paused, data.offerId);
+        setTransferState(paused, 'offered', 'Resume offered');
+        return;
+    }
     const entry = getTransfer(data.offerId, data.peerId, 'send', data);
     if (entry.state === null) setTransferState(entry, 'offered', 'Retry offered');
 });
@@ -1865,6 +1887,7 @@ window.asscrack.onShelfOffered?.(data => {
 });
 
 window.asscrack.onFileDone(data => {
+    linkResume(data);
     const entry = transferForEvent(data);
     if (RESULT_STATES.has(entry.state)) return;
     for (const row of [entry.item, entry.card].filter(Boolean)) {
@@ -1878,19 +1901,285 @@ window.asscrack.onFileDone(data => {
         setTransferResult(entry, 'done', `Saved as ${fileName}`);
     } else {
         entry.confirmed = data.confirmed === true;
-        setTransferResult(entry, 'done', data.confirmed === true ? 'Delivered' : 'Sent (delivery unconfirmed)');
+        const text = data.confirmed === true ? 'Delivered' : 'Sent (delivery unconfirmed)';
+        // P7b: a resumed send gives the bytes of this attempt (P7a: `sent`).
+        const resumed = Number(data.offset) > 0 && Number.isFinite(Number(data.sent));
+        setTransferResult(entry, 'done', resumed ? `${text} · ${formatSize(data.sent)} sent after the resume` : text);
     }
 });
 
 window.asscrack.onFileFailed(data => {
+    linkResume(data);
     const entry = transferForEvent(data);
     if (entry.state !== 'failed' && RESULT_STATES.has(entry.state)) return;
     entry.retryable = data.retryable === true;
     entry.cancelRequested = false;
+    entry.pauseRequested = false;
     setTransferState(entry, 'failed', `Failed: ${data.reason ?? ''}`);
 });
 window.asscrack.onFileRefused(data => setTransferResult(transferForEvent({ ...data, direction: 'send' }), 'refused', 'Refused'));
-window.asscrack.onFileCancelled(data => setTransferResult(transferForEvent(data), 'cancelled', 'Cancelled'));
+window.asscrack.onFileCancelled(data => {
+    linkResume(data);
+    setTransferResult(transferForEvent(data), 'cancelled', 'Cancelled');
+});
+
+// ---- P7b: Pause, Resume and Discard of a received file (P7a is the node part) ----
+// A paused receive keeps its part on disk. The key of the part is the SHA-256 and the size of the offer. A resume
+// attempt has a new offer ID and no file-offer event: its first event has resumeOf, and linkResume moves the row
+// to the new ID. A part of an earlier session gets its own row ("kept row"): only a new offer of the same file from
+// the sender can continue it (after a restart the node knows no older offer).
+const keptPartials = new Map(); // key -> the Partial of the node (no path)
+let discardKey = null;
+let discardBound = false;
+
+function moveTransfer(entry, offerId) {
+    const oldKey = transferKey(entry.item);
+    for (const row of [entry.item, entry.card].filter(Boolean)) row.dataset.offerId = String(offerId);
+    transfers.delete(oldKey);
+    transfers.set(transferKey(entry.item), entry);
+}
+
+function linkResume(data) {
+    if (typeof data?.resumeOf !== 'string' || data.direction !== 'receive') return null;
+    const entry = liveTransfer(`${data.resumeOf}|${data.peerId}`);
+    if (!entry || entry.direction !== 'receive' || transfers.has(`${data.offerId}|${data.peerId}`)) return null;
+    moveTransfer(entry, data.offerId);
+    return entry;
+}
+
+function setProgress(entry, bytes, size) {
+    for (const row of [entry.item, entry.card].filter(Boolean)) {
+        const progress = row.querySelector('progress');
+        if (Number(size) > 0) progress.max = Number(size);
+        progress.value = Number(bytes) || 0;
+        showProgress(progress);
+    }
+}
+
+function keptPartOf(entry) {
+    return entry.partialKey ? keptPartials.get(entry.partialKey) ?? null : null;
+}
+
+function canDiscardTransfer(entry) {
+    const partial = keptPartOf(entry);
+    return entry.direction === 'receive' && partial !== null && partial.active !== true && hasApi('discardPartial');
+}
+
+function pausedText(entry) {
+    const partial = keptPartOf(entry);
+    const bytes = partial?.bytes ?? entry.keptBytes ?? 0;
+    const size = partial?.size ?? entry.keptSize ?? 0;
+    const parts = ['Paused', `${formatSize(bytes)} of ${formatSize(size)}`];
+    const expiresAt = Number(partial?.expiresAt);
+    if (partial && Number.isFinite(expiresAt) && expiresAt > 0) parts.push(`kept until ${new Date(expiresAt).toLocaleString()}`);
+    if (entry.kept) parts.push('it continues when the sender offers the file again');
+    return parts.join(' · ');
+}
+
+async function pauseTransfer(key) {
+    const entry = liveTransfer(key);
+    if (!entry || entry.direction !== 'receive' || entry.state !== 'receiving' || entry.cancelRequested ||
+        entry.pauseRequested || !hasApi('pauseFile')) return false;
+    entry.pauseRequested = true;
+    setTransferState(entry, 'receiving', 'Pausing…');
+    const ok = await callFile(window.asscrack.pauseFile, entry.item.dataset.offerId);
+    if (ok !== true && entry.pauseRequested) {
+        entry.pauseRequested = false;
+        if (entry.state === 'receiving') setTransferState(entry, 'receiving', 'Receiving');
+        status.textContent = 'Pause is not possible now.';
+    }
+    return ok === true;
+}
+
+// Resume asks the sender again, on any open route. With no session to the sender, the row waits for it.
+async function resumeTransfer(key, fromJoin = false) {
+    const entry = liveTransfer(key);
+    if (!entry || entry.direction !== 'receive' || (entry.state !== 'paused' && entry.state !== 'waiting') ||
+        !entry.resumable || !hasApi('resumeFile')) return false;
+    const peerId = entry.item.dataset.peerId;
+    const waiting = () => setTransferState(entry, 'waiting', `Waiting for ${transferPeerName(peerId)}`);
+    if (!fromJoin && !peerItems.has(peerId)) {
+        waiting();
+        return false;
+    }
+    setTransferState(entry, 'requesting', 'Resuming…');
+    const ok = await callFile(window.asscrack.resumeFile, entry.item.dataset.offerId);
+    if (ok === true) {
+        entry.waitRetried = false;
+        return true;
+    }
+    if (entry.state !== 'requesting' || transferKey(entry.item) !== key) return false;
+    if (fromJoin || !peerItems.has(peerId)) {
+        waiting();
+        // The session of a peer that came back can need a moment before the node accepts a file line.
+        if (fromJoin && !entry.waitRetried) {
+            entry.waitRetried = true;
+            setTimeout(() => { if (entry.state === 'waiting') void resumeTransfer(transferKey(entry.item), true); }, 2000);
+        }
+    } else setTransferState(entry, 'paused', `${pausedText(entry)} · Resume could not start`);
+    return false;
+}
+
+function resumeWaiting(peerId) {
+    for (const [key, entry] of [...transfers]) {
+        if (entry.state === 'waiting' && entry.item.dataset.peerId === peerId) void resumeTransfer(key, true);
+    }
+}
+
+window.asscrack.onPeerJoined(data => resumeWaiting(data?.peerId));
+
+function discardTransfer(key) {
+    const entry = liveTransfer(key);
+    const dialog = document.getElementById('discard-dialog');
+    if (!entry || !canDiscardTransfer(entry) || !dialog) return false;
+    discardKey = key;
+    const name = entry.item.querySelector('.file-name').textContent;
+    document.getElementById('discard-text').textContent =
+        `Discard the partial file of ${name}? The download starts again from the beginning next time.`;
+    if (!discardBound) {
+        discardBound = true;
+        document.getElementById('discard-confirm').addEventListener('click', () => {
+            dialog.close();
+            void confirmDiscard();
+        });
+    }
+    if (!dialog.open) dialog.showModal();
+    return true;
+}
+
+async function confirmDiscard() {
+    const key = discardKey;
+    discardKey = null;
+    const entry = key ? liveTransfer(key) : null;
+    if (!entry || !canDiscardTransfer(entry)) return false;
+    const partialKey = entry.partialKey;
+    const ok = await callFile(window.asscrack.discardPartial, partialKey);
+    if (ok !== true) {
+        status.textContent = 'The kept part is in use or no longer on this computer.';
+        return false;
+    }
+    partialGone(partialKey, 'The kept part is discarded. The download starts again from the beginning next time.');
+    return true;
+}
+
+// The node deleted a kept part (Discard, expiry or another reason). A row that waits on it gets the text.
+function partialGone(key, text) {
+    keptPartials.delete(key);
+    for (const entry of transfers.values()) {
+        if (entry.partialKey !== key) continue;
+        entry.partialKey = null;
+        if (entry.kept || entry.state === 'paused' || entry.state === 'waiting') {
+            if (entry.kept) entry.retryable = false;
+            entry.pauseRequested = false;
+            setTransferState(entry, 'failed', text);
+        } else {
+            renderTransferActions(entry, entry.item);
+            if (entry.card) window.reading.keepPosition(() => renderTransferActions(entry, entry.card));
+        }
+    }
+}
+
+function removeKeptRow(key, entry) {
+    entry.item.remove();
+    transfers.delete(key);
+    transferCount.textContent = String(transfers.size);
+}
+
+function keptRow(partial) {
+    const entry = getTransfer(`kept-${partial.key}`, 'kept', 'receive', { name: partial.name, size: partial.size });
+    if (entry.kept) return;
+    Object.assign(entry, { kept: true, partialKey: partial.key, resumable: false });
+    const peer = entry.item.querySelector('.peer-name');
+    peer.textContent = 'from an earlier session';
+    peer.title = peer.textContent;
+    setProgress(entry, partial.bytes, partial.size);
+    setTransferState(entry, 'paused', pausedText(entry));
+}
+
+// The list of the kept parts (file-partials and listPartials). Each part links to the row of its last offer, else
+// it gets a kept row. A kept row goes away when a receive uses its part.
+function syncPartials(list) {
+    if (!Array.isArray(list)) return;
+    keptPartials.clear();
+    for (const partial of list) if (typeof partial?.key === 'string') keptPartials.set(partial.key, partial);
+    for (const partial of keptPartials.values()) {
+        let linked = false;
+        for (const entry of transfers.values()) {
+            if (entry.direction !== 'receive') continue;
+            if (entry.partialKey === partial.key || (!entry.kept && entry.item.dataset.offerId === partial.offerId)) {
+                entry.partialKey = partial.key;
+                linked = true;
+            }
+        }
+        if (!linked && partial.active !== true) keptRow(partial);
+    }
+    for (const [key, entry] of [...transfers]) {
+        if (!entry.partialKey || !entry.item.isConnected) continue;
+        const partial = keptPartials.get(entry.partialKey);
+        if (entry.kept && (!partial || partial.active === true)) removeKeptRow(key, entry);
+        else if (entry.state === 'paused' && partial) setTransferState(entry, 'paused', pausedText(entry));
+        else {
+            renderTransferActions(entry, entry.item);
+            if (entry.card) window.reading.keepPosition(() => renderTransferActions(entry, entry.card));
+        }
+    }
+}
+
+async function refreshKeptPartials() {
+    if (!hasApi('listPartials')) return;
+    try { syncPartials(await window.asscrack.listPartials()); } catch { /* The file-partials event comes later. */ }
+}
+
+window.asscrack.onFilePaused?.(data => {
+    linkResume(data);
+    const direction = data.direction === 'receive' ? 'receive' : 'send';
+    const entry = getTransfer(data.offerId, data.peerId, direction, data);
+    if (RESULT_STATES.has(entry.state)) return;
+    entry.pauseRequested = false;
+    entry.cancelRequested = false;
+    if (direction === 'send') {
+        setTransferState(entry, 'paused', `Paused by ${transferPeerName(data.peerId)} · ${formatSize(data.bytes)} of ${formatSize(data.size)}`);
+        return;
+    }
+    entry.partialKey = typeof data.key === 'string' ? data.key : null;
+    entry.keptBytes = Number(data.bytes) || 0;
+    entry.keptSize = Number(data.size) || 0;
+    // An attachment or a shelf file cannot resume (P7a): only a new offer continues it.
+    entry.resumable = data.resumable === true;
+    entry.retryable = data.resumable === true;
+    setProgress(entry, entry.keptBytes, entry.keptSize);
+    setTransferState(entry, 'paused', pausedText(entry));
+});
+
+window.asscrack.onFileResumed?.(data => {
+    linkResume(data);
+    const send = data.direction !== 'receive';
+    const entry = getTransfer(data.offerId, data.peerId, send ? 'send' : 'receive', data);
+    if (RESULT_STATES.has(entry.state)) return;
+    setProgress(entry, data.offset, data.size);
+    setTransferState(entry, send ? 'sending' : 'receiving', `${send ? 'Sending' : 'Receiving'} · continues from ${formatSize(data.offset)}`);
+});
+
+window.asscrack.onFileRestarted?.(data => {
+    linkResume(data);
+    const entry = getTransfer(data.offerId, data.peerId, 'receive', data);
+    if (RESULT_STATES.has(entry.state)) return;
+    setProgress(entry, 0);
+    setTransferState(entry, 'receiving', 'The download started again from the beginning.');
+});
+
+window.asscrack.onFileExpired?.(partial => {
+    if (typeof partial?.key === 'string') partialGone(partial.key, 'The kept part expired.');
+});
+
+window.asscrack.onFileDiscarded?.(partial => {
+    if (typeof partial?.key !== 'string' || !keptPartials.has(partial.key)) return;
+    partialGone(partial.key, partial.reason === 'user'
+        ? 'The kept part is discarded. The download starts again from the beginning next time.'
+        : `The kept part was deleted (${partial.reason ?? 'unknown'}).`);
+});
+
+window.asscrack.onFilePartials?.(data => syncPartials(data?.partials));
 
 const offerHeads = new Map();
 
@@ -1898,7 +2187,7 @@ function updateOfferSummary(offerId) {
     const head = offerHeads.get(offerId);
     if (!head) return;
     const counts = new Map();
-    const labels = { offered: 'awaiting reply', sending: 'sending', refused: 'declined', failed: 'failed', cancelled: 'cancelled' };
+    const labels = { offered: 'awaiting reply', sending: 'sending', paused: 'paused', refused: 'declined', failed: 'failed', cancelled: 'cancelled' };
     let pending = false;
     for (const entry of head.rows) {
         const label = entry.state === 'done' ? (entry.confirmed ? 'delivered' : 'sent (unconfirmed)') : labels[entry.state];
@@ -1935,6 +2224,7 @@ function addOfferHead(offer, recipientId) {
     for (const peerId of recipients) {
         // A fast response can precede the IPC offer result. Keep its state and fill in the original metadata.
         const entry = getTransfer(offerId, peerId, 'send', offer);
+        entry.headId = offerId;
         const fileName = entry.item.querySelector('.file-name');
         fileName.textContent = name;
         fileName.title = name;

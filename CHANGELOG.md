@@ -7,6 +7,34 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased — pause and resume of large downloads: the window (package P7b, 2026-11-21)
+
+The window now shows the pause and the resume of a received file (P7a made the network part).
+- A receive row has "Pause". A paused row shows "Paused · <bytes> of <size> · kept until <local date and time>"
+  and the actions "Resume" and "Discard".
+- Resume asks the sender again. When the sender is not in the room, the row shows "Waiting for <name>". The
+  download starts when the sender comes back.
+- Discard asks first: "Discard the partial file of <name>? The download starts again from the beginning next time."
+- When the sender cannot continue from the kept part, the row says "The download started again from the beginning."
+- An expired kept part shows "The kept part expired." and only Retry.
+- After a restart, a kept part has its own row with Discard. When the sender offers the same file again, the
+  download continues from the kept part.
+- The sender row shows "Paused by <name>" and the bytes that it sent after the resume.
+- The Quit and Leave room dialogs count only transfers that send or receive, not a paused one.
+- Leave room keeps the paused parts. The next room of the same run shows them.
+
+Fix: each received file failed at its end with "stream ended" in the app on origin/main (`daf2c56`). A listener in
+`main.js` used a name of a different block. The fix is in this package.
+
+Results:
+- `npm test` passes (127.0.0.1).
+- One `npm start` gives no error line (this PC).
+- Two copies (127.0.0.1): A offers a 600 MiB file to B. B pauses at 40.8 %, quits and starts again. A offers the
+  file again, and B continues from the kept part. The SHA-256 of the saved file and of the source agree. A sent
+  372,244,480 bytes after the resume: the remainder exactly. Discard of a second paused transfer deleted its kept
+  part of 110,493,696 bytes.
+- Two copies (127.0.0.1): Resume in the same run continues on the same row, and a kept part stays after Leave room.
+
 ## Unreleased — Windows app shell (goal G5, 2026-11-21)
 
 ASSCRACK now acts like a Windows app.

@@ -44,7 +44,9 @@ if (process.platform === 'win32') {
 
 const EVENTS = ['channels', 'peer-discovered', 'peer-joined', 'peer-left', 'message', 'history', 'signal', 'voice-state', 'host-changed', 'peer-name',
     'file-offer', 'file-retried', 'file-progress', 'file-done', 'file-failed', 'file-refused', 'file-cancelled', 'topology', 'full-node', 'full-node-addrs',
-    'voice-frame', 'connection', 'dial-failed', 'upnp', 'presence', 'topic', 'voice-channels'];
+    'voice-frame', 'connection', 'dial-failed', 'upnp', 'presence', 'topic', 'voice-channels',
+    // P7b: pause and resume of a received file (P7a). The Partial objects have no path.
+    'file-paused', 'file-resumed', 'file-restarted', 'file-discarded', 'file-expired', 'file-partials'];
 
 // Test option: --profile <dir> gives each instance its own user data folder.
 const profileIndex = process.argv.indexOf('--profile');
@@ -653,8 +655,11 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
     onLive('shelf', data => sendToWindow('asscrack:shelf', data));
     onLive('shelf-offered', data => sendToWindow('asscrack:shelf-offered', data));
     onLive('membership', () => sendToWindow('asscrack:membership', node.memberState()));
+    // P7b fix: `live` is a const of the try block above. A ReferenceError here failed each received file at its end
+    // ("stream ended" on both ends). This listener keeps its own copy of the live node.
+    const doneNode = node;
     node.events.on('file-done', data => {
-        if (node !== live) return;
+        if (node !== doneNode) return;
         if (data?.direction !== 'receive' || typeof data.path !== 'string') return;
         receivedFiles.set(`${data.offerId}|${data.peerId}`, data.path);
         if (receivedFiles.size > 2048) receivedFiles.delete(receivedFiles.keys().next().value);
@@ -1245,6 +1250,30 @@ handleRoomIpc('asscrack:cancel-file', (_event, offerId, peerId) => {
     return node.cancelFile(String(offerId), peer);
 });
 
+// P7b: Pause, Resume and Discard of a received file. The window sends an offer ID or a partial key as text only.
+const PARTIAL_KEY = /^[0-9a-f]{64}-(?:0|[1-9]\d{0,15})$/;
+const fileOfferId = offerId => {
+    if (typeof offerId !== 'string' || offerId.length === 0 || offerId.length > 64) throw new Error('Invalid offer ID');
+    return offerId;
+};
+handleRoomIpc('asscrack:pause-file', (_event, offerId) => {
+    if (!node) throw new Error('Not logged in');
+    logAction('pause-file', fileOfferId(offerId));
+    return node.pauseFile(offerId) === true;
+});
+handleRoomIpc('asscrack:resume-file', (_event, offerId) => {
+    if (!node) throw new Error('Not logged in');
+    logAction('resume-file', fileOfferId(offerId));
+    return node.resumeFile(offerId) === true;
+});
+handleRoomIpc('asscrack:discard-partial', async (_event, key) => {
+    if (!node) throw new Error('Not logged in');
+    if (typeof key !== 'string' || !PARTIAL_KEY.test(key)) return false;
+    writeLog('EVENT', `action discard-partial size ${key.slice(65)}`);
+    return await node.discardPartial(key) === true;
+});
+handleRoomIpc('asscrack:list-partials', async () => (node ? await node.partials() : []));
+
 // Gap D2: a click on a link in a chat line. The window sends the text of the href only. link-policy.mjs accepts an
 // http: or https: URL of 2048 characters or less with a host and no user name or password, at most one each 500 ms.
 // All other input: no action and one warning in the log.
@@ -1309,7 +1338,9 @@ function leaveRoom() {
     inVoice = false;
     updatePttHook(() => pttHook.setInVoice(false));
     // Ready check (P9A): the checks of the room end with the room. P7a keeps its partial files in the node: the
-    // stop of the node and the clear of the download scratch below cover them.
+    // stop of the node and the clear of the download scratch below cover them. P7b: a paused partial belongs to
+    // the profile, not to the room. Its in-memory state (the node store and the window rows) ends with the node
+    // and the reload. The files stay in the scratch folder, and the next room of this run uses the same folder.
     try { current.resetReady?.(); } catch (err) { writeLog('WARN', `Ready check reset: ${err?.message ?? err}`); }
     leaving = stopNodeWithin(current).then(() => {
         if (node === current) node = null;
@@ -1319,7 +1350,9 @@ function leaveRoom() {
         clearRoomMedia();
         clipboardImages.clear();
         downloadScratch?.clear();
-        downloadScratch = null;
+        // P7b: clear() keeps a folder with paused partials. createDownloadScratch does not adopt the folder of a
+        // live process (this process), thus keep the session while its folder exists.
+        if (!downloadScratch || !existsSync(downloadScratch.directory)) downloadScratch = null;
         retainRoomHints = null;
         lastUpnp = null;
         saveUpnpChoice = () => {};

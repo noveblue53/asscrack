@@ -211,3 +211,28 @@ test('the G5 calls send their IPC channel with no path, and the alias call sends
     assert.equal(JSON.stringify(b.invoked.at(-1)), JSON.stringify(['asscrack:activity-aliases', []]));
     assert.deepEqual(b.touched, []);
 });
+
+// P7b adds four calls and six events for Pause, Resume and Discard of a received file. Each call sends only the
+// offer ID or the partial key as text; main.js checks the length and the form of each.
+test('the P7b calls send the offer ID or the partial key as text, and the partial events reach the window', () => {
+    const b = loadBridge();
+    b.api.pauseFile('offer-1');
+    b.api.resumeFile({ toString: () => 'offer-2' });
+    b.api.discardPartial(`${'a'.repeat(64)}-5`);
+    b.api.listPartials('ignored');
+    assert.deepEqual(b.invoked, [
+        ['asscrack:pause-file', 'offer-1'],
+        ['asscrack:resume-file', 'offer-2'],
+        ['asscrack:discard-partial', `${'a'.repeat(64)}-5`],
+        ['asscrack:list-partials']
+    ]);
+    for (const [name, channel] of [['onFilePaused', 'asscrack:file-paused'], ['onFileResumed', 'asscrack:file-resumed'],
+        ['onFileRestarted', 'asscrack:file-restarted'], ['onFileDiscarded', 'asscrack:file-discarded'],
+        ['onFileExpired', 'asscrack:file-expired'], ['onFilePartials', 'asscrack:file-partials']]) {
+        const got = [];
+        b.api[name](data => got.push(data));
+        b.emit(channel, { marker: name });
+        assert.deepEqual(got, [{ marker: name }], name);
+    }
+    assert.deepEqual(b.touched, []);
+});

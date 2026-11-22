@@ -1277,6 +1277,14 @@ body.map-open #node-map:not([data-paused]) .nm-node.speaking .nm-pulse {
   background: linear-gradient(90deg, rgba(255, 233, 150, 0.6), rgba(255, 233, 150, 0.08));
 }
 
+/* P7b: a paused download and a download that waits for its sender. */
+#transfers li.transfer:is([data-state="paused"], [data-state="waiting"]) {
+  background: linear-gradient(90deg, rgba(190, 205, 222, 0.55), rgba(190, 205, 222, 0.08));
+}
+
+#discard-dialog { width: min(28rem, calc(100vw - 24px)); }
+#discard-dialog p { margin: 6px 0; }
+
 #transfers li.transfer > span {
   min-width: 0;
   overflow: hidden;

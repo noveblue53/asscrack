@@ -183,6 +183,17 @@ contextBridge.exposeInMainWorld('asscrack', {
     onFileFailed: listen('asscrack:file-failed'),
     onFileRefused: listen('asscrack:file-refused'),
     onFileCancelled: listen('asscrack:file-cancelled'),
+    // P7b: Pause, Resume and Discard of a received file. The window sends an offer ID or a partial key as text.
+    pauseFile: offerId => ipcRenderer.invoke('asscrack:pause-file', String(offerId)),
+    resumeFile: offerId => ipcRenderer.invoke('asscrack:resume-file', String(offerId)),
+    discardPartial: key => ipcRenderer.invoke('asscrack:discard-partial', String(key)),
+    listPartials: () => ipcRenderer.invoke('asscrack:list-partials'),
+    onFilePaused: listen('asscrack:file-paused'),
+    onFileResumed: listen('asscrack:file-resumed'),
+    onFileRestarted: listen('asscrack:file-restarted'),
+    onFileDiscarded: listen('asscrack:file-discarded'),
+    onFileExpired: listen('asscrack:file-expired'),
+    onFilePartials: listen('asscrack:file-partials'),
     // Manual status (milestone 3). presence: { state, note }.
     setPresence: ({ state, note } = {}) => ipcRenderer.invoke('asscrack:set-presence', { state, note }),
     getPresence: () => ipcRenderer.invoke('asscrack:presence'),
