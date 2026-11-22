@@ -1,5 +1,5 @@
 // Note rows in the chat list (gaps B1 and D6): who came and who went, the own connection, and the day rows.
-// A note row is <li class="note" data-kind="presence|link|day" data-time="…"><span class="note-text"/></li>.
+// A note row is <li class="note" data-kind="presence|link|day|offer" data-time="…"><span class="note-text"/></li>.
 // It has no data-id, no .from, no .text and no button. It is never unread, never saved, and plays no sound.
 //
 // window.rosterNotesCore: a pure part with no DOM and no clock. createRoster() gives a state machine. Each call gets
@@ -295,9 +295,10 @@
         if (list) fixAround(list, row, makeDay);
     }
 
-    // A presence or link note at the end of the general list. The visible list keeps its reading position.
-    function append(kind, text, time = Date.now()) {
-        const list = window.roomChannels?.listFor('general') ?? messageList;
+    // A note at the end of the list of a channel (default: general, for presence and link notes). Gap N5 gives the
+    // channel of a file offer. The visible list keeps its reading position.
+    function append(kind, text, time = Date.now(), channelId = 'general') {
+        const list = window.roomChannels?.listFor(channelId) ?? messageList;
         if (!list) return null;
         const visible = list === messageList;
         const state = visible ? window.reading?.beforeChange() : null;

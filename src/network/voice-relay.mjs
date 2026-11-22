@@ -23,6 +23,9 @@ const MAX_DIRECT_REOPENS = 5
 const DIRECT_STABLE_MS = 10000
 // The host counts forwarded frames for at most this number of origins, and of targets for each origin.
 export const MAX_FORWARD_PEERS = 64
+// G6 (D6): after a change of its own voice channel, this node sends no frame for this time. The new voice line can
+// arrive after the first frames; the receivers drop the frames that are already in flight.
+export const MOVE_HOLD_MS = 250
 
 export function encodeFrame({ origin, seq, data }) {
     const o = Buffer.from(origin, 'utf8')
@@ -116,8 +119,11 @@ async function readFrames(source, onBody, onOversize) {
 // directCandidates(): the peer IDs to open a direct stream to (voice peers with a direct session connection).
 // directListOf(peerId): the last valid 'direct' list of that peer, or null.
 // onDirectChanged(): called when the list of working direct streams of this node changes.
+// channelOf(peerId), selfChannel(): the voice channel of a peer and of this node (G6). The host forwards a frame only
+// to the members in the channel of its origin. While this node is in voice, it delivers only the frames of its channel.
 export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectionFor, onFrame,
-    directCandidates = () => [], directListOf = () => null, onDirectChanged = () => {}, protectedRoom = false }) {
+    directCandidates = () => [], directListOf = () => null, onDirectChanged = () => {}, protectedRoom = false,
+    channelOf = () => 'general', selfChannel = () => 'general' }) {
     // Host side: peerId -> { stream, queue }. Member side: one entry to the host.
     const members = new Map()
     let upstream = null
@@ -152,6 +158,11 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
     let forwarded = 0
     // origin -> target -> number of frames that the host forwarded.
     const forwardedTo = {}
+    // G6: the end of the move hold (performance.now()), and the frames that the hold did not send.
+    let holdUntil = 0
+    let heldFrames = 0
+    // The voice peers in the channel of this node at the last refreshDirect(): a peer that comes in gets a new try.
+    let channelPeers = new Set()
 
     function warnOversize(len) {
         droppedOversize++
@@ -182,6 +193,8 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
 
     function deliver(frame) {
         if (frame.origin === selfId) return
+        // G6: in voice, only the frames of the own channel. Out of voice, as before (voice.js drops the frame).
+        if (selfInVoice() && channelOf(frame.origin) !== selfChannel()) return
         if (isDuplicate(frame)) { duplicates++; return }
         try {
             onFrame(frame)
@@ -223,10 +236,12 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
             const wire = Buffer.alloc(4 + body.length)
             wire.writeUInt32BE(body.length, 0)
             body.copy(wire, 4)
-            // Do not forward to a peer that gets the frame on a direct stream from the origin.
+            // Do not forward to a peer that gets the frame on a direct stream from the origin, or to a peer in a
+            // different voice channel.
             const direct = directListOf(peerId)
+            const channel = channelOf(peerId)
             for (const [other, e] of members) {
-                if (other === peerId || (Array.isArray(direct) && direct.includes(other))) continue
+                if (other === peerId || (Array.isArray(direct) && direct.includes(other)) || channelOf(other) !== channel) continue
                 e.queue.push(wire)
                 forwarded++
                 countForward(peerId, other)
@@ -445,6 +460,14 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
 
     // Opens and closes the direct streams after a change of the voice peers, the host or the own voice state.
     function refreshDirect() {
+        // G6: a peer that comes into the channel of this node gets a new try of the direct stream.
+        const inChannel = new Set(selfInVoice() ? voicePeers().filter(p => p !== selfId && channelOf(p) === selfChannel()) : [])
+        for (const peerId of inChannel) {
+            if (channelPeers.has(peerId)) continue
+            directRefused.delete(peerId)
+            clearDirectReopen(peerId)
+        }
+        channelPeers = inChannel
         const wanted = wantedDirect()
         let changed = false
         for (const peerId of [...directOut.keys()]) if (!wanted.includes(peerId)) changed = closeDirect(peerId) || changed
@@ -459,6 +482,8 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
     function hostChanged() {
         if (protectedRoom && !isHost()) for (const peerId of members.keys()) closeInboundVoice(peerId)
         if (protectedRoom && !selfInVoice()) closeDirectIn()
+        // G6: no inbound direct stream from a peer in a different channel.
+        for (const e of [...directIn]) if (channelOf(e.peerId) !== selfChannel()) closeDirectIn(e.peerId)
         refreshDirect()
         const host = hostId()
         if ((upstream || upstreamPending) &&
@@ -473,8 +498,16 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
         openUpstream()
     }
 
+    // G6: the own channel changed. The move hold starts, and the direct streams follow the new channel.
+    function channelChanged() {
+        holdUntil = performance.now() + MOVE_HOLD_MS
+        hostChanged()
+    }
+
     function sendFrame(bytes) {
         if (stopped) return false
+        // The move hold: the frame does not go out and does not use a sequence number.
+        if (performance.now() < holdUntil) { heldFrames++; return false }
         const wire = encodeFrame({ origin: selfId, seq: seq, data: bytes })
         if (!wire) {
             warnOversize(2 + Buffer.byteLength(selfId) + 4 + bytes.length)
@@ -483,8 +516,15 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
         seq = (seq + 1) >>> 0
         // Returns true only when the frame went into at least one queue.
         if (isHost()) {
-            for (const e of members.values()) e.queue.push(wire)
-            return members.size > 0
+            // G6: the host sends its own frames only to the members in its channel.
+            const channel = selfChannel()
+            let pushed = 0
+            for (const [peerId, e] of members) {
+                if (channelOf(peerId) !== channel) continue
+                e.queue.push(wire)
+                pushed++
+            }
+            return pushed > 0
         }
         for (const e of directOut.values()) {
             e.queue.push(wire)
@@ -534,9 +574,11 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
         return {
             drops, droppedOversize, droppedOrigin, streams: members.size + (upstream ? 1 : 0),
             directSent, directReceived, directStreams: directOut.size, directIn: directIn.size,
-            forwarded, forwardedTo: JSON.parse(JSON.stringify(forwardedTo)), duplicates
+            forwarded, forwardedTo: JSON.parse(JSON.stringify(forwardedTo)), duplicates, heldFrames,
+            // The sequence number of the next own frame.
+            seq
         }
     }
 
-    return { handle, handleDirect, directList, sendFrame, hostChanged, closeInboundVoice, peerLeft, stop, stats }
+    return { handle, handleDirect, directList, sendFrame, hostChanged, channelChanged, closeInboundVoice, peerLeft, stop, stats }
 }

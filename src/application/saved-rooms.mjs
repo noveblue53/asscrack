@@ -184,6 +184,21 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
         try { archive.saveChannels(active.roomId, rows); }
         catch (err) { log('WARN', 'Could not save the room channel catalog: ' + errText(err)); }
     }
+    // G6: the saved voice channel catalog of a room, or null.
+    function loadVoiceChannels(room, key) {
+        const a = ensure();
+        if (!a || a.state().state !== 'open') return null;
+        try { return a.voiceChannels(roomFingerprint(room, key)); }
+        catch (err) {
+            log('WARN', 'Saved voice channels unavailable: ' + errText(err));
+            return null;
+        }
+    }
+    function persistVoiceChannels(catalog) {
+        if (!active || !catalog) return;
+        try { archive.saveVoiceChannels(active.roomId, catalog); }
+        catch (err) { log('WARN', 'Could not save the voice channels: ' + errText(err)); }
+    }
     function releaseReplay() {
         replay = null;
     }
@@ -361,6 +376,50 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
         return active ? { roomId: active.roomId, keepHistory: active.keepHistory } : null;
     }
 
+    // Gap A7: Leave room. The archive stays open. The room is no longer active, thus Forget of it works, and a
+    // second afterLogin starts from a clean state.
+    function leave() {
+        active = null;
+        attachedNode = null;
+        releaseReplay();
+    }
+
+    // G7a: the friend part of the archive for friend-links.mjs, or null when the archive is not open. Each call
+    // gives the room ID: the friend lines do not use the one active room.
+    function friendArchive() {
+        const a = ensure();
+        if (!a || a.state().state !== 'open') return null;
+        return {
+            isOpen: () => a.state().state === 'open',
+            listFriends: () => a.listFriends(),
+            saveFriendRoom: value => a.saveFriendRoom(value),
+            getRoom: roomId => a.getRoom(roomId),
+            updateFriend: (roomId, fields) => a.updateFriend(roomId, fields),
+            updateMembership: (roomId, membership) => a.updateMembership(roomId, membership),
+            // Forget the friend room: the hint files, the rooms row (the friends row and the lines go with it).
+            removeFriendRoom(roomId) {
+                const row = a.getRoom(roomId);
+                if (row && forgetHints) forgetHints(row);
+                a.removeRoom(roomId);
+                tombstones.delete(roomId);
+            },
+            blocks: () => a.friendBlocks(),
+            block: (deviceId, name) => a.addFriendBlock(deviceId, name),
+            unblock: deviceId => a.removeFriendBlock(deviceId),
+            settings: () => a.friendSettings(),
+            saveSettings: value => a.saveFriendSettings(value),
+            addLine: (roomId, row) => a.addMessage(roomId, row),
+            hasLine: (roomId, id) => a.hasMessage(roomId, id),
+            lines: (roomId, opts) => lines(roomId, opts)
+        };
+    }
+
+    function isFriendRoom(roomId) {
+        const a = ensure();
+        if (!a || a.state().state !== 'open' || typeof roomId !== 'string') return false;
+        return a.isFriendRoom(roomId);
+    }
+
     function close() {
         active = null;
         attachedNode = null;
@@ -369,7 +428,7 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
     }
 
     return {
-        open, rememberDownload, getDownload, status, unlock, lines, getRoom, loadChannels, persistChannels, prepareReplay, releaseReplay, afterLogin, recordSend, attachNode, setKeepHistory, setUserName, clear, forget, activeInfo,
-        deviceIdentity, isProtectedRoom, persistMembership, close, active: () => active
+        open, rememberDownload, getDownload, status, unlock, lines, getRoom, loadChannels, persistChannels, loadVoiceChannels, persistVoiceChannels, prepareReplay, releaseReplay, afterLogin, recordSend, attachNode, setKeepHistory, setUserName, clear, forget, activeInfo,
+        deviceIdentity, isProtectedRoom, persistMembership, leave, close, active: () => active, friendArchive, isFriendRoom
     };
 }

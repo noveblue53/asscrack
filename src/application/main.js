@@ -17,12 +17,19 @@ import { observeRoomActivity } from './room-activity.mjs';
 import { createSavedRooms, makeProtector } from './saved-rooms.mjs';
 import { roomFingerprint } from './room-archive.mjs';
 import * as voiceSettings from './voice-settings.mjs';
-import { attentionSettings, createAttention, registerNotificationShortcut, WINDOWS_APP_ID, WINDOWS_TOAST_ID } from './attention.mjs';
+import { listeningRoomTag, listeningStore } from './listening-store.mjs';
+import { attentionSettings, createAttention, overlayDotBitmap, registerNotificationShortcut, WINDOWS_APP_ID, WINDOWS_TOAST_ID } from './attention.mjs';
 import { createPttHook } from './ptt-hook.mjs';
 import { createWindowFrame } from './window-frame.mjs';
 import { attachVoiceMonitor } from './voice-monitor.mjs';
 import { installRoomPermissions, isDesktopFrame, lockDesktopNavigation } from './desktop-boundary.mjs';
 import { isAddressInUse, loginErrorText } from './login-errors.mjs';
+import { createLinkPolicy } from './link-policy.mjs';
+import { fitWindowBounds, MIN_WINDOW, readWindowBounds, saveWindowBounds } from './window-bounds.mjs';
+import { createTaskbarFlash } from './taskbar-flash.mjs';
+import { createFriendLinks } from './friend-links.mjs';
+import { attachFriendWindows, registerFriendIpc } from './friend-windows.mjs';
+import { installInterfaceCache } from '../network/interface-cache.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -40,7 +47,9 @@ if (process.platform === 'win32') {
 
 const EVENTS = ['channels', 'peer-discovered', 'peer-joined', 'peer-left', 'message', 'history', 'signal', 'voice-state', 'host-changed', 'peer-name',
     'file-offer', 'file-retried', 'file-progress', 'file-done', 'file-failed', 'file-refused', 'file-cancelled', 'topology', 'full-node', 'full-node-addrs',
-    'voice-frame', 'connection', 'dial-failed', 'upnp', 'presence', 'topic'];
+    'voice-frame', 'connection', 'dial-failed', 'upnp', 'presence', 'topic', 'voice-channels',
+    // P7b: pause and resume of a received file (P7a). The Partial objects have no path.
+    'file-paused', 'file-resumed', 'file-restarted', 'file-discarded', 'file-expired', 'file-partials'];
 
 // Test option: --profile <dir> gives each instance its own user data folder.
 const profileIndex = process.argv.indexOf('--profile');
@@ -110,9 +119,12 @@ if (logFile) for (const [method, level] of [['log', 'LOG'], ['info', 'INFO'], ['
 
 
 
+// G7a: one read of the network interfaces each 2 s for all nodes (the mDNS cost of the friend nodes).
+const interfaceCache = installInterfaceCache();
 // One log line for each node event. The chat text does not go into the log.
 // 'voice-frame' comes 50 times each second for each speaker.
-const UNLOGGED_EVENTS = new Set(['signal', 'file-progress', 'voice-frame']);
+// G7a: 'friend' and 'pm' carry room keys and private text. They never go in the log or to the window as raw events.
+const UNLOGGED_EVENTS = new Set(['signal', 'file-progress', 'voice-frame', 'friend', 'pm']);
 
 function logEvent(type, data) {
     if (!logFile || UNLOGGED_EVENTS.has(type)) return;
@@ -155,6 +167,14 @@ const downloadsIndex = process.argv.indexOf('--downloads');
 if (downloadsIndex !== -1 && process.argv[downloadsIndex + 1]) {
     downloadDir = path.resolve(process.argv[downloadsIndex + 1]);
     mkdirSync(downloadDir, { recursive: true });
+}
+
+// Test option: --open-links-to <file>. Each link that the policy accepts goes to the end of the file as one line,
+// and the system browser does not start (the app check of gap D2 needs it).
+let openLinksTo = null;
+const openLinksIndex = process.argv.indexOf('--open-links-to');
+if (openLinksIndex !== -1 && process.argv[openLinksIndex + 1] && !process.argv[openLinksIndex + 1].startsWith('--')) {
+    openLinksTo = path.resolve(process.argv[openLinksIndex + 1]);
 }
 
 // Test options for the check scripts: --port <n>, --full-node <auto|on|off>, --allow-private-full-node, --relay-only.
@@ -258,10 +278,17 @@ function sendToWindow(channel, data) {
 let idlePeer = false;
 let tray = null;
 let quitting = false;
+// The room name for the tray tooltip (gap E8), and the voice state of the window (asscrack:set-voice).
+let roomName = null;
+let inVoice = false;
+// Gap A7: the running Leave room (a promise), or null.
+let leaving = null;
 const closePreference = path.join(app.getPath('userData'), 'close-to-idle.json');
 let closeToTray = true;
 try { closeToTray = JSON.parse(readFileSync(closePreference, 'utf8')) !== false; } catch { /* new profile */ }
 const idleState = () => ({ idle: idlePeer, closeToTray });
+// Gap E8: the flag file of the first close to the tray of this profile.
+const trayHintFile = path.join(app.getPath('userData'), 'tray-hint.json');
 
 const attentionPrefs = attentionSettings(path.join(app.getPath('userData'), 'attention.json'));
 const attention = createAttention({
@@ -298,6 +325,20 @@ handleRoomIpc('asscrack:attention-set', (_event, patch) => {
 onRoomIpc('asscrack:attention-add', (_event, target) => attention.add(target));
 onRoomIpc('asscrack:attention-read', (_event, target) => attention.read(target));
 
+// Gap E1: the taskbar flash and the overlay dot (taskbar-flash.mjs). The dot is a bitmap made in code.
+const taskbarFlash = createTaskbarFlash({
+    getWindow: () => mainWindow,
+    allowed: () => !quitting && !idlePeer && !!node,
+    enabled: () => attentionPrefs.get().flash === true,
+    makeDot: () => {
+        const dot = overlayDotBitmap();
+        return nativeImage.createFromBitmap(dot.buffer, { width: dot.width, height: dot.height });
+    },
+    log: writeLog
+});
+const stopFlash = taskbarFlash.stop;
+onRoomIpc('asscrack:attention-flash', () => taskbarFlash.start());
+
 function restoreRoomWindow() {
     if (!mainWindow || mainWindow.isDestroyed() || quitting) return;
     if (idlePeer) {
@@ -309,19 +350,38 @@ function restoreRoomWindow() {
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.show();
     mainWindow.focus();
+    updateTray();
+}
+
+// Gap E8: the tooltip and the menu of the tray icon.
+function updateTray() {
+    if (!tray) return;
+    tray.setToolTip(!roomName ? 'ASSCRACK' : idlePeer ? `ASSCRACK – Idle Peer in ${roomName}` : `ASSCRACK – ${roomName}`);
+    tray.setContextMenu(Menu.buildFromTemplate([
+        { label: 'Open ASSCRACK', click: restoreRoomWindow },
+        { label: 'Close to Idle Peer', type: 'checkbox', checked: closeToTray, click: item => {
+            try { setCloseToTray(item.checked); } catch (err) { writeLog('WARN', `Close preference not saved: ${err?.message ?? err}`); }
+        } },
+        { label: 'Quit ASSCRACK', click: () => app.quit() }
+    ]));
+}
+
+function showTrayBalloon(content) {
+    try {
+        tray?.displayBalloon({ iconType: 'info', title: 'ASSCRACK', content });
+        writeLog('EVENT', 'tray balloon requested');
+    } catch (err) {
+        writeLog('WARN', `Tray balloon not shown: ${err?.message ?? err}`);
+    }
 }
 
 function enterIdlePeer() {
-    if (!node || !mainWindow || mainWindow.isDestroyed() || quitting) return false;
+    if (!node || !mainWindow || mainWindow.isDestroyed() || quitting || leaving) return false;
     if (!tray) {
         try {
             tray = new Tray(path.join(__dirname, 'img', 'app.ico'));
-            tray.setToolTip('Asscrack');
-            tray.setContextMenu(Menu.buildFromTemplate([
-                { label: 'Open Asscrack', click: restoreRoomWindow },
-                { label: 'Quit Asscrack', click: () => app.quit() }
-            ]));
             tray.on('click', restoreRoomWindow);
+            tray.on('balloon-show', () => writeLog('EVENT', 'tray balloon shown'));
         } catch (err) {
             tray?.destroy();
             tray = null;
@@ -329,38 +389,97 @@ function enterIdlePeer() {
             return false;
         }
     }
+    // A close in voice ends voice with no question (the window leaves voice at the idle-peer event).
+    const leftVoice = !idlePeer && inVoice;
     if (!idlePeer) {
         idlePeer = true;
+        inVoice = false;
         voiceMonitor?.dismiss();
         attention.clear();
+        stopFlash();
         node.setIdle(true);
         updatePttHook(() => pttHook.setInVoice(false));
         sendToWindow('asscrack:idle-peer', idleState());
     }
     mainWindow.hide();
+    updateTray();
+    // The first close to the tray of the profile gives the hint. A close that ended voice says so.
+    const firstClose = !existsSync(trayHintFile);
+    if (firstClose) {
+        try { writeFileSync(trayHintFile, JSON.stringify({ shown: true })); }
+        catch (err) { writeLog('WARN', `Tray hint flag not saved: ${err?.message ?? err}`); }
+    }
+    const hint = 'ASSCRACK is still in the room as Idle Peer. Click the tray icon to open it. Right-click it to quit.';
+    if (firstClose) showTrayBalloon(leftVoice ? 'You left voice. ' + hint : hint);
+    else if (leftVoice) showTrayBalloon('You left voice. ASSCRACK is still in the room as Idle Peer.');
     return true;
 }
 
-handleRoomIpc('asscrack:idle-peer', idleState);
-handleRoomIpc('asscrack:enter-idle-peer', enterIdlePeer);
-handleRoomIpc('asscrack:close-to-tray', (_event, enabled) => {
+function setCloseToTray(enabled) {
     if (typeof enabled !== 'boolean') throw new TypeError('Expected a close preference');
     writeFileSync(closePreference + '.tmp', JSON.stringify(enabled));
     renameSync(closePreference + '.tmp', closePreference);
     closeToTray = enabled;
     sendToWindow('asscrack:idle-peer', idleState());
+    updateTray();
     return idleState();
-});
+}
+
+handleRoomIpc('asscrack:idle-peer', idleState);
+handleRoomIpc('asscrack:enter-idle-peer', enterIdlePeer);
+handleRoomIpc('asscrack:close-to-tray', (_event, enabled) => setCloseToTray(enabled));
 onRoomIpc('asscrack:quit', () => app.quit());
+
+// Gap E3: the values of the About dialog.
+handleRoomIpc('asscrack:about', () => ({
+    version: app.getVersion(),
+    electron: process.versions.electron,
+    chromium: process.versions.chrome,
+    system: `${process.platform === 'win32' ? 'Windows' : process.platform} ${process.getSystemVersion()}`,
+    debugLog: logFile !== null
+}));
+// Gap E3: open the user data folder of this profile in Explorer. The window gets no path.
+handleRoomIpc('asscrack:open-data-folder', async () => {
+    const error = await shell.openPath(app.getPath('userData'));
+    if (error) writeLog('WARN', `Data folder not opened: ${error}`);
+    return { ok: !error };
+});
+
+// Gap E2: the window bounds of the last run, fitted to the work area of the nearest display.
+function startBounds() {
+    const saved = readWindowBounds(app.getPath('userData'));
+    const area = saved ? screen.getDisplayMatching(saved).workArea : screen.getPrimaryDisplay().workArea;
+    return fitWindowBounds(saved, area, MIN_WINDOW);
+}
+let boundsTimer = null;
+function saveBoundsNow() {
+    clearTimeout(boundsTimer);
+    boundsTimer = null;
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    try {
+        saveWindowBounds(app.getPath('userData'), { ...mainWindow.getNormalBounds(), maximized: mainWindow.isMaximized() });
+    } catch (err) {
+        writeLog('WARN', `Window bounds not saved: ${err?.message ?? err}`);
+    }
+}
+function saveBoundsSoon() {
+    clearTimeout(boundsTimer);
+    boundsTimer = setTimeout(saveBoundsNow, 500);
+}
 
 function createMainWindow() {
     const frame = createWindowFrame(app.getPath('userData'));
+    const bounds = startBounds();
     mainWindow = new BrowserWindow({
         ...frame.options,
-        title: 'AssCrack',
+        title: 'ASSCRACK',
         icon: path.join(__dirname, 'img', 'app.ico'),
-        width: 800,
-        height: 600,
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
+        minWidth: MIN_WINDOW.width,
+        minHeight: MIN_WINDOW.height,
         // The middle sky blue of styles.css: no white flash before the page shows.
         backgroundColor: '#2a8fec',
         webPreferences: {
@@ -384,9 +503,17 @@ function createMainWindow() {
         writeLog('WINDOW', `${details.level} ${details.message} (${details.sourceId}:${details.lineNumber})`);
     });
 
+    if (bounds.maximized) mainWindow.maximize();
+    for (const type of ['resize', 'move', 'maximize', 'unmaximize']) mainWindow.on(type, saveBoundsSoon);
+    // Gap E1: the focus ends the taskbar flash and removes the dot.
+    taskbarFlash.attach(mainWindow);
+
     mainWindow.on('close', event => {
+        saveBoundsNow();
         if (!quitting && closeToTray && enterIdlePeer()) event.preventDefault();
     });
+    // G7a: the friend chat windows close with the main window (then the app quits as before).
+    mainWindow.on('closed', () => friendWindows.closeAll());
     // Windows shutdown may bypass before-quit. Do not hide or veto session termination.
     mainWindow.on('session-end', () => { quitting = true; });
 
@@ -431,6 +558,7 @@ let retainRoomHints = null;
 // room after enableUpnp() (gap N2). startRoom sets both.
 let lastUpnp = null;
 let saveUpnpChoice = () => {};
+let onLive = () => {};
 async function startRoom(options, { publicAddress = '', allowUpnp = false, reopen = false, lan = false } = {}) {
     if (loginStarted) throw new Error('Already logged in');
     loginStarted = true;
@@ -453,7 +581,12 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
                 try { deleteHintFiles(hints); } catch { writeLog('WARN', 'Could not remove old unsaved room hints'); }
             }
             options.seedChannels = rooms.loadChannels(options.room, options.roomKey);
+            options.seedVoiceChannels = rooms.loadVoiceChannels(options.room, options.roomKey);
             options.seedHistory = removeHistory => rooms.prepareReplay(options.room, options.roomKey, removeHistory);
+            // P7c: the resume grants of a sender, one file for each room in the profile. The node writes a grant
+            // only in a protected room (it needs the device ID of the receiver).
+            options.partials = { grantsFile: path.join(app.getPath('userData'), 'resume-grants',
+                `${roomFingerprint(options.room, options.roomKey)}.json`) };
         }
         const hostFile = alreadySaved ? hints.host : null;
         // Older saved host data has no affirmative UPnP preference. Restoring an
@@ -496,13 +629,18 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
             options.port = 0;
             node = await createAsscrackNode(options);
         }
+        // Gap A7: each listener of this room acts only while its node is the live node. After Leave room, a late
+        // event of the old node (for example in a stop that took more than 3 s) does nothing.
+        const live = node;
+        onLive = (type, listener) => live.events.on(type, data => { if (node === live) listener(data); });
+        roomName = options.room;
         lastUpnp = null;
         saveUpnpChoice = () => {};
-        node.events.on('upnp', data => { lastUpnp = data ?? null; });
+        onLive('upnp', data => { lastUpnp = data ?? null; });
         if (hints) {
             let persistence = false, mappedPort = null;
             // For each room with hint files: an owner can turn on UPnP after the start (enableUpnp).
-            node.events.on('upnp', data => {
+            onLive('upnp', data => {
                 if (data?.state !== 'mapped' || !Number.isInteger(data.port)) return;
                 mappedPort = data.port;
                 if (persistence) saveHostFields(hints.host, { upnpPort: mappedPort });
@@ -520,15 +658,20 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
         }
     } catch (err) {
         savedRooms?.releaseReplay();
+        roomName = null;
         loginStarted = false;
         throw err;
     }
     // Record the path before the window gets the event, so that a Show in Explorer at once finds it.
-    node.events.on('attachment-status', data => sendToWindow('asscrack:attachment-status', data));
-    node.events.on('shelf', data => sendToWindow('asscrack:shelf', data));
-    node.events.on('shelf-offered', data => sendToWindow('asscrack:shelf-offered', data));
-    node.events.on('membership', () => sendToWindow('asscrack:membership', node.memberState()));
+    onLive('attachment-status', data => sendToWindow('asscrack:attachment-status', data));
+    onLive('shelf', data => sendToWindow('asscrack:shelf', data));
+    onLive('shelf-offered', data => sendToWindow('asscrack:shelf-offered', data));
+    onLive('membership', () => sendToWindow('asscrack:membership', node.memberState()));
+    // P7b fix: `live` is a const of the try block above. A ReferenceError here failed each received file at its end
+    // ("stream ended" on both ends). This listener keeps its own copy of the live node.
+    const doneNode = node;
     node.events.on('file-done', data => {
+        if (node !== doneNode) return;
         if (data?.direction !== 'receive' || typeof data.path !== 'string') return;
         receivedFiles.set(`${data.offerId}|${data.peerId}`, data.path);
         if (receivedFiles.size > 2048) receivedFiles.delete(receivedFiles.keys().next().value);
@@ -540,13 +683,25 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
     });
     // Saved rooms (milestone 6): the archive listener comes before the window listener.
     getSavedRooms().attachNode(node);
+    // G7a: the friend requests of a protected room.
+    friendLinks.attachRoom(node);
     readRoomActivity = observeRoomActivity(node);
     // Typing goes straight to the window; transient controls never enter diagnostics or the archive.
-    node.events.on('whisper-capability', data => sendToWindow('asscrack:whisper-capability', data));
-    node.events.on('typing', data => sendToWindow('asscrack:typing', data));
+    onLive('whisper-capability', data => sendToWindow('asscrack:whisper-capability', data));
+    onLive('typing', data => sendToWindow('asscrack:typing', data));
+    // Ready check (milestone 9): straight to the window, not in the event log (the log must not get the text).
+    onLive('ready', data => sendToWindow('asscrack:ready', data));
     for (const type of EVENTS) {
-        node.events.on(type, data => {
+        onLive(type, data => {
             if (type === 'channels') savedRooms?.persistChannels(data.added);
+            // G6: the archive gets the signed catalog. The window gets the view only.
+            if (type === 'voice-channels') {
+                const { catalog, ...view } = data;
+                savedRooms?.persistVoiceChannels(catalog);
+                logEvent(type, { seq: view.seq, channels: view.channels.length, movedFrom: view.movedFrom?.id });
+                sendToWindow('asscrack:voice-channels', view);
+                return;
+            }
             logEvent(type, data);
             // The diagnostic window reads a redacted projection of these local events.
             if (type === 'connection' || type === 'dial-failed' || (idlePeer && type === 'voice-frame')) return;
@@ -601,6 +756,9 @@ function deleteHintFiles({ peers, host }) {
 
 function forgetHints(row) {
     if (row?.name && row?.roomKey) deleteHintFiles(roomHintFiles(row.name, row.roomKey));
+    // G4: the listening choices of the room go with it.
+    const tag = listeningRoomTag(row?.roomKey);
+    if (tag) listeningChoicesStore().removeRoom(tag);
 }
 
 // Saved rooms (milestone 6). The check of a roomId from the window.
@@ -626,6 +784,7 @@ function afterRoomStart(result, { invite = null, userName, save = false, keepHis
     catch { writeLog('WARN', 'Saved room address hints could not be stored'); }
     finally { retainRoomHints = null; }
     getSavedRooms().persistChannels(node.channels().channels);
+    getSavedRooms().persistVoiceChannels(node.voiceChannelCatalog());
     return { ...result, ...saveInfo };
 }
 
@@ -688,7 +847,38 @@ async function login(options, { name, room, type, invite, publicAddress, allowUp
 // Saved rooms (milestone 6). The window gets no key, no invite and no file path.
 handleRoomIpc('asscrack:saved-rooms', () => getSavedRooms().status());
 
-handleRoomIpc('asscrack:unlock-archive', () => getSavedRooms().unlock());
+handleRoomIpc('asscrack:unlock-archive', async () => {
+    const result = await getSavedRooms().unlock();
+    startFriendLinks();
+    return result;
+});
+
+// G7a: the friend links start after the archive opens (also on the login screen) and stop at Quit. Leave room, a new
+// login and Idle Peer do not stop them. Only the test flags allowPrivateFullNode and fullNode go to the friend nodes.
+const friendLinks = createFriendLinks({
+    createNode: createAsscrackNode, hintFiles: (room, roomKey) => roomHintFiles(room, roomKey), log: writeLog,
+    nodeOptions: Object.fromEntries(Object.entries(nodeFlags).filter(([name]) => name === 'allowPrivateFullNode' || name === 'fullNode'))
+});
+friendLinks.events.on('changed', view => sendToWindow('asscrack:friends', view));
+friendLinks.events.on('request', event => sendToWindow('asscrack:friend-request', event));
+const friendWindows = attachFriendWindows({
+    BrowserWindow, ipc: ipcMain, assets: __dirname, links: friendLinks, icon: path.join(__dirname, 'img', 'app.ico'),
+    warn: message => writeLog('WARN', message), openLink: value => openCheckedLink(value)
+});
+registerFriendIpc(handleRoomIpc, {
+    links: friendLinks, roomNode: () => node, openChat: friendId => friendWindows.open(friendId),
+    query: (channel, handler) => ipcMain.handle(channel, (event, ...args) =>
+        isDesktopFrame(mainWindow, event.sender, event.senderFrame, ROOM_PAGE) ? handler(event, ...args) : null)
+});
+function startFriendLinks() {
+    if (friendLinks.state() === 'open' || quitting) return;
+    const archive = getSavedRooms().friendArchive();
+    let identity = null;
+    if (archive) {
+        try { identity = getAdmissionIdentity(); } catch (err) { writeLog('WARN', `Friend links: ${err?.message ?? err}`); }
+    }
+    friendLinks.start(identity, identity ? archive : null);
+}
 
 handleRoomIpc('asscrack:saved-room-lines', (_event, roomId, opts) => {
     if (!validRoomId(roomId)) return [];
@@ -710,6 +900,8 @@ handleRoomIpc('asscrack:saved-room-lines', (_event, roomId, opts) => {
 handleRoomIpc('asscrack:reopen-room', async (_event, roomId, allowLegacy) => {
     if (loginStarted) throw new Error('Already logged in');
     if (typeof roomId !== 'string' || roomId.length > 128) throw new Error('Saved room not found');
+    // G7a: a friend room is not a saved room of the list. Only its friend link opens it.
+    if (getSavedRooms().isFriendRoom(roomId)) throw new Error('Saved room not found');
     const row = getSavedRooms().getRoom(roomId);
     if (!row) throw new Error('Saved room not found');
     const options = {
@@ -819,6 +1011,13 @@ handleRoomIpc('asscrack:room-activity', (_event, peerId, transfersOnly) => {
     if (peerId != null && (typeof peerId !== 'string' || !peerId || peerId.length > 128)) return [];
     return readRoomActivity({ peerId: peerId ?? null, transfersOnly: transfersOnly === true });
 });
+// Gap B5: the pseudonyms of the Recent events lines for up to 64 peer IDs: [{ id, alias }].
+handleRoomIpc('asscrack:activity-aliases', (_event, ids) => {
+    if (!Array.isArray(ids)) return [];
+    const valid = ids.slice(0, 64).filter(id => typeof id === 'string' && id.length > 0 && id.length <= 128);
+    const aliases = readRoomActivity.aliases?.(valid) ?? [];
+    return valid.map((id, i) => ({ id, alias: aliases[i] })).filter(row => typeof row.alias === 'string');
+});
 handleRoomIpc('asscrack:copy-text', (_event, text) => {
     if (typeof text !== 'string' || text.length > 10000) throw new Error('Text not copied');
     clipboard.writeText(text);
@@ -834,6 +1033,11 @@ handleRoomIpc('asscrack:whisper-send', (_event, peerId, text, id) => node?.sendW
 
 handleRoomIpc('asscrack:channels', () => node?.channels());
 handleRoomIpc('asscrack:create-channel', (_event, name) => node.createChannel(name));
+// G6: the voice channels. Only the room owner edits them; the node throws a plain text error for the window.
+handleRoomIpc('asscrack:voice-channels', () => node?.voiceChannels());
+handleRoomIpc('asscrack:voice-channel-create', (_event, name) => node.createVoiceChannel(String(name ?? '')));
+handleRoomIpc('asscrack:voice-channel-rename', (_event, id, name) => node.renameVoiceChannel(String(id ?? ''), String(name ?? '')));
+handleRoomIpc('asscrack:voice-channel-delete', (_event, id) => node.deleteVoiceChannel(String(id ?? '')));
 handleRoomIpc('asscrack:send', (_event, text, channelId) => {
     if (!node) throw new Error('Not logged in');
     // Saved rooms (milestone 6): the window gets the record. An archive error does not stop the send.
@@ -871,8 +1075,39 @@ onRoomIpc('asscrack:voice-frame', (_event, bytes) => {
 handleRoomIpc('asscrack:set-voice', (_event, state) => {
     if (!node) throw new Error('Not logged in');
     if (idlePeer && state?.inVoice === true) throw new Error('Idle Peer has left voice');
-    node.setVoice(state ?? {});
-    updatePttHook(() => pttHook.setInVoice(state?.inVoice === true));
+    const result = node.setVoice(state ?? {});
+    inVoice = state?.inVoice === true;
+    updatePttHook(() => pttHook.setInVoice(inVoice));
+    return result;
+});
+
+// G4: the listening choice of each person, per room, in the profile. The key is the device ID of the room membership.
+// A room with no membership has no stable identity of a person (the libp2p peer ID is new at each start): no save.
+let listeningChoices = null;
+function listeningChoicesStore() {
+    listeningChoices ??= listeningStore(path.join(app.getPath('userData'), 'listening.json'));
+    return listeningChoices;
+}
+function listeningKey(peerId) {
+    if (!node || typeof peerId !== 'string' || peerId.length > 128) return null;
+    const tag = listeningRoomTag(node.roomKey());
+    const device = node.memberDevice(peerId);
+    return tag && device ? { tag, device } : null;
+}
+handleRoomIpc('asscrack:get-listening', (_event, peerId) => {
+    const key = listeningKey(peerId);
+    if (!key) return null;
+    return listeningChoicesStore().get(key.tag, key.device);
+});
+handleRoomIpc('asscrack:set-listening', (_event, peerId, muted, volume) => {
+    const key = listeningKey(peerId);
+    if (!key) return false;
+    try {
+        return listeningChoicesStore().set(key.tag, key.device, { muted, volume });
+    } catch (err) {
+        writeLog('WARN', `Listening choice not saved: ${err?.message ?? err}`);
+        return false;
+    }
 });
 
 // The voice settings of this profile (voice-settings.mjs checks each value). The file is read one time.
@@ -931,6 +1166,21 @@ handleRoomIpc('asscrack:topic', () => node?.topic() ?? null);
 handleRoomIpc('asscrack:set-topic', (_event, text) => {
     if (!node) throw new Error('Not logged in');
     node.setTopic(text);
+});
+
+// Ready check (milestone 9). The node checks the text, the ID and the vote.
+handleRoomIpc('asscrack:ready-state', () => node?.readyCheck() ?? null);
+handleRoomIpc('asscrack:ready-open', (_event, text) => {
+    if (!node) throw new Error('Not logged in');
+    return node.openReady(typeof text === 'string' ? text : '');
+});
+handleRoomIpc('asscrack:ready-vote', (_event, id, vote) => {
+    if (!node) throw new Error('Not logged in');
+    return node.voteReady(id, vote);
+});
+handleRoomIpc('asscrack:ready-close', (_event, id) => {
+    if (!node) throw new Error('Not logged in');
+    return node.closeReady(id);
 });
 
 handleRoomIpc('asscrack:host', () => {
@@ -1047,6 +1297,51 @@ handleRoomIpc('asscrack:cancel-file', (_event, offerId, peerId) => {
     return node.cancelFile(String(offerId), peer);
 });
 
+// P7b: Pause, Resume and Discard of a received file. The window sends an offer ID or a partial key as text only.
+const PARTIAL_KEY = /^[0-9a-f]{64}-(?:0|[1-9]\d{0,15})$/;
+const fileOfferId = offerId => {
+    if (typeof offerId !== 'string' || offerId.length === 0 || offerId.length > 64) throw new Error('Invalid offer ID');
+    return offerId;
+};
+handleRoomIpc('asscrack:pause-file', (_event, offerId) => {
+    if (!node) throw new Error('Not logged in');
+    logAction('pause-file', fileOfferId(offerId));
+    return node.pauseFile(offerId) === true;
+});
+handleRoomIpc('asscrack:resume-file', (_event, offerId) => {
+    if (!node) throw new Error('Not logged in');
+    logAction('resume-file', fileOfferId(offerId));
+    return node.resumeFile(offerId) === true;
+});
+handleRoomIpc('asscrack:discard-partial', async (_event, key) => {
+    if (!node) throw new Error('Not logged in');
+    if (typeof key !== 'string' || !PARTIAL_KEY.test(key)) return false;
+    writeLog('EVENT', `action discard-partial size ${key.slice(65)}`);
+    return await node.discardPartial(key) === true;
+});
+handleRoomIpc('asscrack:list-partials', async () => (node ? await node.partials() : []));
+
+// Gap D2: a click on a link in a chat line. The window sends the text of the href only. link-policy.mjs accepts an
+// http: or https: URL of 2048 characters or less with a host and no user name or password, at most one each 500 ms.
+// All other input: no action and one warning in the log.
+const linkPolicy = createLinkPolicy();
+handleRoomIpc('asscrack:open-link', (_event, value) => openCheckedLink(value));
+// G7a: the friend chat windows use the same link policy.
+async function openCheckedLink(value) {
+    const result = linkPolicy.check(value);
+    if (!result.ok) {
+        console.warn(`open-link refused: ${result.reason}`);
+        return false;
+    }
+    if (openLinksTo) {
+        appendFileSync(openLinksTo, `${result.href}
+`);
+        return true;
+    }
+    await shell.openExternal(result.href);
+    return true;
+}
+
 // Show in Explorer for a received file. The window sends the key `${offerId}|${peerId}` only, never a path.
 // Result: { ok: true }, or { ok: false, reason: 'unknown' } (no received file for the key) or
 // { ok: false, reason: 'missing' } (the file was moved or deleted).
@@ -1064,26 +1359,8 @@ handleRoomIpc('asscrack:reveal-file', (_event, key) => {
     return { ok: true };
 });
 
-app.on('before-quit', event => {
-    quitting = true;
-    voiceMonitor?.dismiss();
-    attention.clear();
-    clearRoomMedia();
-    tray?.destroy();
-    tray = null;
-    pttHook.stop();
-    // Saved rooms (milestone 6): close the archive.
-    if (savedRooms) {
-        try { savedRooms.close(); } catch (err) { writeLog('WARN', `Saved rooms archive not closed: ${err?.message ?? err}`); }
-    }
-    if (stopping) return;
-    if (!node) {
-        clipboardImages.clear();
-        downloadScratch?.clear();
-        return;
-    }
-    event.preventDefault();
-    stopping = true;
+// Stop a node with the limit of 3 s. Quit and Leave room use it. The promise never rejects.
+function stopNodeWithin(current) {
     let timer;
     const timeout = new Promise(resolve => {
         timer = setTimeout(() => {
@@ -1091,11 +1368,101 @@ app.on('before-quit', event => {
             resolve();
         }, 3000);
     });
-    Promise.race([
-        node.stop().catch(err => console.error('Node stop failed:', err)),
+    return Promise.race([
+        current.stop().catch(err => console.error('Node stop failed:', err)),
         timeout
-    ]).finally(() => {
-        clearTimeout(timer);
+    ]).finally(() => clearTimeout(timer));
+}
+
+// Gap A7: Leave room. Stop the node, reset the room state of the main process, then reload the window. The tray
+// and the profile settings stay. A later package (screenshare, ready check) adds its reset here.
+function leaveRoom() {
+    if (leaving) return leaving;
+    if (!node || quitting) return Promise.resolve(false);
+    const current = node;
+    writeLog('INFO', 'Leave room');
+    voiceMonitor?.dismiss();
+    attention.clear();
+    stopFlash();
+    inVoice = false;
+    updatePttHook(() => pttHook.setInVoice(false));
+    // Ready check (P9A): the checks of the room end with the room. P7a keeps its partial files in the node: the
+    // stop of the node and the clear of the download scratch below cover them. P7b: a paused partial belongs to
+    // the profile, not to the room. Its in-memory state (the node store and the window rows) ends with the node
+    // and the reload. The files stay in the scratch folder, and the next room of this run uses the same folder.
+    try { current.resetReady?.(); } catch (err) { writeLog('WARN', `Ready check reset: ${err?.message ?? err}`); }
+    leaving = stopNodeWithin(current).then(() => {
+        if (node === current) node = null;
+        readRoomActivity = () => [];
+        receivedFiles.clear();
+        restoringDownloads.clear();
+        clearRoomMedia();
+        clipboardImages.clear();
+        downloadScratch?.clear();
+        // P7b: clear() keeps a folder with paused partials. createDownloadScratch does not adopt the folder of a
+        // live process (this process), thus keep the session while its folder exists.
+        if (!downloadScratch || !existsSync(downloadScratch.directory)) downloadScratch = null;
+        retainRoomHints = null;
+        lastUpnp = null;
+        saveUpnpChoice = () => {};
+        onLive = () => {};
+        roomName = null;
+        idlePeer = false;
+        try { savedRooms?.leave(); } catch (err) { writeLog('WARN', `Saved rooms leave: ${err?.message ?? err}`); }
+        // G7a: the friend links stay. Only the friend requests of the room end.
+        friendLinks.attachRoom(null);
+        loginStarted = false;
+        updateTray();
+        return true;
+    }).finally(() => { leaving = null; });
+    return leaving;
+}
+
+handleRoomIpc('asscrack:leave-room', async () => {
+    const left = await leaveRoom();
+    // Reload after the reply goes to the window: the reload resets the whole window state.
+    if (left && !quitting) setImmediate(() => {
+        if (mainWindow && !mainWindow.isDestroyed() && !quitting) mainWindow.webContents.reload();
+    });
+    return left;
+});
+
+// The texts of the Leave room dialog need two facts of the main process: is the room saved, and is this device
+// the owner. The window gets no room ID.
+handleRoomIpc('asscrack:leave-room-info', () => ({
+    saved: savedRooms?.activeInfo() != null,
+    owner: node?.memberState().owner === true
+}));
+
+app.on('before-quit', event => {
+    quitting = true;
+    saveBoundsNow();
+    voiceMonitor?.dismiss();
+    attention.clear();
+    clearRoomMedia();
+    tray?.destroy();
+    tray = null;
+    pttHook.stop();
+    friendWindows.closeAll();
+    // Saved rooms (milestone 6): close the archive. G7a: after the friend nodes stop (they write to it).
+    const closeArchive = () => {
+        if (!savedRooms) return;
+        try { savedRooms.close(); } catch (err) { writeLog('WARN', `Saved rooms archive not closed: ${err?.message ?? err}`); }
+    };
+    if (stopping) return;
+    const friends = friendLinks.state() === 'open';
+    if (!node && !leaving && !friends) {
+        closeArchive();
+        clipboardImages.clear();
+        downloadScratch?.clear();
+        return;
+    }
+    event.preventDefault();
+    stopping = true;
+    // A quit during Leave room waits for that stop: the node does not stop two times. The friend nodes stop at the
+    // same time, in the same 3 s limit.
+    Promise.all([leaving ?? (node ? stopNodeWithin(node) : null), friends ? stopNodeWithin(friendLinks) : null]).finally(() => {
+        closeArchive();
         clipboardImages.clear();
         downloadScratch?.clear();
         node = null;
@@ -1112,7 +1479,10 @@ if (singleInstance && isFirstInstance) {
 app.whenReady().then(async () => {
     if (!isFirstInstance) return;
     if (profileIndex === -1) clearLegacyDebugLogs(app.getPath('logs'));
-    powerMonitor.on('resume', () => node?.refreshRoutes());
+    powerMonitor.on('resume', () => {
+        interfaceCache.clear();
+        node?.refreshRoutes();
+    });
     protocol.handle('room-media', request => roomMedia.serve(request));
     installRoomPermissions(session.defaultSession, () => mainWindow, ROOM_PAGE, () => idlePeer);
     pttHook.configure(currentVoiceSettings());
@@ -1121,5 +1491,6 @@ app.whenReady().then(async () => {
     }
     // open() never rejects. A failure gives the state locked with the reason open-failed.
     await getSavedRooms().open();
+    startFriendLinks();
     createMainWindow();
 });

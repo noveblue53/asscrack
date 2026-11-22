@@ -154,6 +154,15 @@
         noiseNote.classList.toggle('vs-warn', failed);
     }
 
+    // In voice with no microphone (C1) the preview gives no error: the state has it, and it goes away with its cause.
+    function renderMeterNote() {
+        const { captureError, inVoice } = voice.state();
+        if (captureError) meterNote.textContent = voice.microphoneErrorText(captureError, inVoice);
+        else meterNote.textContent = inVoice
+            ? 'The bar shows your microphone. Green: your voice goes out.'
+            : 'Speak to test your microphone. Nothing goes out while you are not in voice.';
+    }
+
     function renderDeviceNote() {
         const state = voice.state();
         deviceNote.textContent = state.inputFallback
@@ -237,17 +246,18 @@
             settings = voice.settings() ?? settings;
             placePanel();
             render();
-            meterNote.textContent = voice.state().inVoice
-                ? 'The bar shows your microphone. Green: your voice goes out.'
-                : 'Speak to test your microphone. Nothing goes out while you are not in voice.';
+            renderMeterNote();
             voice.startPreview()
                 .then(() => {
+                    renderMeterNote();
                     renderDeviceNote();
                     // The device names show only after the microphone permission. Read the list after the start.
                     return refreshDevices();
                 })
                 .catch(err => {
-                    meterNote.textContent = `The microphone did not start: ${err?.message ?? err}`;
+                    // C7: one text for each error name (voice.js). The original text goes to the console.
+                    meterNote.textContent = voice.microphoneErrorText(err);
+                    console.warn('Voice preview failed:', err?.name ?? 'Error', err?.message ?? err);
                     refreshDevices();
                 });
         } else {
@@ -391,6 +401,7 @@
 
     voice.onChange(() => {
         if (panel.hidden) return;
+        if (voice.state().inVoice) renderMeterNote();
         renderDeviceNote();
         renderNoiseNote();
     });
@@ -406,6 +417,8 @@
         isOpen: () => !panel.hidden,
         close: () => setOpen(false),
         // Escape while the panel waits for a key: the panel uses it (stops the key capture).
-        capturingKey: () => capturingKey
+        capturingKey: () => capturingKey,
+        // The text of a key code, for the Keyboard shortcuts dialog (app-shell.js).
+        keyName
     };
 })();

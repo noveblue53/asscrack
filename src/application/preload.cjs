@@ -23,12 +23,39 @@ contextBridge.exposeInMainWorld('roomVoiceMonitor', {
     onMute: listen('asscrack:voice-monitor-mute')
 });
 
+// G7a: the Friends panel, the friend request bar and the buddy menu lines. Each call sends only text and true or false.
+const text = value => String(value ?? '');
+contextBridge.exposeInMainWorld('friends', {
+    list: () => ipcRenderer.invoke('asscrack:friends'),
+    relations: peerIds => ipcRenderer.invoke('asscrack:friend-relations', Array.isArray(peerIds) ? peerIds.slice(0, 128).map(text) : []),
+    request: peerId => ipcRenderer.invoke('asscrack:friend-request', text(peerId)),
+    respond: (id, accept) => ipcRenderer.invoke('asscrack:friend-respond', text(id), accept === true),
+    remove: friendId => ipcRenderer.invoke('asscrack:friend-remove', text(friendId)),
+    block: friendId => ipcRenderer.invoke('asscrack:friend-block', text(friendId)),
+    unblock: deviceId => ipcRenderer.invoke('asscrack:friend-unblock', text(deviceId)),
+    rename: (friendId, name) => ipcRenderer.invoke('asscrack:friend-rename', text(friendId), text(name)),
+    setName: name => ipcRenderer.invoke('asscrack:friend-name', text(name)),
+    setUpnp: on => ipcRenderer.invoke('asscrack:friend-upnp', on === true),
+    openChat: friendId => ipcRenderer.invoke('asscrack:friend-open-chat', text(friendId)),
+    retry: () => ipcRenderer.invoke('asscrack:unlock-archive'),
+    onChanged: listen('asscrack:friends'),
+    onRequest: listen('asscrack:friend-request')
+});
+
 contextBridge.exposeInMainWorld('asscrack', {
     getIdlePeer: () => ipcRenderer.invoke('asscrack:idle-peer'),
     onIdlePeer: listen('asscrack:idle-peer'),
     enterIdlePeer: () => ipcRenderer.invoke('asscrack:enter-idle-peer'),
     setCloseToTray: enabled => ipcRenderer.invoke('asscrack:close-to-tray', enabled),
     quit: () => ipcRenderer.send('asscrack:quit'),
+    // G5: the Windows app shell. The window gets no path and no room ID.
+    leaveRoom: () => ipcRenderer.invoke('asscrack:leave-room'),
+    leaveRoomInfo: () => ipcRenderer.invoke('asscrack:leave-room-info'),
+    getAbout: () => ipcRenderer.invoke('asscrack:about'),
+    openDataFolder: () => ipcRenderer.invoke('asscrack:open-data-folder'),
+    flashAttention: () => ipcRenderer.send('asscrack:attention-flash'),
+    // ids: up to 64 peer IDs. Returns [{ id, alias }] with the pseudonym of the Room activity lines.
+    getActivityAliases: ids => ipcRenderer.invoke('asscrack:activity-aliases', Array.isArray(ids) ? ids.slice(0, 64).map(String) : []),
     login: ({ name, room, type, invite, publicAddress, allowUpnp, allowLegacy, save, keepHistory } = {}) =>
         ipcRenderer.invoke('asscrack:login', { name, room, type, invite, publicAddress, allowUpnp, allowLegacy, save, keepHistory }),
     // Saved rooms (milestone 6). The window gets no key, no invite and no file path.
@@ -58,6 +85,16 @@ contextBridge.exposeInMainWorld('asscrack', {
     onFullNodeAddrs: listen('asscrack:full-node-addrs'),
     onUpnp: listen('asscrack:upnp'),
     copyText: text => ipcRenderer.invoke('asscrack:copy-text', text),
+    // Gap D2: open a chat link in the system browser. The main process checks the URL (link-policy.mjs).
+    openLink: href => ipcRenderer.invoke('asscrack:open-link', String(href)),
+    // Gap N7: true when the file has a local path that offerFile can send. The window never gets the path.
+    canSendFile: file => {
+        try {
+            return Boolean(webUtils.getPathForFile(file));
+        } catch {
+            return false;
+        }
+    },
     getRoomActivity: (peerId, transfersOnly) => ipcRenderer.invoke('asscrack:room-activity', peerId, transfersOnly === true),
     getWhisperPeers: () => ipcRenderer.invoke('asscrack:whisper-peers'),
     sendWhisper: (peerId, text, id) => ipcRenderer.invoke('asscrack:whisper-send', peerId, text, id),
@@ -74,6 +111,17 @@ contextBridge.exposeInMainWorld('asscrack', {
     onHistory: listen('asscrack:history'),
     signal: (peerId, data) => ipcRenderer.invoke('asscrack:signal', { peerId, data }),
     setVoice: state => ipcRenderer.invoke('asscrack:set-voice', state),
+    // G6: the voice channels of the room: { owner, editable, seq, channels: [{ id, name }] }.
+    getVoiceChannels: () => ipcRenderer.invoke('asscrack:voice-channels'),
+    onVoiceChannels: listen('asscrack:voice-channels'),
+    createVoiceChannel: name => ipcRenderer.invoke('asscrack:voice-channel-create', String(name)),
+    renameVoiceChannel: (id, name) => ipcRenderer.invoke('asscrack:voice-channel-rename', String(id), String(name)),
+    deleteVoiceChannel: id => ipcRenderer.invoke('asscrack:voice-channel-delete', String(id)),
+    // G4: the saved listening choice (volume, "Mute for me") of a person in this room. The main process finds the
+    // device ID of the peer: the window never gives a name or a device ID.
+    getListening: peerId => ipcRenderer.invoke('asscrack:get-listening', String(peerId)),
+    setListening: (peerId, muted, volume) => ipcRenderer.invoke('asscrack:set-listening', String(peerId), muted === true,
+        Number(volume)),
     // Uint8Array of one Opus frame. A plain send: 50 frames each second.
     sendVoiceFrame: bytes => ipcRenderer.send('asscrack:voice-frame', bytes),
     onVoiceFrame: listen('asscrack:voice-frame'),
@@ -105,6 +153,12 @@ contextBridge.exposeInMainWorld('asscrack', {
     onSignal: listen('asscrack:signal'),
     onVoiceState: listen('asscrack:voice-state'),
     onHostChanged: listen('asscrack:host-changed'),
+    // Ready check (milestone 9).
+    getReady: () => ipcRenderer.invoke('asscrack:ready-state'),
+    openReady: text => ipcRenderer.invoke('asscrack:ready-open', String(text ?? '')),
+    voteReady: (id, vote) => ipcRenderer.invoke('asscrack:ready-vote', String(id), String(vote)),
+    closeReady: id => ipcRenderer.invoke('asscrack:ready-close', String(id)),
+    onReady: listen('asscrack:ready'),
     getTopic: () => ipcRenderer.invoke('asscrack:topic'),
     setTopic: text => ipcRenderer.invoke('asscrack:set-topic', text),
     onTopic: listen('asscrack:topic'),
@@ -148,6 +202,17 @@ contextBridge.exposeInMainWorld('asscrack', {
     onFileFailed: listen('asscrack:file-failed'),
     onFileRefused: listen('asscrack:file-refused'),
     onFileCancelled: listen('asscrack:file-cancelled'),
+    // P7b: Pause, Resume and Discard of a received file. The window sends an offer ID or a partial key as text.
+    pauseFile: offerId => ipcRenderer.invoke('asscrack:pause-file', String(offerId)),
+    resumeFile: offerId => ipcRenderer.invoke('asscrack:resume-file', String(offerId)),
+    discardPartial: key => ipcRenderer.invoke('asscrack:discard-partial', String(key)),
+    listPartials: () => ipcRenderer.invoke('asscrack:list-partials'),
+    onFilePaused: listen('asscrack:file-paused'),
+    onFileResumed: listen('asscrack:file-resumed'),
+    onFileRestarted: listen('asscrack:file-restarted'),
+    onFileDiscarded: listen('asscrack:file-discarded'),
+    onFileExpired: listen('asscrack:file-expired'),
+    onFilePartials: listen('asscrack:file-partials'),
     // Manual status (milestone 3). presence: { state, note }.
     setPresence: ({ state, note } = {}) => ipcRenderer.invoke('asscrack:set-presence', { state, note }),
     getPresence: () => ipcRenderer.invoke('asscrack:presence'),

@@ -58,7 +58,8 @@ function parseCompound(text) {
     const s = text.trim();
     if (!s || /[\s>+~]/.test(s.replace(/\[[^\]]*\]/g, ''))) return null;
     const out = { tag: null, id: null, classes: [], attrs: [] };
-    const re = /([a-zA-Z][\w-]*)|#([\w-]+)|\.([\w-]+)|\[([\w-]+)(?:="([^"]*)")?\]/gy;
+    // [name], [name="value"] and [name^="value"] (a prefix: layout.js selects [role^="menuitem"]).
+    const re = /([a-zA-Z][\w-]*)|#([\w-]+)|\.([\w-]+)|\[([\w-]+)(?:(\^?)="([^"]*)")?\]/gy;
     let m;
     let at = 0;
     while (at < s.length) {
@@ -68,7 +69,7 @@ function parseCompound(text) {
         if (m[1]) out.tag = m[1].toUpperCase();
         else if (m[2]) out.id = m[2];
         else if (m[3]) out.classes.push(m[3]);
-        else out.attrs.push({ name: m[4], value: m[5] });
+        else out.attrs.push({ name: m[4], value: m[6], prefix: m[5] === '^' });
         at = re.lastIndex;
     }
     return out;
@@ -82,9 +83,10 @@ function matchesSelector(el, selector) {
         if (c.tag && el.tagName !== c.tag) return false;
         if (c.id && el.id !== c.id) return false;
         if (c.classes.some(cl => !el.classList.contains(cl))) return false;
-        return c.attrs.every(({ name, value }) => {
+        return c.attrs.every(({ name, value, prefix }) => {
             const v = el.getAttribute(name);
-            return value === undefined ? v !== null : v === value;
+            if (value === undefined) return v !== null;
+            return prefix ? v !== null && v.startsWith(value) : v === value;
         });
     });
 }

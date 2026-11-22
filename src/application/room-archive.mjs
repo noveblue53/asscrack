@@ -85,6 +85,9 @@ CREATE TABLE IF NOT EXISTS messages(room_id TEXT NOT NULL REFERENCES rooms(room_
 CREATE INDEX IF NOT EXISTS messages_order ON messages(room_id, time, msg_id);
 CREATE TABLE IF NOT EXISTS channels(room_id TEXT NOT NULL REFERENCES rooms(room_id) ON DELETE CASCADE,
   channel_id TEXT NOT NULL, name TEXT NOT NULL, PRIMARY KEY(room_id,channel_id));
+-- G6: the owner-signed voice channel catalog of a protected room (JSON). The node checks it again at each start.
+CREATE TABLE IF NOT EXISTS voice_channels(room_id TEXT PRIMARY KEY REFERENCES rooms(room_id) ON DELETE CASCADE,
+  catalog TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS channel_messages(room_id TEXT NOT NULL, msg_id TEXT NOT NULL, sender TEXT, body TEXT NOT NULL,
   time INTEGER NOT NULL, own INTEGER NOT NULL, source TEXT NOT NULL, peer_id TEXT, channel_id TEXT NOT NULL,
   PRIMARY KEY(room_id,msg_id), FOREIGN KEY(room_id,channel_id) REFERENCES channels(room_id,channel_id) ON DELETE CASCADE);
@@ -108,6 +111,13 @@ CREATE TRIGGER IF NOT EXISTS remove_channel_attachment AFTER DELETE ON channel_m
 END;
 CREATE VIEW IF NOT EXISTS archived_messages AS
   SELECT p.*, a.descriptor FROM public_messages p LEFT JOIN message_attachments a USING(room_id,msg_id);
+-- G7a: the friends. Each friend is a saved protected 2-person room (rooms row) with one row here. The private
+-- messages are in messages under the room ID of the friend room. state: 'active' or 'removed-you'.
+CREATE TABLE IF NOT EXISTS friends(room_id TEXT PRIMARY KEY REFERENCES rooms(room_id) ON DELETE CASCADE,
+  device_id TEXT UNIQUE NOT NULL, nickname TEXT NOT NULL, slot INTEGER NOT NULL, added_at INTEGER NOT NULL,
+  last_seen INTEGER, addrs TEXT, state TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS friend_blocks(device_id TEXT PRIMARY KEY, name TEXT, blocked_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS friend_settings(slot INTEGER PRIMARY KEY CHECK(slot=1), name TEXT, upnp INTEGER NOT NULL);
 CREATE TRIGGER IF NOT EXISTS remove_public_message INSTEAD OF DELETE ON public_messages BEGIN
   DELETE FROM messages WHERE room_id=OLD.room_id AND msg_id=OLD.msg_id AND OLD.channel_id IS NULL;
   DELETE FROM channel_messages WHERE room_id=OLD.room_id AND msg_id=OLD.msg_id AND OLD.channel_id IS NOT NULL;
@@ -127,6 +137,16 @@ function readAttachment(json) {
   } catch {
     return {};
   }
+}
+
+function mapFriend(r) {
+  let addrs = [];
+  try { const value = JSON.parse(r.addrs ?? '[]'); if (Array.isArray(value)) addrs = value; } catch { /* a bad row has no addresses */ }
+  return {
+    roomId: r.room_id, room: r.name, roomKey: r.room_key, userName: r.user_name, deviceId: r.device_id,
+    nickname: r.nickname, slot: r.slot, addedAt: r.added_at, lastSeen: r.last_seen, addrs,
+    state: r.state === 'removed-you' ? 'removed-you' : 'active',
+  };
 }
 
 function mapRow(r) {
@@ -389,8 +409,9 @@ function makeRoomArchive({ dir, protector, limits = null }) {
       };
     },
     listRooms() {
+      // G7a: a friend room is not a saved room of the list.
       return need().prepare(`SELECT room_id, name, user_name, keep_history, saved_at, opened_at, admission FROM rooms
-        ORDER BY opened_at IS NULL, opened_at DESC, saved_at DESC`).all().map((r) => ({
+        WHERE room_id NOT IN (SELECT room_id FROM friends) ORDER BY opened_at IS NULL, opened_at DESC, saved_at DESC`).all().map((r) => ({
         roomId: r.room_id, name: r.name, userName: r.user_name, keepHistory: r.keep_history === 1,
         savedAt: r.saved_at, openedAt: r.opened_at,
         ...(r.admission === 'legacy' ? {} : { protected: true }),
@@ -414,6 +435,60 @@ function makeRoomArchive({ dir, protector, limits = null }) {
         d.prepare('DELETE FROM messages WHERE room_id = ?').run(roomId);
         d.prepare('DELETE FROM rooms WHERE room_id = ?').run(roomId);
       })();
+    },
+    // G7a: the friends, the block list and the friend settings.
+    isFriendRoom(roomId) {
+      return Boolean(need().prepare('SELECT 1 FROM friends WHERE room_id=?').get(roomId));
+    },
+    listFriends() {
+      return need().prepare(`SELECT f.*, r.name, r.room_key, r.user_name FROM friends f JOIN rooms r USING(room_id)
+        ORDER BY f.slot`).all().map(mapFriend);
+    },
+    // The friend room (rooms and protected_room_memberships) and its friends row, in one transaction.
+    saveFriendRoom({ name, roomKey, userName, membership, friend }) {
+      const d = need();
+      const roomId = roomFingerprint(name, roomKey);
+      d.transaction(() => {
+        this.saveRoom({ name, roomKey, invite: null, userName, keepHistory: true, membership });
+        d.prepare(`INSERT INTO friends(room_id,device_id,nickname,slot,added_at,last_seen,addrs,state)
+          VALUES(?,?,?,?,?,NULL,?,'active')`).run(roomId, friend.deviceId, friend.nickname, friend.slot,
+          friend.addedAt ?? Date.now(), JSON.stringify(friend.addrs ?? []));
+      })();
+      return { roomId };
+    },
+    // fields: nickname, lastSeen, addrs (array), state. Returns true for a changed row.
+    updateFriend(roomId, fields) {
+      const d = need();
+      const sets = [];
+      const args = [];
+      if (fields.nickname !== undefined) { sets.push('nickname=?'); args.push(String(fields.nickname)); }
+      if (fields.lastSeen !== undefined) { sets.push('last_seen=?'); args.push(fields.lastSeen); }
+      if (fields.addrs !== undefined) { sets.push('addrs=?'); args.push(JSON.stringify(fields.addrs)); }
+      if (fields.state !== undefined) { sets.push('state=?'); args.push(fields.state === 'removed-you' ? 'removed-you' : 'active'); }
+      if (!sets.length) return false;
+      return d.prepare(`UPDATE friends SET ${sets.join(',')} WHERE room_id=?`).run(...args, roomId).changes === 1;
+    },
+    friendBlocks() {
+      return need().prepare('SELECT device_id, name, blocked_at FROM friend_blocks ORDER BY blocked_at').all()
+        .map(r => ({ deviceId: r.device_id, name: r.name, blockedAt: r.blocked_at }));
+    },
+    addFriendBlock(deviceId, name) {
+      need().prepare(`INSERT INTO friend_blocks(device_id,name,blocked_at) VALUES(?,?,?)
+        ON CONFLICT(device_id) DO UPDATE SET name=excluded.name`).run(deviceId, name ?? null, Date.now());
+    },
+    removeFriendBlock(deviceId) {
+      return need().prepare('DELETE FROM friend_blocks WHERE device_id=?').run(deviceId).changes === 1;
+    },
+    friendSettings() {
+      const r = need().prepare('SELECT name, upnp FROM friend_settings WHERE slot=1').get();
+      return { name: r?.name ?? null, upnp: r?.upnp === 1 };
+    },
+    saveFriendSettings({ name, upnp }) {
+      need().prepare(`INSERT INTO friend_settings(slot,name,upnp) VALUES(1,?,?)
+        ON CONFLICT(slot) DO UPDATE SET name=excluded.name, upnp=excluded.upnp`).run(name ?? null, upnp ? 1 : 0);
+    },
+    hasMessage(roomId, id) {
+      return Boolean(need().prepare('SELECT 1 FROM public_messages WHERE room_id=? AND msg_id=?').get(roomId, String(id)));
     },
     rememberDownload(roomId, descriptor, file) {
       const valid = normalizeAttachment(descriptor);
@@ -439,6 +514,26 @@ function makeRoomArchive({ dir, protector, limits = null }) {
       d.transaction(() => { for (const row of rows) {
         if (validChannelId(row?.id) && validChannelName(row.name)) put.run(roomId, row.id, row.name);
       } })();
+    },
+    // G6: the saved voice channel catalog, or null. A row that does not read gives null.
+    voiceChannels(roomId) {
+      const row = need().prepare('SELECT catalog FROM voice_channels WHERE room_id=?').get(roomId);
+      if (!row) return null;
+      try { return JSON.parse(row.catalog); } catch { return null; }
+    },
+    // Keeps the catalog with the higher seq. The caller gives only a catalog that the node accepted.
+    saveVoiceChannels(roomId, catalog) {
+      if (!catalog || !Number.isSafeInteger(catalog.seq)) return false;
+      const d = need();
+      return d.transaction(() => {
+        const old = d.prepare('SELECT catalog FROM voice_channels WHERE room_id=?').get(roomId);
+        let oldSeq = -1;
+        try { oldSeq = old ? JSON.parse(old.catalog).seq : -1; } catch { /* a bad row is replaced */ }
+        if (Number.isSafeInteger(oldSeq) && oldSeq >= catalog.seq) return false;
+        d.prepare(`INSERT INTO voice_channels(room_id,catalog) VALUES(?,?)
+          ON CONFLICT(room_id) DO UPDATE SET catalog=excluded.catalog`).run(roomId, JSON.stringify(catalog));
+        return true;
+      })();
     },
     addMessage(roomId, { id, from = null, text, time, own = false, source, peerId = null, channelId = null, attachment = null }) {
       const d = need();

@@ -53,7 +53,8 @@ function loadBridge() {
 
 test('the bridge exposes the room API and uses only ipcRenderer, contextBridge and webUtils of electron', () => {
     const b = loadBridge();
-    assert.deepEqual(Object.keys(b.worlds).sort(), ['asscrack', 'desktopFrame', 'roomVoiceMonitor']);
+    // G7a adds the world 'friends' (the Friends panel, the request bar and the buddy menu lines).
+    assert.deepEqual(Object.keys(b.worlds).sort(), ['asscrack', 'desktopFrame', 'friends', 'roomVoiceMonitor']);
     assert.deepEqual(b.touched, []);
     for (const [name, fn] of Object.entries(b.api)) assert.equal(typeof fn, 'function', name);
 });
@@ -121,4 +122,165 @@ test('the saved-room calls of part 2 send the room ID as text and a strict true 
         ['asscrack:clear-history', '42'],
         ['asscrack:forget-room', 'r']
     ]);
+});
+
+test('the listening calls of G4 send the peer ID as text, a strict true or false, and a number', () => {
+    const b = loadBridge();
+    b.api.getListening(7);
+    b.api.setListening('peer-1', 'yes', '150');
+    b.api.setListening('peer-2', true, 40);
+    assert.deepEqual(b.invoked, [
+        ['asscrack:get-listening', '7'],
+        ['asscrack:set-listening', 'peer-1', false, 150],
+        ['asscrack:set-listening', 'peer-2', true, 40]
+    ]);
+});
+
+// Goal G3 (gaps D2 and N7) adds two bridge functions. openLink sends only a text to asscrack:open-link; the main
+// process checks it (link-policy.mjs). canSendFile gives only true or false, never the path of the file.
+test('openLink sends the href as text, and canSendFile gives a boolean and never the path', () => {
+    const b = loadBridge();
+    b.api.openLink('https://example.com/a(b)');
+    b.api.openLink({ toString: () => 'https://example.com/x' });
+    assert.deepEqual(b.invoked, [['asscrack:open-link', 'https://example.com/a(b)'], ['asscrack:open-link', 'https://example.com/x']]);
+    assert.equal(b.api.canSendFile({ path: 'C:/Users/x/report.docx' }), true);
+    assert.equal(b.api.canSendFile({ name: 'screenshot.png' }), false);
+    assert.equal(b.api.canSendFile(null), false);
+    assert.deepEqual(b.touched, []);
+});
+
+// Goal G6 adds five bridge functions for the voice channels. Each call sends only text to its own IPC channel; the
+// main process asks the node, and the node checks the owner and the name.
+test('the voice channel calls of G6 send the channel ID and the name as text', async () => {
+    const b = loadBridge();
+    assert.deepEqual(await b.api.getVoiceChannels(), { channel: 'asscrack:voice-channels' });
+    b.api.createVoiceChannel('Raid');
+    b.api.renameVoiceChannel({ toString: () => 'id-1' }, 42);
+    b.api.deleteVoiceChannel('id-2');
+    assert.deepEqual(b.invoked, [
+        ['asscrack:voice-channels'],
+        ['asscrack:voice-channel-create', 'Raid'],
+        ['asscrack:voice-channel-rename', 'id-1', '42'],
+        ['asscrack:voice-channel-delete', 'id-2']
+    ]);
+    const got = [];
+    b.api.onVoiceChannels(view => got.push(view));
+    b.emit('asscrack:voice-channels', { seq: 1 });
+    assert.deepEqual(got, [{ seq: 1 }]);
+    assert.deepEqual(b.touched, []);
+});
+
+// Milestone 9 (ready check) adds five bridge functions. Each call sends only texts; the node checks the values.
+test('the ready check calls send the text, the check ID and the vote as text, and onReady gives the view', () => {
+    const b = loadBridge();
+    b.api.getReady();
+    b.api.openReady('Race in five?');
+    b.api.openReady();
+    b.api.voteReady(7, 'ready');
+    b.api.closeReady({ toString: () => 'id-1' });
+    assert.deepEqual(b.invoked, [
+        ['asscrack:ready-state'],
+        ['asscrack:ready-open', 'Race in five?'],
+        ['asscrack:ready-open', ''],
+        ['asscrack:ready-vote', '7', 'ready'],
+        ['asscrack:ready-close', 'id-1']
+    ]);
+    const got = [];
+    b.api.onReady(view => got.push(view));
+    b.emit('asscrack:ready', { checks: [] });
+    assert.deepEqual(JSON.parse(JSON.stringify(got)), [{ checks: [] }]);
+});
+
+// G5: the calls of the Windows app shell. The window gives no path and no room ID: the main process has them.
+test('the G5 calls send their IPC channel with no path, and the alias call sends at most 64 IDs as text', () => {
+    const b = loadBridge();
+    b.api.leaveRoom('C:\secret');
+    b.api.leaveRoomInfo('room-id');
+    b.api.getAbout();
+    b.api.openDataFolder('C:\other');
+    assert.deepEqual(b.invoked, [['asscrack:leave-room'], ['asscrack:leave-room-info'], ['asscrack:about'],
+        ['asscrack:open-data-folder']]);
+    b.api.flashAttention({ text: 'private' });
+    assert.deepEqual(b.sent, [['asscrack:attention-flash']]);
+    b.api.getActivityAliases(Array.from({ length: 70 }, (_, i) => i));
+    const [channel, ids] = b.invoked.at(-1);
+    assert.equal(channel, 'asscrack:activity-aliases');
+    assert.equal(ids.length, 64);
+    assert.equal(ids[3], '3');
+    b.api.getActivityAliases('not a list');
+    // The array comes from the vm context of the preload (another Array prototype): compare the JSON text.
+    assert.equal(JSON.stringify(b.invoked.at(-1)), JSON.stringify(['asscrack:activity-aliases', []]));
+    assert.deepEqual(b.touched, []);
+});
+
+// G7a: the friend calls of the room window send only text and a strict true or false. The chat window bridge
+// (friend-chat-preload.cjs) sends no friend ID: the main process binds each chat window to its friend.
+test('the G7a friend calls send text and a strict boolean; the chat window bridge sends no friend ID', async () => {
+    const b = loadBridge();
+    const f = b.worlds.friends;
+    f.list();
+    f.relations([1, 'p2']);
+    f.relations('not a list');
+    f.request(7);
+    f.respond('r1', 'yes');
+    f.respond('r1', true);
+    f.remove('f1'); f.block('f1'); f.unblock('d1'); f.rename('f1', 42); f.setName('Ann');
+    f.setUpnp('on'); f.setUpnp(true); f.openChat('f1'); f.retry();
+    assert.equal(JSON.stringify(b.invoked), JSON.stringify([
+        ['asscrack:friends'], ['asscrack:friend-relations', ['1', 'p2']], ['asscrack:friend-relations', []],
+        ['asscrack:friend-request', '7'], ['asscrack:friend-respond', 'r1', false], ['asscrack:friend-respond', 'r1', true],
+        ['asscrack:friend-remove', 'f1'], ['asscrack:friend-block', 'f1'], ['asscrack:friend-unblock', 'd1'],
+        ['asscrack:friend-rename', 'f1', '42'], ['asscrack:friend-name', 'Ann'], ['asscrack:friend-upnp', false],
+        ['asscrack:friend-upnp', true], ['asscrack:friend-open-chat', 'f1'], ['asscrack:unlock-archive']
+    ]));
+    const got = [];
+    f.onChanged(view => got.push(view));
+    f.onRequest(event => got.push(event));
+    b.emit('asscrack:friends', { state: 'open' });
+    b.emit('asscrack:friend-request', { kind: 'incoming' });
+    assert.deepEqual(got, [{ state: 'open' }, { kind: 'incoming' }]);
+    assert.deepEqual(b.touched, []);
+
+    const chatSource = await readFile(new URL('../src/application/friend-chat-preload.cjs', import.meta.url), 'utf8');
+    const worlds = {}, invoked = [];
+    const electron = { contextBridge: { exposeInMainWorld: (name, api) => { worlds[name] = api; } },
+        ipcRenderer: { invoke: (...args) => { invoked.push(args); return Promise.resolve(null); }, on() {} } };
+    vm.runInNewContext(chatSource, { require: () => electron, Promise, Number, String });
+    assert.deepEqual(Object.keys(worlds).sort(), ['asscrack', 'friendChat']);
+    assert.deepEqual(Object.keys(worlds.asscrack), ['openLink']);
+    worlds.friendChat.state();
+    worlds.friendChat.lines(null);
+    worlds.friendChat.lines({ time: '5', id: 9, path: 'C:/x' });
+    worlds.friendChat.send(12);
+    worlds.asscrack.openLink({ toString: () => 'https://example.com' });
+    assert.equal(JSON.stringify(invoked), JSON.stringify([
+        ['asscrack:friend-chat-state'], ['asscrack:friend-chat-lines', null],
+        ['asscrack:friend-chat-lines', { time: 5, id: '9' }], ['asscrack:friend-chat-send', '12'],
+        ['asscrack:friend-chat-open-link', 'https://example.com']
+    ]));
+});
+
+// P7b adds four calls and six events for Pause, Resume and Discard of a received file. Each call sends only the
+// offer ID or the partial key as text; main.js checks the length and the form of each.
+test('the P7b calls send the offer ID or the partial key as text, and the partial events reach the window', () => {
+    const b = loadBridge();
+    b.api.pauseFile('offer-1');
+    b.api.resumeFile({ toString: () => 'offer-2' });
+    b.api.discardPartial(`${'a'.repeat(64)}-5`);
+    b.api.listPartials('ignored');
+    assert.deepEqual(b.invoked, [
+        ['asscrack:pause-file', 'offer-1'],
+        ['asscrack:resume-file', 'offer-2'],
+        ['asscrack:discard-partial', `${'a'.repeat(64)}-5`],
+        ['asscrack:list-partials']
+    ]);
+    for (const [name, channel] of [['onFilePaused', 'asscrack:file-paused'], ['onFileResumed', 'asscrack:file-resumed'],
+        ['onFileRestarted', 'asscrack:file-restarted'], ['onFileDiscarded', 'asscrack:file-discarded'],
+        ['onFileExpired', 'asscrack:file-expired'], ['onFilePartials', 'asscrack:file-partials']]) {
+        const got = [];
+        b.api[name](data => got.push(data));
+        b.emit(channel, { marker: name });
+        assert.deepEqual(got, [{ marker: name }], name);
+    }
+    assert.deepEqual(b.touched, []);
 });

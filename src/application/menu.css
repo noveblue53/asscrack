@@ -104,3 +104,6 @@
 #listening-dialog input[type="checkbox"] { margin: 0 4px 0 0; vertical-align: -1px; }
 #listener-percent { float: right; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
 #listener-volume { width: 100%; margin: 0; }
+#listener-volume-label { cursor: default; user-select: none; }
+#listener-note { margin: 6px 0 0; font-size: 12px; color: var(--ink-soft); }
+#listening-dialog form { display: flex; gap: 6px; justify-content: flex-end; }

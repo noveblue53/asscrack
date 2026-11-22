@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createDownloadScratch } from '../src/application/download-scratch.mjs';
@@ -33,6 +33,31 @@ test('new download sessions clear dead owned partials and leave live and unrelat
     assert.equal(existsSync(path.join(live.directory, 'notes.txt')), true);
     current.clear();
     assert.equal(existsSync(current.directory), false);
+});
+
+test('a paused partial of a dead run moves to the new download session and survives clear()', t => {
+    const downloads = mkdtempSync(path.join(tmpdir(), 'asscrack-downloads-'));
+    t.after(() => rmSync(downloads, { recursive: true, force: true }));
+    const profile = path.join(downloads, 'profile');
+    const part = '.asscrack-a12d1f58-9cac-4db5-bef0-ebec1f57161c.part';
+    const paused = `.asscrack-resume-${'d'.repeat(64)}-4096`;
+    const first = createDownloadScratch(downloads, profile, { pid: 12345, alive: () => true });
+    writeFileSync(path.join(first.directory, part), 'interrupted');
+    writeFileSync(path.join(first.directory, `${paused}.part`), 'paused bytes');
+    writeFileSync(path.join(first.directory, `${paused}.json`), '{}');
+    first.clear();
+    assert.equal(existsSync(path.join(first.directory, part)), false, 'clear() removes the interrupted download');
+    assert.equal(existsSync(path.join(first.directory, `${paused}.part`)), true, 'clear() keeps the paused partial');
+    const live = createDownloadScratch(downloads, profile, { pid: 12346, alive: () => true });
+    writeFileSync(path.join(live.directory, `${paused}.part`), 'paused in a live run');
+
+    const next = createDownloadScratch(downloads, profile, { pid: 12347, alive: pid => pid === 12346 });
+    assert.equal(existsSync(first.directory), false, 'the dead folder is empty and removed');
+    assert.equal(readFileSync(path.join(next.directory, `${paused}.part`), 'utf8'), 'paused bytes');
+    assert.equal(existsSync(path.join(next.directory, `${paused}.json`)), true);
+    assert.equal(readFileSync(path.join(live.directory, `${paused}.part`), 'utf8'), 'paused in a live run');
+    next.clear();
+    assert.equal(existsSync(next.directory), true, 'a folder with a paused partial stays for the next run');
 });
 
 test('cleanup removes old automatic logs while keeping unrelated files and explicit debug captures', t => {

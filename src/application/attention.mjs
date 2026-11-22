@@ -4,12 +4,12 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import path from 'node:path';
 
 const defaults = Object.freeze({ voiceCues: true, otherVoiceCues: true, messageCues: true, volume: 35, alerts: false,
-    previews: false, sound: false });
+    previews: false, sound: false, flash: true });
 
 export function attentionSettings(file) {
     function merge(current, patch) {
         const next = { ...current };
-        for (const key of ['voiceCues', 'otherVoiceCues', 'messageCues', 'alerts', 'previews', 'sound']) {
+        for (const key of ['voiceCues', 'otherVoiceCues', 'messageCues', 'alerts', 'previews', 'sound', 'flash']) {
             if (typeof patch?.[key] === 'boolean') next[key] = patch[key];
         }
         if (Number.isInteger(patch?.volume)) next.volume = Math.max(0, Math.min(100, patch.volume));
@@ -27,6 +27,23 @@ export function attentionSettings(file) {
             return { ...current };
         }
     };
+}
+
+// Gap E1: the overlay dot of the taskbar button. A 16 x 16 BGRA bitmap for nativeImage.createFromBitmap: a red
+// dot with a white edge on a clear background. No image file and no count (the window title has the count).
+export function overlayDotBitmap() {
+    const side = 16;
+    const pixels = Buffer.alloc(side * side * 4);
+    for (let y = 0; y < side; y++) {
+        for (let x = 0; x < side; x++) {
+            const d = Math.hypot(x + 0.5 - side / 2, y + 0.5 - side / 2);
+            const i = (y * side + x) * 4;
+            if (d > 7.5) continue;
+            const [b, g, r] = d > 6 ? [255, 255, 255] : [40, 40, 220];
+            pixels[i] = b; pixels[i + 1] = g; pixels[i + 2] = r; pixels[i + 3] = 255;
+        }
+    }
+    return { buffer: pixels, width: side, height: side };
 }
 
 export const WINDOWS_APP_ID = 'com.asscrack.app';

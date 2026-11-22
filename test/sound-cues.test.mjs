@@ -10,6 +10,7 @@ const SELF = 'self-peer-id';
 const SAM = '12D3KooWsamAAAAAAaaaa01';
 const ALEX = '12D3KooWalexBBBBBbbbb02';
 const OWN_KINDS = new Set(['join', 'leave', 'mute', 'unmute']);
+const MOD = { ctrlKey: true, shiftKey: true };
 
 const ATTENTION = [
     { id: 'attention-settings', tag: 'dialog', children: [
@@ -18,13 +19,16 @@ const ATTENTION = [
         { id: 'attention-percent', tag: 'output' }, { id: 'attention-tone', tag: 'select', value: 'join' },
         { id: 'attention-preview', tag: 'button' }, { id: 'attention-alerts', tag: 'input' },
         { id: 'attention-windows', tag: 'p' }, { id: 'attention-content', tag: 'input' },
-        { id: 'attention-sound', tag: 'input' }, { id: 'attention-status', tag: 'p' }
+        { id: 'attention-sound', tag: 'input' }, { id: 'attention-status', tag: 'p' },
+        // G5 (E1): the box of the flash setting is in the dialog.
+        { id: 'attention-flash', tag: 'input' }
     ] }
 ];
 
-// prefs: changes to the defaults of attention.mjs. Returns the fixture with played (the cue kinds of other people and
-// of messages), own (the own cue kinds), state ({ idle, focus }) and the helpers below.
-async function room(prefs = {}, peers = [[SAM, 'Sam'], [ALEX, 'Alex']]) {
+// prefs: changes to the defaults of attention.mjs. audio: the object that new AudioContext() gives (default: a running
+// context with no setSinkId). Returns the fixture with played (the cue kinds of other people and of messages), own (the
+// own cue kinds), state ({ idle, focus }) and the helpers below.
+async function room(prefs = {}, peers = [[SAM, 'Sam'], [ALEX, 'Alex']], audio = null) {
     const clock = createClock();
     const settings = { voiceCues: true, otherVoiceCues: true, messageCues: true, volume: 35, alerts: false,
         previews: false, sound: false, ...prefs };
@@ -34,7 +38,7 @@ async function room(prefs = {}, peers = [[SAM, 'Sam'], [ALEX, 'Alex']]) {
         scripts: ['attention.js'],
         globals: {
             navigator: { userAgent: 'test' },
-            AudioContext: class { state = 'running'; destination = {}; async resume() {} },
+            AudioContext: audio ? function () { return audio; } : class { state = 'running'; destination = {}; async resume() {} },
             CSS: { escape: s => s }
         },
         api: {
@@ -185,9 +189,9 @@ test('the voice cues of other people are silent in Idle Peer, in Do not disturb 
     await dnd.dnd();
     dnd.voiceState(SAM, true);
     assert.deepEqual(dnd.played, []);
-    // The own cues keep the behavior of 0.8 in DND (G4 changes it): silent.
+    // G4 (C4): a cue of my own action is a confirmation. It plays in DND.
     dnd.el('mute').click();
-    assert.deepEqual(dnd.own, ['join']);
+    assert.deepEqual(dnd.own, ['join', 'mute']);
 
     const off = await room({ otherVoiceCues: false });
     await off.joinVoice();
@@ -277,4 +281,70 @@ test('at most one message cue each 2 s; with alerts on each line still goes to t
     assert.equal(Object.hasOwn(f.adds()[0].args[0], 'from'), false);
     assert.equal(f.window.roomAttention.wanted({ kind: 'mention', channelId: 'general', id: 'x', from: SELF }), false);
     assert.equal(f.window.roomAttention.wanted({ kind: 'mention', channelId: 'general', id: 'x', from: SAM }), true);
+});
+
+// ---- G4: the own cues in DND (C4) and the output device of the cues (C3) ----
+
+test('a cue of my own action plays in Do not disturb and is silent in Idle Peer (C4)', async () => {
+    const f = await room();
+    await f.dnd();
+    await f.joinVoice();
+    f.el('mute').click();
+    f.key(f.document, 'M', { code: 'KeyM', ...MOD });
+    // Deafen on gives the mute cue, Deafen off the unmute cue.
+    f.key(f.document, 'D', { code: 'KeyD', ...MOD });
+    f.key(f.document, 'D', { code: 'KeyD', ...MOD });
+    assert.deepEqual(f.own, ['join', 'mute', 'unmute', 'mute', 'unmute']);
+    // A cue of a different person and a message cue stay silent in DND.
+    f.clock.advance(5000);
+    f.voiceState(SAM, true);
+    f.state.focus = false;
+    f.receive({ from: 'Sam', text: 'hi Parker', peerId: SAM, id: 'c4' });
+    assert.deepEqual(f.played, []);
+    // The preview: an own cue plays in DND. A message cue does not, and the status gives the reason.
+    f.el('attention-tone').value = 'mute';
+    f.el('attention-preview').click();
+    await settle();
+    assert.equal(f.el('attention-status').textContent, 'Preview played.');
+    f.el('attention-tone').value = 'mention';
+    f.el('attention-preview').click();
+    await settle();
+    assert.equal(f.el('attention-status').textContent, 'Sounds are quiet in your current availability.');
+
+    const idle = await room();
+    await idle.joinVoice();
+    idle.state.idle = true;
+    assert.equal(await idle.window.roomAttention.cue('mute'), false);
+    idle.el('attention-tone').value = 'join';
+    idle.el('attention-preview').click();
+    await settle();
+    assert.equal(idle.el('attention-status').textContent, 'Sounds are quiet in your current availability.');
+    assert.deepEqual(idle.own, ['join']);
+    assert.deepEqual(f.errors, []);
+});
+
+test('the cues play on the output device of the voice settings, with the default device as the fallback (C3)', async () => {
+    const sinks = [];
+    let fail = false;
+    let output = 'speakers-1';
+    // The one AudioContext of the cues (attention.js makes it at the first cue).
+    const audio = { state: 'running', sinkId: '', destination: {}, async resume() {},
+        async setSinkId(id) {
+            sinks.push(id);
+            if (fail && id !== '') throw Object.assign(new Error('not found'), { name: 'NotFoundError' });
+            this.sinkId = id;
+        } };
+    const f = await room({}, undefined, audio);
+    f.window.voice.settings = () => ({ outputDeviceId: output });
+    assert.equal(await f.window.roomAttention.cue('join'), true);
+    assert.equal(await f.window.roomAttention.cue('leave'), true);
+    assert.deepEqual(sinks, ['speakers-1'], 'one change for the same device');
+    output = 'speakers-2';
+    fail = true;
+    assert.equal(await f.window.roomAttention.cue('mute'), true, 'the cue plays on the default device');
+    assert.deepEqual(sinks, ['speakers-1', 'speakers-2', '']);
+    fail = false;
+    assert.equal(await f.window.roomAttention.cue('unmute'), true);
+    assert.deepEqual(sinks, ['speakers-1', 'speakers-2', '', 'speakers-2'], 'the next cue tries the device again');
+    assert.deepEqual(f.own, ['join', 'leave', 'mute', 'unmute']);
 });

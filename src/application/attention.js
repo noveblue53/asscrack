@@ -11,14 +11,16 @@
     const pending = new Map();
     let prefs = null;
     let audio = null;
+    // C3: the output device of the voice settings that the cue context uses now (null: not set yet, or it failed).
+    let cueSink = null;
 
     // The rule of each cue class (REVIEW.md, "Cue and attention rules"). setting: the key in attention.mjs that
     // switches the class on and off. idle and dnd: the class plays in Idle Peer or in Do not disturb. inView: the
     // class plays when viewing(target) is true. gap: the minimum time in ms between two cues of the class; a cue in
     // that time is dropped, not queued. The volume controls all the classes.
-    // 'own' keeps the behavior of 0.8 (silent in DND): G4 (C4) changes only its dnd value.
+    // 'own' (C4): a cue of my own action (join, leave, mute, unmute, deafen) is a confirmation, thus it plays in DND.
     const CUE_RULES = Object.freeze({
-        own: Object.freeze({ setting: 'voiceCues', idle: false, dnd: false, inView: true, gap: 0 }),
+        own: Object.freeze({ setting: 'voiceCues', idle: false, dnd: true, inView: true, gap: 0 }),
         // The caller (renderer.js) sends these cues only while I am in voice.
         'voice-other': Object.freeze({ setting: 'otherVoiceCues', idle: false, dnd: false, inView: true, gap: 500 }),
         message: Object.freeze({ setting: 'messageCues', idle: false, dnd: false, inView: false, gap: 2000 })
@@ -45,8 +47,7 @@
     }
 
     // One rule for the attention of a live line (REVIEW.md): a line of a different person, not Idle Peer, not DND, and
-    // the conversation is not in view. The message cue and the native notification use it; G5 (E1) adds the taskbar
-    // flash. target: { kind: 'mention', channelId, id, from } or { kind: 'whisper', peerId, id }.
+    // the conversation is not in view. The message cue, the native notification and the taskbar flash (E1) use it. target: { kind: 'mention', channelId, id, from } or { kind: 'whisper', peerId, id }.
     function wanted(target) {
         if (!target?.id || quiet()) return false;
         const author = target.kind === 'whisper' ? target.peerId : target.from;
@@ -66,10 +67,19 @@
         api.addAttention(from === undefined ? target : { ...route, preview });
     }
 
-    // whispers.js: a live whisper to me. The whisper cue, then the native notification.
+    // Gap E1: the taskbar flash and the overlay dot. main.js flashes only a window with no focus that is not hidden
+    // as Idle Peer. The flash keeps its own setting (default on), not the alerts setting.
+    function flash() {
+        if (prefs?.flash) api.flashAttention?.();
+    }
+
+    // whispers.js: a live whisper to me. The whisper cue and the flash, then the native notification.
     function incoming(target) {
         if (!target?.id) return;
-        if (target.kind === 'whisper' && wanted(target)) cue('whisper', 'message', target);
+        if (target.kind === 'whisper' && wanted(target)) {
+            cue('whisper', 'message', target);
+            flash();
+        }
         notify(target);
     }
 
@@ -87,7 +97,10 @@
     function mention(data) {
         if (!data?.peerId || data.peerId === (selfId ?? topologySelf) || !window.chatHighlights?.matches(data.text)) return;
         const target = { kind: 'mention', channelId: data.channelId || 'general', id: data.id, from: data.peerId };
-        if (wanted(target)) cue('mention', 'message', target);
+        if (wanted(target)) {
+            cue('mention', 'message', target);
+            flash();
+        }
         if (!prefs?.alerts) return;
         const quote = prefs.previews && window.quoteCore.split(data.text);
         notify({ ...target, preview: prefs.previews ? (quote ? quote.rest : data.text).slice(0, 160) : '' });
@@ -107,6 +120,28 @@
         window.whispers?.close();
         if (lists && !lists.open(target.channelId)) return;
         window.reading.revealLine(row);
+    }
+
+    // C3: the cues play on the output device of the voice settings. Not the voice context: Leave closes it before the
+    // leave cue plays. A device that does not open gives the default device, and the next cue tries again.
+    function outputDevice() {
+        const wanted = window.voice?.settings?.()?.outputDeviceId ?? '';
+        return typeof audio.setSinkId === 'function' && wanted !== cueSink ? wanted : null;
+    }
+
+    async function useOutputDevice(wanted) {
+        try {
+            await audio.setSinkId(wanted);
+            cueSink = wanted;
+        } catch {
+            cueSink = null;
+            if (audio.sinkId !== '') await audio.setSinkId('').catch(() => {});
+        }
+    }
+
+    // C4: the current availability stops this class (the text of the preview status).
+    function quietFor(rule) {
+        return (idle() && !rule.idle) || (dnd() && !rule.dnd);
     }
 
     // The rule of the class, at this time. target: the conversation of a message cue (for inView).
@@ -131,6 +166,9 @@
         }
         try {
             audio ??= new AudioContext();
+            // No await when the device is the same: the cue plays at once.
+            const wanted = outputDevice();
+            if (wanted !== null) await useOutputDevice(wanted);
             if (audio.state === 'suspended') await audio.resume();
             if (!cueAllowed(rule, target)) return false;
             return window.voiceCues.play(audio, kind, prefs.volume);
@@ -138,7 +176,7 @@
     }
 
     const fields = { voiceCues: 'cues', otherVoiceCues: 'other-cues', messageCues: 'message-cues', alerts: 'alerts',
-        sound: 'sound', previews: 'content', volume: 'volume' };
+        sound: 'sound', previews: 'content', volume: 'volume', flash: 'flash' };
     // The class of each cue in the preview list.
     const toneClass = { 'other-join': 'voice-other', 'other-leave': 'voice-other', mention: 'message', whisper: 'message' };
     const previewClass = () => toneClass[byId('attention-tone').value] ?? 'own';
@@ -146,6 +184,8 @@
         if (!prefs) return;
         for (const [key, suffix] of Object.entries(fields)) {
             const input = byId('attention-' + suffix);
+            // A page with no box for a setting (for example a test page with an older dialog) skips it.
+            if (!input) continue;
             if (key === 'volume') input.value = prefs.volume;
             else input.checked = prefs[key];
         }
@@ -159,6 +199,7 @@
         .catch(() => { status.textContent = 'Sound and notification settings could not be loaded.'; });
     for (const [key, suffix] of Object.entries(fields)) {
         const input = byId('attention-' + suffix);
+        if (!input) continue;
         input.addEventListener('change', async () => {
             const value = key === 'volume' ? Number(input.value) : input.checked;
             try {
@@ -176,7 +217,8 @@
     byId('attention-tone').addEventListener('change', render);
     byId('attention-preview').addEventListener('click', async () => {
         const played = await cue(byId('attention-tone').value, previewClass(), null, { preview: true });
-        status.textContent = played ? 'Preview played.' : quiet() ? 'Sounds are quiet in your current availability.' : 'Audio output unavailable.';
+        const quietNow = quietFor(CUE_RULES[previewClass()]);
+        status.textContent = played ? 'Preview played.' : quietNow ? 'Sounds are quiet in your current availability.' : 'Audio output unavailable.';
     });
     byId('attention-windows').hidden = !navigator.userAgent.includes('Windows');
     api.onAttentionOpen(openTarget);

@@ -28,8 +28,17 @@
         return data.unread > 0 || Boolean(data.draft) || data.busy || data.rows.length > 0;
     }
 
+    // Gap E7: one callback for a change of the number of unread whispers (title.js).
+    let countChanged = null;
+    let lastTotal = 0;
+    const unreadTotal = () => [...threads.values()].reduce((sum, data) => sum + data.unread, 0);
+
     function refreshContacts() {
-        const total = [...threads.values()].reduce((sum, data) => sum + data.unread, 0);
+        const total = unreadTotal();
+        if (total !== lastTotal) {
+            lastTotal = total;
+            countChanged?.(total);
+        }
         nav.textContent = total ? 'Whispers (' + total + ')' : 'Whispers';
         nav.hidden = !total && ![...threads.values()].some(data => !data.online && retained(data));
         for (const row of document.getElementById('peers')?.children || []) {
@@ -78,7 +87,12 @@
             const li = document.createElement('li');
             li.dataset.id = row.id;
             li.dataset.direction = row.mine ? 'out' : 'in';
-            li.textContent = (row.mine ? 'You' : data.name || label(selected)) + ' — ' + row.text;
+            // Gap D2: the links are only in the text of the line, not in the name.
+            const body = document.createElement('span');
+            body.className = 'whisper-text';
+            body.textContent = row.text;
+            li.append((row.mine ? 'You' : data.name || label(selected)) + ' — ', body);
+            window.chatLinks?.apply(body, { focusable: true });
             if (row.mine) li.setAttribute('aria-label', li.textContent + ', received by peer');
             lines.append(li);
         }
@@ -292,6 +306,8 @@
     });
     window.whispers = {
         open, close, command, isOpen: () => !pane.hidden, isViewing: id => !pane.hidden && selected === id,
+        unreadCount: unreadTotal,
+        onCount(callback) { countChanged = typeof callback === 'function' ? callback : null; },
         async refresh() {
             const revision = capabilityRevision;
             const peers = await api.getWhisperPeers();
