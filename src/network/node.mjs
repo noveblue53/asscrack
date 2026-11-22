@@ -232,6 +232,12 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     })
     // The name that each open session sent in its hello line.
     const names = new Map()
+    // M1 (P10a), protected rooms: the last name of each device that this node knows from a proved session (now or
+    // before), from its own device, or from the saved lines of the archive. It stays after the session closes.
+    const deviceNames = new Map()
+    if (membership) deviceNames.set(membership.id, senderName)
+    // The device ID at the start of a message ID of a protected room ("<device ID>.<UUID>"), or null.
+    const deviceOfMessage = id => /^([A-Za-z0-9_-]{43})\./.exec(id)?.[1] ?? null
     // P9C: the app version line and the signed update manifest for an older peer (update-spread.mjs).
     const updateSpread = createUpdateSpread(updates)
     const stopUpdateShare = updateSpread.subscribe(() => updateSpread.share(sessions.values()))
@@ -376,10 +382,25 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         for (const [peerId, session] of sessions) sendHistoryTo(peerId, session)
     }
 
+    // M1 (P10a), items 1 and 2 (a partial fix): in a protected room, the host gives the history, and the host can write
+    // any from field. A history item needs the device prefix of its message ID; an item with no prefix or with a
+    // removed device is dropped. An item of a device that this node knows shows the name that this node knows for that
+    // device. An item of a device that this node does not know (for example a member that is offline) keeps the name
+    // of the host, with unverified: true; the window marks it. Without signatures (item 4, after 1.0), a host can still
+    // use the real prefix of a device that this node does not know.
+    function checkedHistoryItem(m) {
+        if (!membership) return m
+        const device = deviceOfMessage(m.id)
+        if (!device || membership.revoked(device)) return null
+        const known = deviceNames.get(device)
+        return known !== undefined ? { ...m, from: known } : { ...m, unverified: true }
+    }
+
     function handleHistory(peerId, control) {
         if (!Array.isArray(control.messages) || control.messages.length > HISTORY_LIMIT) return
         const messages = control.messages.filter(m => validHistoryItem(m) && (!m.channelId || (channels.capable(peerId) && channels.known(m.channelId))))
             .map(({ id, from, text, time, channelId, attachment }) => ({ id, from, text, time, ...(channelId ? { channelId } : {}), ...(attachment ? { attachment } : {}) }))
+            .map(checkedHistoryItem).filter(Boolean)
         if (election.host()?.peerId === peerId) {
             applyHistory(messages)
             return
@@ -665,6 +686,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 memberPeers.set(peerId, authenticatedMember)
             }
             if (peerName) names.set(peerId, peerName)
+            if (membership && peerName) deviceNames.set(authenticatedMember.deviceId, peerName)
             open = true
             openSession(session, peerId, connection, false, old)
             settle()
@@ -761,6 +783,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                         const peerName = typeof control.name === 'string' ? control.name.trim().slice(0, 64) : ''
                         if (peerName && sessions.get(peerId) === session) {
                             names.set(peerId, peerName)
+                            if (membership && memberPeers.has(peerId)) deviceNames.set(memberPeers.get(peerId).deviceId, peerName)
                             events.emit('peer-name', { peerId, name: peerName })
                         }
                     }
@@ -1683,7 +1706,13 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     // synchronous step so Clear can remove these rows even while the network is still starting.
     const initialHistory = typeof seedHistory === 'function' ? seedHistory(removeHistory) : seedHistory
     if (Array.isArray(initialHistory)) {
-        for (const m of initialHistory) if (validHistoryItem(m)) history.add(attachments.remember({ ...m }))
+        for (const m of initialHistory) {
+            if (!validHistoryItem(m)) continue
+            history.add(attachments.remember({ ...m }))
+            // M1: the archive keeps only live lines (with the name of the session) and own lines.
+            const device = membership ? deviceOfMessage(m.id) : null
+            if (device && device !== membership.id) deviceNames.set(device, m.from)
+        }
     }
     if (membership) {
         let lastRevocation = membership.revocations().sequence

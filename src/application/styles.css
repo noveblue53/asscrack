@@ -887,6 +887,13 @@ body.layout-map-docked.layout-buddy-off #chat-body {
   display: none;
 }
 
+/* M1 (P10a): a history line of a device that this computer does not know (renderer.js, markUnverified). */
+.from.unverified::after {
+  content: " (not verified)";
+  font-weight: 400;
+  opacity: 0.75;
+}
+
 #messages .bubble-text {
   display: flex;
   flex-wrap: wrap;

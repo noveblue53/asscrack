@@ -67,6 +67,8 @@ export function createHistory(limit = HISTORY_LIMIT) {
             const descriptor = normalizeAttachment(message.attachment)
             if (descriptor) item.attachment = descriptor
             if (message.channelId) item.channelId = message.channelId
+            // M1 (P10a): a history item of a device that this node does not know.
+            if (message.unverified === true) item.unverified = true
             let i = items.length
             while (i > 0 && compare(items[i - 1], item) > 0) i--
             items.splice(i, 0, item)

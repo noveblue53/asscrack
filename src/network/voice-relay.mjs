@@ -330,13 +330,63 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
         upstreamHost = host
         attach(stream, entry.queue, body => {
             const frame = decodeBody(body)
-            if (frame) deliver(frame)
+            if (!frame) return
+            // M1 (P10a), item 3: the host forwards the frames of the voice peers. A frame whose origin is not a voice
+            // peer with a session (voicePeers) waits a short time (holdUnknown), then it is dropped. The host can still
+            // use the origin of a real voice peer.
+            if (!voicePeers().includes(frame.origin)) {
+                holdUnknown(frame)
+                return
+            }
+            deliver(frame)
         }, () => {
             if (upstream !== entry) return
             upstream = null
             closedDrops += entry.queue.drops
             scheduleRetry(host)
         })
+    }
+
+    // M1 (P10a), item 3: the frames of an origin that is not a voice peer yet. The voice line of a peer goes on the chat
+    // session with that peer, and the host can forward the first frames before it. Such frames wait at most
+    // UNKNOWN_HOLD_MS (at most UNKNOWN_FRAMES for each origin, UNKNOWN_ORIGINS origins). releaseUnknown() delivers
+    // the frames of an origin that is now a voice peer and drops the frames that waited too long.
+    const UNKNOWN_HOLD_MS = 1000
+    const UNKNOWN_FRAMES = 50
+    const UNKNOWN_ORIGINS = 8
+    const unknownOrigins = new Map()
+    let unknownTimer = null
+    function holdUnknown(frame) {
+        let held = unknownOrigins.get(frame.origin)
+        if (!held) {
+            if (unknownOrigins.size >= UNKNOWN_ORIGINS) { droppedOrigin++; return }
+            held = { since: performance.now(), frames: [] }
+            unknownOrigins.set(frame.origin, held)
+        }
+        if (held.frames.length >= UNKNOWN_FRAMES) { droppedOrigin++; return }
+        held.frames.push(frame)
+        if (!unknownTimer) {
+            unknownTimer = setTimeout(() => { unknownTimer = null; releaseUnknown() }, UNKNOWN_HOLD_MS / 4)
+            unknownTimer.unref?.()
+        }
+    }
+    function releaseUnknown() {
+        if (unknownOrigins.size === 0) return
+        const peers = voicePeers()
+        const now = performance.now()
+        for (const [origin, held] of [...unknownOrigins]) {
+            if (peers.includes(origin)) {
+                unknownOrigins.delete(origin)
+                for (const frame of held.frames) deliver(frame)
+            } else if (stopped || now - held.since >= UNKNOWN_HOLD_MS) {
+                unknownOrigins.delete(origin)
+                droppedOrigin += held.frames.length
+            }
+        }
+        if (unknownOrigins.size > 0 && !unknownTimer && !stopped) {
+            unknownTimer = setTimeout(() => { unknownTimer = null; releaseUnknown() }, UNKNOWN_HOLD_MS / 4)
+            unknownTimer.unref?.()
+        }
     }
 
     function scheduleRetry(host) {
@@ -480,6 +530,8 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
 
     // Opens or closes the stream to the host and the direct streams, after a change of host or of the voice state.
     function hostChanged() {
+        // A voice line came (node.mjs calls hostChanged for each one): an origin can be a voice peer now.
+        releaseUnknown()
         if (protectedRoom && !isHost()) for (const peerId of members.keys()) closeInboundVoice(peerId)
         if (protectedRoom && !selfInVoice()) closeDirectIn()
         // G6: no inbound direct stream from a peer in a different channel.
@@ -558,6 +610,9 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
 
     function stop() {
         stopped = true
+        clearTimeout(unknownTimer)
+        unknownTimer = null
+        releaseUnknown()
         for (const peerId of [...directReopenTimers.keys()]) clearDirectReopen(peerId)
         closeUpstream()
         for (const [peerId] of [...members]) peerLeft(peerId)

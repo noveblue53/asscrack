@@ -145,3 +145,41 @@ test('the host drops a frame whose origin is not the sender of the stream (127.0
         await cleanup(ctx)
     }
 })
+
+// M1 (P10a), item 3: the member side delivered each frame of the host with the origin that the host gave. A host
+// could send a frame under the ID of a peer that is not in voice. The fix: a frame whose origin is not a voice peer
+// with a session (voicePeers) waits at most 1 s for the voice line of that peer, then it is dropped.
+test('M1: a member drops a frame of the host whose origin is not a voice peer (127.0.0.1)', async () => {
+    const [a, h] = await Promise.all([makeNode(), makeNode()])
+    const ids = { a: a.peerId.toString(), h: h.peerId.toString() }
+    const ghost = '12D3KooWGpponMzJoSX1usSBzTdUmp9iaNvRFkvtJh75io6goVuA'
+    const late = '12D3KooWBxHfB4apQpRCjyMFzqoW8RJEH4CYJK2s2TSvU74cvSqt'
+    const voice = new Set([ids.a, ids.h])
+    const got = []
+    const relay = createVoiceRelay({
+        libp2p: a, selfId: ids.a, hostId: () => ids.h, voicePeers: () => [...voice],
+        connectionFor: peerId => a.getConnections().find(c => c.remotePeer.toString() === peerId),
+        onFrame: f => got.push(f)
+    })
+    try {
+        // The host writes one frame of a voice peer (itself), three frames of a peer that is never in voice, and two
+        // frames of a peer whose voice line comes 200 ms later.
+        const frames = [encodeFrame({ origin: ids.h, seq: 0, data: new Uint8Array(40) }),
+            ...[0, 1, 2].map(seq => encodeFrame({ origin: ghost, seq, data: new Uint8Array(40) })),
+            ...[0, 1].map(seq => encodeFrame({ origin: late, seq, data: new Uint8Array(40) }))]
+        await h.handle(VOICE_PROTOCOL, ({ stream }) => {
+            stream.sink((async function * () { yield * frames; await delay(3000) })()).catch(() => {})
+        }, { runOnTransientConnection: true })
+        await a.dial(h.getMultiaddrs()[0])
+        relay.hostChanged()
+        await waitUntil(() => got.length >= 1, 5000)
+        await delay(200)
+        voice.add(late)
+        relay.hostChanged()
+        await waitUntil(() => relay.stats().droppedOrigin === 3, 3000)
+        assert.deepEqual(got.map(f => f.origin), [ids.h, late, late])
+    } finally {
+        relay.stop()
+        await Promise.allSettled([a.stop(), h.stop()])
+    }
+})

@@ -161,9 +161,22 @@ function groupWithPrevious(item) {
     const itemFrom = item.querySelector('.from');
     const same = Boolean(prevFrom && itemFrom) && !prev.classList.contains('file-card') && !item.classList.contains('file-card')
         && prev.classList.contains('own') === item.classList.contains('own')
+        && prev.classList.contains('unverified') === item.classList.contains('unverified')
         && prevFrom.textContent === itemFrom.textContent
         && Math.abs(Number(item.dataset.time) - Number(prev.dataset.time)) < GROUP_MS;
     item.classList.toggle('cont', same);
+}
+
+// M1 (P10a): a history line of a device that this computer does not know. The host gave the name. The mark is CSS
+// (styles.css), thus the text of .from stays the name for the quote and the detail view.
+function markUnverified(item) {
+    const from = item.querySelector('.from');
+    if (!from) return;
+    item.classList.add('unverified');
+    from.classList.add('unverified');
+    from.title = 'The host gave this name. This computer does not know the device of this line.';
+    groupWithPrevious(item);
+    groupWithPrevious(nextContentRow(item));
 }
 
 // The first row after item that is not a note row, or null.
@@ -522,7 +535,13 @@ window.asscrack.onHistory(data => {
     const first = visible && !historyShown.has(activeChannel) && !hasContentRows(messageList);
     const state = window.reading.beforeChange();
     let added = 0;
-    for (const line of lines) if (insertMessage(line.from, line.text, line.time, line.id, null, line.channelId, line.attachment)) added++;
+    for (const line of lines) {
+        // M1 (P10a): a line of a device that this computer does not know is never an own line, and it gets a mark.
+        const item = insertMessage(line.from, line.text, line.time, line.id, line.unverified === true ? false : null, line.channelId, line.attachment);
+        if (!item) continue;
+        added++;
+        if (line.unverified === true) markUnverified(item);
+    }
     for (const line of lines) historyShown.add(line.channelId ?? 'general');
     console.info(`History shown: ${added} lines`);
     if (first) window.reading.followLatest();
