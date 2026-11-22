@@ -75,6 +75,8 @@ function circuitRelay(addr) {
     return m ? m[1] : null
 }
 const PROOF_TIMEOUT_MS = 10000
+// stop() sends a bye line on each open session, then waits this time before it closes the sessions (gap B1).
+const BYE_WAIT_MS = 200
 const MAX_ADDRS = 16
 const RELAY_LINK_DURATION = 8 * 60 * 60 * 1000
 const RELAY_LINK_BYTES = 8n * 1024n * 1024n * 1024n
@@ -513,6 +515,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     const endedSessions = new WeakSet()
     // Open sessions that a new chat stream replaced.
     const replacedSessions = new WeakSet()
+    // Open sessions that received a bye line: the peer quit. Its 'peer-left' event gets left: true (gap B1).
+    const byeSessions = new WeakSet()
     // For each pending session: a promise that settles when the session opens or fails.
     const pendingSettled = new WeakMap()
 
@@ -664,6 +668,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                     else if (control.type === 'whisper') whispers.handle(peerId, session, control)
                     else if (control.type === 'topic' && sessions.get(peerId) === session) topic.handle(peerId, control)
                     else if (control.type === 'history' && sessions.get(peerId) === session) handleHistory(peerId, control)
+                    else if (control.type === 'bye') {
+                        if (sessions.get(peerId) === session) byeSessions.add(session)
+                    }
                     else if (control.type === 'hello') {
                         const peerName = typeof control.name === 'string' ? control.name.trim().slice(0, 64) : ''
                         if (peerName && sessions.get(peerId) === session) {
@@ -837,7 +844,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 peerFull.delete(peerId)
                 names.delete(peerId)
                 pendingHistory.delete(peerId)
-                events.emit('peer-left', { peerId })
+                // left: true when the peer sent a bye line on this session (it quit), false for a lost connection.
+                events.emit('peer-left', { peerId, left: byeSessions.has(session) })
                 if (membership) events.emit('membership', memberState())
                 peerVoice.delete(peerId)
                 peerPresence.delete(peerId)
@@ -1752,6 +1760,11 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             await files.stop()
             election.stop()
             voiceRelay.stop()
+            // Gap B1: tell each peer that this node quits, then give the lines time to go out. close() aborts the
+            // stream at once and drops the queue. No open session: no wait.
+            let byeSent = false
+            for (const s of sessions.values()) if (s.send(JSON.stringify({ type: 'bye' }))) byeSent = true
+            if (byeSent) await new Promise(resolve => setTimeout(resolve, BYE_WAIT_MS))
             const pending = [...sessions.values()].map(s => { s.close(); return s.done })
             await Promise.allSettled(pending)
             // UPnP: remove the mapping before node.stop() closes the client (the library close() does not unmap).

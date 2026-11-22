@@ -63,7 +63,7 @@ test('two nodes chat through createAsscrackNode', { timeout: 15000 }, async () =
         await b.stop()
         bStopped = true
         await waitFor(() => logA.left.length === 1)
-        assert.deepEqual(logA.left, [{ peerId: b.peerId }])
+        assert.deepEqual(logA.left, [{ peerId: b.peerId, left: true }])
         assert.deepEqual(a.peers(), [])
     } finally {
         if (!bStopped) await b.stop()
