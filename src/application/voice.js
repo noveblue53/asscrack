@@ -33,6 +33,8 @@
     // Deafen off.
     let deafened = false;
     let mutedBeforeDeafen = false;
+    // G6: the voice channel of this window in voice. A move changes only this value and the voice line.
+    let channel = 'general';
     // The settings panel is open: the capture runs for the input meter, also out of voice. Nothing goes out.
     let previewWanted = false;
     // A pending microphone request can finish after the window has entered and reopened from Idle Peer.
@@ -67,7 +69,7 @@
     let rnnoiseError = null;
     let rnnoiseInContext = false;
     let rnnoiseNode = null;
-    // peerId -> { inVoice, streamId, muted } of the other peers.
+    // peerId -> { inVoice, streamId, muted, deafened, channel } of the other peers.
     const members = new Map();
     // origin -> { decoder, bytesReceived, audioLevel, lastAt, timestamp }
     const origins = new Map();
@@ -201,8 +203,10 @@
         const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
         o.bytesReceived += bytes.length;
         o.lastAt = performance.now();
-        // A host that is not in voice does not play.
+        // A host that is not in voice does not play. G6: no frame of a known member in a different channel.
         if (!inVoice || !playbackNode || typeof AudioDecoder !== 'function') return;
+        const member = members.get(origin);
+        if (member && member.channel !== channel) return;
         if (!o.decoder) o.decoder = makeDecoder(origin, o);
         try {
             o.decoder.decode(new EncodedAudioChunk({ type: 'key', timestamp: o.timestamp, data: bytes }));
@@ -418,12 +422,20 @@
         if (track) track.enabled = !(inVoice && muted);
     }
 
+    // G6: the node gives the channel in use (General for an ID that is not in its catalog). This window follows it.
+    function useChannel(result) {
+        if (!inVoice || typeof result?.channel !== 'string' || result.channel === channel) return;
+        channel = result.channel;
+        dropOtherChannels();
+        changed();
+    }
+
     // The state for the peers. With no capture the others cannot hear this user: muted.
     function sendState() {
         if (!inVoice) return Promise.resolve();
         return Promise.resolve(api.setVoice({
-            inVoice: true, streamId: localStream?.id ?? null, muted: muted || localStream === null, deafened
-        })).catch(err => console.warn('Voice state send failed:', err?.message ?? err));
+            inVoice: true, streamId: localStream?.id ?? null, muted: muted || localStream === null, deafened, channel
+        })).then(useChannel).catch(err => console.warn('Voice state send failed:', err?.message ?? err));
     }
 
     // C1: open the capture again (the track ended, a device came, or a new device choice). Call it in the serial
@@ -627,16 +639,30 @@
     }
 
     if (typeof api.onVoiceFrame === 'function') api.onVoiceFrame(handleFrame);
-    api.onVoiceState(({ peerId, inVoice: memberInVoice, streamId, muted: memberMuted, deafened: memberDeafened } = {}) => {
+    const channelOf = value => (typeof value === 'string' && value ? value : 'general');
+    // G6: the buffered audio of the members that are not in my channel stops.
+    function dropOtherChannels() {
+        for (const [peerId, member] of members) if (member.channel !== channel) removeOrigin(peerId);
+    }
+    api.onVoiceState(({ peerId, inVoice: memberInVoice, streamId, muted: memberMuted, deafened: memberDeafened,
+        channel: memberChannel } = {}) => {
         members.set(peerId, { inVoice: memberInVoice === true, streamId: streamId ?? null, muted: memberMuted === true,
-            deafened: memberInVoice === true && memberDeafened === true });
-        if (memberInVoice !== true) removeOrigin(peerId);
+            deafened: memberInVoice === true && memberDeafened === true,
+            channel: memberInVoice === true ? channelOf(memberChannel) : 'general' });
+        if (memberInVoice !== true || (inVoice && members.get(peerId).channel !== channel)) removeOrigin(peerId);
         refreshIds();
         changed();
     });
     api.onHostChanged(info => {
         hostId = info?.peerId ?? null;
         refreshIds();
+        changed();
+    });
+    // G6: the node moved this window to General, because the owner deleted its channel. The node sent the voice line.
+    api.onVoiceChannels?.(view => {
+        if (!view?.movedFrom || view.movedFrom.id !== channel) return;
+        channel = 'general';
+        dropOtherChannels();
         changed();
     });
     api.onPeerLeft(({ peerId } = {}) => {
@@ -665,8 +691,10 @@
             else listening.set(origin, { muted, volume });
             applyGain(origin);
         },
-        async join() {
+        // G6: join in a voice channel (an ID of the catalog). The node uses General for an unknown ID.
+        async join(channelId = 'general') {
             if (inVoice) return;
+            channel = channelOf(channelId);
             const generation = captureGeneration;
             checkCapture(generation);
             await refreshHost();
@@ -678,9 +706,10 @@
             inVoice = true;
             applyTrack();
             try {
-                await api.setVoice({ inVoice: true, streamId: localStream?.id ?? null, muted: muted || localStream === null,
-                    deafened: false });
+                const result = await api.setVoice({ inVoice: true, streamId: localStream?.id ?? null,
+                    muted: muted || localStream === null, deafened: false, channel });
                 checkCapture(generation);
+                if (typeof result?.channel === 'string') channel = result.channel;
             } catch (err) {
                 inVoice = false;
                 applyTrack();
@@ -690,7 +719,17 @@
                 }).catch(() => {});
                 throw err;
             }
+            dropOtherChannels();
             changed();
+        },
+        // G6: move to a different voice channel. No new microphone, no new worklet; mute and deafen stay.
+        async move(channelId) {
+            const next = channelOf(channelId);
+            if (!inVoice || next === channel) return;
+            channel = next;
+            dropOtherChannels();
+            changed();
+            await sendState();
         },
         enterIdle() {
             captureGeneration++;
@@ -838,6 +877,7 @@
                 outputFallback,
                 muted,
                 deafened,
+                channel,
                 // The noise suppressor in use, and the reason when RNNoise did not load.
                 suppressor: suppressor(),
                 rnnoiseError,

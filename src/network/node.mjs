@@ -998,6 +998,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         // A move inside voice starts the move hold.
         if (before.inVoice && active && before.channel !== voiceState.channel) voiceRelay.channelChanged()
         else voiceRelay.hostChanged()
+        // The channel in use: the window follows it when the node used General in place of an unknown ID.
+        return { channel: voiceState.channel }
     }
 
     // Legacy peers consume fullNode and addrs and ignore the optional participation flag.

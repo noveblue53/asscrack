@@ -406,13 +406,15 @@ function applyRoster(actions) {
 // in the 10 s of G2 thus gives no cue. The entry stays while the roster holds the peer: the leave cue comes when the
 // roster removes the line. The states update also when I am not in voice, thus the states that come at my own Join
 // are not a change.
+// G6: "in voice" means "in my voice channel" (my channel at the time of each event). A move between two different
+// channels plays no cue.
 const VOICE_BASE_MS = 3 * 1000;
 const otherVoice = new Map();
 
 function otherInVoice(entry, now) {
     if (!entry) return false;
     if (entry.inVoice === null) return now - entry.openedAt > VOICE_BASE_MS ? false : null;
-    return entry.inVoice;
+    return entry.inVoice && (entry.channel ?? 'general') === ownVoiceChannel();
 }
 
 function otherVoiceOpened(peerId) {
@@ -425,16 +427,18 @@ function otherVoiceLoss() {
     for (const entry of otherVoice.values()) entry.lost = true;
 }
 
-function otherVoiceState(peerId, inVoice) {
+function otherVoiceState(peerId, inVoice, channel = 'general') {
     if (typeof peerId !== 'string' || !peerId || peerId === selfId) return;
     const now = Date.now();
     const entry = otherVoice.get(peerId);
     const before = otherInVoice(entry, now);
     const inBase = entry?.base === true && now - entry.openedAt <= VOICE_BASE_MS;
-    otherVoice.set(peerId, { inVoice, openedAt: entry?.openedAt ?? now, base: false, lost: entry?.lost === true });
+    const next = { inVoice, channel, openedAt: entry?.openedAt ?? now, base: false, lost: entry?.lost === true };
+    otherVoice.set(peerId, next);
+    const after = otherInVoice(next, now);
     // No entry: a state before the session event. Not a known change.
-    if (!entry || inBase || before === null || before === inVoice) return;
-    otherVoiceCue(inVoice ? 'other-join' : 'other-leave');
+    if (!entry || inBase || before === null || before === after) return;
+    otherVoiceCue(after ? 'other-join' : 'other-leave');
 }
 
 // The roster removes the line of a peer: at once after a bye, or at the end of the grey time.
@@ -450,7 +454,8 @@ function otherVoiceCue(kind) {
     if (ownInVoice && !joining) window.roomAttention?.cue(kind, 'voice-other');
 }
 
-window.asscrack.onVoiceState(data => otherVoiceState(data?.peerId, data?.inVoice === true));
+window.asscrack.onVoiceState(data => otherVoiceState(data?.peerId, data?.inVoice === true,
+    typeof data?.channel === 'string' && data.channel ? data.channel : 'general'));
 
 function peerJoined(peerId) {
     otherVoiceOpened(peerId);
@@ -699,6 +704,7 @@ function roomStarted(result) {
     window.roomMembership?.start(result?.membership);
     if (result?.membership?.protected === false && internetRoom) statusBar.querySelector('.net-note').textContent = 'Legacy shared-code room';
     void window.roomChannels?.start();
+    void window.voiceChannels?.start();
     window.whispers?.refresh();
     refreshRoomTopic();
     startPresence();
@@ -967,6 +973,16 @@ let mutedBeforeDeafen = false;
 // The text of a failed Join or Leave. The texts of the voice state (C1) come from voice.state().
 let voiceFailText = '';
 let joining = false;
+// G6: the own voice channel (voice.js keeps it), and the last channel of this run for "Join voice".
+let lastVoiceChannel = 'general';
+function ownVoiceChannel() {
+    return window.voice.state().channel ?? 'general';
+}
+// The text after the voice state: " · Raid" when the room has 2 or more voice channels.
+function channelSuffix(channelId) {
+    const name = window.voiceChannels?.label(channelId ?? 'general') ?? '';
+    return name ? ` · ${name}` : '';
+}
 let speaking = new Set(); // peerIds above SPEAKING_LEVEL in the last stats() read
 let statsTimer = null;
 let monitorActive = false;
@@ -974,19 +990,24 @@ let lastMonitorView = '';
 
 function publishMonitorView(state, speakers) {
     const view = { inVoice: ownInVoice, muted: ownMuted, deafened: ownDeafened, transmitting: state.transmitting === true,
-        speakers, theme: document.documentElement.dataset.theme || 'aero-classic' };
+        speakers, theme: document.documentElement.dataset.theme || 'aero-classic',
+        // G6: the microphone line of the detached panel starts with the channel name.
+        channel: ownInVoice && window.voiceChannels ? window.voiceChannels.name(state.channel ?? 'general') : '' };
     const key = JSON.stringify(view);
     if (key === lastMonitorView) return;
     lastMonitorView = key;
     window.roomVoiceMonitor.publish(view);
 }
 
-function setVoiceState(item, text) {
+// extra: the text after the state (G6 channel, G4 volume). data-state has the state only: the CSS of the voice marks
+// reads it.
+function setVoiceState(item, text, extra = '') {
     const span = item.querySelector('.voice-state');
     // No DOM write when the text is the same: the stats timer calls this 4 times each second.
-    if (span.dataset.state === text) return;
-    span.textContent = text;
+    if (span.dataset.state === text && span.dataset.extra === extra) return;
+    span.textContent = text + extra;
     span.dataset.state = text;
+    span.dataset.extra = extra;
 }
 
 // C5: the choice of this listener for a person (Listening dialog).
@@ -1019,6 +1040,7 @@ function updateVoiceView() {
     for (const [peerId, item] of peerItems) {
         item.querySelector('.host-mark').hidden = peerId !== hostId;
         let text = 'not in voice';
+        let extra = '';
         let talking = false;
         const member = members[peerId];
         if (member?.inVoice) {
@@ -1028,7 +1050,9 @@ function updateVoiceView() {
             else if (member.deafened) text = 'in voice (deafened)';
             else if (member.muted) text = 'in voice (muted)';
             else text = talking ? 'speaking' : 'in voice';
-            if (listen.volume !== 100) text += ` · ${listen.volume}%`;
+            // G6, G4: state, channel, volume ("in voice (muted) · Raid · 40%").
+            extra = channelSuffix(member.channel);
+            if (listen.volume !== 100) extra += ` · ${listen.volume}%`;
         }
         // G4: the tooltip of the line gives the listening choice when it is not the default.
         const choice = listeningTo(peerId);
@@ -1036,7 +1060,7 @@ function updateVoiceView() {
             ? `${peerId}\nListening volume ${choice.volume}%${choice.muted ? ', muted for you' : ''}` : peerId;
         if (item.title !== tip) item.title = tip;
         if (speakers && talking) speakers.push(peerNames.get(peerId) || peerId.slice(-8));
-        setVoiceState(item, text);
+        setVoiceState(item, text, extra);
     }
     if (selfLine) {
         selfLine.querySelector('.host-mark').hidden = selfId === null || selfId !== hostId;
@@ -1049,8 +1073,9 @@ function updateVoiceView() {
             else text = state.transmitting ? 'speaking' : 'in voice';
         }
         if (speakers && text === 'speaking') speakers.unshift('You');
-        setVoiceState(selfLine, text);
+        setVoiceState(selfLine, text, ownInVoice ? channelSuffix(state.channel) : '');
     }
+    renderVoiceChannels(state, members);
     const errorText = voiceFailText || voiceStateText(state);
     // #voice-error is an alert: write it only when the text changes (the stats timer calls this 4 times each second).
     if (voiceError.textContent !== errorText) voiceError.textContent = errorText;
@@ -1072,6 +1097,24 @@ function updateVoiceView() {
     if (speakers) publishMonitorView(state, speakers);
     document.body.classList.toggle('in-voice', ownInVoice);
     updateNodeMap();
+}
+
+// G6: the people of each voice channel, for voice-channels-ui.js.
+function renderVoiceChannels(state, members) {
+    if (!window.voiceChannels) return;
+    const people = [];
+    if (ownInVoice && selfLine) {
+        people.push({ peerId: selfId ?? 'self', name: ownName, self: true, inVoice: true, channel: state.channel ?? 'general',
+            muted: ownMuted, deafened: ownDeafened, speaking: state.transmitting === true && !ownMuted });
+    }
+    for (const [peerId, item] of peerItems) {
+        const member = members[peerId];
+        if (!member?.inVoice) continue;
+        people.push({ peerId, name: item.querySelector('.name').textContent, inVoice: true, channel: member.channel ?? 'general',
+            muted: member.muted === true, deafened: member.deafened === true,
+            speaking: speaking.has(peerId) && !listeningTo(peerId).muted });
+    }
+    window.voiceChannels.render({ inVoice: ownInVoice, channel: state.channel ?? 'general', people });
 }
 
 async function refreshHostInfo() {
@@ -1109,16 +1152,19 @@ function stopStatsTimer() {
     speaking = new Set();
 }
 
-async function joinVoice() {
+// G6: "Join voice" joins the last channel of this run (when it still exists), else General.
+async function joinVoice(channelId = lastVoiceChannel) {
     if (joining || ownInVoice) return;
+    const channel = window.voiceChannels?.has(channelId) ? channelId : 'general';
     joining = true;
     voiceFailText = '';
     updateVoiceView();
     try {
         // C1 and N1: a microphone error does not stop Join. voice.state() then gives the text.
-        await window.voice.join();
+        await window.voice.join(channel);
         if (window.idlePeer?.isIdle()) return;
         window.roomAttention?.cue('join');
+        lastVoiceChannel = channel;
         ownInVoice = true;
         ownDeafened = false;
         startStatsTimer();
@@ -1128,6 +1174,30 @@ async function joinVoice() {
         joining = false;
         updateVoiceView();
     }
+}
+
+// G6: move to a different voice channel. The microphone stays open. My own move plays the join cue.
+async function moveVoice(channelId) {
+    if (!ownInVoice || joining || window.idlePeer?.isIdle() || !window.voiceChannels?.has(channelId)) return;
+    if (channelId === ownVoiceChannel()) return;
+    voiceFailText = '';
+    try {
+        await window.voice.move?.(channelId);
+        lastVoiceChannel = channelId;
+        window.roomAttention?.cue('join');
+    } catch (err) {
+        voiceFailText = `Voice error: ${errorText(err)}`;
+    }
+    updateVoiceView();
+}
+
+// G6: the owner deleted my voice channel. The node moved me to General (voice.js follows it).
+function voiceChannelMoved(movedFrom) {
+    if (lastVoiceChannel === movedFrom?.id) lastVoiceChannel = 'general';
+    if (!ownInVoice) return;
+    showNotice(window.voiceChannels?.movedText(String(movedFrom?.name ?? '')) ?? '');
+    window.roomAttention?.cue('join');
+    updateVoiceView();
 }
 
 async function leaveVoice() {
@@ -1176,7 +1246,7 @@ function toggleDeafen() {
     updateVoiceView();
 }
 
-joinVoiceButton.addEventListener('click', joinVoice);
+joinVoiceButton.addEventListener('click', () => joinVoice());
 leaveVoiceButton.addEventListener('click', leaveVoice);
 muteButton.addEventListener('click', toggleMute);
 deafenButton.addEventListener('click', toggleDeafen);
@@ -1583,6 +1653,8 @@ function rowInfo(row) {
     if (row.parentElement === messageList && !row.classList.contains('file-card')) {
         return { kind: 'message', details: Boolean(row.querySelector('.text')), inspect: Boolean(window.peerInspector && peerItems.has(row.dataset.peerId)), quotable: selfLine !== null && row.querySelector('.text') !== null, localOnly: row.classList.contains('local-only'), link: Boolean(window.chatLinks?.firstLink(row)), image: window.chatMedia?.hasImage?.(row) === true };
     }
+    // G6: a voice channel row (voice-channels-ui.js).
+    if (row.parentElement?.id === 'voice-channel-list') return window.voiceChannels?.rowInfo(row) ?? null;
     if (row.parentElement === transferList || row.parentElement === messageList) {
         if (row.classList.contains('offer-head')) {
             const head = offerHeads.get(row.dataset.offerId);
@@ -1627,6 +1699,8 @@ function runRowAction(action, row) {
         case 'cancel-receiver': return cancelToReceiver(transferKey(row));
         case 'cancel-offer': return cancelWholeOffer(row.dataset.offerId);
         case 'reveal': return revealTransfer(transferKey(row));
+        case 'rename-voice-channel': return window.voiceChannels?.rename(row) ?? false;
+        case 'delete-voice-channel': return window.voiceChannels?.remove(row) ?? false;
         default: return false;
     }
 }
@@ -2080,7 +2154,7 @@ function updateNodeMap() {
     const nodes = [];
     if (self) {
         selfLine.dataset.peerId = self;
-        nodes.push({ id: self, name: ownName, color: nameColorClass(ownName), idle: selfIdle, inVoice: voice.inVoice === true, muted: ownMuted, speaking: voice.transmitting === true && !ownMuted, fullNode: fullNodeSelf });
+        nodes.push({ id: self, name: ownName, color: nameColorClass(ownName), idle: selfIdle, inVoice: voice.inVoice === true, muted: ownMuted, speaking: voice.transmitting === true && !ownMuted, fullNode: fullNodeSelf, channel: window.voiceChannels?.label(voice.channel ?? 'general') ?? '' });
     }
     for (const [peerId, item] of peerItems) {
         const name = item.querySelector('.name').textContent;
@@ -2090,6 +2164,8 @@ function updateNodeMap() {
             color: nameColorClass(name),
             inVoice: members[peerId]?.inVoice === true,
             muted: members[peerId]?.muted === true,
+            // G6: the channel name when the room has 2 or more voice channels.
+            channel: window.voiceChannels?.label(members[peerId]?.channel ?? 'general') ?? '',
             // C5: no speaking mark for a person that is muted for me.
             speaking: speaking.has(peerId) && !listeningTo(peerId).muted,
             idle: idlePeerIds.has(peerId),

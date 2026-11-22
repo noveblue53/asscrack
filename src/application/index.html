@@ -21,6 +21,7 @@
   <link rel="stylesheet" href="desktop-controls.css">
   <link rel="stylesheet" href="shared-shelf.css">
   <link rel="stylesheet" href="transcript-notes.css">
+  <link rel="stylesheet" href="voice-channels.css">
 </head>
 <body>
   <!-- Decoration only: the sky bubbles behind the two screens. -->
@@ -216,6 +217,19 @@
       <section id="buddy-panel" class="panel" tabindex="-1" aria-label="Buddies">
         <h2 class="panel-head">Buddies <span id="peer-count" class="count">1</span> <button id="whisper-open" type="button" aria-controls="whisper-pane" hidden>Whispers</button></h2>
         <ul id="peers"></ul>
+        <!-- G6: voice-channels-ui.js fills the list. One click on a channel joins it or moves to it. -->
+        <section id="voice-channels" aria-labelledby="voice-channels-title">
+          <div class="vc-head"><h3 id="voice-channels-title">Voice channels</h3><button id="voice-channel-create" type="button" hidden>Create</button></div>
+          <ul id="voice-channel-list" aria-labelledby="voice-channels-title"></ul>
+          <dialog id="voice-channel-dialog" aria-labelledby="voice-channel-title"><form id="voice-channel-form">
+            <h2 id="voice-channel-title">Create voice channel</h2><label>Voice channel name <input type="text" id="voice-channel-name" required maxlength="80" autocomplete="off"></label>
+            <p id="voice-channel-error" role="status"></p><button id="voice-channel-cancel" type="button">Cancel</button><button id="voice-channel-submit">Create</button>
+          </form></dialog>
+          <dialog id="voice-channel-delete-dialog" aria-labelledby="voice-channel-delete-title">
+            <h2 id="voice-channel-delete-title">Delete voice channel</h2><p id="voice-channel-delete-text"></p>
+            <p id="voice-channel-delete-error" role="status"></p><button id="voice-channel-delete-cancel" type="button">Cancel</button><button id="voice-channel-delete-confirm" type="button">Delete</button>
+          </dialog>
+        </section>
         <div id="voice-controls" aria-label="Voice controls" role="group">
           <button id="join-voice" type="button">Join voice</button>
           <button id="mute" type="button" aria-pressed="false" title="Mute (Ctrl+Shift+M)" aria-keyshortcuts="Control+Shift+M">Mute</button>
@@ -531,6 +545,7 @@
   <script src="composer-keys.js"></script>
   <script src="room-membership-ui.js"></script>
   <script src="channels-ui.js"></script>
+  <script src="voice-channels-ui.js"></script>
   <script src="typing.js"></script>
   <script src="whispers.js"></script>
   <script src="saved-rooms-ui.js"></script>

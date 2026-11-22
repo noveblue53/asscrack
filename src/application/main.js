@@ -899,8 +899,9 @@ onRoomIpc('asscrack:voice-frame', (_event, bytes) => {
 handleRoomIpc('asscrack:set-voice', (_event, state) => {
     if (!node) throw new Error('Not logged in');
     if (idlePeer && state?.inVoice === true) throw new Error('Idle Peer has left voice');
-    node.setVoice(state ?? {});
+    const result = node.setVoice(state ?? {});
     updatePttHook(() => pttHook.setInVoice(state?.inVoice === true));
+    return result;
 });
 
 // G4: the listening choice of each person, per room, in the profile. The key is the device ID of the room membership.

@@ -8,8 +8,10 @@
         document.documentElement.dataset.theme = view.theme;
         mic.dataset.muted = String(view.inVoice && muted);
         // C2: Deafen mutes the microphone too. The text tells the user that the voice of the others does not play.
-        mic.textContent = !view.inVoice ? 'Mic off' : view.deafened ? 'Deafened' : muted ? 'Mic muted'
+        const state = !view.inVoice ? 'Mic off' : view.deafened ? 'Deafened' : muted ? 'Mic muted'
             : view.transmitting ? 'Mic transmitting' : 'Mic ready';
+        // G6: in voice, the line starts with the voice channel name ("Raid · Mic ready").
+        mic.textContent = view.inVoice && typeof view.channel === 'string' && view.channel ? `${view.channel} · ${state}` : state;
         mute.textContent = muted ? 'Unmute' : 'Mute';
         mute.disabled = !view.inVoice;
         mute.setAttribute('aria-pressed', String(muted));
