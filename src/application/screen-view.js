@@ -51,7 +51,7 @@
     let filled = false;
     let noticeTimer = null;
     let waitTimer = null;
-    const totals = { watches: 0, frames: 0, decoded: 0, resets: 0, keyRequests: 0, sizeErrors: 0, configs: 0, dropped: 0 };
+    const totals = { watches: 0, frames: 0, bytes: 0, decoded: 0, resets: 0, keyRequests: 0, sizeErrors: 0, configs: 0, dropped: 0 };
 
     function nameOf(peerId) {
         const name = typeof peerNames !== 'undefined' ? peerNames.get(peerId) : '';
@@ -231,6 +231,7 @@
         const w = watch;
         if (!w || !w.config || data?.peerId !== w.peerId || !(data.data instanceof Uint8Array)) return;
         totals.frames++;
+        totals.bytes += data.data.length;
         w.frames++;
         w.lastFrameAt = now();
         if (note && !note.hidden) setNote('');

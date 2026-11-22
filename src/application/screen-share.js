@@ -52,7 +52,7 @@
     let starting = false;
     let encoderGen = 0;
     let lastTrack = null; // for stats(): the track state after a stop (W4 check 6)
-    const totals = { captured: 0, encoded: 0, sent: 0, skipped: 0, dropped: 0, keyframes: 0, reports: 0 };
+    const totals = { captured: 0, encoded: 0, sent: 0, sentBytes: 0, skipped: 0, dropped: 0, keyframes: 0, reports: 0 };
 
     function nameOf(peerId) {
         const name = typeof peerNames !== 'undefined' ? peerNames.get(peerId) : '';
@@ -423,6 +423,7 @@
         if (key) totals.keyframes++;
         api.sendScreenFrame({ tier: tier.id, key, timestampMs: Math.floor(chunk.timestamp / 1000), data });
         totals.sent++;
+        totals.sentBytes += data.length;
         maybeReport(t);
     }
     // E11: each 500 ms, for each tier: the frame slots, the frames that E3 skipped and E4 dropped, the encode p95.
@@ -631,7 +632,9 @@
             sharing: share !== null, trackState: lastTrack?.readyState ?? null, ...totals,
             tiers: share ? [...share.tiers.values()].map(t => ({ tier: t.id, preset: t.preset, fps: t.fps, bitrate: t.bitrate,
                 width: t.size?.width ?? null, height: t.size?.height ?? null, encoder: Boolean(t.encoder) })) : [],
-            capture: share?.capture ?? null
+            capture: share?.capture ?? null,
+            // The groups of the last screen-viewers event: [{ tier, role, preset, bitrate, viewers }].
+            groups: share && Array.isArray(lastViewers.tiers) ? lastViewers.tiers.map(t => ({ ...t, viewers: [...(t.viewers ?? [])] })) : []
         })
     });
     updateButton();
