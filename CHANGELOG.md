@@ -7,6 +7,33 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased — chat links, files with text, and keys of the message box (goal G3, 2026-11-21)
+
+Links in the chat open in the system browser. A file and the text of the message box go to the correct people. Gap
+IDs D1, D2, D3, D4, D5, D7, N5, N7 of `work-orders/gaps-1.0-20261121`.
+
+- **Links (D2).** Each `http://` or `https://` URL in a chat line or a whisper line is a link. The punctuation at the
+  end of the URL is not part of the link. A highlight in a URL does not cut the link. A click sends the URL to the
+  main process. The main process opens it in the system browser only if it is `http:` or `https:` with a host and
+  no user name or password. The URL has 2048 characters or less. It opens at most one link each 500 ms. The window
+  itself never goes to the link.
+- **A file and the text (D1).** The message box always belongs to the room. A media file for the room takes the text
+  as its caption. An ordinary file for the room goes first, then the text goes as a line. A file for one person and
+  a text: only the text goes to the room, and the file stays attached with a status text. The draft shows the size
+  of the file and a small picture of an image.
+- **Offer note (N5).** An offer with no chat line gives a note row: "You offered notes.txt (27 B) to the room."
+- **Paste of a file (N7).** Copy a file in Explorer, then press Ctrl+V in the message box: the file attaches.
+- **Keys (D3, D4).** Up and Down in the message box recall the last 50 sent texts of this run. Tab completes a buddy
+  name at the end of a word. All other Tabs move the focus.
+- **Channels (D5).** A count next to the channel menu shows the unread lines of the other channels.
+- **Image viewer (D7).** A click on a chat image, or "View image" in the row menu, shows the image at full size.
+  Escape closes it.
+- **Result: 127.0.0.1, this PC.** `npm test`: 555 of 555 pass (28 new tests). One start of the app: no error line.
+  App check with two copies on this PC: 9 of 9 checks pass. They check these items: the paste of a copied file,
+  the offer note, the link and its click, and a link with a highlight. They also check the draft picture and the
+  image viewer with Escape. The check
+  used `Set-Clipboard -Path` in place of a copy in Explorer (the same clipboard format). No LAN test.
+
 ## Unreleased — sound cues for other people and for messages (goal P11, 2026-11-21)
 
 ASSCRACK plays a short local cue when a different person joins or leaves voice, and for a mention or a whisper to
