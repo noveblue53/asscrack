@@ -217,7 +217,8 @@
         <ul id="peers"></ul>
         <div id="voice-controls" aria-label="Voice controls" role="group">
           <button id="join-voice" type="button">Join voice</button>
-          <button id="mute" type="button" aria-pressed="false" hidden>Mute</button>
+          <button id="mute" type="button" aria-pressed="false" title="Mute (Ctrl+Shift+M)" aria-keyshortcuts="Control+Shift+M">Mute</button>
+          <button id="deafen" type="button" aria-pressed="false" title="Deafen: you hear no voice and your microphone is muted (Ctrl+Shift+D)" aria-keyshortcuts="Control+Shift+D" hidden>Deafen</button>
           <span id="ptt-state" hidden>PTT released</span>
           <button id="voice-settings-toggle" type="button" aria-expanded="false" aria-controls="voice-settings">Voice settings</button>
           <button id="leave-voice" type="button" hidden>Leave voice</button>
@@ -452,7 +453,7 @@
     <h2 id="attention-title">Sound &amp; notifications</h2>
     <fieldset>
       <legend>Sound cues</legend>
-      <label><input id="attention-cues" type="checkbox"> Play local cues when I join, leave, mute or unmute</label>
+      <label><input id="attention-cues" type="checkbox"> Play local cues when I join, leave, mute, unmute or deafen</label>
       <label><input id="attention-other-cues" type="checkbox"> Other people join or leave voice</label>
       <label><input id="attention-message-cues" type="checkbox"> Mentions and whispers</label>
       <label for="attention-volume">Cue volume <output id="attention-percent" for="attention-volume"></output></label>

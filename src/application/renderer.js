@@ -11,6 +11,7 @@ const sendButton = document.getElementById('send');
 const joinVoiceButton = document.getElementById('join-voice');
 const leaveVoiceButton = document.getElementById('leave-voice');
 const muteButton = document.getElementById('mute');
+const deafenButton = document.getElementById('deafen');
 const voiceError = document.getElementById('voice-error');
 const waitingPeer = document.getElementById('waiting-peer');
 
@@ -914,7 +915,13 @@ const STATS_INTERVAL_MS = 250;
 let selfId = null;
 let hostId = null;
 let ownInVoice = false;
+// C8: the mute state stays through Leave and Join while the window runs. Idle Peer sets it to off.
 let ownMuted = false;
+// C2: Deafen mutes the microphone too. mutedBeforeDeafen comes back at Deafen off and at Leave.
+let ownDeafened = false;
+let mutedBeforeDeafen = false;
+// The text of a failed Join or Leave. The texts of the voice state (C1) come from voice.state().
+let voiceFailText = '';
 let joining = false;
 let speaking = new Set(); // peerIds above SPEAKING_LEVEL in the last stats() read
 let statsTimer = null;
@@ -922,7 +929,7 @@ let monitorActive = false;
 let lastMonitorView = '';
 
 function publishMonitorView(state, speakers) {
-    const view = { inVoice: ownInVoice, muted: ownMuted, transmitting: state.transmitting === true,
+    const view = { inVoice: ownInVoice, muted: ownMuted, deafened: ownDeafened, transmitting: state.transmitting === true,
         speakers, theme: document.documentElement.dataset.theme || 'aero-classic' };
     const key = JSON.stringify(view);
     if (key === lastMonitorView) return;
@@ -938,35 +945,74 @@ function setVoiceState(item, text) {
     span.dataset.state = text;
 }
 
+// C5: the choice of this listener for a person (Listening dialog).
+function listeningTo(peerId) {
+    return window.voice.listeningFor?.(peerId) ?? { muted: false, volume: 100 };
+}
+
+// C1: the texts of the voice state, while in voice. Each text goes away when its cause goes away.
+function voiceStateText(state) {
+    if (!ownInVoice) return '';
+    const texts = [];
+    if (state.capturing === false && state.captureError) {
+        texts.push(window.voice.microphoneErrorText?.(state.captureError, true) ?? 'The microphone did not start.');
+    } else if (state.capturing === true && state.inputFallback === true) {
+        texts.push('The microphone was disconnected. ASSCRACK uses the default microphone.');
+    }
+    if (state.outputFallback === true) texts.push('The selected speakers are not connected. ASSCRACK uses the default speakers.');
+    return texts.join(' ');
+}
+
 function updateVoiceView() {
     const state = window.voice.state();
     const members = state.members ?? {};
     const speakers = monitorActive ? [] : null;
     if (state.self) selfId = state.self;
     if (state.host !== undefined && state.host !== null) hostId = state.host;
+    // voice.js keeps the mute and Deafen state. This copy follows it.
+    if (typeof state.muted === 'boolean') ownMuted = state.muted;
+    if (typeof state.deafened === 'boolean') ownDeafened = state.deafened;
     for (const [peerId, item] of peerItems) {
         item.querySelector('.host-mark').hidden = peerId !== hostId;
         let text = 'not in voice';
-        if (members[peerId]?.inVoice) {
-            if (members[peerId].muted) text = 'in voice (muted)';
-            else text = speaking.has(peerId) ? 'speaking' : 'in voice';
+        let talking = false;
+        const member = members[peerId];
+        if (member?.inVoice) {
+            const listen = listeningTo(peerId);
+            talking = !listen.muted && !member.muted && speaking.has(peerId);
+            if (listen.muted) text = 'muted for you';
+            else if (member.deafened) text = 'in voice (deafened)';
+            else if (member.muted) text = 'in voice (muted)';
+            else text = talking ? 'speaking' : 'in voice';
+            if (listen.volume !== 100) text += ` · ${listen.volume}%`;
         }
-        if (speakers && text === 'speaking') speakers.push(peerNames.get(peerId) || peerId.slice(-8));
+        if (speakers && talking) speakers.push(peerNames.get(peerId) || peerId.slice(-8));
         setVoiceState(item, text);
     }
     if (selfLine) {
         selfLine.querySelector('.host-mark').hidden = selfId === null || selfId !== hostId;
-        let text = 'not in voice';
+        let text = ownMuted ? 'not in voice (mic muted)' : 'not in voice';
         // transmitting: the send gate of voice.js is open (voice activity or push to talk).
-        if (ownInVoice) text = ownMuted ? 'in voice (muted)' : (state.transmitting ? 'speaking' : 'in voice');
+        if (ownInVoice) {
+            if (ownDeafened) text = 'in voice (deafened)';
+            else if (state.capturing === false) text = 'in voice (no microphone)';
+            else if (ownMuted) text = 'in voice (muted)';
+            else text = state.transmitting ? 'speaking' : 'in voice';
+        }
         if (speakers && text === 'speaking') speakers.unshift('You');
         setVoiceState(selfLine, text);
     }
+    const errorText = voiceFailText || voiceStateText(state);
+    // #voice-error is an alert: write it only when the text changes (the stats timer calls this 4 times each second).
+    if (voiceError.textContent !== errorText) voiceError.textContent = errorText;
     joinVoiceButton.hidden = ownInVoice;
     joinVoiceButton.disabled = joining;
     leaveVoiceButton.hidden = !ownInVoice;
-    muteButton.hidden = !ownInVoice;
+    // C8: Mute also before Join.
+    muteButton.hidden = false;
     muteButton.textContent = ownMuted ? 'Unmute' : 'Mute';
+    deafenButton.hidden = !ownInVoice;
+    deafenButton.setAttribute('aria-pressed', String(ownDeafened));
     const ptt = document.getElementById('ptt-state');
     if (ptt) {
         ptt.hidden = !ownInVoice || state.inputMode !== 'ptt';
@@ -1017,17 +1063,18 @@ function stopStatsTimer() {
 async function joinVoice() {
     if (joining || ownInVoice) return;
     joining = true;
-    voiceError.textContent = '';
+    voiceFailText = '';
     updateVoiceView();
     try {
+        // C1 and N1: a microphone error does not stop Join. voice.state() then gives the text.
         await window.voice.join();
         if (window.idlePeer?.isIdle()) return;
         window.roomAttention?.cue('join');
         ownInVoice = true;
-        ownMuted = false;
+        ownDeafened = false;
         startStatsTimer();
     } catch (err) {
-        if (err?.message !== 'Voice capture ended') voiceError.textContent = `Voice error: ${errorText(err)}`;
+        if (err?.message !== 'Voice capture ended') voiceFailText = `Voice error: ${errorText(err)}`;
     } finally {
         joining = false;
         updateVoiceView();
@@ -1037,28 +1084,65 @@ async function joinVoice() {
 async function leaveVoice() {
     stopStatsTimer();
     ownInVoice = false;
-    ownMuted = false;
+    // C2: Leave turns Deafen off. C8: the mute state stays.
+    if (ownDeafened) ownMuted = mutedBeforeDeafen;
+    ownDeafened = false;
     updateVoiceView();
     try {
         await window.voice.leave();
         window.roomAttention?.cue('leave');
     } catch (err) {
-        voiceError.textContent = `Voice error: ${errorText(err)}`;
+        voiceFailText = `Voice error: ${errorText(err)}`;
     }
     updateVoiceView();
 }
 
+// C8: Mute works also before Join. C2: Unmute while deafened also turns Deafen off.
 function toggleMute() {
-    if (!ownInVoice) return;
-    ownMuted = !ownMuted;
+    if (window.idlePeer?.isIdle()) return;
+    if (ownDeafened) {
+        ownDeafened = false;
+        ownMuted = false;
+    } else {
+        ownMuted = !ownMuted;
+    }
     window.voice.setMuted(ownMuted);
     window.roomAttention?.cue(ownMuted ? 'mute' : 'unmute');
+    updateVoiceView();
+}
+
+// C2: Deafen, only in voice. Its cues are the mute and unmute cues.
+function toggleDeafen() {
+    if (!ownInVoice || window.idlePeer?.isIdle()) return;
+    if (ownDeafened) {
+        ownDeafened = false;
+        ownMuted = mutedBeforeDeafen;
+    } else {
+        mutedBeforeDeafen = ownMuted;
+        ownDeafened = true;
+        ownMuted = true;
+    }
+    window.voice.setDeafened(ownDeafened);
+    window.roomAttention?.cue(ownDeafened ? 'mute' : 'unmute');
     updateVoiceView();
 }
 
 joinVoiceButton.addEventListener('click', joinVoice);
 leaveVoiceButton.addEventListener('click', leaveVoice);
 muteButton.addEventListener('click', toggleMute);
+deafenButton.addEventListener('click', toggleDeafen);
+// C6 and C2: Ctrl+Shift+M changes Mute and Ctrl+Shift+D changes Deafen, while the room is open. Not a global key:
+// the key hook runs only in push-to-talk mode (ptt-hook.mjs).
+document.addEventListener('keydown', e => {
+    if (!e.ctrlKey || !e.shiftKey || e.altKey || e.metaKey || e.repeat || e.defaultPrevented || chatScreen.hidden) return;
+    if (e.code === 'KeyM') {
+        e.preventDefault();
+        toggleMute();
+    } else if (e.code === 'KeyD' && ownInVoice) {
+        e.preventDefault();
+        toggleDeafen();
+    }
+});
 window.roomVoiceMonitor?.onActive(active => {
     monitorActive = active;
     lastMonitorView = '';
@@ -1381,6 +1465,8 @@ function changeListening() {
     listenerPercent.textContent = `${volume}%`;
     listenerVolume.setAttribute('aria-valuetext', listenerPercent.textContent);
     window.voice.setListening(id, listenerMuted.checked, volume);
+    // C5: setListening gives no change event. The line shows "muted for you" and the volume.
+    updateVoiceView();
 }
 
 listenerMuted?.addEventListener('change', changeListening);
@@ -1869,7 +1955,8 @@ function updateNodeMap() {
             color: nameColorClass(name),
             inVoice: members[peerId]?.inVoice === true,
             muted: members[peerId]?.muted === true,
-            speaking: speaking.has(peerId),
+            // C5: no speaking mark for a person that is muted for me.
+            speaking: speaking.has(peerId) && !listeningTo(peerId).muted,
             idle: idlePeerIds.has(peerId),
             fullNode: fullNodePeers.has(peerId)
         });
@@ -2374,6 +2461,7 @@ document.addEventListener('keydown', e => {
             stopStatsTimer();
             ownInVoice = false;
             ownMuted = false;
+            ownDeafened = false;
             void window.voice.enterIdle();
             updateVoiceView();
         }

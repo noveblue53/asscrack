@@ -86,13 +86,13 @@
 }
 :root[data-theme] :is(#voice-settings, #invite-panel, #room-storage, dialog) { text-shadow: none; }
 :root[data-theme] button:not(:where(.theme-choice, #window-controls button, #peers .avatar)),
-:root[data-theme] :is(#titlebar > button, #join-voice, #leave-voice, #mute, #quote-remove) {
+:root[data-theme] :is(#titlebar > button, #join-voice, #leave-voice, #mute, #deafen, #quote-remove) {
   color: var(--control-ink); background: var(--control-glass); border-color: var(--line); box-shadow: var(--relief); text-shadow: none;
 }
 :root[data-theme] :is(#titlebar > button[aria-expanded="true"], #login, #send, #send-file, .btn-accept, #jump-latest, .reopen-room) {
   color: var(--frame-ink); background: var(--glass); border-color: var(--line); box-shadow: var(--relief);
 }
-:root[data-theme] :is(#voice-controls, #transfers, .file-card) :is(.btn-refuse, .btn-cancel, #leave-voice, #mute[aria-pressed="true"]) { color: var(--danger); }
+:root[data-theme] :is(#voice-controls, #transfers, .file-card) :is(.btn-refuse, .btn-cancel, #leave-voice, #mute[aria-pressed="true"], #deafen[aria-pressed="true"]) { color: var(--danger); }
 :root[data-theme] :is(input[type="text"], select, textarea, #message-input, #invite-code, #voice-settings select, #vs-ptt-key) {
   color: var(--ink); background: var(--chat); border-color: var(--line); box-shadow: inset 0 1px 2px rgb(0 0 0 / .1);
 }
