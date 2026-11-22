@@ -213,28 +213,28 @@ test('the Leave room dialog has the text of each room case, and one more line fo
     await settle();
     assert.equal(f.el('leave-dialog').open, true);
     assert.equal(f.el('leave-text').textContent,
-        'Leave this room? You go out of voice and the chat closes. The room stays in Saved rooms.');
+        'Leave room? It stays in Saved rooms.');
     assert.equal(f.el('leave-transfers').hidden, true);
     f.el('leave-dialog').close();
 
     info = { saved: false, owner: false };
     await f.window.appShell.openLeave();
     assert.equal(f.el('leave-text').textContent,
-        'Leave this room? It is not saved on this device. To come back, you need your invite again.');
+        'Leave room? It isn\'t saved. You\'ll need the invite to rejoin.');
     f.el('leave-dialog').close();
 
     info = { saved: false, owner: true };
     sending(f, 'one');
     await f.window.appShell.openLeave();
     assert.equal(f.el('leave-text').textContent,
-        'Leave this room? You own it and it is not saved on this device. If you leave, you cannot open it as the owner again.');
+        'Leave room? It isn\'t saved, so you can\'t reopen it as owner.');
     assert.equal(f.el('leave-transfers').hidden, false);
-    assert.equal(f.el('leave-transfers').textContent, '1 file transfer stops.');
+    assert.equal(f.el('leave-transfers').textContent, '1 transfer will stop.');
     f.el('leave-dialog').close();
 
     sending(f, 'two');
     await f.window.appShell.openLeave();
-    assert.equal(f.el('leave-transfers').textContent, '2 file transfers stop.');
+    assert.equal(f.el('leave-transfers').textContent, '2 transfers will stop.');
     // A transfer that ended does not count.
     f.handlers.onFileDone({ offerId: 'one', peerId: SAM, direction: 'send', confirmed: true });
     assert.equal(f.window.roomTransfers.activeCount(), 1);
@@ -250,7 +250,7 @@ test('Leave room calls leaveRoom of the bridge one time; a failure keeps the dia
     f.el('leave-confirm').click();
     await settle();
     assert.equal(calls, 1, 'a second click while the first one runs does nothing');
-    assert.equal(f.el('leave-status').textContent, 'Could not leave the room.');
+    assert.equal(f.el('leave-status').textContent, "Couldn't leave the room.");
     assert.equal(f.el('leave-confirm').disabled, false);
     result = true;
     f.el('leave-confirm').click();
@@ -272,7 +272,7 @@ test('View, Quit with no active transfer quits at once; with active transfers it
     f.window.appShell.quit();
     assert.equal(quits(), 1, 'no quit before the answer');
     assert.equal(f.el('quit-dialog').open, true);
-    assert.equal(f.el('quit-text').textContent, 'Quit ASSCRACK? 2 file transfers stop.');
+    assert.equal(f.el('quit-text').textContent, 'Quit? 2 transfers will stop.');
     f.el('quit-confirm').click();
     assert.equal(quits(), 2);
     assert.equal(f.el('quit-dialog').open, false);

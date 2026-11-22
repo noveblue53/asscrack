@@ -8,19 +8,19 @@
 
     // ---- E6: one table of the keys that work in this build. The push-to-talk key comes from the voice settings. ----
     const SHORTCUTS = Object.freeze([
-        ['Enter', 'Send the message'],
-        ['Shift+Enter', 'Start a new line in the message'],
-        ['Ctrl+F', 'Find in the loaded messages'],
-        ['F3 and Shift+F3', 'Go to the next or the previous result of Find'],
-        ['Escape', 'Close the menu, the panel or the dialog on top'],
-        ['Alt+J', 'Go to the next unread highlight'],
-        ['Up and Down', 'In the message box: show a text that you sent before'],
-        ['Tab', 'In the message box: complete the name of a buddy'],
-        ['Ctrl+Shift+M', 'Mute or unmute your microphone'],
-        ['Ctrl+Shift+D', 'Deafen or undeafen (in voice)'],
-        ['Shift+F10 and the Menu key', 'Open the menu of the selected line'],
-        ['Arrow keys', 'Move between the lines of a list or a menu'],
-        ['F1', 'Show the keyboard shortcuts']
+        ['Enter', 'Send'],
+        ['Shift+Enter', 'New line'],
+        ['Ctrl+F', 'Find'],
+        ['F3 and Shift+F3', 'Next / previous result'],
+        ['Escape', 'Close menu or dialog'],
+        ['Alt+J', 'Next unread highlight'],
+        ['Up and Down', 'Previous sent message'],
+        ['Tab', 'Complete a name'],
+        ['Ctrl+Shift+M', 'Mute / unmute'],
+        ['Ctrl+Shift+D', 'Deafen / undeafen'],
+        ['Shift+F10 and the Menu key', 'Open context menu'],
+        ['Arrow keys', 'Move in lists and menus'],
+        ['F1', 'Keyboard shortcuts']
     ]);
     const PUSH_TO_TALK = 'Push to talk (voice settings)';
 
@@ -76,7 +76,7 @@
             byId('about-log').hidden = about.debugLog !== true;
             aboutText = version + '\n' + runtime;
         } catch {
-            byId('about-status').textContent = 'The version info could not be read.';
+            byId('about-status').textContent = 'Couldn\'t read version info.';
         }
         // P9C: the update part (updates-ui.js).
         window.updatesUi?.refreshAbout();
@@ -85,17 +85,17 @@
     byId('about-copy')?.addEventListener('click', async () => {
         try {
             await api.copyText(aboutText);
-            byId('about-status').textContent = 'Version info copied.';
+            byId('about-status').textContent = 'Copied.';
         } catch {
-            byId('about-status').textContent = 'The version info could not be copied.';
+            byId('about-status').textContent = 'Couldn\'t copy.';
         }
     });
     byId('about-data')?.addEventListener('click', async () => {
         try {
             const result = await api.openDataFolder();
-            byId('about-status').textContent = result?.ok ? '' : 'The data folder could not be opened.';
+            byId('about-status').textContent = result?.ok ? '' : 'Couldn\'t open the data folder.';
         } catch {
-            byId('about-status').textContent = 'The data folder could not be opened.';
+            byId('about-status').textContent = 'Couldn\'t open the data folder.';
         }
     });
 
@@ -104,16 +104,14 @@
         return window.roomTransfers?.activeCount() ?? 0;
     }
     function transfersStopText(count) {
-        return count === 1 ? '1 file transfer stops.' : count + ' file transfers stop.';
+        return count === 1 ? '1 transfer will stop.' : count + ' transfers will stop.';
     }
 
     // ---- A7: Leave room ----
     function leaveText(info) {
-        if (info?.saved) return 'Leave this room? You go out of voice and the chat closes. The room stays in Saved rooms.';
-        if (info?.owner) {
-            return 'Leave this room? You own it and it is not saved on this device. If you leave, you cannot open it as the owner again.';
-        }
-        return 'Leave this room? It is not saved on this device. To come back, you need your invite again.';
+        if (info?.saved) return 'Leave room? It stays in Saved rooms.';
+        if (info?.owner) return 'Leave room? It isn\'t saved, so you can\'t reopen it as owner.';
+        return 'Leave room? It isn\'t saved. You\'ll need the invite to rejoin.';
     }
 
     let leaving = false;
@@ -134,16 +132,16 @@
         if (leaving) return;
         leaving = true;
         byId('leave-confirm').disabled = true;
-        byId('leave-status').textContent = 'Leaving the room…';
+        byId('leave-status').textContent = 'Leaving…';
         try {
             // The main process stops the node and then reloads the window. The ready check view (P9A) ends now.
             if (await api.leaveRoom()) {
                 window.readyCheckUi?.reset();
                 return;
             }
-            byId('leave-status').textContent = 'Could not leave the room.';
+            byId('leave-status').textContent = 'Couldn\'t leave the room.';
         } catch (err) {
-            byId('leave-status').textContent = 'Could not leave the room. ' + errorText(err);
+            byId('leave-status').textContent = 'Couldn\'t leave the room. ' + errorText(err);
         }
         leaving = false;
         byId('leave-confirm').disabled = false;
@@ -161,7 +159,7 @@
             api.quit();
             return;
         }
-        byId('quit-text').textContent = 'Quit ASSCRACK? ' + transfersStopText(count);
+        byId('quit-text').textContent = 'Quit? ' + transfersStopText(count);
         if (!dialog.open) dialog.showModal();
     }
     byId('quit-confirm')?.addEventListener('click', () => {

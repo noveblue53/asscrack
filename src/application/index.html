@@ -377,8 +377,8 @@
           <p id="channel-error" role="status"></p><button id="channel-cancel" type="button">Cancel</button><button>Create channel</button>
         </form></dialog>
         <!-- find.js: Ctrl+F shows this bar. It searches the lines in the list now. -->
-        <div id="find-bar" role="search" aria-label="Find in the loaded messages" hidden>
-          <input type="text" id="find-input" placeholder="Find in the loaded messages" aria-label="Find in the loaded messages" aria-describedby="find-count" autocomplete="off" spellcheck="false">
+        <div id="find-bar" role="search" aria-label="Find in chat" hidden>
+          <input type="text" id="find-input" placeholder="Find in chat" aria-label="Find in chat" aria-describedby="find-count" autocomplete="off" spellcheck="false">
           <span id="find-count" role="status" aria-live="polite"></span>
           <button id="find-prev" type="button" title="Previous result (Shift+Enter)" disabled>Previous</button>
           <button id="find-next" type="button" title="Next result (Enter)" disabled>Next</button>
@@ -656,8 +656,7 @@
       <button id="about-diag-save" type="button" title="A zip file to send to whoever helps you">Save diagnostics…</button>
       <label><input id="about-diag-dumps" type="checkbox"> Include crash memory (may contain chat text)</label>
     </div>
-    <p>For a full debug log, start ASSCRACK with --log-dir and a folder. The log can contain network addresses.</p>
-    <p id="about-log" hidden>A debug log is on for this run.</p>
+    <p id="about-log" class="state-tag warn" title="This run writes a debug log. It can contain network addresses." hidden>Debug log on</p>
     <p id="about-status" role="status"></p>
     <form method="dialog"><button>Done</button></form>
   </dialog>
@@ -750,7 +749,7 @@
     <p id="leave-transfers" hidden></p>
     <p id="leave-status" role="status"></p>
     <form method="dialog" class="dialog-buttons">
-      <button id="leave-confirm" class="btn-danger" type="button">Leave room</button>
+      <button id="leave-confirm" class="btn-danger" type="button">Leave</button>
       <button value="cancel">Cancel</button>
     </form>
   </dialog>

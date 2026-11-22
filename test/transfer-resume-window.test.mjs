@@ -257,7 +257,7 @@ test('N6 and A7 count only the transfers that send or receive, not a paused or w
     assert.equal(f.window.roomTransfers.activeCount(), 1);
     f.window.appShell.quit();
     assert.equal(f.el('quit-dialog').open, true);
-    assert.equal(f.el('quit-text').textContent, 'Quit ASSCRACK? 1 file transfer stops.');
+    assert.equal(f.el('quit-text').textContent, 'Quit? 1 transfer will stop.');
 });
 
 test('the sender row shows the pause of the receiver and continues as the resume attempt', async () => {

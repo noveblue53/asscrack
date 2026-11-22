@@ -18,25 +18,25 @@
     let hiddenFor = null;
 
     function barText(update) {
-        if (update.ready && update.inDownloads) return `ASSCRACK ${update.version} is ready in your Downloads folder.`;
-        if (update.ready) return `ASSCRACK ${update.version} is ready.`;
-        if (update.downloading) return `ASSCRACK ${update.version} is available. Downloading…`;
-        return `ASSCRACK ${update.version} is available.`;
+        if (update.ready && update.inDownloads) return `Version ${update.version} is in your Downloads folder.`;
+        if (update.ready) return `Update ${update.version} ready`;
+        if (update.downloading) return `Downloading ${update.version}…`;
+        return `Update ${update.version} available`;
     }
 
     function lastText(last) {
-        if (!last?.time) return 'No check yet.';
+        if (!last?.time) return 'Never checked';
         const when = new Date(last.time).toLocaleString();
         return `Last check: ${when}. ${last.note ?? ''}`.trim();
     }
 
     function stateText(current) {
         const update = current.update;
-        if (update?.ready) return `ASSCRACK ${update.version} is ready. Restart to update.`;
-        if (update?.downloading) return `ASSCRACK ${update.version} is downloading.`;
-        if (update) return `ASSCRACK ${update.version} is available.` + (update.note ? ' ' + update.note : '');
+        if (update?.ready) return `Update ${update.version} ready`;
+        if (update?.downloading) return `Downloading ${update.version}…`;
+        if (update) return `Update ${update.version} available` + (update.note ? '. ' + update.note : '');
         if (current.checking) return 'Checking for updates…';
-        if (!current.buildKind) return 'This copy cannot install updates (for example npm start). It can check only.';
+        if (!current.buildKind) return 'This build can\'t install updates.';
         return '';
     }
 
@@ -70,8 +70,8 @@
             const result = await api.restartToUpdate(false);
             if (result?.busy) {
                 byId('update-busy-text').textContent = result.busy === 'voice'
-                    ? 'You are in a voice call. The restart ends the call.'
-                    : 'A file transfer runs. The restart stops it.';
+                    ? 'This ends your voice call.'
+                    : 'This stops your file transfer.';
                 busyDialog.showModal();
             }
         } catch { /* see above */ } finally {
@@ -91,8 +91,8 @@
     notesButton.addEventListener('click', () => {
         const update = view?.update;
         if (!update || notesDialog.open) return;
-        byId('update-notes-title').textContent = `What's new in ASSCRACK ${update.version}`;
-        byId('update-notes-meta').textContent = update.date ? `Release date: ${update.date}` : '';
+        byId('update-notes-title').textContent = `What's new in ${update.version}`;
+        byId('update-notes-meta').textContent = update.date ? `Released ${update.date}` : '';
         byId('update-notes-text').textContent = update.notes ?? '';
         notesDialog.showModal();
     });
