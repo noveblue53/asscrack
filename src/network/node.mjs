@@ -359,7 +359,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         history.removeIds(removed)
         for (const kept of pendingHistory.values()) kept.messages = kept.messages.filter(m => !removed.has(m.id))
     }
-    let voiceState = { inVoice: false, streamId: null, muted: false }
+    // deafened (G4, C2): this user hears no voice. A peer that does not know the field ignores it.
+    let voiceState = { inVoice: false, streamId: null, muted: false, deafened: false }
     // peerId -> true for the peers in voice (from their voice lines).
     const peerVoice = new Map()
     let voiceRelay = null
@@ -369,7 +370,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     // A 0.5.2 peer ignores the field 'direct'.
     const voiceLine = () => JSON.stringify({
         type: 'voice', inVoice: voiceState.inVoice, streamId: voiceState.streamId, muted: voiceState.muted,
-        direct: voiceRelay ? voiceRelay.directList() : []
+        deafened: voiceState.deafened, direct: voiceRelay ? voiceRelay.directList() : []
     })
     // Manual status (presence) of this node. It lives for the life of the node.
     const PRESENCE_STATES = new Set(['available', 'away', 'dnd'])
@@ -728,7 +729,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                             peerId,
                             inVoice: control.inVoice === true,
                             streamId: typeof control.streamId === 'string' ? control.streamId : null,
-                            muted: control.muted === true
+                            muted: control.muted === true,
+                            deafened: control.deafened === true
                         })
                     } else if (control.type === 'typing') {
                         if (sessions.get(peerId) === session && control.v === 1 && typeof control.active === 'boolean') {
@@ -944,9 +946,11 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         if (conn === undefined || conn === connection || conn.id === connection.id) sessions.get(peerId)?.close()
     })
 
-    function setVoice({ inVoice, streamId = null, muted = false } = {}) {
+    function setVoice({ inVoice, streamId = null, muted = false, deafened = false } = {}) {
         if (inVoice === true && membership && !membership.admitted()) throw new Error('This device is not admitted to the room')
-        voiceState = { inVoice: !selfIdle && inVoice === true, streamId: typeof streamId === 'string' ? streamId : null, muted: muted === true }
+        const active = !selfIdle && inVoice === true
+        voiceState = { inVoice: active, streamId: typeof streamId === 'string' ? streamId : null, muted: muted === true,
+            deafened: active && deafened === true }
         const line = voiceLine()
         for (const session of sessions.values()) session.send(line)
         voiceRelay.hostChanged()
