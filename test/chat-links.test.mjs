@@ -107,7 +107,8 @@ test('a click on a link of #messages or #whisper-lines is prevented and asks the
         const li = document.createElement('li');
         li.textContent = `go https://example.com/${id}`;
         document.getElementById(id).append(li);
-        document.defaultView.chatLinks.apply(li);
+        document.defaultView.chatLinks.apply(li, { focusable: id === 'whisper-lines' });
+        assert.equal(li.querySelector('a.chat-link').tabIndex, id === 'whisper-lines' ? 0 : -1, id);
         const event = new Event('click');
         li.querySelector('a.chat-link').dispatchEvent(event);
         assert.equal(event.defaultPrevented, true, id);
@@ -142,5 +143,16 @@ test('room window: a live line, a quoted line and a highlighted line each get th
     assert.equal(event.defaultPrevented, true);
     await settle();
     assert.deepEqual(opened, ['https://example.com/alice/x']);
+    // The keyboard: a chat link is not a tab stop; the row menu has "Open link" (the first link of the row).
+    assert.equal(link.tabIndex, -1);
+    const info = room.window.roomActions.rowInfo(plain);
+    assert.equal(info.link, true);
+    assert.ok([...room.window.menuCore.actionsFor(info)].includes('open-link'));
+    assert.equal(room.window.menuCore.label('open-link'), 'Open link');
+    assert.equal(room.window.roomActions.run('open-link', plain), true);
+    await settle();
+    assert.deepEqual(opened, ['https://example.com/alice/x', 'https://example.com/a(b)']);
+    const none = room.receive({ from: 'bob', text: 'no link here', peerId: 'peer-bob', id: 'm4' });
+    assert.equal([...room.window.menuCore.actionsFor(room.window.roomActions.rowInfo(none))].includes('open-link'), false);
     assert.deepEqual(room.errors, []);
 });

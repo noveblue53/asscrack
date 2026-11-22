@@ -59,9 +59,12 @@
         return node?.nodeType === 1 && node.tagName === 'A' && node.classList.contains('chat-link');
     }
 
-    function makeLink(doc, href, text) {
+    function makeLink(doc, href, text, focusable) {
         const link = doc.createElement('a');
         link.className = 'chat-link';
+        // A chat line link is not a tab stop (polish report N01: no tab stops in the rows). The keyboard uses the
+        // row action "Open link". A whisper line link stays a tab stop: the whisper pane has no row menu.
+        if (!focusable) link.tabIndex = -1;
         link.setAttribute('href', href);
         // The parsed form: a look-alike host shows as xn--….
         let title = href;
@@ -73,7 +76,7 @@
     }
 
     // Put the parts of one text node that are in a range into links. start: the offset of the node in the span.
-    function wrap(node, start, ranges) {
+    function wrap(node, start, ranges, focusable) {
         const data = node.data;
         const end = start + data.length;
         const doc = node.ownerDocument;
@@ -84,7 +87,7 @@
             const from = Math.max(range.start, at);
             const to = Math.min(range.end, end);
             if (from > at) parts.push(doc.createTextNode(data.slice(at - start, from - start)));
-            parts.push(makeLink(doc, range.href, data.slice(from - start, to - start)));
+            parts.push(makeLink(doc, range.href, data.slice(from - start, to - start), focusable));
             at = to;
         }
         if (parts.length === 0) return;
@@ -95,8 +98,8 @@
     }
 
     // Make the links of a span. The textContent of the span does not change. A second call changes nothing: a text
-    // node in a link stays as it is.
-    function apply(span) {
+    // node in a link stays as it is. options.focusable: the links are tab stops (default: no).
+    function apply(span, options = {}) {
         if (!span || typeof span.textContent !== 'string') return;
         const ranges = linkRanges(span.textContent);
         if (ranges.length === 0) return;
@@ -110,18 +113,28 @@
                 } else if (child.nodeType === 1) visit(child, inLink || isLink(child));
             }
         })(span, false);
-        for (const { node, start } of texts) wrap(node, start, ranges);
+        for (const { node, start } of texts) wrap(node, start, ranges, options.focusable === true);
+    }
+
+    function open(href) {
+        if (typeof href !== 'string' || !href) return false;
+        Promise.resolve(window.asscrack?.openLink?.(href)).catch(err => console.warn('Open link failed:', err?.message ?? err));
+        return true;
     }
 
     function onClick(event) {
         const link = event.target?.closest?.('a.chat-link');
         if (!link) return;
         event.preventDefault();
-        const href = link.getAttribute('href');
-        Promise.resolve(window.asscrack?.openLink?.(href)).catch(err => console.warn('Open link failed:', err?.message ?? err));
+        open(link.getAttribute('href'));
+    }
+
+    // The row action "Open link": the first link of the row.
+    function firstLink(row) {
+        return row?.querySelector?.('a.chat-link')?.getAttribute('href') ?? null;
     }
 
     for (const id of ['messages', 'whisper-lines']) document.getElementById(id)?.addEventListener('click', onClick);
 
-    window.chatLinks = Object.freeze({ apply });
+    window.chatLinks = Object.freeze({ apply, firstLink, openFirst: row => open(firstLink(row)) });
 })();

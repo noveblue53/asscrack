@@ -29,6 +29,7 @@
         'listening': 'Listening volume…',
         'show-on-map': 'Show on map',
         'copy-message': 'Copy message',
+        'open-link': 'Open link',
         'view-image': 'View image',
         quote: 'Quote',
         availability: 'Edit availability…',
@@ -58,7 +59,7 @@
             case 'message':
                 // quotable: the window can take a quote now (renderer.js rowInfo).
                 // localOnly: the line has "Only on this computer" (gap B3).
-                return [...(info.quotable ? ['quote', 'copy-message'] : ['copy-message']), ...(info.image ? ['view-image'] : []), ...(info.inspect ? ['inspect-peer'] : []), ...(info.details ? ['message-details'] : []), ...(info.localOnly ? ['resend'] : [])];
+                return [...(info.quotable ? ['quote', 'copy-message'] : ['copy-message']), ...(info.link ? ['open-link'] : []), ...(info.image ? ['view-image'] : []), ...(info.inspect ? ['inspect-peer'] : []), ...(info.details ? ['message-details'] : []), ...(info.localOnly ? ['resend'] : [])];
             case 'offer':
                 return info.active ? ['cancel-offer'] : [];
             case 'transfer':

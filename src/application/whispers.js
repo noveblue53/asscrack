@@ -83,7 +83,7 @@
             body.className = 'whisper-text';
             body.textContent = row.text;
             li.append((row.mine ? 'You' : data.name || label(selected)) + ' — ', body);
-            window.chatLinks?.apply(body);
+            window.chatLinks?.apply(body, { focusable: true });
             if (row.mine) li.setAttribute('aria-label', li.textContent + ', received by peer');
             lines.append(li);
         }
