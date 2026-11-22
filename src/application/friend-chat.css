@@ -22,3 +22,8 @@ a.chat-link { color: var(--accent); }
 #messages .mark[data-mark="waiting"] { color: var(--ink-soft); }
 #messages .mark[data-mark="not-delivered"] { color: var(--danger); }
 #messages .delete { margin-left: 6px; padding: 0 6px; font-size: 11px; }
+/* easy-join: a room invite card (friend-invite.mjs) with Join / Not now. */
+#messages > li.invite .text { font-weight: 600; }
+#messages .invite-actions { display: block; margin-top: 4px; }
+#messages .invite-actions button { margin-right: 6px; }
+#messages .invite-note { margin-right: 6px; font-size: 12px; color: var(--ink-soft); }

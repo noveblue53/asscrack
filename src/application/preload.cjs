@@ -39,13 +39,31 @@ contextBridge.exposeInMainWorld('friends', {
     setName: name => ipcRenderer.invoke('asscrack:friend-name', text(name)),
     setUpnp: on => ipcRenderer.invoke('asscrack:friend-upnp', on === true),
     openChat: friendId => ipcRenderer.invoke('asscrack:friend-open-chat', text(friendId)),
+    // easy-join: "Invite to room" (the friend ID only).
+    invite: friendId => ipcRenderer.invoke('asscrack:friend-invite', text(friendId)),
     retry: () => ipcRenderer.invoke('asscrack:unlock-archive'),
     // 1.0.1: open the Friends window (friends-popout.mjs). Only in a room; true when it opens or gets the focus.
     popOut: () => ipcRenderer.invoke('asscrack:friends-popout'),
+    // easy-join: the Join of a friend invite that waits for this window: { token, room, name } or null (one time).
+    takeJoin: () => ipcRenderer.invoke('asscrack:friend-join-take'),
+    onJoin: listen('asscrack:friend-join'),
+    // easy-join part 3: Join of a friend row (the friend ID only). leave: the user agreed to leave the current room.
+    knockJoin: (friendId, leave) => ipcRenderer.invoke('asscrack:friend-knock', text(friendId), leave === true),
+    // The state of the friend Join: { state: 'waiting', room } (the owner sees the request).
+    onKnockState: listen('asscrack:friend-knock-state'),
     onChanged: listen('asscrack:friends'),
     onRequest: listen('asscrack:friend-request'),
     // G7b: a friend line for the attention rules (attention.js): { friendId, id, away, focused }. No text, no name.
     onAttention: listen('asscrack:friend-attention')
+});
+
+// easy-join part 3: the prompt for a device invite in the clipboard (clipboard-join-ui.js). The window gets
+// { id, room } only. The main process keeps the code.
+contextBridge.exposeInMainWorld('clipboardJoin', {
+    take: () => ipcRenderer.invoke('asscrack:clipboard-join-take'),
+    join: (id, leave) => ipcRenderer.invoke('asscrack:clipboard-join', String(id ?? ''), leave === true),
+    dismiss: id => ipcRenderer.invoke('asscrack:clipboard-join-dismiss', String(id ?? '')),
+    onPrompt: listen('asscrack:clipboard-join')
 });
 
 contextBridge.exposeInMainWorld('asscrack', {
@@ -88,8 +106,9 @@ contextBridge.exposeInMainWorld('asscrack', {
     flashAttention: () => ipcRenderer.send('asscrack:attention-flash'),
     // ids: up to 64 peer IDs. Returns [{ id, alias }] with the pseudonym of the Room activity lines.
     getActivityAliases: ids => ipcRenderer.invoke('asscrack:activity-aliases', Array.isArray(ids) ? ids.slice(0, 64).map(String) : []),
-    login: ({ name, room, type, invite, publicAddress, allowUpnp, allowLegacy, save, keepHistory } = {}) =>
-        ipcRenderer.invoke('asscrack:login', { name, room, type, invite, publicAddress, allowUpnp, allowLegacy, save, keepHistory }),
+    // easy-join: friendInvite is the token of a Join from a friend invite (the main process keeps the code).
+    login: ({ name, room, type, invite, friendInvite, publicAddress, allowUpnp, allowLegacy, save, keepHistory } = {}) =>
+        ipcRenderer.invoke('asscrack:login', { name, room, type, invite, friendInvite, publicAddress, allowUpnp, allowLegacy, save, keepHistory }),
     // Saved rooms (milestone 6). The window gets no key, no invite and no file path.
     listSavedRooms: () => ipcRenderer.invoke('asscrack:saved-rooms'),
     unlockArchive: () => ipcRenderer.invoke('asscrack:unlock-archive'),
@@ -111,6 +130,19 @@ contextBridge.exposeInMainWorld('asscrack', {
     getDeviceId: () => ipcRenderer.invoke('asscrack:device-id'),
     createMemberInvite: (deviceId, canHost) => ipcRenderer.invoke('asscrack:member-invite', deviceId, canHost === true),
     revokeMember: deviceId => ipcRenderer.invoke('asscrack:member-revoke', deviceId),
+    // easy-join part 2: "Copy room code" (renew false) and "New room code" (renew true): { code, expires }. The main
+    // process copies the code.
+    roomCode: renew => ipcRenderer.invoke('asscrack:room-code', renew === true),
+    // The knock prompts of the owner: [{ id, name, mark }]. answerKnock: Allow (true) or Deny (false).
+    getKnocks: () => ipcRenderer.invoke('asscrack:knocks'),
+    answerKnock: (id, allow) => ipcRenderer.invoke('asscrack:knock-answer', String(id), allow === true),
+    onKnocks: listen('asscrack:knocks'),
+    // The state of the own knock during the login: { state: 'looking' | 'waiting' | 'allowed', room }.
+    onKnockState: listen('asscrack:knock-state'),
+    // easy-join part 3: "Always allow my friends" (owner only). Returns the value now.
+    setAutoAllowFriends: on => ipcRenderer.invoke('asscrack:auto-allow-friends', on === true),
+    // A friend got in with no prompt: { name, mark }.
+    onKnockAuto: listen('asscrack:knock-auto'),
     onMembership: listen('asscrack:membership'),
     getFullNode: () => ipcRenderer.invoke('asscrack:full-node'),
     onFullNode: listen('asscrack:full-node'),

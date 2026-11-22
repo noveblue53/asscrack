@@ -45,6 +45,9 @@
 #friend-list .friend-state { grid-column: 1; font-size: 11px; opacity: 0.85; }
 #friend-list > li[data-state="online"] .friend-state, #friend-list > li[data-state="room"] .friend-state { color: #11713f; font-weight: 600; }
 #friend-list .count { grid-column: 2; grid-row: 1 / span 2; }
+/* easy-join part 3: Join of a friend in another room, or the text "Ask <name> for an invite". */
+#friend-list .friend-join { grid-column: 3; grid-row: 1 / span 2; font-size: 12px; padding: 2px 10px; cursor: pointer; }
+#friend-list .friend-ask { grid-column: 1; font-size: 11px; font-style: italic; opacity: 0.85; }
 #friend-waiting > li { padding: 3px 7px; font-size: 12px; font-style: italic; }
 #friend-blocked-list > li { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 12px; }
 #friends-blocked summary { cursor: pointer; font-size: 12px; }
@@ -64,8 +67,8 @@
 #friends-panel.friends-drawer #friend-list > li[data-state="online"] .friend-state,
 #friends-panel.friends-drawer #friend-list > li[data-state="room"] .friend-state { color: var(--accent); }
 
-/* The friend request bar above the composer. */
-#friend-request-bar {
+/* The friend request bar above the composer. easy-join part 2: the knock bar has the same look. */
+#friend-request-bar, #knock-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -77,7 +80,8 @@
   color: var(--ink);
   background: var(--surface-raised);
 }
-#friend-request-bar[hidden] { display: none; }
-#friend-request-bar p { flex: 1 1 260px; margin: 0; }
+#friend-request-bar[hidden], #knock-bar[hidden] { display: none; }
+#friend-request-bar p, #knock-bar p { flex: 1 1 260px; margin: 0; }
+#room-code-box[hidden] { display: none; }
 
 #friend-name-form label { display: grid; gap: 4px; margin: 8px 0; }

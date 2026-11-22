@@ -28,7 +28,9 @@ import { createHistory, HISTORY_LIMIT, MAX_MESSAGE_BYTES, validHistoryItem } fro
 import { createFileTransfer, FILE_PROTOCOLS } from './file-transfer.mjs'
 import { createScreenShare, SCREEN_PROTOCOL } from './screen-share.mjs'
 import { createVoiceRelay, VOICE_PROTOCOL, VOICE_DIRECT_PROTOCOL } from './voice-relay.mjs'
-import { makeInvite, makeMemberInvite, validAddr, validPeerId } from './invite.mjs'
+import { makeInvite, makeMemberInvite, makeRoomCode, validAddr, validPeerId } from './invite.mjs'
+import { createKnockDesk, KNOCK_PROTOCOL } from './knock.mjs'
+import { knockChannel } from './knock-stream.mjs'
 import { DIALBACK_PROTOCOL, handleDialback, requestDialback, isPrivateIp, observedIp, peerAddrAllowed, tcpTarget } from './fullnode.mjs'
 
 export { FILE_PROTOCOL, safeFileName } from './file-transfer.mjs'
@@ -86,6 +88,18 @@ const BYE_WAIT_MS = 200
 const MAX_ADDRS = 16
 const RELAY_LINK_DURATION = 8 * 60 * 60 * 1000
 const RELAY_LINK_BYTES = 8n * 1024n * 1024n * 1024n
+// easy-join part 2: a relay circuit of a peer that is not admitted (a knock, or the first admission after Allow). Only
+// to the owner peer of the room. The relay ends the circuit after KNOCK_CIRCUIT_MS, or after KNOCK_CIRCUIT_BYTES from
+// the source, unless the source is an admitted member with a session on the relay now. The time is more than the
+// prompt time of the owner (2 minutes). KNOCK_CIRCUITS: the knock circuits at one time on one relay.
+export const KNOCK_CIRCUIT_MS = 150 * 1000
+export const KNOCK_CIRCUIT_BYTES = 64 * 1024
+const KNOCK_CIRCUITS = 8
+// easy-join part 3: the forward of a friend knock (forwardKnock). The answer of the owner can be a device invite of some
+// kilobytes, the same read limits as knock-client.mjs.
+const FORWARD_DIAL_MS = 8000
+const FORWARD_READ_LIMITS = { maxLineBytes: 64 * 1024, maxStreamBytes: 256 * 1024 }
+const ipOf = addr => /^\/ip[46]\/([^/]+)\//.exec(addr)?.[1] ?? null
 
 // A room key is 32 bytes: a Uint8Array or a base64url string. Returns a Buffer, or null for a LAN room.
 export function parseRoomKey(roomKey) {
@@ -154,6 +168,10 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     redialInterval = 5000, inviteNodes = [], upnp = false, upnpTimeout = 70000, upnpLeaseSeconds = 1800,
     upnpClient = null, seedHistory = [], seedChannels = [], seedVoiceChannels = null, membership = null,
     screen: screenOptions = {},
+    // easy-join part 2: true (or an object with test limits) for the room node of the app. The owner answers knocks,
+    // and a relay lets a peer that is not admitted open a circuit to the owner peer. The friend link nodes do not set it.
+    // easy-join part 3: knock.isFriend(deviceId) -> true for a friend that is not blocked ("Always allow my friends").
+    knock = false,
     // P9C: the update hub of the app (update-spread.mjs), or null: no update lines.
     updates = null } = {}) {
     if (typeof room !== 'string') throw new TypeError('room must be a string')
@@ -198,6 +216,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     // Set after the sessions map exists.
     let allowReservation = () => false
     let allowRelay = () => false
+    let knockCircuit = () => false
     const node = await createStreamCompatibleLibp2p({
         start: false,
         addresses: { listen: listenAddrs, announce: [...announce] },
@@ -205,8 +224,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         services,
         connectionGater: {
             denyInboundRelayReservation: peer => !allowReservation(peer.toString()),
-            denyOutboundRelayedConnection: (source, destination) =>
-                !allowReservation(source.toString()) || !allowReservation(destination.toString()),
+            // easy-join part 2: a source that is not admitted gets a circuit only to the owner peer (knockCircuit).
+            denyOutboundRelayedConnection: (source, destination) => !allowReservation(destination.toString()) ||
+                (!allowReservation(source.toString()) && !knockCircuit(source, destination)),
             denyInboundRelayedConnection: relay => !allowRelay(relay.toString())
         },
         peerDiscovery: discovery ? [mdns({ serviceTag: keyedServiceTag(room, key), ...(discoveryInterval !== undefined ? { interval: discoveryInterval } : {}) })] : [],
@@ -269,7 +289,10 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         const entries = [...memberPeers.entries()].filter(([peerId]) => sessions.has(peerId) && memberAllowed(peerId))
         const members = membership.owner ? membership.issued() : entries.filter(([, member]) => member.deviceId !== membership.ownerId)
             .map(([, member]) => ({ deviceId: member.deviceId, canHost: member.canHost, revoked: false }))
+        // easy-join part 3: roomId and ownerId for the room announce line of the friend links; autoAllowFriends for
+        // the owner setting "Always allow my friends".
         return { protected: true, owner: membership.owner, deviceId: membership.id, lan: membership.lan,
+            roomId: membership.roomId, ownerId: membership.ownerId, autoAllowFriends: membership.autoAllowFriends(),
             admitted: membership.admitted(), canHost: membership.canHost(), revoked: membership.revoked(membership.id),
             members: members.map(member => {
                 const pair = entries.find(([, active]) => active.deviceId === member.deviceId)
@@ -316,6 +339,60 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         sessions.has(peerId) && memberAllowed(peerId)
     allowRelay = peerId => sessions.has(peerId) && peerFull.get(peerId) === true &&
         (!membership || (!membership.lan && hostAllowed(peerId)))
+
+    // easy-join part 2: the relay rule of a knock. A relay cannot see the protocol in a circuit. Thus it lets a source
+    // that is not admitted open a circuit only when the destination is the owner peer of the room (a proved session of
+    // the owner device). The circuit gets a time limit and a data limit (a 'message' listener on the hop stream of the
+    // source, the same method as the data limit of the relay). Rate limits: for each source peer and each source IP.
+    const knockCircuits = new Map()
+    // The tests give shorter limits: knock: { circuitMs, circuitBytes }.
+    const circuitMs = Number.isSafeInteger(knock?.circuitMs) ? knock.circuitMs : KNOCK_CIRCUIT_MS
+    const circuitBytes = Number.isSafeInteger(knock?.circuitBytes) ? knock.circuitBytes : KNOCK_CIRCUIT_BYTES
+    const knockSourceRate = roomRateLimit(3, 30)
+    const knockIpRate = roomRateLimit(10, 60)
+    knockCircuit = (source, destination) => {
+        const sourceId = source.toString()
+        if (!knock || !membership || membership.lan || memberPeers.get(destination.toString())?.deviceId !== membership.ownerId) return false
+        const connections = node.getConnections(source)
+        const hops = connections.flatMap(connection => connection.streams.filter(stream =>
+            stream.direction === 'inbound' && stream.protocol === RELAY_V2_HOP_CODEC && !knockCircuits.has(stream)))
+        if (!hops.length || knockCircuits.size + hops.length > KNOCK_CIRCUITS) return false
+        const ip = ipOf(connections[0]?.remoteAddr?.toString() ?? '') ?? '?'
+        if (!knockSourceRate(sourceId) || !knockIpRate(ip)) {
+            console.info(connText('knock circuit-refused', { peer: sourceId, reason: 'rate' }))
+            return false
+        }
+        for (const stream of hops) watchKnockCircuit(stream, sourceId)
+        markKnockSource(sourceId)
+        console.info(connText('knock circuit', { peer: sourceId, owner: destination.toString() }))
+        return true
+    }
+    function watchKnockCircuit(stream, sourceId) {
+        let bytes = 0
+        const admitted = () => sessions.has(sourceId) && memberAllowed(sourceId)
+        const cleanup = () => {
+            clearTimeout(knockCircuits.get(stream))
+            knockCircuits.delete(stream)
+            stream.removeEventListener('message', count)
+        }
+        const end = cause => {
+            cleanup()
+            console.info(connText('knock circuit-end', { peer: sourceId, reason: cause }))
+            stream.abort(new Error(`Knock circuit ${cause}`))
+        }
+        function count(event) {
+            bytes += event.data?.byteLength ?? 0
+            if (bytes > circuitBytes && knockCircuits.has(stream)) {
+                if (admitted()) cleanup()
+                else end('data limit')
+            }
+        }
+        const timer = setTimeout(() => { if (admitted()) cleanup(); else end('time limit') }, circuitMs)
+        timer.unref?.()
+        knockCircuits.set(stream, timer)
+        stream.addEventListener('message', count)
+        stream.addEventListener('close', cleanup, { once: true })
+    }
 
     function selfKinds() {
         const kinds = {}
@@ -1194,6 +1271,90 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         await handleDialback(data)
     }, { runOnTransientConnection: true, maxInboundStreams: 1, maxOutboundStreams: 1 })
 
+    // easy-join part 2: the peers of a knock (a knock stream, or a knock circuit on a relay). The knock node has no chat
+    // protocol and no listen address: the discovery dial (after identify) does not dial it.
+    const knockSources = new Set()
+    function markKnockSource(peerId) {
+        knockSources.delete(peerId)
+        knockSources.add(peerId)
+        if (knockSources.size > 256) knockSources.delete(knockSources.values().next().value)
+    }
+    // easy-join part 2: the owner answers a knock. This is the only stream that the owner accepts from a peer that is
+    // not admitted. The other handlers close the streams of such a peer, as before.
+    const knockDesk = knock && membership?.owner ? createKnockDesk({
+        membership,
+        makeInvite: deviceId => makeMemberInvite({ room, key, nodes: knockNodes(), membership: membership.issue(deviceId, false) }),
+        changed: ({ pending, added }) => events.emit('knocks', { pending, added }),
+        log: text => console.info(text),
+        // easy-join part 3: "Always allow my friends". The desk asks only after the device proof.
+        autoAllow: deviceId => membership.autoAllowFriends() && typeof knock?.isFriend === 'function' && knock.isFriend(deviceId) === true,
+        autoAllowed: view => events.emit('knock-auto', view),
+        // The tests give other limits: knock: { limits } (knock.mjs).
+        limits: typeof knock === 'object' ? knock.limits : undefined
+    }) : null
+    if (knockDesk) {
+        await node.handle(KNOCK_PROTOCOL, ({ stream, connection }) => {
+            const source = connection.remotePeer.toString()
+            // easy-join part 3: an admitted member with a session forwards the knock of its friend (forwardKnock). Only
+            // such a stream can carry a friend knock (FRIEND_KNOCK_CODE). The path of the limits is the member.
+            const forwarder = sessions.has(source) && memberAllowed(source) && memberPeers.get(source)?.deviceId !== membership.ownerId
+            if (!forwarder) markKnockSource(source)
+            const addr = connection.remoteAddr?.toString() ?? ''
+            let handler = null
+            const channel = knockChannel(stream, {
+                maxLineBytes: knockDesk.limits.maxLineBytes, maxStreamBytes: knockDesk.limits.maxStreamBytes,
+                onLine: message => handler?.receive(message),
+                onClose: () => handler?.closed()
+            })
+            handler = knockDesk.open(channel, forwarder ? { source, via: source, friend: true }
+                : { source, via: circuitRelay(addr) ?? ipOf(addr) ?? '?' })
+        }, { runOnTransientConnection: true, maxInboundStreams: 2, maxOutboundStreams: 1 })
+    }
+
+    // The own TCP addresses (no /p2p-circuit, no /p2p/ part).
+    function ownTcpAddrs() {
+        return [...new Set(node.getMultiaddrs().map(String).filter(addr => !addr.includes('/p2p-circuit') && tcpTarget(addr)).map(bareAddr))]
+    }
+    // The relay circuits of the owner (with the /p2p/ part of this node).
+    function ownCircuitAddrs() {
+        return [...new Set(node.getMultiaddrs().map(String).filter(addr => addr.includes('/p2p-circuit')))]
+    }
+    // easy-join part 2: the nodes of the device invite of Allow. An internet room: this node (public addresses and relay
+    // circuits) and the full nodes with a session. If it has no other address, the own TCP addresses (two copies on one
+    // network can then join). A LAN room: none (mDNS), the same as a device invite.
+    function knockNodes() {
+        if (membership.lan) return []
+        const own = [...publicAddrs(), ...ownCircuitAddrs()].slice(0, MAX_ADDRS)
+        const nodes = own.length ? [{ id: selfId, addrs: own }] : []
+        // The relays of the circuits: the owner reached each one at this address (an outbound connection). The joiner
+        // gets a session with them after its admission.
+        const relays = new Map()
+        for (const addr of ownCircuitAddrs()) {
+            const m = /^(.+)\/p2p\/([^/]+)\/p2p-circuit/.exec(addr)
+            if (m && validPeerId(m[2]) && validAddr(m[1])) relays.set(m[2], [...new Set([...(relays.get(m[2]) ?? []), m[1]])])
+        }
+        for (const id of sessions.keys()) {
+            if (peerFull.get(id) !== true) continue
+            const addrs = verifiedList(id)
+            if (addrs.length) relays.set(id, [...new Set([...addrs, ...(relays.get(id) ?? [])])])
+        }
+        for (const [id, addrs] of relays) {
+            if (nodes.length >= MAX_ADDRS) break
+            if (id !== selfId) nodes.push({ id, addrs: addrs.slice(0, MAX_ADDRS) })
+        }
+        if (!nodes.length) {
+            const local = ownTcpAddrs().slice(0, MAX_ADDRS)
+            if (local.length) nodes.push({ id: selfId, addrs: local })
+        }
+        return nodes
+    }
+    // The owner node in a room code: the public addresses and the relay circuits (internet), or the own TCP addresses
+    // (a LAN room listens only on private addresses, L5).
+    function roomCodeNodes() {
+        const own = (membership.lan ? ownTcpAddrs() : [...publicAddrs(), ...ownCircuitAddrs().map(bareAddr)]).slice(0, MAX_ADDRS)
+        return own.length ? [{ id: selfId, addrs: own }] : []
+    }
+
     // Rule 9: close a session only when its chat stream is on the closed connection.
     node.addEventListener('connection:close', ({ detail: connection }) => {
         const peerId = connection.remotePeer.toString()
@@ -1369,14 +1530,18 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         const pending = pendingSettled.get(pendingChats.get(id))
         if (pending) await pending
         if (!sessions.has(id)) {
-            if (!pendingChats.has(id)) await conn.close().catch(() => {})
+            // easy-join part 2: a device that is not admitted yet keeps the connection. A member refuses its session,
+            // but the same connection can carry the relay circuit to the owner for the first admission.
+            if (!pendingChats.has(id) && (!membership || membership.admitted())) await conn.close().catch(() => {})
             throw new Error('The endpoint did not open this room')
         }
     }
 
     // Dial a known full node directly when this node has no direct room session to it.
     function dialFullNode(peerId) {
-        const addrs = hintAddrs(peerId)
+        // easy-join part 2: a relay circuit address (the owner in the device invite of a knock) gives nothing new to a
+        // node that has a session with that peer.
+        const addrs = hintAddrs(peerId).filter(addr => !sessions.has(peerId) || !addr.includes('/p2p-circuit'))
         if (stopped || !addrs.length || dialing.has(peerId)) return
         const direct = node.getConnections().some(c => c.remotePeer.toString() === peerId && !c.remoteAddr.toString().includes('/p2p-circuit'))
         if (direct && sessions.has(peerId)) return
@@ -1683,7 +1848,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     let stopped = false
     function dialDiscovered(id, attempt) {
         const remoteId = id.toString()
-        if (stopped || chatBusy(remoteId)) return
+        if (stopped || chatBusy(remoteId) || knockSources.has(remoteId)) return
         if (attempt === 0 && waitingDial.has(remoteId)) return
         const conns = node.getConnections(id)
         const streams = conns.flatMap(c => c.streams)
@@ -1970,6 +2135,45 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             return makeMemberInvite({ room, key, nodes, membership: membership.issue(deviceId, canHost === true) })
         },
         revokeMember(deviceId) { return membership?.revoke(deviceId) ?? false },
+        // easy-join part 2: the room code of the owner. renew: "New room code" (the old code stops working).
+        // Returns { code, expires }.
+        roomCode({ renew = false } = {}) {
+            if (!membership?.owner) throw new Error('Only the room owner can make a room code.')
+            const nodes = roomCodeNodes()
+            if (!membership.lan && !nodes.length) throw new Error('A reachable owner address is required for a room code')
+            const { id, expires } = membership.roomCode({ renew: renew === true })
+            const code = makeRoomCode({ room, key, owner: membership.ownerId, lan: membership.lan, codeId: id, expires,
+                ownerPeer: selfId, nodes }, hash => membership.signRoomCode(hash))
+            return { code, expires }
+        },
+        // The knocks that wait for the owner: [{ id, name, mark, deviceId, at }].
+        knocks: () => knockDesk?.list() ?? [],
+        // Allow (true) or Deny of a knock. Returns false when the knock is not there now.
+        answerKnock: (id, allow) => knockDesk?.answer(id, allow === true) ?? false,
+        // The knock desk of the owner (knock.mjs), or null. A friend link channel can use it (part 3).
+        knockDesk: () => knockDesk,
+        // easy-join part 3: "Always allow my friends" of the owner. Returns the value now.
+        setAutoAllowFriends(on) {
+            if (!membership?.owner) throw new Error('Only the room owner can change this setting.')
+            return membership.setAutoAllowFriends(on === true)
+        },
+        // easy-join part 3: an admitted member that is not the owner forwards the knock of a friend to the owner, on a
+        // knock stream on the session connection. The member does not change the lines. Resolves a knock channel
+        // (knock-stream.mjs) or null: no owner session now, or the owner refused the stream.
+        async forwardKnock({ onLine, onClose = () => {} } = {}) {
+            if (stopped || !membership || membership.owner || !membership.admitted() || typeof onLine !== 'function') return null
+            const ownerPeer = [...sessions.keys()].find(peerId => memberAllowed(peerId) && memberPeers.get(peerId)?.deviceId === membership.ownerId)
+            const conn = ownerPeer ? sessionConns.get(ownerPeer) : null
+            if (!conn) return null
+            let stream
+            try {
+                stream = await conn.newStream(KNOCK_PROTOCOL, { runOnTransientConnection: true, signal: AbortSignal.timeout(FORWARD_DIAL_MS) })
+            } catch (err) {
+                console.info(connText('knock forward-refused', { peer: ownerPeer, reason: err?.message ?? String(err) }))
+                return null
+            }
+            return knockChannel(stream, { ...FORWARD_READ_LIMITS, onLine, onClose })
+        },
         whisperPeers: whispers.peers,
         sendWhisper: whispers.send,
         channels: channels.view, createChannel: channels.create,
@@ -2090,6 +2294,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         screenTestRate: screen.testRate,
         async stop() {
             stopped = true
+            // easy-join part 2: each knock that waits gets 'timeout' ("The owner is not online").
+            knockDesk?.stop()
+            for (const timer of knockCircuits.values()) clearTimeout(timer)
             membership?.onChanged(null)
             stopUpdateShare()
             whispers.stop()

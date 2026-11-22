@@ -19,8 +19,9 @@ function chatState(links, friendId) {
 }
 
 // focused(friendId): G7b, the chat window of that friend got the focus (main.js reads its notification).
+// join(friendId, lineId, leave): easy-join, Join of an invite card (main.js). The window gives only the line ID.
 export function attachFriendWindows({ BrowserWindow, ipc, assets, links, warn = () => {}, openLink = async () => false, icon,
-    focused = () => {} }) {
+    focused = () => {}, join = async () => ({ result: 'failed' }) }) {
     // I4: the page comes from the app scheme (app-scheme.mjs).
     const page = appPage('friend-chat.html');
     const windows = new Map(); // friendId -> BrowserWindow
@@ -94,6 +95,11 @@ export function attachFriendWindows({ BrowserWindow, ipc, assets, links, warn = 
             const friendId = need(event);
             return text128(id) ? links.deleteWaiting(friendId, id) : 'gone';
         },
+        // easy-join: Join of an invite card. leave: the user agreed to leave the current room.
+        'asscrack:friend-chat-join': (event, id, leave) => {
+            const friendId = need(event);
+            return text128(id) ? join(friendId, id, leave === true) : { result: 'gone' };
+        },
         'asscrack:friend-chat-open-link': (event, href) => {
             need(event);
             return openLink(href);
@@ -146,4 +152,6 @@ export function registerFriendIpc(handle, { links, roomNode, openChat, query = h
     handle('asscrack:friend-name', (_event, name) => links.setName(String(name ?? '')));
     handle('asscrack:friend-upnp', (_event, on) => links.setUpnp(on === true));
     handle('asscrack:friend-open-chat', (_event, friendId) => text128(friendId) && openChat(friendId));
+    // easy-join: "Invite to room" of a friend row. The window gives only the friend ID (never a device ID).
+    handle('asscrack:friend-invite', (_event, friendId) => (text128(friendId) ? links.invite(friendId) : { result: 'unavailable' }));
 }

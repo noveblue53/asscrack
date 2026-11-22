@@ -14,6 +14,12 @@
     const reachBox = get('reach-box');
     const reachNote = get('reach-note');
     const reachButton = get('reach-upnp');
+    // easy-join part 2: "Copy room code" and "New room code" (owner only). Optional: older test pages have no box.
+    const codeBox = get('room-code-box');
+    const codeCopy = get('room-code-copy');
+    const codeNew = get('room-code-new');
+    // easy-join part 3: "Always allow my friends" (owner only, off by default). Optional as the code box.
+    const autoAllow = get('auto-allow-friends');
     let state = null;
     // The reach state of asscrack:invite (gap A1), or null before the first answer.
     let reach = null;
@@ -22,6 +28,7 @@
     let confirming = null;
     let rendering = '';
     let busy = false;
+    let autoAllowBusy = false;
 
     // Gap A3: the device ID button is below the login button for each room type. After the copy, the window goes to
     // the join type, because the next step of the friend is to paste the invite.
@@ -160,6 +167,8 @@
             ? 'Waiting for the room owner to admit this device.' : next.owner ? 'You own this protected room.'
                 : next.canHost ? 'This device is admitted and can host or relay.' : 'This device is admitted.';
         form.hidden = !next.owner;
+        if (codeBox) codeBox.hidden = !next.owner;
+        if (autoAllow && !autoAllowBusy) autoAllow.checked = next.owner && next.autoAllowFriends === true;
         statusBar.querySelector('.net-note').textContent = next.lan ? 'Protected LAN room' : 'Protected internet room';
         // Gap A2: room-link.js writes #waiting-peer from these facts and the peer facts.
         window.roomLink?.membership({ owner: next.owner, admitted: next.admitted, revoked: next.revoked });
@@ -184,6 +193,48 @@
             if (confirming === null) target.focus();
         }
     }
+
+    // easy-join part 2: the room code. The main process copies it; the box also shows it.
+    async function roomCode(renew) {
+        if (!state?.owner || busy || !codeCopy) return;
+        busy = codeCopy.disabled = codeNew.disabled = true;
+        clearCode();
+        try {
+            const made = await api.roomCode(renew);
+            if (typeof made?.code !== 'string' || made.code.length === 0) throw new Error('Could not make the room code.');
+            codeLabel.textContent = 'Room code';
+            inviteCode.value = made.code;
+            codeLabel.hidden = inviteCode.hidden = copyInviteButton.hidden = false;
+            copyInviteButton.disabled = false;
+            const until = new Date(made.expires).toLocaleDateString(undefined, { day: 'numeric', month: 'long' });
+            inviteNote.textContent = renew
+                ? `New room code copied. The old code no longer works. Valid until ${until}.`
+                : `Room code copied. Valid until ${until}.`;
+        } catch (error) {
+            inviteNote.textContent = error?.message ? errorText(error) : 'Could not make the room code.';
+        } finally {
+            busy = codeCopy.disabled = codeNew.disabled = false;
+            listDevices();
+        }
+    }
+    // easy-join part 3: the main process saves the setting with the room of the owner.
+    autoAllow?.addEventListener('change', async () => {
+        if (!state?.owner || autoAllowBusy) return;
+        const wanted = autoAllow.checked;
+        autoAllowBusy = autoAllow.disabled = true;
+        try {
+            autoAllow.checked = (await api.setAutoAllowFriends(wanted)) === true;
+            // The checkbox shows the state; its tooltip has the detail (index.html).
+            inviteNote.textContent = '';
+        } catch (error) {
+            autoAllow.checked = !wanted;
+            inviteNote.textContent = error?.message ? errorText(error) : 'Could not change the setting.';
+        } finally {
+            autoAllowBusy = autoAllow.disabled = false;
+        }
+    });
+    codeCopy?.addEventListener('click', () => roomCode(false));
+    codeNew?.addEventListener('click', () => roomCode(true));
 
     target.addEventListener('input', clearCode);
     canHost.addEventListener('change', clearCode);

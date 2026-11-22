@@ -6,7 +6,10 @@
 // to a friend with no session until the friend acknowledges it (design F10); the friend nodes copy the availability
 // of the person (design F11).
 // Events: 'changed' (list()), 'line' { friendId, line }, 'request' (a request event), 'receipt' { friendId, id, result },
-// 'away' { friendId, batch, count } (G7b: the end of a batch of lines that were sent while this device was away).
+// 'away' { friendId, batch, count } (G7b: the end of a batch of lines that were sent while this device was away),
+// 'invite' { friendId, id, name, room } (easy-join: a valid room invite of a friend arrived; friend-invite.mjs).
+// easy-join part 3: each friend link carries the room announce line and the friend knock (friend-knock.mjs).
+// A line of an event or of lines() never has the code of an invite: an invite line has text '' and invite { state, room }.
 import { EventEmitter } from 'node:events';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
@@ -21,6 +24,9 @@ import { observedIp, peerAddrAllowed } from '../network/fullnode.mjs';
 import { deviceMark } from '../network/device-mark.mjs';
 import { restoreSavedAdmission } from './room-admission.mjs';
 import { isAddressInUse } from './login-errors.mjs';
+import { checkInvite, inviteCodeOf, inviteText, isInviteText, plainText, validInviteCode, windowLine } from './friend-invite.mjs';
+import { createKnockRelay, isFriendKnockLine, readRoomLine, roomLine, startFriendKnock } from '../network/friend-knock.mjs';
+import { checkFriendAllowedInvite } from '../network/knock.mjs';
 
 // The cap and the ports (design F2). 32 needs the interface cache of main.js (interface-cache.mjs, DECISIONS.md G7a).
 export const FRIEND_CAP = 32;
@@ -36,6 +42,8 @@ const ROOM_ROUTE = 'room:';
 const PRESENCE_STATES = new Set(['available', 'away', 'dnd']);
 const MAX_NODES = 16;
 const MAX_ADDRS = 16;
+// easy-join: the codes of the shown invite lines of one friend (line ID -> code), for Join.
+const MAX_KEPT_INVITES = 64;
 
 const errText = err => err?.message ?? String(err);
 
@@ -169,6 +177,13 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
         };
         if (peerId && !removed) Object.assign(view, friendAvailability(entry, peerId));
         if (inRoom) view.roomName = room.name ?? '';
+        // easy-join part 3: the friend is in a protected room that this device is not in. join.ask: the friend cannot
+        // forward a knock ("Ask <friend> for an invite").
+        const target = peerId && !removed ? joinTarget(entry) : null;
+        if (target) view.join = { room: target.name, ask: target.route === 'none' };
+        // easy-join: the owner of the current protected room can invite this friend (friend-invite.mjs). A friend that is
+        // in this room now (also with a friend link session) gets no item.
+        view.canInvite = !removed && roomPeerOf(entry) === null && canInviteTo(entry);
         return view;
     }
 
@@ -229,7 +244,9 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
             sendTo: (peer, line) => routeSend(entry, peer, line),
             seen: id => { try { return archive.hasLine(entry.row.roomId, id); } catch { return false; } },
             receive: msg => {
-                const line = { id: msg.id, from: entry.row.nickname, text: msg.text, time: msg.time, own: false };
+                // easy-join: the archive keeps an invite as its stored text (friend-invite.mjs).
+                const text = msg.invite !== undefined ? inviteText(msg.invite) : plainText(msg.text);
+                const line = { id: msg.id, from: entry.row.nickname, text, time: msg.time, own: false };
                 if (msg.away) line.away = awayMark(entry);
                 try {
                     archive.addLine(entry.row.roomId, { id: line.id, from: line.from, text: line.text, time: line.time,
@@ -239,7 +256,11 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
                     log('WARN', `Friend line not saved: ${errText(err)}`);
                 }
                 entry.unread += 1;
-                events.emit('line', { friendId: entry.row.roomId, line });
+                const shown = showLine(entry, line);
+                events.emit('line', { friendId: entry.row.roomId, line: shown });
+                if (shown.invite?.state === 'ok') {
+                    events.emit('invite', { friendId: entry.row.roomId, id: line.id, name: entry.row.nickname, room: shown.invite.room });
+                }
                 emitChanged();
             },
             acked: (id, result) => onAcked(entry, id, result),
@@ -251,6 +272,9 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
             entry.peerId = peerId;
             entry.row.lastSeen = now();
             save(entry.row.roomId, { lastSeen: entry.row.lastSeen });
+            // easy-join part 3: a new session gets the current room of this device.
+            entry.sentRoom = null;
+            announce(entry);
             emitChanged();
             // G7b: a new session sends the waiting lines.
             flush(entry);
@@ -263,6 +287,7 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
             entry.row.lastSeen = now();
             save(entry.row.roomId, { lastSeen: entry.row.lastSeen });
             routeClosed(entry, peerId);
+            knockClosed(entry);
             emitChanged();
         });
         // G7b: the availability of the friend (presence lines and the idle flag of the node line).
@@ -271,7 +296,11 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
             const idle = Boolean(entry.peerId && friendAvailability(entry, entry.peerId).availability === 'idle');
             if (idle !== entry.idle) { entry.idle = idle; emitChanged(); }
         });
-        node.events.on('pm', data => entry.pm?.handle(data));
+        node.events.on('pm', data => {
+            // easy-join part 3: the room announce line and the friend knock lines (friend-knock.mjs).
+            if (isFriendKnockLine(data?.message)) knockLine(entry, data);
+            else entry.pm?.handle(data);
+        });
         // A proved address of the friend: keep it for each start (design F5 item 2).
         node.events.on('full-node-addrs', ({ peerId, addrs }) => {
             if (node.deviceOf(peerId) !== entry.row.deviceId || !Array.isArray(addrs)) return;
@@ -282,6 +311,10 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
         const addrsChanged = () => { emitChanged(); if (entry.roomPeer) sendAddrs(entry, entry.roomPeer); };
         node.events.on('upnp', addrsChanged);
         node.events.on('full-node', addrsChanged);
+        entry.relay = createKnockRelay({
+            send: line => Boolean(sessionPeer(entry) && entry.node?.sendTo(sessionPeer(entry), line)),
+            connect: knockRoute(entry), setTimer, clearTimer, log: text => log('INFO', text)
+        });
         applyAvailability(entry);
         emitChanged();
         roomScan();
@@ -320,7 +353,7 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
             if (entry.inflight.has(row.id) || entry.tried.has(row.id)) continue;
             entry.tried.add(row.id);
             entry.inflight.add(row.id);
-            pm.send(row.id, row.text, { time: row.time, away: true }).then(result => {
+            transmit(pm, row.id, row.text, { time: row.time, away: true }).then(result => {
                 entry.inflight.delete(row.id);
                 if (entry.pm === pm && result !== 'unavailable') pump(entry);
             });
@@ -377,6 +410,74 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
             }
             emitChanged();
         }
+        // easy-join part 3: a new room, Leave room or a new membership state goes to each friend with a session.
+        for (const entry of friends.values()) announce(entry);
+    }
+
+    // ---- easy-join part 3: the room announce line and the friend knock (friend-knock.mjs) ----
+
+    // The current protected room of this device for the friends: { id, owner, name, route }, or null.
+    function ownRoom() {
+        if (!room) return null;
+        let member;
+        try { member = room.node.memberState?.(); } catch { return null; }
+        if (!member?.protected || typeof member.roomId !== 'string' || typeof member.ownerId !== 'string') return null;
+        const route = member.owner ? 'owner' : member.admitted && !member.revoked ? 'forward' : 'none';
+        return { id: member.roomId, owner: member.ownerId, name: room.name || 'a room', route };
+    }
+    // Send the room line to the friend when it changed. Only on the friend link session (not on a common room).
+    function announce(entry) {
+        const peerId = entry.node ? sessionPeer(entry) : null;
+        if (!peerId || entry.row.state === 'removed-you') return;
+        const line = roomLine(ownRoom());
+        const text = JSON.stringify(line.room);
+        if (text === entry.sentRoom) return;
+        if (entry.node.sendTo(peerId, line)) entry.sentRoom = text;
+    }
+    // The room of the friend that this device can ask to join, or null: not the current room of this device, and not
+    // a room that this device owns.
+    function joinTarget(entry) {
+        const target = entry.friendRoom;
+        if (!target || target.owner === identity?.id) return null;
+        const own = ownRoom();
+        return own && own.id === target.id ? null : target;
+    }
+    // A line of friend-knock.mjs from the friend link of this friend. Only the proved device of the friend, on the
+    // friend link session (never on a common room).
+    function knockLine(entry, { peerId, deviceId, message } = {}) {
+        if (stopped || deviceId !== entry.row.deviceId || !peerId || peerId !== sessionPeer(entry) || entry.row.state === 'removed-you') return;
+        if (message.op === 'room') {
+            const next = readRoomLine(message);
+            if (JSON.stringify(next) === JSON.stringify(entry.friendRoom ?? null)) return;
+            entry.friendRoom = next;
+            emitChanged();
+            return;
+        }
+        if (entry.knock && message.kid === entry.knock.kid) entry.knock.handle(message);
+        else entry.relay?.handle(message);
+    }
+    // The friend link session ended: the room of the friend is not known now, and each knock on it ends.
+    function knockClosed(entry) {
+        entry.friendRoom = null;
+        entry.sentRoom = null;
+        entry.relay?.closed();
+        entry.knock?.closed();
+    }
+    // The route of a knock that this friend sends to this device: the knock desk of the own room (this device is the
+    // owner), else a forward to the owner (an admitted member), else none.
+    function knockRoute(entry) {
+        return ({ toJoiner, ended }) => {
+            const node = room?.node;
+            const desk = node?.knockDesk?.() ?? null;
+            if (desk) {
+                const handler = desk.open({ send: line => { toJoiner(line); return true; }, end: () => ended() },
+                    { source: `friend:${entry.row.deviceId}`, via: 'friend', friend: true });
+                return { send: line => handler.receive(line), end: () => handler.closed() };
+            }
+            if (!node?.forwardKnock || ownRoom()?.route !== 'forward') return null;
+            return node.forwardKnock({ onLine: toJoiner, onClose: () => ended() })
+                .then(channel => channel && { send: line => channel.send(line), end: () => channel.end() });
+        };
     }
 
     function applyAvailability(entry) {
@@ -393,12 +494,64 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
         }
     }
 
+    // ---- easy-join: the friend invite (friend-invite.mjs) ----
+
+    // A message or an invite line on the pm session.
+    function transmit(pm, id, text, options) {
+        return isInviteText(text) ? pm.sendInvite(id, inviteCodeOf(text), options) : pm.send(id, text, options);
+    }
+    // The owner of the current protected room can invite a friend with a device ID.
+    function canInviteTo(entry) {
+        if (!room || typeof entry.row.deviceId !== 'string' || !entry.row.deviceId) return false;
+        try {
+            const member = room.node.memberState?.();
+            return member?.protected === true && member.owner === true;
+        } catch {
+            return false;
+        }
+    }
+    // The line for a window. The receiver checks each received invite again: the device of the grant must be this
+    // device, and the owner of the room must be the device of this friend. The code of a valid invite stays in main.
+    function showLine(entry, line) {
+        const shown = windowLine(line, code => checkInvite(code, { selfId: identity.id, friendDevice: entry.row.deviceId }));
+        if (shown.invite && !line.own && shown.invite.state === 'ok') {
+            entry.invites.delete(line.id);
+            entry.invites.set(line.id, inviteCodeOf(line.text));
+            if (entry.invites.size > MAX_KEPT_INVITES) entry.invites.delete(entry.invites.keys().next().value);
+        }
+        return shown;
+    }
+    // Send a text or an invite line: on the session now, else into the outbox (G7b).
+    function post(entry, text) {
+        const friendId = entry.row.roomId;
+        const time = now();
+        const from = ownName(archive.getRoom(friendId)?.userName);
+        if (!entry.pm || !routePeer(entry)) {
+            const id = `${identity.id}.${randomUUID()}`;
+            let seq = null;
+            try { seq = archive.addOutbox(friendId, { id, text, time }, OUTBOX_CAP); }
+            catch (err) { log('WARN', `Friend line not queued: ${errText(err)}`); return { result: 'unavailable' }; }
+            if (seq === null) return { result: 'full' };
+            return { result: 'waiting', line: showLine(entry, { id, from, text, time, own: true, waiting: true }) };
+        }
+        const id = entry.pm.newId();
+        const line = { id, from, text, time, own: true };
+        transmit(entry.pm, id, text, { time }).then(result => {
+            if (result === 'unavailable' || result === 'invalid') events.emit('receipt', { friendId, id, result });
+        });
+        try { archive.addLine(friendId, { ...line, source: 'send', peerId: null }); }
+        catch (err) { log('WARN', `Friend line not saved: ${errText(err)}`); }
+        return { result: 'sending', line: showLine(entry, line) };
+    }
+
     async function stopNode(entry) {
         const node = entry.node;
         entry.node = null;
         entry.peerId = null;
         entry.pm?.stop();
         entry.pm = null;
+        knockClosed(entry);
+        entry.relay = null;
         entry.roomPeer = null;
         clearTimer(entry.batch?.timer);
         entry.batch = null;
@@ -435,7 +588,8 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
 
     function addEntry(row) {
         const entry = { row, node: null, pm: null, peerId: null, port: null, unread: 0,
-            roomPeer: null, tried: new Set(), inflight: new Set(), batch: null, idle: false };
+            roomPeer: null, tried: new Set(), inflight: new Set(), batch: null, idle: false, invites: new Map(),
+            friendRoom: null, sentRoom: null, relay: null, knock: null };
         friends.set(row.roomId, entry);
         return entry;
     }
@@ -721,33 +875,100 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
         send(friendId, text) {
             const entry = friends.get(friendId);
             if (!entry || state !== 'open') return { result: 'unavailable' };
-            if (!validPmText(text)) return { result: 'invalid' };
+            // easy-join: a typed text never has the mark of a stored invite.
+            if (!validPmText(text) || isInviteText(text)) return { result: 'invalid' };
             if (entry.row.state === 'removed-you') return { result: 'removed' };
-            const time = now();
-            const from = ownName(archive.getRoom(friendId)?.userName);
-            if (!entry.pm || !routePeer(entry)) {
-                const id = `${identity.id}.${randomUUID()}`;
-                let seq = null;
-                try { seq = archive.addOutbox(friendId, { id, text, time }, OUTBOX_CAP); }
-                catch (err) { log('WARN', `Friend line not queued: ${errText(err)}`); return { result: 'unavailable' }; }
-                if (seq === null) return { result: 'full' };
-                return { result: 'waiting', line: { id, from, text, time, own: true, waiting: true } };
+            return post(entry, text);
+        },
+        // easy-join: "Invite to room". The owner of the current protected room sends a device invite (no host rights)
+        // for the saved device ID of the friend, on the session or into the outbox. The caller gives no device ID.
+        // Returns the result of send(), or { result: 'not-owner' | 'no-room' | 'no-device' | 'no-address' | 'failed' }.
+        invite(friendId) {
+            const entry = friends.get(friendId);
+            if (!entry || state !== 'open') return { result: 'unavailable' };
+            if (entry.row.state === 'removed-you') return { result: 'removed' };
+            if (!room) return { result: 'no-room' };
+            if (typeof entry.row.deviceId !== 'string' || !entry.row.deviceId) return { result: 'no-device' };
+            if (!canInviteTo(entry)) return { result: 'not-owner' };
+            let code;
+            try {
+                code = room.node.createMemberInvite(entry.row.deviceId, { canHost: false });
+            } catch (err) {
+                log('WARN', `Friend invite not made: ${errText(err)}`);
+                return { result: /reachable owner address/.test(errText(err)) ? 'no-address' : 'failed' };
             }
-            const id = entry.pm.newId();
-            const line = { id, from, text, time, own: true };
-            entry.pm.send(id, text, { time }).then(result => {
-                if (result === 'unavailable' || result === 'invalid') events.emit('receipt', { friendId, id, result });
+            if (!validInviteCode(code)) { log('WARN', 'Friend invite not made: the code is too large'); return { result: 'failed' }; }
+            const answer = post(entry, inviteText(code));
+            if (answer.line) log('INFO', `Friend invite ${answer.result === 'waiting' ? 'queued' : 'sent'}`);
+            return answer;
+        },
+        // easy-join: Join of a received invite. Checks the invite again now (the expiry). Returns { state, room, code }:
+        // code only for the state 'ok'. state 'gone': no shown invite line with this ID.
+        inviteCode(friendId, id) {
+            const entry = friends.get(friendId);
+            const code = entry?.invites.get(id);
+            if (!entry || typeof code !== 'string') return { state: 'gone', room: '' };
+            const view = checkInvite(code, { selfId: identity.id, friendDevice: entry.row.deviceId });
+            return view.state === 'ok' ? { state: 'ok', room: view.room, code } : { state: view.state, room: view.room };
+        },
+        // easy-join part 3: the room of the friend for Join. Returns { state: 'ok' | 'ask' | 'gone', room, roomId }.
+        // 'ask': the friend cannot forward a knock. 'gone': no room to join (no session, no room, or the same room).
+        joinTarget(friendId) {
+            const entry = friends.get(friendId);
+            const target = entry && state === 'open' && entry.row.state !== 'removed-you' && sessionPeer(entry) ? joinTarget(entry) : null;
+            if (!target) return { state: 'gone', room: '', roomId: null };
+            return { state: target.route === 'none' ? 'ask' : 'ok', room: target.name, roomId: target.id };
+        },
+        // easy-join part 3: Join of a friend row. Sends a knock (knock.mjs) over the friend link to the friend: the owner
+        // of the room, or a member that forwards it to the owner. Resolves { result: 'allowed', invite, room } (the
+        // device invite of Allow, checked) or { result: 'denied' | 'timeout' | 'offline' | 'refused', reason?, room }.
+        // onState('waiting'): the owner sees the prompt.
+        async knock(friendId, { name = '', onState = () => {} } = {}) {
+            const entry = friends.get(friendId);
+            const target = entry && state === 'open' && entry.row.state !== 'removed-you' && sessionPeer(entry) ? joinTarget(entry) : null;
+            if (!target) return { result: 'offline', room: '' };
+            if (target.route === 'none') return { result: 'refused', reason: 'ask', room: target.name };
+            if ([...friends.values()].some(e => e.knock)) return { result: 'refused', reason: 'pending', room: target.name };
+            const knock = startFriendKnock({
+                // The name of the knock: the name for friends, else the name of this friend link.
+                room: target, identity, name: name || ownName(archive.getRoom(entry.row.roomId)?.userName), onState,
+                send: line => Boolean(sessionPeer(entry) && entry.node?.sendTo(sessionPeer(entry), line)),
+                setTimer, clearTimer
             });
-            try { archive.addLine(friendId, { ...line, source: 'send', peerId: null }); }
-            catch (err) { log('WARN', `Friend line not saved: ${errText(err)}`); }
-            return { result: 'sending', line };
+            entry.knock = knock;
+            let outcome;
+            try {
+                outcome = await knock.result;
+            } finally {
+                if (entry.knock === knock) entry.knock = null;
+            }
+            log('INFO', `Friend knock result: ${outcome.result}${outcome.reason ? ` (${outcome.reason})` : ''}`);
+            if (outcome.result !== 'allowed') return { ...outcome, room: target.name };
+            try {
+                checkFriendAllowedInvite({ roomId: target.id, owner: target.owner }, identity, outcome.invite);
+            } catch (err) {
+                log('WARN', `Friend knock answer refused: ${errText(err)}`);
+                return { result: 'refused', reason: 'error', room: target.name };
+            }
+            return { result: 'allowed', invite: outcome.invite, room: target.name };
+        },
+        // easy-join part 3: "Always allow my friends" of the owner: a friend with this device ID that is not blocked.
+        isFriend(deviceId) {
+            const entry = typeof deviceId === 'string' && state === 'open' ? byDevice(deviceId) : null;
+            return Boolean(entry && entry.row.state !== 'removed-you' && !isBlocked(deviceId));
+        },
+        // The nickname of a friend device, or null.
+        nameOf(deviceId) {
+            const entry = typeof deviceId === 'string' && state === 'open' ? byDevice(deviceId) : null;
+            return entry ? entry.row.nickname : null;
         },
         // The saved lines (pages), with the away mark of each received away line. The first page also has the waiting
         // lines of the outbox (G7b), in time order.
         lines(friendId, before = null) {
             if (!friends.has(friendId)) return [];
+            const entry = friends.get(friendId);
             const page = archive.lines(friendId, { before, limit: before ? 100 : 200 })
-                .map(({ id, from, text, time, own }) => ({ id, from, text, time, own }));
+                .map(({ id, from, text, time, own }) => showLine(entry, { id, from, text, time, own }));
             let marks = new Map();
             try { marks = archive.awayMarks(friendId, page.filter(l => !l.own).map(l => l.id)); }
             catch (err) { log('WARN', `Friend away marks not read: ${errText(err)}`); }
@@ -757,7 +978,7 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
             try { rows = archive.listOutbox(friendId); } catch (err) { log('WARN', `Friend outbox not read: ${errText(err)}`); }
             if (!rows.length) return page;
             const from = ownName(archive.getRoom(friendId)?.userName);
-            return [...page, ...rows.map(r => ({ id: r.id, from, text: r.text, time: r.time, own: true, waiting: true }))]
+            return [...page, ...rows.map(r => showLine(entry, { id: r.id, from, text: r.text, time: r.time, own: true, waiting: true }))]
                 .sort((a, b) => a.time - b.time || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
         },
         // G7b: Delete of a waiting line. Returns 'deleted', 'sending' (it is on a session now) or 'gone'.

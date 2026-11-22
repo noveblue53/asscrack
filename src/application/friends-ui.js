@@ -23,7 +23,9 @@
     function stateText(friend, now = Date.now()) {
         if (friend.state === 'online') {
             const label = AVAILABILITY[friend.availability];
-            return label ? `Online · ${label}${friend.note ? ` · ${friend.note}` : ''}` : 'Online';
+            // easy-join part 3: the friend is in a protected room that this device is not in.
+            const where = friend.join?.room ? ` · in ${friend.join.room}` : '';
+            return (label ? `Online · ${label}${friend.note ? ` · ${friend.note}` : ''}` : 'Online') + where;
         }
         if (friend.state === 'room') return `Online · in ${friend.roomName}`;
         if (friend.state === 'removed-you') return 'Removed you as a friend';
@@ -35,7 +37,36 @@
         return 'Friends can reach you only on this network, or when they have an open port.';
     }
     const waitingText = name => `Waiting for ${name || 'your friend'} to accept…`;
-    window.friendsCore = Object.freeze({ stateText, reachText, waitingText, timeText });
+    // easy-join: the result of "Invite to room" (friend-links.mjs invite()).
+    function inviteText(result, name) {
+        switch (result) {
+            case 'sending': return `Invite sent to ${name}.`;
+            case 'waiting': return `Invite queued. ${name} gets it when you are both online.`;
+            case 'not-owner': return 'Only the room owner can invite.';
+            case 'no-room': return 'Open your protected room first.';
+            case 'no-address': return 'This room cannot be reached from the internet. See Invite for details.';
+            case 'full': return `Too many unsent messages for ${name}. Try again when ${name} is online.`;
+            case 'removed': return `${name} removed you as a friend.`;
+            default: return 'Could not send the invite.';
+        }
+    }
+    // easy-join part 3: Join of a friend row. The status while the knock waits, and the result (main.js
+    // 'asscrack:friend-knock'; answer.text is the knock result text of login-errors.mjs).
+    const knockStateText = (state, room) => (state === 'waiting'
+        ? `Waiting for the owner of ${room}…` : `Looking for the owner of ${room}…`);
+    const askText = name => `Ask ${name} for an invite`;
+    function joinText(answer, name) {
+        switch (answer?.result) {
+            case 'joining': return `Allowed. Joining ${answer.room}…`;
+            case 'knock': return answer.text || 'The owner is not online. Try again later.';
+            case 'ask': return `${askText(name)}.`;
+            case 'gone': return `${name} is not in a room you can join.`;
+            case 'saved': return 'This room is in your saved rooms. Open it there.';
+            case 'busy': return 'Try again in a moment.';
+            default: return 'Could not join the room. Try again.';
+        }
+    }
+    window.friendsCore = Object.freeze({ stateText, reachText, waitingText, timeText, inviteText, knockStateText, askText, joinText });
 
     if (typeof document === 'undefined' || typeof document.getElementById !== 'function') return;
     const api = window.friends;
@@ -55,7 +86,11 @@
     let relations = {};
     let drawerOpen = false;
     let confirmAction = null;
+    let confirmKeep = false;
     let nameAction = null;
+    // easy-join part 3: a friend Join waits for the owner.
+    let knockBusy = false;
+    let knockRoom = '';
 
     const statusLine = text => { byId('friends-status').textContent = text; };
     const roomStatus = text => { const s = byId('status'); if (s) s.textContent = text; };
@@ -80,6 +115,26 @@
             state.className = 'friend-state';
             state.textContent = stateText(friend);
             row.append(name, state);
+            // easy-join part 3: Join, or "Ask <name> for an invite" when the friend cannot forward a knock.
+            if (friend.join && friend.join.ask) {
+                const ask = document.createElement('span');
+                ask.className = 'friend-ask';
+                ask.textContent = askText(friend.name);
+                row.append(ask);
+            } else if (friend.join) {
+                const join = document.createElement('button');
+                join.type = 'button';
+                join.className = 'friend-join';
+                join.textContent = 'Join';
+                join.setAttribute('aria-label', `Join ${friend.join.room}`);
+                join.disabled = knockBusy;
+                join.addEventListener('click', event => {
+                    event.stopPropagation();
+                    void knockJoin(friend.friendId);
+                });
+                join.addEventListener('keydown', event => { if (event.key === 'Enter') event.stopPropagation(); });
+                row.append(join);
+            }
             if (friend.unread > 0) {
                 const count = document.createElement('span');
                 count.className = 'count';
@@ -220,17 +275,50 @@
     byId('friend-name-cancel').addEventListener('click', () => nameDialog.close?.());
     byId('friends-name-change').addEventListener('click', () => askName('Your name for friends', view.name ?? '', name => api.setName(name)));
 
-    function ask(text, button, run) {
+    // keep: run() writes its own status (no act()).
+    function ask(text, button, run, keep = false) {
         byId('friend-confirm-text').textContent = text;
         byId('friend-confirm-yes').textContent = button;
         confirmAction = run;
+        confirmKeep = keep;
         confirmDialog.showModal?.();
     }
     byId('friend-confirm-yes').addEventListener('click', () => {
         const run = confirmAction;
+        const keep = confirmKeep;
         confirmAction = null;
         confirmDialog.close?.();
-        if (run) act(run());
+        if (run && keep) run();
+        else if (run) act(run());
+    });
+
+    // easy-join part 3: Join of a friend row. In a room it first asks "Leave <room> and join <room>?" (the step of the
+    // friend invite). The current room stays until the owner selects Allow.
+    function joinStatus(text) {
+        statusLine(text);
+        roomStatus(text);
+    }
+    async function knockJoin(friendId, leave = false) {
+        const friend = friendById(friendId);
+        if (!friend?.join || friend.join.ask || !api.knockJoin || knockBusy) return false;
+        knockBusy = true;
+        knockRoom = friend.join.room;
+        render();
+        joinStatus(knockStateText('looking', knockRoom));
+        let answer;
+        try { answer = await api.knockJoin(friend.friendId, leave); } catch { answer = { result: 'failed' }; }
+        knockBusy = false;
+        render();
+        if (answer?.result === 'confirm') {
+            joinStatus('');
+            ask(`Leave ${answer.current} and join ${answer.room}?`, 'Leave and join', () => { void knockJoin(friendId, true); }, true);
+            return true;
+        }
+        joinStatus(joinText(answer, friend.name));
+        return answer?.result === 'joining';
+    }
+    api.onKnockState?.(data => {
+        if (knockBusy && data?.state) joinStatus(knockStateText(data.state, String(data.room || knockRoom)));
     });
 
     function run(action, row) {
@@ -247,6 +335,15 @@
             case 'friend-block':
                 ask(`Block ${name}? ${name} is removed as a friend and cannot send you friend requests.`, 'Block',
                     () => api.block(friend.friendId));
+                return true;
+            case 'friend-join':
+                if (!friend.join || friend.join.ask) return false;
+                void knockJoin(friend.friendId);
+                return true;
+            case 'friend-invite':
+                if (!friend.canInvite || !api.invite) return false;
+                Promise.resolve(api.invite(friend.friendId)).then(answer => statusLine(inviteText(answer?.result, name)),
+                    () => statusLine(inviteText('failed', name)));
                 return true;
             default: return false;
         }
@@ -288,7 +385,10 @@
 
     window.friendsUi = Object.freeze({
         relation: peerId => relations[peerId]?.kind ?? null,
-        rowInfo: row => friendById(row?.dataset?.friendId) ? { kind: 'friend' } : null,
+        rowInfo: row => {
+            const friend = friendById(row?.dataset?.friendId);
+            return friend ? { kind: 'friend', invite: friend.canInvite === true, join: Boolean(friend.join && !friend.join.ask) } : null;
+        },
         run, add, openFor, refresh,
         view: () => view
     });

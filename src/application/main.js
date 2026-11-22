@@ -19,7 +19,9 @@ import { mkdirSync, appendFileSync, existsSync, readFileSync, writeFileSync, ren
 import { copyFile, rename, unlink, writeFile } from 'fs/promises';
 import { format } from 'util';
 import { createAsscrackNode, keyedServiceTag } from '../network/node.mjs';
-import { newRoomKey, readInvite } from '../network/invite.mjs';
+import { isRoomCode, newRoomKey, readInvite, readRoomCode } from '../network/invite.mjs';
+import { knockRoom } from '../network/knock-client.mjs';
+import { checkAllowedInvite } from '../network/knock.mjs';
 import { createDeviceIdentity, importDeviceIdentity, createRoomMembership } from '../network/room-membership.mjs';
 import { joinAdmission, restoreSavedAdmission } from './room-admission.mjs';
 import { observeRoomActivity } from './room-activity.mjs';
@@ -33,7 +35,7 @@ import { createPttHook } from './ptt-hook.mjs';
 import { createWindowFrame } from './window-frame.mjs';
 import { attachVoiceMonitor } from './voice-monitor.mjs';
 import { installRoomPermissions, isDesktopFrame, lockDesktopNavigation } from './desktop-boundary.mjs';
-import { isAddressInUse, loginErrorText } from './login-errors.mjs';
+import { isAddressInUse, knockResultText, loginErrorText } from './login-errors.mjs';
 import { createLinkPolicy } from './link-policy.mjs';
 import { fitWindowBounds, MIN_WINDOW, readWindowBounds, saveWindowBounds } from './window-bounds.mjs';
 import { createTaskbarFlash } from './taskbar-flash.mjs';
@@ -42,6 +44,8 @@ import { createFriendLinks } from './friend-links.mjs';
 import { withDeviceMarks } from './peer-marks.mjs';
 import { attachFriendWindows, registerFriendIpc } from './friend-windows.mjs';
 import { attachFriendsPopout } from './friends-popout.mjs';
+import { createFriendJoins, savedRoomHasId } from './friend-join.mjs';
+import { createClipboardJoin, createAskedStore, ASKED_FILE } from './clipboard-join.mjs';
 import { installInterfaceCache } from '../network/interface-cache.mjs';
 import { createUpdateService } from './update-service.mjs';
 import { chooseDataFolder, cleanHoldFolders, dataPaths, downloadOwner, holdFolder, legacyFolder, moveFailedText, moveOldData, needsMove,
@@ -354,6 +358,8 @@ handleRoomIpc('asscrack:media-preview', async (_event, id) => {
 });
 const MAX_RECEIVED_KEY = 300;
 let loginStarted = false;
+// easy-join part 2: true while a knock with a room code waits for the owner (up to 2.5 minutes).
+let knocking = false;
 let stopping = false;
 
 function sendToWindow(channel, data) {
@@ -838,6 +844,7 @@ function createMainWindow() {
     for (const type of ['resize', 'move', 'maximize', 'unmaximize']) mainWindow.on(type, saveBoundsSoon);
     // Gap E1: the focus ends the taskbar flash and removes the dot.
     taskbarFlash.attach(mainWindow);
+    attachClipboardJoin(mainWindow);
 
     mainWindow.on('close', event => {
         saveBoundsNow();
@@ -951,6 +958,9 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
         const fromSavedUpnpPort = options.savedUpnpPort === true;
         delete options.savedUpnpPort;
         options.updates = updates.hub;
+        // easy-join part 2: the owner answers knocks; a relay lets a knock circuit reach the owner.
+        // Part 3: isFriend for "Always allow my friends" (a friend that is not blocked).
+        options.knock = { isFriend: deviceId => friendLinks.isFriend(deviceId) };
         try {
             node = await createAsscrackNode(options);
         } catch (err) {
@@ -1003,6 +1013,21 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
     onLive('shelf', data => sendToWindow('asscrack:shelf', data));
     onLive('shelf-offered', data => sendToWindow('asscrack:shelf-offered', data));
     onLive('membership', () => sendToWindow('asscrack:membership', node.memberState()));
+    // easy-join part 2: the knock prompts of the owner. The window gets the name and the device mark, no device ID.
+    onLive('knocks', ({ pending, added }) => {
+        sendToWindow('asscrack:knocks', knockView(pending));
+        if (!added) return;
+        writeLog('INFO', `Knock prompt shown (${pending.length} waiting)`);
+        if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
+            showTrayBalloon(`${added.name} #${added.mark} wants to join ${roomName ?? 'the room'}.`);
+        }
+    });
+    // easy-join part 3: "Always allow my friends" let a friend in with no prompt. The window shows a line with the name
+    // of the Friends list and the device mark. The log has no name.
+    onLive('knock-auto', ({ name, mark, deviceId }) => {
+        writeLog('INFO', 'Knock auto-allowed (friend)');
+        sendToWindow('asscrack:knock-auto', { name: friendLinks.nameOf(deviceId) ?? name, mark });
+    });
     // P7b fix: `live` is a const of the try block above. A ReferenceError here failed each received file at its end
     // ("stream ended" on both ends). This listener keeps its own copy of the live node.
     const doneNode = node;
@@ -1152,18 +1177,26 @@ async function withLoginErrors(what, options, start, kind = 'reopen') {
 
 handleRoomIpc('asscrack:login', async (_event, fields = {}) => {
     if (loginStarted) throw new Error('Already logged in');
+    if (knocking) throw new Error('Wait for the room owner to answer first.');
     const options = { downloadDir: downloadDir ?? app.getPath('downloads'), ...nodeFlags };
     return withLoginErrors('Login', options, () => login(options, fields), ['new', 'lan', 'join'].includes(fields?.type) ? fields.type : undefined);
 });
 
-async function login(options, { name, room, type, invite, publicAddress, allowUpnp, allowLegacy, save, keepHistory } = {}) {
+async function login(options, { name, room, type, invite, friendInvite, publicAddress, allowUpnp, allowLegacy, save, keepHistory } = {}) {
     if (typeof name !== 'string' || !name.trim() || name.length > 64) throw new Error('Enter a username of up to 64 characters.');
     options.name = name.trim();
     let lan = false;
     let typedInvite = null;
     if (type === 'join') {
+        // easy-join: a Join from a friend invite gives a token. The code stays in the main process.
+        if (typeof friendInvite === 'string') {
+            invite = friendJoins.code(friendInvite);
+            if (!invite) throw new Error('Invite no longer available. Select Join in the friend chat again.');
+        }
         if (typeof invite !== 'string' || !invite.trim()) throw new Error('Enter an invite code.');
         if (invite.length > 128 * 1024 + 10) throw new Error('The invite code is too large.');
+        // easy-join part 2: a room code. Knock, then join with the device invite of Allow (the normal path below).
+        if (isRoomCode(invite)) invite = await knockForInvite(invite, options.name);
         const code = readInvite(invite);
         options.room = code.room;
         options.roomKey = code.key;
@@ -1188,6 +1221,65 @@ async function login(options, { name, room, type, invite, publicAddress, allowUp
     const result = await startRoom(options, { publicAddress: publicAddress?.trim(), allowUpnp: type === 'new' && allowUpnp === true, lan });
     return afterRoomStart(result, { invite: typedInvite, userName: options.name, save, keepHistory: keepHistory !== false });
 }
+
+// easy-join part 2: the knock of a room code. Returns the device invite of Allow; else throws the text for the user.
+// The log gets the result, not the codes.
+async function knockForInvite(text, name) {
+    const roomCode = readRoomCode(text);
+    const saved = getSavedRooms().getRoom(roomFingerprint(roomCode.room, roomCode.key));
+    if (saved?.protected) throw new Error('This room is in your saved rooms. Open it there.');
+    const identity = getAdmissionIdentity();
+    const state = value => sendToWindow('asscrack:knock-state', { state: value, room: roomCode.room });
+    knocking = true;
+    state('looking');
+    try {
+        const outcome = await knockRoom({ code: roomCode, identity, name, serviceTag: keyedServiceTag(roomCode.room, roomCode.key),
+            onState: state, log: line => writeLog('INFO', line) });
+        writeLog('INFO', `Knock result: ${outcome.result}${outcome.reason ? ` (${outcome.reason})` : ''}`);
+        if (outcome.result !== 'allowed') throw new Error(knockResultText(outcome));
+        checkAllowedInvite(roomCode, identity, outcome.invite);
+        state('allowed');
+        return outcome.invite;
+    } finally {
+        knocking = false;
+    }
+}
+
+// easy-join part 2: the prompts for the window: [{ id, name, mark }].
+function knockView(pending) {
+    return (pending ?? []).map(({ id, name, mark }) => ({ id, name, mark }));
+}
+queryRoomIpc('asscrack:knocks', () => knockView(node?.knocks()));
+handleRoomIpc('asscrack:knock-answer', (_event, id, allow) => {
+    if (!node?.memberState().owner) throw new Error('Only the room owner can answer.');
+    if (typeof id !== 'string' || id.length > 64) return false;
+    const done = node.answerKnock(id, allow === true);
+    writeLog('INFO', `Knock ${allow === true ? 'allowed' : 'denied'}${done ? '' : ' (not waiting now)'}`);
+    return done;
+});
+// easy-join part 3: "Always allow my friends" of the owner (the room membership card). Returns the value now.
+handleRoomIpc('asscrack:auto-allow-friends', (_event, on) => {
+    if (!node?.memberState().owner) throw new Error('Only the room owner can change this setting.');
+    const value = node.setAutoAllowFriends(on === true);
+    writeLog('INFO', `Always allow my friends: ${value ? 'on' : 'off'}`);
+    return value;
+});
+// "Copy room code" (renew false) and "New room code" (renew true). The main process copies the code.
+handleRoomIpc('asscrack:room-code', (_event, renew) => {
+    if (!node?.memberState().owner) throw new Error('Only the room owner can make a room code.');
+    let made;
+    try {
+        made = node.roomCode({ renew: renew === true });
+    } catch (err) {
+        if (/reachable owner address/.test(String(err?.message))) {
+            throw new Error('This room cannot be reached from the internet. See Invite for details.');
+        }
+        throw err;
+    }
+    clipboard.writeText(made.code);
+    writeLog('INFO', renew === true ? 'New room code copied' : 'Room code copied');
+    return made;
+});
 
 // Saved rooms (milestone 6). The window gets no key, no invite and no file path.
 handleRoomIpc('asscrack:saved-rooms', () => getSavedRooms().status());
@@ -1219,7 +1311,74 @@ friendLinks.events.on('request', event => sendToWindow('asscrack:friend-request'
 const friendWindows = attachFriendWindows({
     BrowserWindow, ipc: ipcMain, assets: __dirname, links: friendLinks, icon: path.join(__dirname, 'img', 'app.ico'),
     warn: message => writeLog('WARN', message), openLink: value => openCheckedLink(value),
-    focused: friendId => attention.read({ kind: 'friend', friendId, id: 'focus' })
+    focused: friendId => attention.read({ kind: 'friend', friendId, id: 'focus' }),
+    join: (friendId, id, leave) => friendJoins.join(friendId, id, leave)
+});
+// easy-join part 1: Join of a friend invite (friend-join.mjs), and the tray balloon of a new invite.
+const friendJoins = createFriendJoins({
+    links: friendLinks, room: () => (node ? roomName ?? '' : null), busy: () => Boolean(leaving) || (loginStarted && !node) || knocking,
+    leave: () => leaveRoom(),
+    reload: () => setImmediate(() => { if (mainWindow && !mainWindow.isDestroyed() && !quitting) mainWindow.webContents.reload(); }),
+    show: () => restoreRoomWindow(), notify: () => sendToWindow('asscrack:friend-join', null),
+    name: () => friendLinks.list().name ?? '', log: writeLog,
+    knocking: on => { knocking = on === true; }, savedRoom: roomId => savedProtectedRoom(roomId)
+});
+handleRoomIpc('asscrack:friend-join-take', () => friendJoins.take());
+// easy-join part 3: true when a saved protected room has this room ID (the announce line of a friend has no key).
+function savedProtectedRoom(roomId) {
+    try {
+        return savedRoomHasId(getSavedRooms(), roomId);
+    } catch (err) {
+        writeLog('WARN', `Saved rooms not read for a friend Join: ${err?.message ?? err}`);
+        return false;
+    }
+}
+// easy-join part 3: Join of a friend row (friend-join.mjs knock()). The window gives only the friend ID. Returns
+// { result, room, current?, text? }: text is the knock result text for the user (login-errors.mjs).
+handleRoomIpc('asscrack:friend-knock', async (_event, friendId, leave) => {
+    if (typeof friendId !== 'string' || friendId.length > 128) return { result: 'gone', room: '' };
+    const answer = await friendJoins.knock(friendId, leave === true, {
+        onState: state => sendToWindow('asscrack:friend-knock-state', { state, room: friendLinks.joinTarget(friendId).room })
+    });
+    writeLog('INFO', `Friend Join: ${answer.result}${answer.outcome ? ` (${answer.outcome.result}${answer.outcome.reason ? `, ${answer.outcome.reason}` : ''})` : ''}`);
+    if (answer.result !== 'knock') return answer;
+    return { result: 'knock', room: answer.room, denied: answer.outcome.result === 'denied', text: knockResultText(answer.outcome) };
+});
+// easy-join part 3: a device invite in the clipboard (clipboard-join.mjs). Main reads the clipboard text only when the
+// main window opens or gets the focus. The window gets { id, room }, never the code.
+const clipboardJoin = createClipboardJoin({
+    readText: () => clipboard.readText(),
+    selfId: clipboardSelfId,
+    currentRoom: () => (node && roomName !== null ? { room: roomName, roomKey: node.roomKey() } : null),
+    busy: () => Boolean(leaving) || (loginStarted && !node) || knocking || quitting,
+    store: createAskedStore(path.join(app.getPath('userData'), ASKED_FILE), { log: writeLog }),
+    notify: () => sendToWindow('asscrack:clipboard-join', null),
+    join: (code, room, leave) => friendJoins.joinCode(code, room, leave),
+    log: writeLog
+});
+// The device ID only when the protected storage is open and has an identity. This read makes no identity.
+function clipboardSelfId() {
+    if (friendLinks.state() !== 'open') return null;
+    try {
+        return importDeviceIdentity(getSavedRooms().deviceIdentity(() => { throw new Error('no identity'); })).id;
+    } catch {
+        return null;
+    }
+}
+function attachClipboardJoin(win) {
+    const check = () => {
+        // The window takes the prompt at its start (clipboard-join-ui.js), thus a check during the load is no loss.
+        if (!win.isDestroyed() && win.isVisible()) clipboardJoin.check().catch(() => {});
+    };
+    win.on('focus', check);
+    win.webContents.on('did-finish-load', check);
+}
+handleRoomIpc('asscrack:clipboard-join-take', () => clipboardJoin.take());
+handleRoomIpc('asscrack:clipboard-join', (_event, id, leave) => clipboardJoin.join(typeof id === 'string' ? id : '', leave === true));
+handleRoomIpc('asscrack:clipboard-join-dismiss', (_event, id) => { clipboardJoin.dismiss(typeof id === 'string' ? id : ''); });
+friendLinks.events.on('invite', ({ name, room }) => {
+    if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isVisible()) return;
+    showTrayBalloon(`${name || 'A friend'} invites you to ${room}. Open the chat with ${name || 'your friend'} to join.`);
 });
 // 1.0.1: the Friends window. "Pop out" in the drawer opens it, only in a room. It stays open after Leave room
 // and closes with the room window and at Quit.
@@ -1262,6 +1421,8 @@ handleRoomIpc('asscrack:saved-room-lines', (_event, roomId, opts) => {
 
 handleRoomIpc('asscrack:reopen-room', async (_event, roomId, allowLegacy) => {
     if (loginStarted) throw new Error('Already logged in');
+    // easy-join part 2: a knock waits for the owner. A reopen now would make the Allow of the owner fail.
+    if (knocking) throw new Error('Wait for the room owner to answer first.');
     if (typeof roomId !== 'string' || roomId.length > 128) throw new Error('Saved room not found');
     // G7a: a friend room is not a saved room of the list. Only its friend link opens it.
     if (getSavedRooms().isFriendRoom(roomId)) throw new Error('Saved room not found');
