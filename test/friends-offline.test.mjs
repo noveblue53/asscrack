@@ -175,7 +175,9 @@ test('127.0.0.1 common room: the pm lines go on the room session; the addrs line
     t.after(() => { A.rooms.close(); B.rooms.close(); });
     const port = randomBasePort();
     const noListen = { discovery: false, nodeOptions: { listen: [] } };
-    const optsA = { ...noListen, basePort: port, now: pastClock() };
+    // L1 (P10a): A keeps a loopback address of B only with allowPrivateFullNode. Without it, the link used the LAN
+    // address of this PC, and the test depended on the network of the PC.
+    const optsA = { ...noListen, nodeOptions: { ...noListen.nodeOptions, allowPrivateFullNode: true }, basePort: port, now: pastClock() };
     const optsB = { ...noListen, basePort: port + 50 };
     const first = await protectedRoomPair(t, A, B);
     const linksA = await startLinks(t, A, optsA);
