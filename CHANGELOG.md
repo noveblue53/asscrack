@@ -41,6 +41,9 @@ Changes for old data (features-first rule):
   has only the two CSP lines of one check. In that check, script in the window cannot read a local `file:` URL.
   On the base, it read `C:/Windows/win.ini`.
 - The image decoder window (this PC): a 1500 x 900 JPEG and PNG give a preview in a sandboxed renderer.
+- Two app copies (127.0.0.1): A posts a 1500 x 900 PNG, and B shows a 1024 x 614 preview from its decoder window.
+  The voice panel of A opens from the app scheme. Both copies quit with no error line in the terminal or the log.
+- `npm run install:clean` (this PC, no VC++ build tools): exit 0, then the tests and the app start work.
 - The voice check of two app copies (127.0.0.1, the Steam Streaming devices) with the fixed script (OI3): B
   gets the voice bytes of A. The old script made two LAN rooms, because each "Create LAN room" makes a new key.
 
