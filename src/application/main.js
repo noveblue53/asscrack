@@ -1,10 +1,11 @@
 import { app, BrowserWindow, Menu, Notification, nativeImage, protocol, Tray, screen, powerMonitor, clipboard, desktopCapturer, dialog, ipcMain, safeStorage, session, shell } from 'electron';
 import { createRoomMedia } from './room-media.mjs';
 import { createRoomIpc } from './room-ipc.mjs';
+import { APP_PRIVILEGES, APP_SCHEME, appPage, createAppHandler } from './app-scheme.mjs';
 import { createClipboardStaging } from './clipboard-image.mjs';
 import { createDownloadScratch } from './download-scratch.mjs';
 import { clearLegacyDebugLogs } from './local-debug.mjs';
-import { fileURLToPath, pathToFileURL } from 'url';
+import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import path from 'path';
 import { mkdirSync, appendFileSync, existsSync, readFileSync, writeFileSync, renameSync, rmSync } from 'fs';
@@ -39,12 +40,14 @@ import { CHOICE_FILE, choiceAfterForget, createStartEntry, createStartRunner, is
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const require = createRequire(import.meta.url);
-const ROOM_PAGE = pathToFileURL(path.join(__dirname, 'index.html')).href;
+// I4: the room page comes from the app scheme, not from file:// (app-scheme.mjs).
+const ROOM_PAGE = appPage('index.html');
+const RNNOISE_WORKLET = '/vendor/rnnoiseWorklet.js';
 
 Menu.setApplicationMenu(null);
 protocol.registerSchemesAsPrivileged([{ scheme: 'room-media', privileges: {
     standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true
-} }]);
+} }, { scheme: APP_SCHEME, privileges: APP_PRIVILEGES }]);
 if (process.platform === 'win32') {
     app.setAppUserModelId(WINDOWS_APP_ID);
     app.setToastActivatorCLSID(WINDOWS_TOAST_ID);
@@ -1349,10 +1352,10 @@ handleRoomIpc('asscrack:ptt-status', () => pttHook.status());
 
 // RNNoise (@sapphi-red/web-noise-suppressor): the window gets the worklet URL and the WASM bytes from here.
 // The window cannot fetch file: URLs, and the main process reads only these two fixed files of the package.
+// I4: the app scheme gives the worklet at a fixed path (see protocol.handle of APP_SCHEME).
 handleRoomIpc('asscrack:rnnoise', (_event, simd) => {
     const wasm = require.resolve(`@sapphi-red/web-noise-suppressor/${simd === true ? 'rnnoise_simd.wasm' : 'rnnoise.wasm'}`);
-    const worklet = require.resolve('@sapphi-red/web-noise-suppressor/rnnoiseWorklet.js');
-    return { workletUrl: pathToFileURL(worklet).href, wasm: readFileSync(wasm) };
+    return { workletUrl: appPage(RNNOISE_WORKLET.slice(1)), wasm: readFileSync(wasm) };
 });
 
 handleRoomIpc('asscrack:voice-settings', () => currentVoiceSettings());
@@ -1705,6 +1708,8 @@ app.whenReady().then(async () => {
         startRunner?.wake();
     });
     protocol.handle('room-media', request => roomMedia.serve(request));
+    protocol.handle(APP_SCHEME, createAppHandler({ root: __dirname,
+        extra: { [RNNOISE_WORKLET]: require.resolve('@sapphi-red/web-noise-suppressor/rnnoiseWorklet.js') } }));
     installRoomPermissions(session.defaultSession, () => mainWindow, ROOM_PAGE, () => idlePeer, () => screenSources.hasPending());
     // P8b: getDisplayMedia of the room window gets only the source of the pending selection (design section 2.1).
     session.defaultSession.setDisplayMediaRequestHandler((request, callback) => screenSources.handleDisplayMedia(request, callback));

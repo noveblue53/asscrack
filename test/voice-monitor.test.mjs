@@ -4,7 +4,6 @@ import { EventEmitter } from 'node:events';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { attachVoiceMonitor, fitVoiceBounds } from '../src/application/voice-monitor.mjs';
 
 const area = { x: -1440, y: 20, width: 1440, height: 850 };
@@ -33,8 +32,9 @@ test('one detached panel uses the live room, closes quietly on shutdown, and sav
         isDestroyed() { return this.destroyed; }
         show() {}
         focus() { this.focused = true; }
-        async loadFile(file) {
-            this.webContents.mainFrame.url = pathToFileURL(file).href;
+        // I4: the panel loads its page from the app scheme (loadURL), not from a file.
+        async loadURL(url) {
+            this.webContents.mainFrame.url = url;
             this.webContents.emit('did-finish-load'); this.emit('ready-to-show');
         }
         getBounds() { return area; }
@@ -81,7 +81,7 @@ test('W6: Stop sharing in the detached panel reaches the room window only from t
         isDestroyed() { return this.destroyed; }
         show() {}
         focus() {}
-        async loadFile(file) { this.webContents.mainFrame.url = pathToFileURL(file).href; this.webContents.emit('did-finish-load'); }
+        async loadURL(url) { this.webContents.mainFrame.url = url; this.webContents.emit('did-finish-load'); }
         getBounds() { return area; }
         getNormalBounds() { return { x: 0, y: 0, width: 300, height: 180 }; }
         close() { this.emit('close'); this.destroyed = true; this.emit('closed'); }

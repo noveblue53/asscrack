@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { appPage } from './app-scheme.mjs';
 import { isDesktopFrame, lockDesktopNavigation } from './desktop-boundary.mjs';
 
 const coordinate = n => Number.isInteger(n) && n >= -2147483648 && n <= 2147483647;
@@ -18,8 +18,8 @@ export function fitVoiceBounds(saved, area) {
 
 export function attachVoiceMonitor({ room, roomPage, ipc, BrowserWindow, screen, profile, assets, participating, restoreRoom, warn }) {
     const file = path.join(profile, 'voice-window.json');
-    const monitorFile = path.join(assets, 'voice-monitor.html');
-    const monitorPage = pathToFileURL(monitorFile).href;
+    // I4: the page comes from the app scheme (app-scheme.mjs).
+    const monitorPage = appPage('voice-monitor.html');
     let monitor = null;
     let ready = false;
     let returnToRoom = false;
@@ -65,7 +65,7 @@ export function attachVoiceMonitor({ room, roomPage, ipc, BrowserWindow, screen,
             roomMessage('asscrack:voice-monitor-active', false);
             if (returnToRoom && participating()) restoreRoom();
         });
-        win.loadFile(monitorFile).catch(err => {
+        win.loadURL(monitorPage).catch(err => {
             if (!win.isDestroyed()) { warn('Voice window could not open: ' + err.message); win.close(); }
         });
     }

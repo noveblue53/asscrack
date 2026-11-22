@@ -5,6 +5,7 @@ import { open, lstat } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
+import { APP_ORIGIN } from './app-scheme.mjs';
 import { IMAGE_INPUT_LIMIT, PREVIEW_LIMIT, inspectGif, inspectImage, videoMime } from './media-formats.mjs';
 
 const CACHE_LIMIT = 32 * 1024 * 1024;
@@ -202,7 +203,7 @@ export function createRoomMedia({ nativeImage, changed = () => {} }) {
         const entry = routes.get(m[1]);
         if (!entry) return failed(404);
         const headers = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
-            'Content-Security-Policy': "default-src 'none'", 'Access-Control-Allow-Origin': 'null' };
+            'Content-Security-Policy': "default-src 'none'", 'Access-Control-Allow-Origin': APP_ORIGIN };
         if (m[2] === 'thumbnail') {
             if (!entry.thumbnail) return failed(404);
             headers['Content-Type'] = 'image/png';
