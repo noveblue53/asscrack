@@ -103,6 +103,23 @@ export function keyedServiceTag(room, roomKey) {
     return roomServiceTag(room + '\n' + createHash('sha256').update(key).digest('hex').slice(0, 16))
 }
 
+// L5 (P10a): the listen addresses of a LAN room. Only the private IPv4 addresses of this PC (10/8, 172.16/12,
+// 192.168/16, and 169.254/16 for a cable with no DHCP), and 127.0.0.1 for the copies on this PC. A LAN room then
+// accepts no TCP connection on a public network interface. interfaces: the value of os.networkInterfaces().
+export function lanListenAddrs(port = 0, interfaces = networkInterfaces()) {
+    const out = ['/ip4/127.0.0.1/tcp/' + port]
+    for (const infos of Object.values(interfaces ?? {})) {
+        for (const info of infos ?? []) {
+            if (info.internal || !(info.family === 'IPv4' || info.family === 4)) continue
+            const [a, b] = String(info.address).split('.').map(Number)
+            const lan = a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254)
+            const addr = `/ip4/${info.address}/tcp/${port}`
+            if (lan && !out.includes(addr)) out.push(addr)
+        }
+    }
+    return out
+}
+
 export function roomServiceTag(room) {
     const h = createHash('sha256').update(room).digest('hex').slice(0, 8)
     return `_asscrack-${h}._udp.local`
@@ -146,7 +163,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     if (fullNode !== 'auto' && fullNode !== true && fullNode !== false) throw new TypeError("fullNode must be 'auto', true or false")
     if (!Number.isInteger(port) || port < 0 || port > 65535) throw new TypeError('port must be an integer from 0 to 65535')
     // Rule 5: a relay-only node has no TCP listen address and no mDNS.
-    const listenAddrs = relayOnly ? [] : (listen ?? [`/ip4/${key ? '0.0.0.0' : '127.0.0.1'}/tcp/${port}`])
+    // L5 (P10a): a LAN room listens only on the private addresses (lanListenAddrs), not on 0.0.0.0.
+    const listenAddrs = relayOnly ? [] : (listen ?? (membership?.lan ? lanListenAddrs(port) :
+        [`/ip4/${key ? '0.0.0.0' : '127.0.0.1'}/tcp/${port}`]))
     if (!key && !listen) discovery = false
     if (relayOnly) discovery = false
     const hasRelayRole = !membership || (!membership.lan && membership.hostGrant && !relayOnly)
