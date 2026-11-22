@@ -244,3 +244,21 @@ test('127.0.0.1 availability: the friend sees Away, Do not disturb (with the not
     linksA.setAvailability({ state: 'available', note: '', idle: false });
     await waitFor(() => linksB.friend(friendB).availability === null, 'available');
 });
+
+test('private message: a sender clock in the future gives times after each other, thus the order stays', async () => {
+    const { createPrivateMessages } = await import('../src/network/private-messages.mjs');
+    const { createDeviceIdentity } = await import('../src/network/room-membership.mjs');
+    const { randomUUID } = await import('node:crypto');
+    const devA = createDeviceIdentity().id, devB = createDeviceIdentity().id;
+    const got = [];
+    const b = createPrivateMessages({ selfDevice: devB, friendDevice: devA, sessionPeer: () => 'peerA', sendTo: () => true,
+        receive: msg => { got.push(msg); }, now: () => 1_000_000 });
+    // A clock 1 hour ahead: three queued lines in one burst, and one line with no time.
+    for (const time of [4_600_000, 4_601_000, 4_602_000, undefined]) {
+        b.handle({ peerId: 'peerA', deviceId: devA, message: { type: 'pm', v: 1, op: 'msg', id: `${devA}.${randomUUID()}`, text: 'x', time, away: true } });
+    }
+    assert.deepEqual(got.map(m => m.time), [1_000_000, 1_000_001, 1_000_002, 1_000_003]);
+    // A time in the past of this computer stays as it is.
+    b.handle({ peerId: 'peerA', deviceId: devA, message: { type: 'pm', v: 1, op: 'msg', id: `${devA}.${randomUUID()}`, text: 'y', time: 900_000 } });
+    assert.equal(got.at(-1).time, 900_000);
+});

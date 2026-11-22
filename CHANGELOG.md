@@ -22,14 +22,16 @@ A message to a friend that is not connected waits on this computer. It goes out 
   connection. The panel then shows "Online · in <room name>". The room also gives the current addresses of the friend
   link, and the friend link connects at once when it can.
 - Friends see "Online · Away", "Online · Do not disturb" or "Online · Idle Peer".
+- When the clock of the sender is ahead of the clock of the receiver, the waiting lines keep their order.
 - With 1 or more friends and "Close to Idle Peer" on, Close on the login screen puts ASSCRACK in the tray. The tray
   tooltip is "ASSCRACK – online for friends". The first time, a note tells the user how to open and quit it.
 - When a friend ends the friendship, each waiting line shows "Not delivered" and the reason.
 
 Results:
-- `npm test` passes, 715 tests on the branch and 730 after the merge with P7c (127.0.0.1).
-- 13 new tests. 7 use real friend nodes and a real archive in a temp folder (127.0.0.1 on this PC). 6 test the
-  window part with a stub bridge or the room window fixture.
+- `npm test` passes, 731 tests after the merge with P7c (127.0.0.1).
+- 14 new tests. 7 use real friend nodes and a real archive in a temp folder (127.0.0.1 on this PC). 6 test the
+  window part with a stub bridge or the room window fixture. 1 tests the order of the lines when the clock of the
+  sender is ahead.
 - One `npm start` gives no error line in the terminal or the developer console (this PC).
 - Two copies (this PC, 127.0.0.1), 5 runs: B quits, A writes 3 lines ("Waiting"). B starts: A shows "Delivered" for
   the 3 lines, B shows the note and the 3 lines once, and B logs one notification. A closes the window on the login
