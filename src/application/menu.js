@@ -53,7 +53,9 @@
         'friend-remove': 'Remove friend…',
         'friend-block': 'Block…',
         // easy-join: the owner of the current protected room sends a room invite to the friend.
-        'friend-invite': 'Invite to room'
+        'friend-invite': 'Invite to room',
+        // easy-join part 3: ask to join the room of the friend (a knock to the owner).
+        'friend-join': 'Join room'
     });
 
     // The action names for the data of a row (roomActions.rowInfo). An empty list: no menu.
@@ -77,7 +79,7 @@
                 // localOnly: the line has "Only on this computer" (gap B3).
                 return [...(info.quotable ? ['quote', 'copy-message'] : ['copy-message']), ...(info.link ? ['open-link'] : []), ...(info.image ? ['view-image'] : []), ...(info.inspect ? ['inspect-peer'] : []), ...(info.details ? ['message-details'] : []), ...(info.localOnly ? ['resend'] : [])];
             case 'friend':
-                return ['friend-open', ...(info.invite ? ['friend-invite'] : []), 'friend-rename', 'friend-remove', 'friend-block'];
+                return ['friend-open', ...(info.join ? ['friend-join'] : []), ...(info.invite ? ['friend-invite'] : []), 'friend-rename', 'friend-remove', 'friend-block'];
             case 'offer':
                 return info.active ? ['cancel-offer'] : [];
             // G6: only the room owner renames and deletes a voice channel (not General).

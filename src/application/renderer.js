@@ -1862,7 +1862,7 @@ function runRowAction(action, row) {
         case 'delete-voice-channel': return window.voiceChannels?.remove(row) ?? false;
         case 'add-friend': return window.friendsUi?.add(buddyId(row)) ?? false;
         case 'open-friend-chat': return window.friendsUi?.openFor(buddyId(row)) ?? false;
-        case 'friend-open': case 'friend-rename': case 'friend-remove': case 'friend-block': case 'friend-invite':
+        case 'friend-open': case 'friend-rename': case 'friend-remove': case 'friend-block': case 'friend-invite': case 'friend-join':
             return window.friendsUi?.run(action, row) ?? false;
         default: return false;
     }

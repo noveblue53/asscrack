@@ -94,6 +94,10 @@ const RELAY_LINK_BYTES = 8n * 1024n * 1024n * 1024n
 export const KNOCK_CIRCUIT_MS = 150 * 1000
 export const KNOCK_CIRCUIT_BYTES = 64 * 1024
 const KNOCK_CIRCUITS = 8
+// easy-join part 3: the forward of a friend knock (forwardKnock). The answer of the owner can be a device invite of some
+// kilobytes, the same read limits as knock-client.mjs.
+const FORWARD_DIAL_MS = 8000
+const FORWARD_READ_LIMITS = { maxLineBytes: 64 * 1024, maxStreamBytes: 256 * 1024 }
 const ipOf = addr => /^\/ip[46]\/([^/]+)\//.exec(addr)?.[1] ?? null
 
 // A room key is 32 bytes: a Uint8Array or a base64url string. Returns a Buffer, or null for a LAN room.
@@ -283,7 +287,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         const entries = [...memberPeers.entries()].filter(([peerId]) => sessions.has(peerId) && memberAllowed(peerId))
         const members = membership.owner ? membership.issued() : entries.filter(([, member]) => member.deviceId !== membership.ownerId)
             .map(([, member]) => ({ deviceId: member.deviceId, canHost: member.canHost, revoked: false }))
+        // easy-join part 3: roomId and ownerId for the room announce line of the friend links.
         return { protected: true, owner: membership.owner, deviceId: membership.id, lan: membership.lan,
+            roomId: membership.roomId, ownerId: membership.ownerId,
             admitted: membership.admitted(), canHost: membership.canHost(), revoked: membership.revoked(membership.id),
             members: members.map(member => {
                 const pair = entries.find(([, active]) => active.deviceId === member.deviceId)
@@ -1215,7 +1221,10 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     if (knockDesk) {
         await node.handle(KNOCK_PROTOCOL, ({ stream, connection }) => {
             const source = connection.remotePeer.toString()
-            markKnockSource(source)
+            // easy-join part 3: an admitted member with a session forwards the knock of its friend (forwardKnock). Only
+            // such a stream can carry a friend knock (FRIEND_KNOCK_CODE). The path of the limits is the member.
+            const forwarder = sessions.has(source) && memberAllowed(source) && memberPeers.get(source)?.deviceId !== membership.ownerId
+            if (!forwarder) markKnockSource(source)
             const addr = connection.remoteAddr?.toString() ?? ''
             let handler = null
             const channel = knockChannel(stream, {
@@ -1223,7 +1232,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 onLine: message => handler?.receive(message),
                 onClose: () => handler?.closed()
             })
-            handler = knockDesk.open(channel, { source, via: circuitRelay(addr) ?? ipOf(addr) ?? '?' })
+            handler = knockDesk.open(channel, forwarder ? { source, via: source, friend: true }
+                : { source, via: circuitRelay(addr) ?? ipOf(addr) ?? '?' })
         }, { runOnTransientConnection: true, maxInboundStreams: 2, maxOutboundStreams: 1 })
     }
 
@@ -2068,6 +2078,23 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         answerKnock: (id, allow) => knockDesk?.answer(id, allow === true) ?? false,
         // The knock desk of the owner (knock.mjs), or null. A friend link channel can use it (part 3).
         knockDesk: () => knockDesk,
+        // easy-join part 3: an admitted member that is not the owner forwards the knock of a friend to the owner, on a
+        // knock stream on the session connection. The member does not change the lines. Resolves a knock channel
+        // (knock-stream.mjs) or null: no owner session now, or the owner refused the stream.
+        async forwardKnock({ onLine, onClose = () => {} } = {}) {
+            if (stopped || !membership || membership.owner || !membership.admitted() || typeof onLine !== 'function') return null
+            const ownerPeer = [...sessions.keys()].find(peerId => memberAllowed(peerId) && memberPeers.get(peerId)?.deviceId === membership.ownerId)
+            const conn = ownerPeer ? sessionConns.get(ownerPeer) : null
+            if (!conn) return null
+            let stream
+            try {
+                stream = await conn.newStream(KNOCK_PROTOCOL, { runOnTransientConnection: true, signal: AbortSignal.timeout(FORWARD_DIAL_MS) })
+            } catch (err) {
+                console.info(connText('knock forward-refused', { peer: ownerPeer, reason: err?.message ?? String(err) }))
+                return null
+            }
+            return knockChannel(stream, { ...FORWARD_READ_LIMITS, onLine, onClose })
+        },
         whisperPeers: whispers.peers,
         sendWhisper: whispers.send,
         channels: channels.view, createChannel: channels.create,

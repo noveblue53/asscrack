@@ -45,6 +45,10 @@ contextBridge.exposeInMainWorld('friends', {
     // easy-join: the Join of a friend invite that waits for this window: { token, room, name } or null (one time).
     takeJoin: () => ipcRenderer.invoke('asscrack:friend-join-take'),
     onJoin: listen('asscrack:friend-join'),
+    // easy-join part 3: Join of a friend row (the friend ID only). leave: the user agreed to leave the current room.
+    knockJoin: (friendId, leave) => ipcRenderer.invoke('asscrack:friend-knock', text(friendId), leave === true),
+    // The state of the friend Join: { state: 'waiting', room } (the owner sees the request).
+    onKnockState: listen('asscrack:friend-knock-state'),
     onChanged: listen('asscrack:friends'),
     onRequest: listen('asscrack:friend-request'),
     // G7b: a friend line for the attention rules (attention.js): { friendId, id, away, focused }. No text, no name.

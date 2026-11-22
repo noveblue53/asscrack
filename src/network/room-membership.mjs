@@ -66,10 +66,26 @@ function authority(room, roomKey, owner, lan) {
     // easy-join part 2: the room code (the owner signs the SHA-256 of the code bytes), the knock proof of the owner
     // (over the nonce of the knocker) and the knock proof of the knocker device (over the nonce of the owner).
     const roomCodeFields = bodyHash => ['asscrack-room-code/1', id, bodyHash]
-    const knockOwnerFields = (codeId, nonce) => ['asscrack-knock-owner/1', id, codeId, nonce]
-    const knockFields = (codeId, nonce) => ['asscrack-knock/1', id, codeId, nonce]
+    const knockOwnerFields = (codeId, nonce) => knockOwnerFieldsOf(id, codeId, nonce)
+    const knockFields = (codeId, nonce) => knockFieldsOf(id, codeId, nonce)
     return { id, owner, lan, grantFields, admissionFields, revokeFields, proofFields, voiceChannelFields,
         roomCodeFields, knockOwnerFields, knockFields }
+}
+
+// easy-join part 2: the signed fields of the two knock proofs. Part 3 (the friend knock) uses them with a room ID only.
+const knockOwnerFieldsOf = (roomId, codeId, nonce) => ['asscrack-knock-owner/1', roomId, codeId, nonce]
+const knockFieldsOf = (roomId, codeId, nonce) => ['asscrack-knock/1', roomId, codeId, nonce]
+export const validRoomId = value => canonicalBytes(value, 32) !== null
+
+// easy-join part 3: the knock proofs for a knocker that knows only the room ID and the owner device ID (a friend knock:
+// the friend tells the room ID, never the room key). The same fields as roomCodeAccess.
+export function knockAccess(roomId, owner) {
+    if (!validRoomId(roomId) || !validDeviceId(owner)) throw new Error('Invalid protected room')
+    return Object.freeze({
+        roomId,
+        verifyOwnerKnock: (codeId, nonce, signature) => verified(owner, knockOwnerFieldsOf(roomId, codeId, nonce), signature),
+        knockProof: (identity, codeId, nonce) => identity.sign(knockFieldsOf(roomId, codeId, nonce))
+    })
 }
 
 // easy-join part 2: the checks of a room code and of a knock for a device that has no membership yet (the knocker).

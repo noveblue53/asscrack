@@ -13,13 +13,18 @@
 //   owner -> knocker  { type: 'knock-wait' } when the prompt shows, then again each keepAliveMs (the stream of a
 //                     muxer closes after 120 s with no data)
 //   owner -> knocker  { type: 'knock-result', result: 'allowed' | 'denied' | 'timeout' | 'refused', reason?, invite? }
+// easy-join part 3: a friend knock has no room code. Its code field is FRIEND_KNOCK_CODE, and only a channel that the
+// owner opens with { friend: true } accepts it (the friend link of the owner, or a forward of an admitted member).
 import { randomBytes, randomUUID } from 'node:crypto'
 import { deviceMark } from './device-mark.mjs'
 import { readInvite } from './invite.mjs'
-import { validDeviceId } from './room-membership.mjs'
+import { roomCodeAccess, validDeviceId } from './room-membership.mjs'
 import { displayText } from './text-safety.mjs'
 
 export const KNOCK_PROTOCOL = '/asscrack/knock/1.0.0'
+// easy-join part 3: the code field of a friend knock. It is not a code ID (16 bytes, 22 characters), thus a room code
+// knock can never use it, and the proofs of a friend knock are not valid for a room code knock.
+export const FRIEND_KNOCK_CODE = 'friend'
 // maxLineBytes and maxStreamBytes: the knock size cap of the owner. maxPending: the prompts at one time. promptMs: the
 // time of a prompt with no answer. coolDownMs: after Deny, the same device gets "denied" with no prompt.
 // perSource, perVia and perOwner: the knocks in each periodMs for one source peer, for one path (a relay or an IP
@@ -95,8 +100,9 @@ export function createKnockDesk({ membership, makeInvite, limits = {}, clock = r
     }
 
     // source: the peer (or friend) of the channel. via: the path (a relay peer ID, an IP address, 'friend').
+    // friend: true for a friend knock (part 3); the hello must then have FRIEND_KNOCK_CODE, and no room code is checked.
     // Returns { receive(message), closed() }.
-    function open(channel, { source = '?', via = '?' } = {}) {
+    function open(channel, { source = '?', via = '?', friend = false } = {}) {
         let state = 'hello'
         let done = false
         let codeId = null
@@ -129,7 +135,8 @@ export function createKnockDesk({ membership, makeInvite, limits = {}, clock = r
                     if (message?.type !== 'knock-hello' || message.v !== 1 || typeof message.room !== 'string' ||
                         typeof message.code !== 'string' || typeof message.nonce !== 'string' || !NONCE.test(message.nonce)) return drop('bad hello')
                     if (message.room !== membership.roomId) return finish('refused', { reason: 'room' })
-                    const check = membership.checkRoomCode(message.code)
+                    const check = friend === true ? (message.code === FRIEND_KNOCK_CODE ? 'ok' : 'old-code')
+                        : membership.checkRoomCode(message.code)
                     if (check !== 'ok') return finish('refused', { reason: check })
                     codeId = message.code
                     ownerNonce = newNonce()
@@ -253,6 +260,20 @@ export function checkAllowedInvite(code, identity, invite) {
     const value = readInvite(invite)
     if (value.room !== code.room || value.key !== code.key || value.membership?.owner !== code.owner ||
         value.membership.lan !== code.lan || value.membership.grant?.deviceId !== identity.id || value.membership.grant.canHost !== false) {
+        throw new Error('The answer of the owner is not valid.')
+    }
+    return value
+}
+
+// easy-join part 3: the device invite of Allow after a friend knock. The joiner knows the room ID and the owner device
+// ID of the announce line of the friend, not the room key. The room ID of the invite (the room, the key, the owner and
+// the LAN flag) must be that room ID. Returns the value of readInvite.
+export function checkFriendAllowedInvite({ roomId, owner }, identity, invite) {
+    const value = readInvite(invite)
+    const m = value.membership
+    let id = null
+    try { id = roomCodeAccess(value.room, value.key, m?.owner, m?.lan).roomId } catch { id = null }
+    if (id !== roomId || m?.owner !== owner || m.grant?.deviceId !== identity.id || m.grant.canHost !== false) {
         throw new Error('The answer of the owner is not valid.')
     }
     return value

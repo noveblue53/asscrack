@@ -17,7 +17,7 @@ import { createAsscrackNode, keyedServiceTag } from '../network/node.mjs';
 import { isRoomCode, newRoomKey, readInvite, readRoomCode } from '../network/invite.mjs';
 import { knockRoom } from '../network/knock-client.mjs';
 import { checkAllowedInvite } from '../network/knock.mjs';
-import { createDeviceIdentity, importDeviceIdentity, createRoomMembership } from '../network/room-membership.mjs';
+import { createDeviceIdentity, importDeviceIdentity, createRoomMembership, roomCodeAccess } from '../network/room-membership.mjs';
 import { joinAdmission, restoreSavedAdmission } from './room-admission.mjs';
 import { observeRoomActivity } from './room-activity.mjs';
 // Saved rooms (milestone 6).
@@ -1103,9 +1103,38 @@ const friendJoins = createFriendJoins({
     leave: () => leaveRoom(),
     reload: () => setImmediate(() => { if (mainWindow && !mainWindow.isDestroyed() && !quitting) mainWindow.webContents.reload(); }),
     show: () => restoreRoomWindow(), notify: () => sendToWindow('asscrack:friend-join', null),
-    name: () => friendLinks.list().name ?? '', log: writeLog
+    name: () => friendLinks.list().name ?? '', log: writeLog,
+    knocking: on => { knocking = on === true; }, savedRoom: roomId => savedProtectedRoom(roomId)
 });
 handleRoomIpc('asscrack:friend-join-take', () => friendJoins.take());
+// easy-join part 3: true when a saved protected room has this room ID (the announce line of a friend has no key).
+function savedProtectedRoom(roomId) {
+    if (typeof roomId !== 'string') return false;
+    try {
+        for (const row of getSavedRooms().status().rooms) {
+            if (!row.protected) continue;
+            const saved = getSavedRooms().getRoom(row.roomId);
+            const membership = typeof saved?.membership === 'string' ? JSON.parse(saved.membership) : saved?.membership;
+            if (!membership) continue;
+            try { if (roomCodeAccess(saved.name, saved.roomKey, membership.owner, membership.lan).roomId === roomId) return true; }
+            catch { /* a damaged row */ }
+        }
+    } catch (err) {
+        writeLog('WARN', `Saved rooms not read for a friend Join: ${err?.message ?? err}`);
+    }
+    return false;
+}
+// easy-join part 3: Join of a friend row (friend-join.mjs knock()). The window gives only the friend ID. Returns
+// { result, room, current?, text? }: text is the knock result text for the user (login-errors.mjs).
+handleRoomIpc('asscrack:friend-knock', async (_event, friendId, leave) => {
+    if (typeof friendId !== 'string' || friendId.length > 128) return { result: 'gone', room: '' };
+    const answer = await friendJoins.knock(friendId, leave === true, {
+        onState: state => sendToWindow('asscrack:friend-knock-state', { state, room: friendLinks.joinTarget(friendId).room })
+    });
+    writeLog('INFO', `Friend Join: ${answer.result}${answer.outcome ? ` (${answer.outcome.result}${answer.outcome.reason ? `, ${answer.outcome.reason}` : ''})` : ''}`);
+    if (answer.result !== 'knock') return answer;
+    return { result: 'knock', room: answer.room, denied: answer.outcome.result === 'denied', text: knockResultText(answer.outcome) };
+});
 friendLinks.events.on('invite', ({ name, room }) => {
     if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isVisible()) return;
     showTrayBalloon(`${name || 'A friend'} invites you to ${room}. Open the chat with ${name || 'your friend'} to join.`);

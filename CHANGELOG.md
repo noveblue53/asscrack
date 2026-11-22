@@ -7,6 +7,29 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased — Join on a friend row (goal easy-join, part 3, 2026-11-22)
+
+A friend row shows Join when the friend is in a protected room that you are not in. Join asks the owner to let you in.
+
+- **Room line on the friend link.** Each app tells its friends the name of its current protected room. The line also has
+  the room ID and the owner device ID. It has no room key, no code and no address. The row then shows "Online · in
+  <room>" and Join.
+- **Join.** Join sends a knock on the friend link, with the same proofs and limits as a room code. If the friend owns
+  the room, the friend sees the normal request "<name> #<mark> wants to join." If the friend is an admitted member,
+  the app of the friend sends the knock to the owner with no change. The owner checks the device key of the person
+  that asks. Allow gives a device invite with no host rights. Then the normal join starts, with no paste.
+- **In a room.** Join first asks "Leave <room> and join <room>?". The current room stays until the owner selects Allow.
+- **Texts.** Deny gives "The owner did not let you in." No owner gives "The owner is not online. Try again later." A
+  friend that cannot send the knock (not admitted yet) shows "Ask <name> for an invite" on the row.
+- **1.0.0 apps.** A 1.0.0 app ignores the new lines with no error, and it never sends a room line. Thus a 1.0.0 friend
+  has no Join.
+
+Checks (127.0.0.1 on this PC, not LAN, not internet): `test/friend-knock.test.mjs` has 8 tests.
+`test/friend-knock-node.test.mjs` has 5 tests. They do Allow and Deny of a friend that is the owner, and Allow
+through a member that is not the owner. They also do "Ask", owner offline, and the friend code on a room code knock.
+Two app copies on this PC:
+B selects Join on the row of A, A selects Allow, then chat in both directions.
+
 ## Unreleased — knock and approve (goal easy-join, part 2, 2026-11-22)
 
 A person with a room code asks the owner to join. The owner sees the request and selects Allow or Deny.
