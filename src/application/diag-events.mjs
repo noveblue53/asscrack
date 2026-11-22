@@ -5,7 +5,7 @@
 import { addrClass, ipClass } from './journal.mjs';
 
 // The node events that go into the journal.
-export const JOURNAL_NODE_EVENTS = Object.freeze(['connection', 'dial-failed', 'dial-ok', 'upnp', 'full-node', 'host-changed',
+export const JOURNAL_NODE_EVENTS = Object.freeze(['connection', 'dial-failed', 'dial-result', 'upnp', 'full-node', 'host-changed',
     'peer-left', 'failover', 'session-refused', 'session-ids', 'admission', 'clock', 'file-offer', 'file-done', 'file-failed',
     'file-refused', 'file-cancelled', 'file-paused', 'file-resumed', 'file-restarted', 'file-discarded', 'file-expired',
     'file-retried', 'diag', 'knock-event', 'screen-diag']);
@@ -69,9 +69,10 @@ export function projectNodeEvent(type, data, selfId = null) {
         case 'dial-failed':
             return ['dial', { peer: d.peer, via: reasonCode(d.via), result: 'failed', reason: reasonCode(d.reason),
                 ...addrClass(d.addr), error: d.error, count: d.count, ms: d.ms }];
-        // Diagnostics (1.0.1, rank 2): a successful dial or reach attempt (node.mjs dialOk).
-        case 'dial-ok':
-            return ['dial', { peer: d.peer, via: reasonCode(d.via), result: 'ok', ...addrClass(d.addr), ms: d.ms }];
+        // Diagnostics (1.0.1, rank 2): a successful dial or reach attempt, or a negative dial-back (node.mjs dialResult).
+        case 'dial-result':
+            return ['dial', { peer: d.peer, via: reasonCode(d.via), result: d.result === 'failed' ? 'failed' : 'ok',
+                reason: reasonCode(d.reason), ...addrClass(d.addr), ms: d.ms }];
         case 'upnp':
             return ['upnp', { state: reasonCode(d.state), reason: reasonCode(d.reason), port: d.port,
                 external: typeof d.ip === 'string' ? ipClass(d.ip) ?? 'unknown' : undefined, renew: d.renew }];

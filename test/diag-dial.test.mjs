@@ -94,3 +94,37 @@ test('127.0.0.1: the journal has each dial with its route, result and time: conn
     // No raw address in a dial line.
     for (const node of nodes) for (const line of lines(node)) assert.ok(!JSON.stringify(line).includes('127.0.0.1'))
 })
+
+test('127.0.0.1: a negative dial-back goes into the journal as a failed reach attempt, not as a "dial-failed" event', { timeout: 30000 }, async t => {
+    const roomKey = newRoomKey()
+    const ownerMembership = createRoomMembership({ identity: createDeviceIdentity(), room, roomKey, lan: false })
+    const nodes = []
+    const dir = mkdtempSync(path.join(tmpdir(), 'asscrack-diag-dialback-'))
+    t.after(async () => { await Promise.allSettled(nodes.map(node => node.stop())); rmSync(dir, { recursive: true, force: true }) })
+    // The owner listens on 127.0.0.2 only. The peer sees the connection from 127.0.0.1 and dials back there: refused.
+    const owner = await createAsscrackNode({ room, roomKey, membership: ownerMembership, name: 'Owner', listen: ['/ip4/127.0.0.2/tcp/0'],
+        ...timing, allowPrivateFullNode: false })
+    nodes.push(owner)
+    const relayDevice = createDeviceIdentity()
+    const relay = await createAsscrackNode({ room, roomKey, name: 'Relay', listen: ['/ip4/127.0.0.1/tcp/0'], ...timing, fullNode: true,
+        allowPrivateFullNode: true, membership: restoreRoomMembership({ identity: relayDevice, room, roomKey,
+            descriptor: ownerMembership.issue(relayDevice.id, true) }) })
+    nodes.push(relay)
+    const journal = createJournal({ dir, budgets: { default: [1e6, 0] } })
+    journalNodeEvents((type, fn) => owner.events.on(type, fn), (type, fields) => journal.write(type, fields), owner.peerId)
+    const failedEvents = []
+    owner.events.on('dial-failed', data => failedEvents.push(data))
+    const dialLines = () => {
+        journal.flushSync()
+        return readdirSync(dir).filter(name => name.endsWith('.jsonl'))
+            .flatMap(name => readFileSync(path.join(dir, name), 'utf8').split('\n').filter(Boolean)).map(line => JSON.parse(line))
+            .filter(line => line.type === 'dial')
+    }
+    await owner.connect(localAddress(relay))
+    await waitFor(() => dialLines().some(line => line.via === 'dial-back'), 'a dial-back line')
+    const line = dialLines().find(l => l.via === 'dial-back')
+    assert.equal(line.result, 'failed')
+    assert.equal(line.reason, 'no-dial-back')
+    assert.ok(Number.isInteger(line.ms))
+    assert.deepEqual(failedEvents.filter(e => e.via === 'dial-back'), [], 'no dial-failed event (terminal and Room activity as before)')
+})

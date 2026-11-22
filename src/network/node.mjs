@@ -1598,19 +1598,23 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         console.warn(connText('conn dial-failed', data))
         events.emit('dial-failed', data)
     }
-    // Diagnostics (1.0.1, REVIEW.md rank 2): one 'dial-ok' event for each successful dial or reach attempt, with the
-    // route (via), the address and the time in ms. The same site, target and address again in DIAL_FAIL_QUIET_MS gives
-    // no new event (thus a stream of successes does not use up the journal budget of the failures). No console line.
-    const dialOkSeen = new Map()
-    function dialOk({ peer, addr, via, started }) {
-        const data = { peer: peer ? String(peer) : '?', via, addr: addr ? String(addr) : '?', ms: Date.now() - started }
-        const k = `${data.via} ${data.peer} ${data.addr}`
+    // Diagnostics (1.0.1, REVIEW.md rank 2): one 'dial-result' event (only for the journal) for each successful dial or
+    // reach attempt, with the route (via), the address and the time in ms. reason: a reach attempt with a negative answer
+    // and no error (a dial-back that did not reach this node); then the result is 'failed'. This is not a 'dial-failed'
+    // event: the terminal and the Room activity stay as before. The same site, target, address and result again in
+    // DIAL_FAIL_QUIET_MS gives no new event (thus a stream of successes does not use up the journal budget of the
+    // failures). No console line.
+    const dialResultSeen = new Map()
+    function dialResult({ peer, addr, via, started, reason }) {
+        const data = { peer: peer ? String(peer) : '?', via, addr: addr ? String(addr) : '?', ms: Date.now() - started,
+            result: reason ? 'failed' : 'ok', ...(reason ? { reason } : {}) }
+        const k = `${data.via} ${data.peer} ${data.addr} ${data.result}`
         const now = Date.now()
-        const last = dialOkSeen.get(k)
+        const last = dialResultSeen.get(k)
         if (last !== undefined && now - last < DIAL_FAIL_QUIET_MS) return
-        if (dialOkSeen.size > 1000) dialOkSeen.clear()
-        dialOkSeen.set(k, now)
-        events.emit('dial-ok', data)
+        if (dialResultSeen.size > 1000) dialResultSeen.clear()
+        dialResultSeen.set(k, now)
+        events.emit('dial-result', data)
     }
 
     // An open TCP connection can now serve a different room. A saved hint succeeds only
@@ -1648,7 +1652,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 try {
                     const conn = await node.dial(multiaddr(target))
                     await openHintChat(conn)
-                    dialOk({ peer: peerId, addr: target, via: 'full-node', started })
+                    dialResult({ peer: peerId, addr: target, via: 'full-node', started })
                     // L1: the connection to this peer ID has this address (libp2p can give a connection that exists).
                     if (bareAddr(conn.remoteAddr.toString()) === bareAddr(a)) {
                         addVerified(peerId, a)
@@ -1677,7 +1681,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                         continue
                     }
                     await openHintChat(conn)
-                    dialOk({ peer: remoteId, addr: bare, via: 'address', started })
+                    dialResult({ peer: remoteId, addr: bare, via: 'address', started })
                     return
                 } catch (err) {
                     dialFailed({ peer: '?', addr: bare, via: 'address', err, started })
@@ -1728,8 +1732,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         requestDialback(conn, upnpState?.port ?? port)
             .then(({ ok, ip }) => {
                 // Diagnostics: the reach attempt with its result (a negative answer is a failed dial-back).
-                if (ok) dialOk({ peer: peerId, addr: target, via: 'dial-back', started })
-                else dialFailed({ peer: peerId, addr: target, via: 'dial-back', err: 'no dial-back', started, reason: 'no-dial-back' })
+                dialResult({ peer: peerId, addr: target, via: 'dial-back', started, reason: ok ? undefined : 'no-dial-back' })
                 const publicIp = observedIp(node) ?? ip
                 const full = ok && canRelay() && publicIp !== null && (allowPrivateFullNode || !isPrivateIp(publicIp))
                 if (full) dialbackIp = publicIp
@@ -1766,7 +1769,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             try {
                 await node.components.transportManager.listen([multiaddr(`${addr}/p2p-circuit`)])
                 console.info(`Relay reservation on ${peerId}: ok`)
-                dialOk({ peer: peerId, addr: `${addr}/p2p-circuit`, via: 'reserve', started })
+                dialResult({ peer: peerId, addr: `${addr}/p2p-circuit`, via: 'reserve', started })
             } catch (err) {
                 if (sessionConns.get(peerId) !== connection) return
                 reserved.delete(peerId)
@@ -1821,7 +1824,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             node.dial(multiaddr(addr))
                 .then(conn => openChat(conn, target)
                     .then(() => {
-                        dialOk({ peer: target, addr, via: 'relay', started })
+                        dialResult({ peer: target, addr, via: 'relay', started })
                         relayDialTries.delete(target)
                         lastRelay.delete(target)
                         wantedSince.delete(target)
@@ -1971,7 +1974,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         dialing.add(remoteId)
         const started = Date.now()
         node.dial(id)
-            .then(conn => openChat(conn, remoteId).then(() => dialOk({ peer: remoteId, addr: conn.remoteAddr.toString(), via: 'discovery', started })))
+            .then(conn => openChat(conn, remoteId).then(() => dialResult({ peer: remoteId, addr: conn.remoteAddr.toString(), via: 'discovery', started })))
             .catch(err => dialFailed({ peer: remoteId, addr: node.getConnections(id)[0]?.remoteAddr?.toString() ?? '?', via: 'discovery', err, started }))
             .finally(() => dialing.delete(remoteId))
     }
@@ -2221,7 +2224,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 const remoteId = connection.remotePeer.toString()
                 if (remoteId !== target) mark(remoteId)
                 await openChat(connection, remoteId)
-                dialOk({ peer: remoteId, addr: connection.remoteAddr.toString(), via: 'connect', started })
+                dialResult({ peer: remoteId, addr: connection.remoteAddr.toString(), via: 'connect', started })
             } finally {
                 for (const peerId of marked) markConnecting(peerId, -1)
             }
