@@ -287,7 +287,10 @@ test('check A6a, rule A3: up after 2000 ms at 0.7 x the next bitrate, not above 
     const rate = createScreenRate({ quality: 'auto', now: () => t, configRecord: () => Uint8Array.of(0, 0, 0, 1, 2) })
     rate.addViewer('a', { send: () => true })
     rate.viewer('a').rate = 0.7 * 3000000
-    t = 500
+    // Rule U1 (revision 3): no step up in the first 10 s of a viewer (no measured headroom yet).
+    for (t = 500; t <= 9500; t += 500) rate.evaluate()
+    assert.equal(rate.tiers()[0].preset, 'standard', 'no step with less than 10 s of headroom')
+    t = 10000
     rate.evaluate()
     const since = t
     assert.equal(rate.tiers()[0].preset, 'standard')
@@ -329,7 +332,8 @@ test('check A6a, rule A4: light content goes up below the bitrate of rule A3', (
     const light = tier => Math.round(0.4 * tier.bitrate / 8 / 15)
     s.run(4500, { frameBytes: light, report: tiers => ({ tiers: tiers.map(x => ({ tier: x.tier, slots: 30, skipped: 0, dropped: 0, encodeP95Ms: 2 })) }) })
     assert.equal(s.tier().preset, 'standard', 'no step before 5000 ms')
-    s.run(5000, { frameBytes: light, report: tiers => ({ tiers: tiers.map(x => ({ tier: x.tier, slots: 30, skipped: 0, dropped: 0, encodeP95Ms: 2 })) }) })
+    // Revision 3: the first step comes after the 10 s of headroom (rule U1) and the hold of 2000 ms.
+    s.run(8000, { frameBytes: light, report: tiers => ({ tiers: tiers.map(x => ({ tier: x.tier, slots: 30, skipped: 0, dropped: 0, encodeP95Ms: 2 })) }) })
     assert.equal(s.tier().preset, 'smooth')
     assert.ok(s.tier().bitrate < 0.7 * 3000000, 'below the bitrate of rule A3')
     assert.ok(s.rate.history().some(h => h.why === 'light'))
@@ -340,7 +344,7 @@ const skipReport = ratio => tiers => ({ tiers: tiers.map(x => ({ tier: x.tier, s
 test('check A6a, rule A5: skipped slots, two lates, and more steps for a low bitrate', () => {
     // 41 % skipped slots for 2000 ms: one step down.
     const s = autoAt(2400000)
-    s.run(3000, { frameBytes: () => 2000 })
+    s.run(12500, { frameBytes: () => 2000 })
     assert.equal(s.tier().preset, 'smooth')
     s.run(5000, { frameBytes: () => 2000, report: skipReport(0.41) })
     assert.equal(s.tier().preset, 'standard')
@@ -348,13 +352,17 @@ test('check A6a, rule A5: skipped slots, two lates, and more steps for a low bit
     assert.equal(down.length, 1)
     // 39 % gives no step.
     const n = autoAt(2400000)
-    n.run(3000, { frameBytes: () => 2000 })
+    n.run(12500, { frameBytes: () => 2000 })
     n.run(8000, { frameBytes: () => 2000, report: skipReport(0.39) })
     assert.equal(n.tier().preset, 'smooth')
     // Two lates in 5000 ms: a step at once.
     const l = autoAt(2400000)
-    l.run(3000, { frameBytes: () => 2000 })
+    l.run(12500, { frameBytes: () => 2000 })
     assert.equal(l.tier().preset, 'smooth')
+    // After the probe of 5 s (rule U3): a late frame in the probe goes back by rule U3, not by rule A5. The cap
+    // keeps the light content (rule A4) at Smooth.
+    l.rate.setCap('smooth')
+    l.run(6000, { frameBytes: () => 2000 })
     let stalls = 0
     l.conf.get('a').delay = t => (t % 2500) < 800 ? Infinity : 5
     while (l.tier().preset === 'smooth' && stalls++ < 4000) l.run(5, { frameBytes: () => 2000 })
@@ -362,7 +370,7 @@ test('check A6a, rule A5: skipped slots, two lates, and more steps for a low bit
     assert.ok(l.rate.history().some(h => h.why === 'late'))
     // More steps: balanced with a bitrate below 0.5 x the bitrate of smooth.
     const m = autoAt(4300000)
-    m.run(6000, { frameBytes: () => 2000 })
+    m.run(15000, { frameBytes: () => 2000 })
     assert.equal(m.tier().preset, 'balanced')
     m.v('a').rate = 600000
     m.run(500, { frameBytes: () => 2000 })
@@ -371,7 +379,7 @@ test('check A6a, rule A5: skipped slots, two lates, and more steps for a low bit
     assert.equal(m.rate.history().filter(h => h.why === 'skip').length, 1, 'one change of two steps')
 })
 
-test('check A6a, rule A6: the wait before the next step up doubles, at most 160 s', () => {
+test('check A6a, rules A6 and U4 (revision 3): the wait after a failed step up doubles from 30 s, at most 240 s', () => {
     const s = autoAt(2400000)
     let skipping = false
     const report = skipReport(0)
@@ -388,9 +396,9 @@ test('check A6a, rule A6: the wait before the next step up doubles, at most 160 
         assert.ok(downAt - ups.at(-1) <= 10000, 'the step down came in 10 s after the step up')
         waits.push(Math.round((s.rate.stats().tiers[0].upBlockedUntil - downAt) / 1000))
     }
-    // The first failure gives 10 s, then 20 s, 40 s, 80 s, 160 s and not more.
-    assert.deepEqual(waits, [10, 20, 40, 80, 160, 160])
-    assert.ok(ups[2] - ups[1] >= 20000 && ups[3] - ups[2] >= 40000)
+    // Revision 3: the first failure gives 30 s, then 60 s, 120 s, 240 s and not more.
+    assert.deepEqual(waits, [30, 60, 120, 240, 240, 240])
+    assert.ok(ups[2] - ups[1] >= 60000 && ups[3] - ups[2] >= 120000)
 })
 
 test('check A6a, rule A7: the slow tier', () => {
@@ -527,4 +535,50 @@ test('rules R4 and A4: the use of a tier counts each frame one time, also with t
     }
     assert.equal(usage(2), usage(1))
     assert.equal(usage(3), usage(1))
+})
+
+test('rule U3 (revision 3): an up step is a probe of 5 s; an excess goes back at once, a held probe resets the wait', () => {
+    const s = autoAt(2400000)
+    s.run(12500, { frameBytes: () => 2000 })
+    assert.equal(s.tier().preset, 'smooth')
+    const upAt = s.rate.history().find(h => h.to === 'smooth' && h.from).t
+    // An ack delay excess above 70 ms in the probe: back at once, and a wait of 30 s.
+    s.conf.get('a').delay = 120
+    while (s.tier().preset === 'smooth' && s.now() < upAt + 5000) s.run(50, { frameBytes: () => 2000 })
+    const back = s.rate.history().at(-1)
+    assert.equal(back.why, 'probe')
+    assert.equal(back.to, 'standard')
+    assert.ok(back.t - upAt < 5000, 'back in the probe time')
+    const wait = s.rate.stats().tiers[0].upBlockedUntil - back.t
+    assert.equal(wait, 30000)
+    // Calm again: the next step after the wait, and a probe that holds for 5 s resets the wait to 30 s.
+    s.conf.get('a').delay = 5
+    while (s.tier().preset === 'standard') s.run(100, { frameBytes: () => 2000 })
+    assert.ok(s.now() - back.t >= 30000)
+    assert.equal(s.rate.stats().tiers[0].upBackoffMs, 60000)
+    s.run(6000, { frameBytes: () => 2000 })
+    assert.equal(s.tier().preset, 'smooth')
+    assert.equal(s.rate.stats().tiers[0].upBackoffMs, 30000)
+})
+
+test('rule U2 (revision 3): the rate goes up only when the stream used 70 % of the bitrate in this period', () => {
+    // Period 1: the stream uses 100 % of 500 kbit/s. Period 2: 60 %. The smoothed use is then 80 %, the use of the
+    // period 60 %. The second calm period is the time of the increase of rule R4.
+    const final = usedNow => {
+        let t = 0
+        const rate = createScreenRate({ quality: 'max', now: () => t, params: { usedNow }, configRecord: () => Uint8Array.of(0, 0, 0, 1, 2) })
+        rate.addViewer('a', { send: () => true })
+        const tier = rate.tiers()[0].tier
+        rate.setSize(tier, 1280, 720)
+        const period = 500000 * 0.5 / 8
+        rate.pushFrame(tier, { key: true, timestampMs: 0, data: new Uint8Array(period - 14) })
+        t = 500
+        rate.evaluate()
+        rate.pushFrame(tier, { key: false, timestampMs: t, data: new Uint8Array(0.6 * period - 14) })
+        t = 1000
+        rate.evaluate()
+        return rate.viewer('a').rate
+    }
+    assert.equal(final(false), 625000, 'the smoothed use alone permits the increase')
+    assert.equal(final(true), 500000, 'rule U2 stops it')
 })

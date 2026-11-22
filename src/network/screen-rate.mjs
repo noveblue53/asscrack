@@ -25,7 +25,10 @@ export const RATE_DEFAULTS = Object.freeze({
     slowMs: 10000, keySpacingMs: 2000, refreshMs: 1000,
     startBitrate: 500000, minBitrate: 300000, relayLimit: 6000000,
     upFactor: 0.7, upHoldMs: 2000, lightUsage: 0.7, lightSkip: 0.05, lightHoldMs: 5000, lightNoDecreaseMs: 10000,
-    downSkip: 0.4, downHoldMs: 2000, lateDownCount: 2, lateDownMs: 5000, upBackoffMs: 10000, upBackoffMaxMs: 160000,
+    downSkip: 0.4, downHoldMs: 2000, lateDownCount: 2, lateDownMs: 5000,
+    // Revision 3 (DECISIONS.md P8a-19): rules U1 to U4 for the up steps. They replace the values of rule A6.
+    usedNow: true, headroomMs: 20, headroomHoldMs: 10000, probeMs: 5000, upFailWindowMs: 10000,
+    upBackoffMs: 30000, upBackoffMaxMs: 240000,
     slowHoldMs: 3000, deepMs: 140, deepFactor: 0.7, mergeFactor: 0.9, maxEncoders: 2,
     overloadDrop: 0.02, overloadEncode: 0.8, overloadReports: 4, cpuRecoverMs: 60000, cpuRaisesMax: 2
 })
@@ -186,6 +189,7 @@ export function createScreenRate({ quality = 'auto', source = null, now, params 
         if (t.preset === preset) return
         history.push({ t: now(), tier: t.id, role: t.role, from: ladder[t.preset].id, to: ladder[preset].id, why, bitrate: t.bitrate })
         t.preset = preset
+        if (why !== 'rate' && why !== 'light') t.probe = null
         t.ready = false
         t.size = null
         t.keyWanted = true
@@ -215,7 +219,8 @@ export function createScreenRate({ quality = 'auto', source = null, now, params 
             drops: 0, congested: false, recovering: false, behindSince: null, sentFrames: 0, sentBytes: 0, keys: 0,
             congestions: 0, rate: P.startBitrate, limit: null, calm: 0, noIncreaseUntil: 0, noDecreaseUntil: 0, excess: 0,
             lates: [], calmSince: t, queueSince: null, tier: null, switches: 0, slow: false, decreased: false, acked: [],
-            deep: 0, lastDecreaseAt: -Infinity, nextSeq: 0, lastSeq: null, addedAt: t, lastNewFrameAt: t }
+            deep: 0, lastDecreaseAt: -Infinity, nextSeq: 0, lastSeq: null, addedAt: t, lastNewFrameAt: t,
+            noHeadroomAt: t, lateNow: false }
         // Rule A2: a new viewer starts at max(start, bitrate of the fast tier), at most its target (R5).
         v.rate = Math.min(targetOf(v), tiers[0] ? Math.max(P.startBitrate, tiers[0].bitrate) : P.startBitrate)
         viewers.set(id, v)
@@ -432,6 +437,12 @@ export function createScreenRate({ quality = 'auto', source = null, now, params 
         onTiers()
     }
 
+    // Rule U4: after a failed up step, wait 30 s, then two times the last wait, at most 240 s.
+    function failedUp(tier, t) {
+        tier.upBlockedUntil = t + tier.upBackoff
+        tier.upBackoff = Math.min(P.upBackoffMaxMs, tier.upBackoff * 2)
+    }
+
     function evaluate() {
         const t = now()
         const changed = { tiers: false, ended: [] }
@@ -472,6 +483,9 @@ export function createScreenRate({ quality = 'auto', source = null, now, params 
             const congested = v.congested
             v.congested = false
             v.decreased = false
+            v.lateNow = congested
+            // Rule U1: the last time that this viewer showed no headroom (an excess of 20 ms or more, or a late frame).
+            if (congested || v.excess >= P.headroomMs) v.noHeadroomAt = t
             const got = tier?.bitrate ?? P.minBitrate
             v.acked = v.acked.filter(x => t - x.t <= 1000)
             const delivered = v.acked.reduce((a, x) => a + x.bytes, 0) * 8
@@ -535,13 +549,30 @@ export function createScreenRate({ quality = 'auto', source = null, now, params 
         if (fixed === null) for (const tier of tiers) {
             const members = membersOf(tier)
             if (!members.length) continue
+            // Rule U3: an up step is a probe of 5 s. An excess above 70 ms or a late viewer sends the tier back at once.
+            if (tier.probe) {
+                if (members.some(v => v.lateNow || v.excess > P.highMs)) {
+                    const from = tier.probe.from
+                    tier.probe = null
+                    failedUp(tier, t)
+                    setPreset(tier, from, 'probe')
+                    for (const v of members) v.lates = []
+                    tier.upSince = null
+                    tier.downSince = null
+                    continue
+                }
+                // Rule U4: a probe that holds for 5 s resets the wait.
+                if (t - tier.probe.at >= P.probeMs) { tier.probe = null; tier.upBackoff = P.upBackoffMs }
+            }
             const up = nextUp(tier.preset)
             const next = up === null ? null : ladder[up]
             const allCalm = members.every(v => v.calmSince !== null)
             const light = tier.lightSince !== null && t - tier.lightSince >= P.lightHoldMs && members.every(v =>
                 v.calmSince !== null && t - v.calmSince >= P.lightHoldMs && t - v.lastDecreaseAt >= P.lightNoDecreaseMs)
             const ceiling = tier.role === 'slow' && tiers[0] ? Math.min(capIndex(), tiers[0].preset) : capIndex()
-            const upOk = next !== null && up <= ceiling && t >= tier.upBlockedUntil && allCalm &&
+            // Rule U1: each viewer of the tier had headroom for the last 10 s.
+            const headroom = members.every(v => t - v.noHeadroomAt >= P.headroomHoldMs)
+            const upOk = next !== null && up <= ceiling && t >= tier.upBlockedUntil && allCalm && headroom &&
                 (tier.bitrate >= P.upFactor * next.bitrate || light)
             tier.upSince = upOk ? (tier.upSince ?? t) : null
             const late = members.some(v => v.lates.length >= P.lateDownCount)
@@ -552,19 +583,19 @@ export function createScreenRate({ quality = 'auto', source = null, now, params 
                 let p = canon(tier.preset - 1)
                 // Rule A5: more steps when the bitrate is below 0.5 x the bitrate of the lower preset.
                 while (p > 0 && tier.bitrate < 0.5 * ladder[p].bitrate) p = canon(p - 1)
-                // Rule A6: a step down in 10 s after a step up doubles the wait before the next step up.
-                if (t - tier.lastUpAt <= P.upBackoffMs) {
-                    tier.upBlockedUntil = t + tier.upBackoff
-                    tier.upBackoff = Math.min(P.upBackoffMaxMs, tier.upBackoff * 2)
-                }
+                // Rules A6 and U4: a step down in 10 s after a step up is a failed up step.
+                if (t - tier.lastUpAt <= P.upFailWindowMs) failedUp(tier, t)
+                tier.probe = null
                 setPreset(tier, p, late ? 'late' : 'skip')
                 for (const v of members) v.lates = []
                 tier.downSince = null
                 tier.upSince = null
             } else if (tier.upSince !== null && t - tier.upSince >= P.upHoldMs) {
+                const from = tier.preset
                 setPreset(tier, up, tier.bitrate >= P.upFactor * next.bitrate ? 'rate' : 'light')
                 tier.upSince = null
                 tier.lastUpAt = t
+                tier.probe = { from, at: t }
             }
         }
         if (before !== tiers.map(x => `${x.id}:${x.preset}:${x.bitrate}`).join()) changed.tiers = true

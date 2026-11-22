@@ -277,7 +277,7 @@ test('check 5c and 5d: a wrong share ID gets END refused; a stream with no WATCH
     assert.equal(A.screenState().own.viewers.length, 0)
 })
 
-test('check 6: the record limits', { timeout: 30000 }, async t => {
+test('check 6: the record limits', { timeout: 45000 }, async t => {
     const { nodes: [A, B] } = await directRoom(t, 2)
     const enc = fakeEncoder(A, { run: false })
     A.startScreenShare({ preset: 'standard' })
@@ -298,7 +298,8 @@ test('check 6: the record limits', { timeout: 30000 }, async t => {
     assert.equal(A.sendScreenFrame({ tier, key: true, timestampMs: 0, data: new Uint8Array(1048577) }), false)
     assert.equal(sent(), before)
     assert.equal(A.sendScreenFrame({ tier, key: true, timestampMs: 0, data: new Uint8Array(1048576) }), true)
-    await waitFor(() => b.frames.length === 1, 10000, 'a frame of 1 048 576 bytes arrives')
+    // At the start rate (500 kbit/s x 1.25 of the pacer) a frame of 1 MiB takes about 13 s.
+    await waitFor(() => b.frames.length === 1, 20000, 'a frame of 1 048 576 bytes arrives')
     B.unwatchScreen()
     // A record length of 1 048 587 from the sharer makes the viewer abort with error.
     await A.libp2p.unhandle(SCREEN_PROTOCOL)
