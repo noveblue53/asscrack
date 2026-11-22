@@ -169,7 +169,7 @@ export function summarize(lines, { maxLines = 400 } = {}) {
                         voiceFrames += l.frames ?? 0;
                         voiceGaps += l.gaps ?? 0;
                         voiceMinutes++;
-                        if ((l.gaps ?? 0) + (l.underruns ?? 0) > 5) badMinutes++;
+                        if ((l.gaps ?? 0) > 5) badMinutes++;
                     }
                     break;
                 case 'file':

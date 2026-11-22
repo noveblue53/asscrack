@@ -173,7 +173,7 @@ export const EVENT_FIELDS = Object.freeze({
         error: kinds.code, sampleRate: kinds.int, channels: kinds.int, ec: kinds.bool, ns: kinds.bool, agc: kinds.bool,
         suppressor: oneOf('rnnoise', 'standard', 'off'), reopen: kinds.bool, ended: kinds.bool },
     'voice-summary': { origin: kinds.peer, frames: kinds.int, gaps: kinds.int, dups: kinds.int, late: kinds.int,
-        jitterMs: kinds.num, underruns: kinds.int, trims: kinds.int, decodeErrors: kinds.int, own: kinds.bool,
+        jitterMs: kinds.num, trims: kinds.int, decodeErrors: kinds.int, own: kinds.bool,
         sent: kinds.int, gateOpenPct: kinds.num, encodeErrors: kinds.int, sendErrors: kinds.int, secs: kinds.int },
     'voice-relay': { forwarded: kinds.int, dropped: kinds.int, duplicates: kinds.int, direct: kinds.int, host: kinds.bool },
     ptt: { status: kinds.code, mode: kinds.code, global: kinds.bool, presses: kinds.int },

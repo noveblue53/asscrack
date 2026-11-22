@@ -106,12 +106,14 @@
             if (d === 0) { s.dups++; return; }
             if (d >= 0x80000000) { s.late++; return; }
             if (d > 1 && d <= 500) s.gaps += d - 1;
-            if (d === 1 && s.lastAt) { s.jitterSum += Math.abs(at - s.lastAt - 20); s.jitterN++; }
+            // The gate of the sender stops the frames at each pause with no gap in the sequence numbers. The frame has no
+            // mark for a pause, thus only intervals up to 100 ms count as jitter (a pause is longer, measured on this PC).
+            if (d === 1 && s.lastAt && at - s.lastAt <= 100) { s.jitterSum += Math.abs(at - s.lastAt - 20); s.jitterN++; }
         }
         s.lastSeq = seq;
         s.lastAt = at;
     }
-    // The underruns and trims of the playback worklet since the last question. Empty after 500 ms.
+    // The trims of the playback worklet since the last question. Empty after 500 ms.
     function playbackStats() {
         if (!playbackNode) return Promise.resolve({});
         return new Promise(resolve => {
@@ -134,11 +136,10 @@
         for (const [origin, o] of origins) {
             const s = o.stats;
             const w = worklet[origin] ?? {};
-            if (!s?.frames && !w.underruns) continue;
-            diag('voice-summary', { origin, frames: s?.frames ?? 0, gaps: s?.gaps ?? 0, dups: s?.dups ?? 0, late: s?.late ?? 0,
-                jitterMs: s?.jitterN ? s.jitterSum / s.jitterN : 0, decodeErrors: s?.decodeErrors ?? 0,
-                underruns: w.underruns ?? 0, trims: w.trims ?? 0, secs: 60 });
-            if (s) Object.assign(s, { frames: 0, gaps: 0, dups: 0, late: 0, jitterSum: 0, jitterN: 0, decodeErrors: 0 });
+            if (!s?.frames) continue;
+            diag('voice-summary', { origin, frames: s.frames, gaps: s.gaps, dups: s.dups, late: s.late,
+                jitterMs: s.jitterN ? s.jitterSum / s.jitterN : 0, decodeErrors: s.decodeErrors, trims: w.trims ?? 0, secs: 60 });
+            Object.assign(s, { frames: 0, gaps: 0, dups: 0, late: 0, jitterSum: 0, jitterN: 0, decodeErrors: 0 });
         }
         diag('voice-summary', { own: true, sent: own.sent, encodeErrors: own.encodeErrors, sendErrors: own.sendErrors,
             gateOpenPct: own.blocks ? (100 * own.open) / own.blocks : 0, secs: 60 });

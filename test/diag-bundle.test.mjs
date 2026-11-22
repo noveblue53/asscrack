@@ -35,7 +35,7 @@ test('the bundle has the fixed file list, a manifest with the hash of each file,
     j.write('peer-left', { peer: PEER, left: 'lost' });
     j.write('file', { event: 'failed', reason: 'peer left' });
     j.write('mark', { category: 'voice-bad' });
-    j.write('voice-summary', { origin: PEER, frames: 2970, gaps: 30, underruns: 1 });
+    j.write('voice-summary', { origin: PEER, frames: 2970, gaps: 30 });
     j.flushSync();
     const crash = path.join(dir, 'Crashpad', 'reports');
     mkdirSync(crash, { recursive: true });

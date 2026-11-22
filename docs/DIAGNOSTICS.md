@@ -106,7 +106,7 @@ the budget. One `suppressed` line (`of`, `count`) follows. A write error writes 
 | `clock` | `peer rttMs offsetMs` | the clock line (see below) |
 | `voice-state` | `in muted deafened host` | Join and Leave voice |
 | `voice-device` | `dir ok kind tag fallback error sampleRate channels ec ns agc suppressor ended` | voice.js |
-| `voice-summary` | `origin frames gaps dups late jitterMs underruns trims decodeErrors secs`, or `own sent gateOpenPct encodeErrors sendErrors` | voice.js, each 60 s in voice |
+| `voice-summary` | `origin frames gaps dups late jitterMs trims decodeErrors secs`, or `own sent gateOpenPct encodeErrors sendErrors` | voice.js, each 60 s in voice |
 | `file` | `event offer dir by size reason action peer retryOf` | file transfer events and the actions of the user |
 | `screen` | `event share preset reason` | screen share start and stop |
 | `crash` | `process reason exitCode service` | `render-process-gone`, `child-process-gone` |
@@ -115,6 +115,10 @@ the budget. One `suppressed` line (`of`, `count`) follows. A write error writes 
 | `metrics` | `loopP50 loopP99 loopMax cpuPct sysCpuPct memMb rendererMb gpuMb` | main process, each 60 s |
 | `mark` | `category inVoice sharing peers` | "Mark a problem" |
 | `diag` | `event peer id reason size crashDumps` | the requests and the bundles |
+
+The voice summary has a limit. The gate of the sender stops the frames at each pause, and a frame has no mark for
+the start of a talk spurt. Thus the summary has no underrun count, and `jitterMs` uses only the intervals of 100 ms
+or less. `gaps` (lost sequence numbers) is the loss.
 
 ## Shared keys of two bundles
 

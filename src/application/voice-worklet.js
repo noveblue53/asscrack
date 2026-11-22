@@ -66,8 +66,7 @@ class VoicePlayback extends AudioWorkletProcessor {
             else if (data.type === 'stats') {
                 const origins = {};
                 for (const [origin, o] of this.origins) {
-                    origins[origin] = { underruns: o.underruns, trims: o.trims };
-                    o.underruns = 0;
+                    origins[origin] = { trims: o.trims };
                     o.trims = 0;
                 }
                 this.port.postMessage({ type: 'stats', origins });
@@ -78,8 +77,9 @@ class VoicePlayback extends AudioWorkletProcessor {
     origin(origin) {
         let o = this.origins.get(origin);
         if (!o) {
-            // underruns: the queue became empty during playback. trims: samples dropped above MAX_SAMPLES.
-            o = { chunks: [], offset: 0, size: 0, playing: false, gain: 1, underruns: 0, trims: 0 };
+            // trims (diagnostics): the chunks dropped above MAX_SAMPLES. An empty queue is not counted here: the gate of
+            // the sender empties it at each pause (voice.js counts the late frames).
+            o = { chunks: [], offset: 0, size: 0, playing: false, gain: 1, trims: 0 };
             this.origins.set(origin, o);
         }
         return o;
@@ -117,10 +117,7 @@ class VoicePlayback extends AudioWorkletProcessor {
                     o.offset = 0;
                 }
             }
-            if (o.size <= 0) {
-                o.playing = false;
-                o.underruns++;
-            }
+            if (o.size <= 0) o.playing = false;
         }
         for (let i = 0; i < out.length; i++) out[i] = limit(out[i]);
         for (let c = 1; c < outputs[0].length; c++) outputs[0][c].set(out);
