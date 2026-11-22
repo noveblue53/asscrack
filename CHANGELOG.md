@@ -27,7 +27,7 @@ login screen and from inside a room.
 - Not in this goal (G7b): messages to a friend that is offline, and Close to the tray on the login screen.
 
 Results:
-- `npm test` passes, 684 tests (127.0.0.1).
+- `npm test` passes, 685 tests (127.0.0.1).
 - 20 tests in three new files test the friend requests, the grant, the private messages and the friend links.
   Most of them use real nodes and a real archive (127.0.0.1 and mDNS on this PC). 5 window tests use a stub bridge.
 - Two copies (this PC): B adds A, A accepts. After a quit and a start with no room, both panels show "Online" in
