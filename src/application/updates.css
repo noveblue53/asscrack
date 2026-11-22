@@ -1,0 +1,35 @@
+/* P9C: the update bar (updates-ui.js). A quiet bar at the bottom of the window, above the status bar. */
+#update-bar {
+  position: fixed;
+  right: 12px;
+  bottom: 40px;
+  z-index: 40;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  max-width: min(36rem, calc(100vw - 24px));
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: var(--surface-raised);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.18);
+}
+#update-bar[hidden] { display: none; }
+#update-bar p { flex: 1 1 200px; margin: 0; }
+#update-restart[hidden], #update-download[hidden] { display: none; }
+
+#update-notes-dialog, #update-busy-dialog { width: min(28rem, calc(100vw - 24px)); }
+#update-notes-text {
+  max-height: 50vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+}
+#update-notes-meta:empty { display: none; }
+
+#about-update { margin: 8px 0; padding: 6px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+#about-update label { display: block; margin: 4px 0; }
+#about-update-state:empty { display: none; }

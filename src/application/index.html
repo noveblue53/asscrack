@@ -24,6 +24,7 @@
   <link rel="stylesheet" href="voice-channels.css">
   <link rel="stylesheet" href="ready-check.css">
   <link rel="stylesheet" href="friends.css">
+  <link rel="stylesheet" href="updates.css">
 </head>
 <body>
   <!-- Decoration only: the sky bubbles behind the two screens. -->
@@ -583,6 +584,13 @@
     <h2 id="about-title">About ASSCRACK</h2>
     <p id="about-version"></p>
     <p id="about-runtime"></p>
+    <!-- P9C: updates-ui.js fills the update part. -->
+    <div id="about-update">
+      <p id="about-update-state"></p>
+      <p id="about-update-last"></p>
+      <label><input id="about-update-auto" type="checkbox"> Check for updates</label>
+      <button id="about-update-check" type="button">Check now</button>
+    </div>
     <div class="about-actions">
       <button id="about-copy" type="button">Copy version info</button>
       <button id="about-data" type="button">Open data folder</button>
@@ -592,6 +600,29 @@
     <p id="about-log" hidden>A debug log is on for this run.</p>
     <p id="about-status" role="status"></p>
     <form method="dialog"><button>Done</button></form>
+  </dialog>
+
+  <!-- P9C: updates-ui.js shows this bar when a new signed version is available or ready. -->
+  <div id="update-bar" role="status" aria-live="polite" hidden>
+    <p id="update-text"></p>
+    <button id="update-restart" type="button" hidden>Restart to update</button>
+    <button id="update-download" type="button" hidden>Download</button>
+    <button id="update-notes" type="button">What's new</button>
+    <button id="update-later" type="button">Later</button>
+  </div>
+  <dialog id="update-notes-dialog" aria-labelledby="update-notes-title">
+    <h2 id="update-notes-title">What's new</h2>
+    <p id="update-notes-meta"></p>
+    <pre id="update-notes-text"></pre>
+    <form method="dialog"><button>Close</button></form>
+  </dialog>
+  <dialog id="update-busy-dialog" aria-labelledby="update-busy-title">
+    <h2 id="update-busy-title">Restart now?</h2>
+    <p id="update-busy-text"></p>
+    <div class="dialog-buttons">
+      <button id="update-busy-restart" type="button">Restart now</button>
+      <button id="update-busy-cancel" type="button">Not now</button>
+    </div>
   </dialog>
 
   <dialog id="shortcuts-dialog" aria-labelledby="shortcuts-title">
@@ -683,5 +714,6 @@
   <script src="title.js"></script>
   <script src="app-shell.js"></script>
   <script src="startup-ui.js"></script>
+  <script src="updates-ui.js"></script>
 </body>
 </html>

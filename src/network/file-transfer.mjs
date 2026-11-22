@@ -1333,5 +1333,7 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
 
     return { prepareFile, publishOffer, offerAttachmentTo, expireAttachment, forgetOffer: id => ownOffers.delete(id), unchanged, offerFile, acceptFile,
         retryFile: offerId => retryFile(offerId), pauseFile, resumeFile, discardPartial, listPartials,
-        refuseFile, cancelFile, handleControl, peerLeft, handleStream, stop }
+        refuseFile, cancelFile, handleControl, peerLeft, handleStream, stop,
+        // P9C: the number of transfers that move data now (an update restart asks first).
+        activeCount: () => active.size }
 }

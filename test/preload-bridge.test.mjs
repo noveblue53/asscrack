@@ -213,6 +213,28 @@ test('the G5 calls send their IPC channel with no path, and the alias call sends
     assert.deepEqual(b.touched, []);
 });
 
+// P9C: the update calls. The window gives no path and no URL: the main process has the file and the release address.
+// Only a strict true turns the check on or forces a restart in voice or during a transfer.
+test('the P9C update calls send their IPC channel and a strict true or false, and onUpdate gives the view', () => {
+    const b = loadBridge();
+    b.api.getUpdate('C:\other');
+    b.api.checkUpdate('https://example.com');
+    b.api.setUpdateCheck('yes');
+    b.api.setUpdateCheck(true);
+    b.api.downloadUpdate('C:\file.exe');
+    b.api.updateLater();
+    b.api.restartToUpdate('yes');
+    b.api.restartToUpdate(true);
+    assert.deepEqual(b.invoked, [['asscrack:update'], ['asscrack:update-check'], ['asscrack:update-auto', false],
+        ['asscrack:update-auto', true], ['asscrack:update-download'], ['asscrack:update-later'],
+        ['asscrack:update-restart', false], ['asscrack:update-restart', true]]);
+    const got = [];
+    b.api.onUpdate(view => got.push(view));
+    b.emit('asscrack:update', { current: '1.0.0', update: null });
+    assert.deepEqual(got, [{ current: '1.0.0', update: null }]);
+    assert.deepEqual(b.touched, []);
+});
+
 // G7a: the friend calls of the room window send only text and a strict true or false. The chat window bridge
 // (friend-chat-preload.cjs) sends no friend ID: the main process binds each chat window to its friend.
 test('the G7a friend calls send text and a strict boolean; the chat window bridge sends no friend ID', async () => {

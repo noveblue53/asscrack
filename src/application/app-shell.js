@@ -78,6 +78,8 @@
         } catch {
             byId('about-status').textContent = 'The version info could not be read.';
         }
+        // P9C: the update part (updates-ui.js).
+        window.updatesUi?.refreshAbout();
         if (!dialog.open) dialog.showModal();
     }
     byId('about-copy')?.addEventListener('click', async () => {

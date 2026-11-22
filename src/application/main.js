@@ -30,6 +30,7 @@ import { createTaskbarFlash } from './taskbar-flash.mjs';
 import { createFriendLinks } from './friend-links.mjs';
 import { attachFriendWindows, registerFriendIpc } from './friend-windows.mjs';
 import { installInterfaceCache } from '../network/interface-cache.mjs';
+import { createUpdateService } from './update-service.mjs';
 import { CHOICE_FILE, choiceAfterForget, createStartEntry, createStartRunner, isInstalledBuild, isStaleChoice, normalizeChoice,
     readChoice, START_IDLE_FLAG, startArgs, startRooms, writeChoice } from './start-at-sign-in.mjs';
 
@@ -301,6 +302,10 @@ const startChoiceFile = path.join(app.getPath('userData'), CHOICE_FILE);
 const startEntry = createStartEntry({ app, execPath: process.execPath,
     args: startArgs(profileIndex !== -1 ? app.getPath('userData') : null) });
 let startRunner = null;
+// P9C: the updates that the operator publishes (update-service.mjs). The window gets no path.
+const updates = createUpdateService({ app, shell, handle: handleRoomIpc, send: (channel, data) => sendToWindow(channel, data),
+    log: writeLog, installedBuild, quit: () => app.quit(),
+    busy: () => ({ voice: inVoice, transfers: node?.activeTransfers?.() ?? 0 }) });
 
 const attentionPrefs = attentionSettings(path.join(app.getPath('userData'), 'attention.json'));
 const attention = createAttention({
@@ -730,6 +735,7 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
         };
         const fromSavedUpnpPort = options.savedUpnpPort === true;
         delete options.savedUpnpPort;
+        options.updates = updates.hub;
         try {
             node = await createAsscrackNode(options);
         } catch (err) {
@@ -967,7 +973,7 @@ handleRoomIpc('asscrack:unlock-archive', async () => {
 // G7a: the friend links start after the archive opens (also on the login screen) and stop at Quit. Leave room, a new
 // login and Idle Peer do not stop them. Only the test flags allowPrivateFullNode and fullNode go to the friend nodes.
 const friendLinks = createFriendLinks({
-    createNode: createAsscrackNode, hintFiles: (room, roomKey) => roomHintFiles(room, roomKey), log: writeLog,
+    createNode: options => createAsscrackNode({ ...options, updates: updates.hub }), hintFiles: (room, roomKey) => roomHintFiles(room, roomKey), log: writeLog,
     nodeOptions: Object.fromEntries(Object.entries(nodeFlags).filter(([name]) => name === 'allowPrivateFullNode' || name === 'fullNode'))
 });
 friendLinks.events.on('changed', view => { sendToWindow('asscrack:friends', view); if (tray && !roomName) updateTray(); });
@@ -1625,4 +1631,5 @@ app.whenReady().then(async () => {
     startFriendLinks();
     createMainWindow();
     if (startIdle) beginStartAtSignIn();
+    void updates.startup();
 });
