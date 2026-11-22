@@ -12,13 +12,13 @@
 
     const TEXTS = Object.freeze({
         revoked: 'You were removed from this room.',
-        creator: 'Waiting for a peer. Select Invite to add a friend’s device.',
-        ownerReopen: 'Waiting for a peer.',
+        creator: 'Waiting for others to join.',
+        ownerReopen: 'Waiting for others.',
         ownerWait: 'Connecting to the room owner…',
         ownerSlow: 'Can\'t reach the room owner yet. They need to be online for your first join. Retrying…',
         roomWait: 'Connecting to the room…',
         roomSlow: 'Can\'t reach the room yet. Another member needs to be online. Retrying…',
-        everyoneLeft: 'Everyone left the room. Waiting for a peer.'
+        everyoneLeft: 'Everyone left. Waiting for others.'
     });
 
     // The local time HH:MM of a time in ms.

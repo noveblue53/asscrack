@@ -101,3 +101,6 @@
 }
 #ptt-state[data-held="true"] { color: var(--chat); background: var(--voice-line); }
 #ptt-state[hidden] { display: none; }
+
+/* U12: the history state line shows only a save failure. */
+#history-state:empty { display: none; }

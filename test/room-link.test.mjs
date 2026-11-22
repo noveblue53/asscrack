@@ -30,15 +30,15 @@ test('revoked: the revoked text and no link key', () => {
 test('creator with no peer seen: the Invite text, "Ready", also after 20 s', () => {
     for (const ms of [0, 19000, 20000, 600000]) {
         const r = at({ role: 'creator', owner: true }, ms);
-        assert.equal(r.text, 'Waiting for a peer. Select Invite to add a friend’s device.');
+        assert.equal(r.text, 'Waiting for others to join.');
         assert.equal(r.link, '');
         assert.equal(r.details, false);
     }
 });
 
-test('reopen as owner with no peer seen: "Waiting for a peer."', () => {
+test('reopen as owner with no peer seen: "Waiting for others."', () => {
     const r = at({ role: 'reopen', owner: true }, 25000);
-    assert.equal(r.text, 'Waiting for a peer.');
+    assert.equal(r.text, 'Waiting for others.');
     assert.equal(r.link, '');
 });
 
@@ -79,9 +79,9 @@ test('a peer was seen, 0 peers, no bye from one: "Connection lost at <local time
     assert.equal(clock(lostAt), '21:04');
 });
 
-test('a peer was seen, 0 peers, each one said bye: "Everyone left the room. Waiting for a peer."', () => {
+test('a peer was seen, 0 peers, each one said bye: "Everyone left. Waiting for others."', () => {
     const r = at({ role: 'joiner', seen: true, lostAt: START, allBye: true }, 1000);
-    assert.equal(r.text, 'Everyone left the room. Waiting for a peer.');
+    assert.equal(r.text, 'Everyone left. Waiting for others.');
     assert.equal(r.details, false);
     assert.equal(r.link, '');
 });

@@ -73,7 +73,7 @@ test('rowInfo of a note row is null and the row menu skips it', async () => {
     assert.equal(f.window.reading.unreadCount(), 0, 'a note row is never unread');
 });
 
-test('a quit (bye) removes the line and gives "left the room."; then "Everyone left the room."', async () => {
+test('a quit (bye) removes the line and gives "left the room."; then "Everyone left."', async () => {
     const f = await roomWindow();
     await f.login('Me');
     peer(f, 'peer-bob', 'Bob');
@@ -81,7 +81,7 @@ test('a quit (bye) removes the line and gives "left the room."; then "Everyone l
     f.handlers.onPeerLeft({ peerId: 'peer-bob', left: true });
     assert.equal(peerLine(f, 'peer-bob'), null);
     assert.deepEqual(noteTexts(f), ['Bob joined the room.', 'Bob left the room.']);
-    assert.equal(f.waiting(), 'Everyone left the room. Waiting for a peer.');
+    assert.equal(f.waiting(), 'Everyone left. Waiting for others.');
     assert.equal(f.link(), '');
 });
 
@@ -159,7 +159,7 @@ test('a joiner: "Connecting to the room…" for 19 s, the long text and Details 
 test('a creator: the Invite text and "Ready"', async () => {
     const f = await roomWindow();
     await f.login('Me');
-    assert.equal(f.waiting(), 'Waiting for a peer. Select Invite to add a friend’s device.');
+    assert.equal(f.waiting(), 'Waiting for others to join.');
     assert.equal(f.link(), '');
 });
 
