@@ -79,7 +79,7 @@ test('Forget room asks first; Cancel keeps the room; Forget room in the confirma
 
     item().querySelector('.forget-room').click();
     assert.equal(confirm.hidden, false, 'the first click only asks');
-    assert.match(confirm.textContent, /Peers keep their copies/);
+    assert.match(confirm.textContent, /need a new invite to rejoin/);
     assert.deepEqual(forgotten, []);
     assert.equal(f.document.activeElement, confirm.querySelector('.forget-no'), 'the focus goes to Cancel');
 

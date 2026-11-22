@@ -24,8 +24,7 @@
 
     const FIRST_PAGE = 200;
     const OLDER_PAGE = 100;
-    const FORGET_TEXT = 'Forget this room on this computer? This deletes the saved invite, the saved messages, the saving '
-        + 'choice and the saved addresses of this room. Peers keep their copies. To join again, you need an invite.';
+    const FORGET_TEXT = 'Forget this room? Its messages and invite are deleted from this PC. You\'ll need a new invite to rejoin.';
 
     let archiveOpen = false;
     let reopenBusy = false;
@@ -78,15 +77,14 @@
 
     function stateText(result) {
         if (result.state === 'unavailable') {
-            return 'Protected storage is not available on this computer. Rooms cannot be saved.';
+            return 'Can\'t save rooms: secure storage is unavailable.';
         }
         // One data folder: a copy of the folder on an other computer or for an other Windows user cannot open the
         // protected key (safeStorage).
         if (result.reason === 'key-unwrap-failed') {
-            return 'Saved rooms: locked. This data folder comes from an other Windows user account or an other computer. ' +
-                'Only that account on that computer can open its saved rooms.';
+            return 'Saved rooms are locked. This data folder belongs to another Windows account or PC.';
         }
-        return `Saved rooms: locked (${result.reason ?? 'unknown'})`;
+        return `Saved rooms are locked (${result.reason ?? 'unknown'})`;
     }
 
     function showRooms(rooms) {
@@ -105,8 +103,14 @@
             const button = document.createElement('button');
             button.type = 'button';
             button.className = 'reopen-room';
-            button.textContent = room.protected ? 'Reopen room' : 'Reopen legacy room';
+            button.textContent = 'Reopen room';
             if (room.protected) button.addEventListener('click', () => reopen(room, false, button));
+            // UI copy pass: an old shared-code room has a tag, not the word "legacy" on the button.
+            const tag = document.createElement('span');
+            tag.className = 'state-tag old-code-tag';
+            tag.textContent = 'Old code';
+            tag.title = 'Anyone with the code can join';
+            if (!room.protected) name.append(' ', tag);
             item.append(name, user, button, ...(room.protected ? [] : legacyControls(room, button)),
                 ...nameControls(room, user), ...forgetControls(room, item));
             savedList.appendChild(item);
@@ -119,10 +123,10 @@
         row.className = 'forget-confirm legacy-reopen';
         row.hidden = true;
         const text = document.createElement('p');
-        text.textContent = 'Anyone who has this legacy room code can join. Continue only if you trust everyone with the code.';
+        text.textContent = 'Anyone with this code can join. Open anyway?';
         const yes = document.createElement('button');
         yes.type = 'button';
-        yes.textContent = 'Continue to legacy room';
+        yes.textContent = 'Open';
         const no = document.createElement('button');
         no.type = 'button';
         no.textContent = 'Cancel';
@@ -172,7 +176,7 @@
         const submit = async () => {
             const value = input.value.trim();
             if (!value || value.length > 64) {
-                status.textContent = 'Error: enter a username of up to 64 characters.';
+                showStatusError('Enter a name (up to 64 characters).');
                 input.focus();
                 return;
             }
@@ -184,7 +188,7 @@
                 status.textContent = '';
                 close();
             } catch (err) {
-                status.textContent = `Error: the name did not change: ${errText(err)}`;
+                showStatusError(`Name not changed: ${errText(err)}`);
             } finally {
                 save.disabled = cancel.disabled = false;
             }
@@ -236,7 +240,7 @@
                 item.remove();
                 await refresh(() => api.listSavedRooms());
             } catch (err) {
-                status.textContent = `Error: the room was not forgotten: ${errText(err)}`;
+                showStatusError(`Couldn't forget the room: ${errText(err)}`);
                 yes.disabled = false;
                 no.disabled = false;
             }
@@ -353,7 +357,8 @@
 
     function showKeepState(keep) {
         roomKeepHistory.checked = keep === true;
-        historyState.textContent = keep === true ? 'Saving new messages on this device.' : 'Saving is off. Saved messages stay.';
+        // U12: the checkbox shows the state. #history-state shows only a save failure.
+        historyState.textContent = '';
     }
 
     function showStorage(result) {
@@ -379,7 +384,7 @@
             showKeepState(result?.keepHistory === true);
         } catch (err) {
             showKeepState(!want);
-            status.textContent = `Error: the saving choice did not change: ${errText(err)}`;
+            showStatusError(`Couldn't change this: ${errText(err)}`);
         } finally {
             roomKeepHistory.disabled = false;
         }
@@ -403,9 +408,9 @@
             window.roomChannels?.clearOlder();
             setOlder('none');
             clearConfirm.hidden = true;
-            status.textContent = `Saved history deleted on this device (${Number(result?.cleared) || 0} messages).`;
+            status.textContent = `Deleted ${Number(result?.cleared) || 0} messages.`;
         } catch (err) {
-            status.textContent = `Error: the saved history was not deleted: ${errText(err)}`;
+            showStatusError(`Couldn't delete history: ${errText(err)}`);
         } finally {
             clearYes.disabled = false;
         }
@@ -452,7 +457,7 @@
             roomStarted(result);
             window.chatAttachments?.restoreSaved(lines);
         } catch (err) {
-            status.textContent = `Error: the room did not start: ${errText(err)}`;
+            showStatusError(`Room didn't start: ${errText(err)}`);
         } finally {
             if (!started) {
                 reopenBusy = false;
@@ -480,7 +485,7 @@
             return { save: saveRoomBox.checked && !saveRoomBox.disabled, keepHistory: keepHistoryBox.checked };
         },
         roomStarted(result) {
-            if (result?.saveError) status.textContent = `The room was not saved: ${result.saveError}`;
+            if (result?.saveError) showStatusError(`Room not saved: ${result.saveError}`);
             showStorage(result);
             if (openRoomId && linesLoadedFor !== openRoomId) loadAfterLogin(openRoomId);
         },

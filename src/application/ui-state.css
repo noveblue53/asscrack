@@ -7,3 +7,13 @@
 
 /* U20: a short warning line on the login card. */
 .warn-line::before { content: '⚠\FE0E  '; color: var(--warning); font-weight: 700; }
+
+/* A small tag after a name or a label ("Old code", "Pending", "Unverified", "No audio"). */
+.state-tag {
+  display: inline-block; margin-left: 4px; padding: 0 6px; border: 1px solid currentColor; border-radius: 8px;
+  font: 600 10.5px/15px var(--font-small, inherit); color: var(--ink-soft); vertical-align: 1px; white-space: nowrap;
+}
+.state-tag.warn { color: var(--warning); }
+.state-tag.bad { color: var(--danger); }
+.state-tag.ok { color: var(--voice-line); }
+.state-tag[hidden] { display: none; }
