@@ -14,10 +14,14 @@
     const reachBox = get('reach-box');
     const reachNote = get('reach-note');
     const reachButton = get('reach-upnp');
+    // UI copy pass: the router reason is one line under the UPnP button (optional: older test pages have no line).
+    const reachReason = get('reach-reason');
     // easy-join part 2: "Copy room code" and "New room code" (owner only). Optional: older test pages have no box.
     const codeBox = get('room-code-box');
     const codeCopy = get('room-code-copy');
     const codeNew = get('room-code-new');
+    // U5: the expiry of the copied room code as a small tag (optional).
+    const codeExpiry = get('room-code-expiry');
     // easy-join part 3: "Always allow my friends" (owner only, off by default). Optional as the code box.
     const autoAllow = get('auto-allow-friends');
     let state = null;
@@ -45,36 +49,48 @@
         } finally { enrollment.disabled = false; }
     });
 
-    // Gap A1: the texts of the owner for each reach state. A device invite needs an address (or a LAN room).
-    const REACH_TEXTS = {
-        untested: 'Address ready. ASSCRACK tests it when the first friend connects.',
-        'upnp-wait': 'Asking the router to open a port. This can take up to 70 seconds.',
-        'no-gateway': 'The router did not answer. Turn on UPnP in the router, or forward a TCP port.',
-        'private-ip': 'The router has no public address (a second router or the provider is between you and the internet). '
-            + 'UPnP cannot help. A friend with an open port must create the room.',
-        failed: 'The router did not open a port.',
-        none: 'Friends on the internet cannot join yet: this room has no address.'
+    // Gap A1, U2 of the UI copy pass: the reach of the owner is a dot and a short label, with the detail in the
+    // tooltip. A router failure gives one line under the UPnP button. A device invite needs an address (or a LAN room).
+    const REACH_VIEWS = {
+        untested: { kind: 'none', label: 'Not tested', tip: 'Checked when the first friend joins' },
+        'upnp-wait': { kind: 'busy', label: 'Opening port…', tip: '' },
+        none: { kind: 'bad', label: 'Not reachable', tip: 'Friends on the internet can\'t join yet' }
+    };
+    const REASON_TEXTS = {
+        'no-gateway': { text: 'Router didn\'t respond. Turn on UPnP in your router or forward a TCP port.', tip: '' },
+        'private-ip': { text: 'Your router has no public IP. Ask a friend with an open port to create the room.',
+            tip: 'A second router or your provider (CGNAT) is in the way' },
+        failed: { text: 'Router refused to open a port.', tip: '' }
     };
     function canInvite() {
         return !reach || reach.state === 'ready' || reach.state === 'lan';
     }
     function showReach() {
         if (!reachBox) return;
-        let text = '';
+        let view = null;
+        let reason = null;
         let action = '';
         if (state?.owner && reach) {
-            if (reach.state === 'ready') text = reach.proven === true ? '' : REACH_TEXTS.untested;
-            else if (reach.state === 'upnp-wait') text = REACH_TEXTS['upnp-wait'];
+            if (reach.state === 'ready') view = reach.proven === true ? null : REACH_VIEWS.untested;
+            else if (reach.state === 'upnp-wait') view = REACH_VIEWS['upnp-wait'];
             else if (reach.state === 'upnp-failed') {
-                text = REACH_TEXTS[reach.reason] ?? REACH_TEXTS.failed;
+                view = REACH_VIEWS.none;
+                reason = REASON_TEXTS[reach.reason] ?? REASON_TEXTS.failed;
                 action = 'Try UPnP again';
             } else if (reach.state === 'none') {
-                text = REACH_TEXTS.none;
-                action = 'Ask my router to open a port (UPnP)';
+                view = REACH_VIEWS.none;
+                action = 'Open port (UPnP)';
             }
         }
-        reachBox.hidden = text === '';
-        reachNote.textContent = text;
+        reachBox.hidden = view === null;
+        reachNote.textContent = view?.label ?? '';
+        reachNote.title = view?.tip ?? '';
+        reachNote.dataset.reach = view?.kind ?? '';
+        if (reachReason) {
+            reachReason.hidden = reason === null;
+            reachReason.textContent = reason?.text ?? '';
+            reachReason.title = reason?.tip ?? '';
+        }
         reachButton.hidden = action === '';
         reachButton.textContent = action;
         reachButton.disabled = reachBusy;
@@ -87,9 +103,9 @@
         try {
             const result = await api.enableUpnp();
             if (result?.reach) reach = result.reach;
-            if (result?.started === false) inviteNote.textContent = 'UPnP cannot start in this room.';
+            if (result?.started === false) inviteNote.textContent = 'UPnP isn\'t available in this room.';
         } catch (error) {
-            inviteNote.textContent = error?.message ? errorText(error) : 'Could not start UPnP.';
+            inviteNote.textContent = error?.message ? errorText(error) : 'Couldn\'t start UPnP.';
         } finally {
             reachBusy = false;
             showReach();
@@ -127,12 +143,13 @@
             const id = document.createElement('code');
             id.textContent = member.deviceId;
             const details = document.createElement('span');
-            details.textContent = member.revoked ? 'Revoked' : (member.connected ? 'Connected' : 'Offline or invited')
+            details.textContent = member.revoked ? 'Removed' : (member.connected ? 'Connected' : 'Offline')
                 + (member.canHost ? ' · Can host' : ' · Member');
             device.append(name, id, details);
             if (member.revoked) return device;
             if (confirming === member.deviceId) {
-                const confirm = button('Confirm revoke', () => revoke(member.deviceId));
+                const confirm = button('Remove', () => revoke(member.deviceId));
+                confirm.className = 'btn-danger';
                 const cancel = button('Cancel', () => {
                     confirming = null;
                     listDevices();
@@ -141,13 +158,13 @@
                 confirm.disabled = cancel.disabled = busy;
                 device.append(confirm, cancel);
             } else {
-                const deny = button('Revoke', () => {
+                const deny = button('Remove', () => {
                     confirming = member.deviceId;
                     listDevices();
                     devices.querySelector(`[data-device-id="${member.deviceId}"] button`)?.focus();
                 });
                 deny.disabled = busy;
-                deny.setAttribute('aria-label', `Revoke ${member.name || 'device'} ${member.deviceId}`);
+                deny.setAttribute('aria-label', `Remove ${member.name || 'device'}`);
                 device.append(deny);
             }
             return device;
@@ -162,14 +179,22 @@
         inviteToggle.hidden = false;
         inviteToggle.textContent = next.owner ? 'Invite' : 'Access';
         if (first || !next.owner || next.members?.some(member => member.deviceId === generatedFor && member.revoked)) clearCode();
+        // U1 of the UI copy pass: the role is a badge on the card head, not a sentence.
+        const role = next.revoked ? ['removed', 'Removed', 'You were removed from this room']
+            : !next.admitted ? ['waiting', 'Waiting for approval', 'Waiting for the room owner']
+                : next.owner ? ['owner', 'Owner', 'You created this room']
+                    : next.canHost ? ['host', 'Member · Host', 'Can host and relay for the room'] : ['member', 'Member', ''];
         accessStatus.hidden = false;
-        accessStatus.textContent = next.revoked ? 'This device’s access was revoked.' : !next.admitted
-            ? 'Waiting for the room owner to admit this device.' : next.owner ? 'You own this protected room.'
-                : next.canHost ? 'This device is admitted and can host or relay.' : 'This device is admitted.';
+        accessStatus.dataset.role = role[0];
+        accessStatus.textContent = role[1];
+        accessStatus.title = role[2];
         form.hidden = !next.owner;
         if (codeBox) codeBox.hidden = !next.owner;
         if (autoAllow && !autoAllowBusy) autoAllow.checked = next.owner && next.autoAllowFriends === true;
-        statusBar.querySelector('.net-note').textContent = next.lan ? 'Protected LAN room' : 'Protected internet room';
+        const netNote = statusBar.querySelector('.net-note');
+        netNote.textContent = next.lan ? 'LAN room' : 'Internet room';
+        netNote.classList.add('locked');
+        netNote.title = 'Protected room';
         // Gap A2: room-link.js writes #waiting-peer from these facts and the peer facts.
         window.roomLink?.membership({ owner: next.owner, admitted: next.admitted, revoked: next.revoked });
         listDevices();
@@ -181,12 +206,12 @@
         busy = true;
         listDevices();
         try {
-            if (!await api.revokeMember(id)) throw new Error('This device is already unavailable.');
+            if (!await api.revokeMember(id)) throw new Error('Already removed.');
             if (generatedFor === id) clearCode();
-            inviteNote.textContent = 'Device access revoked.';
+            inviteNote.textContent = 'Device removed.';
             confirming = null;
         } catch (error) {
-            inviteNote.textContent = error?.message ? errorText(error) : 'Could not revoke access.';
+            inviteNote.textContent = error?.message ? errorText(error) : 'Couldn\'t remove the device.';
         } finally {
             busy = false;
             listDevices();
@@ -201,17 +226,20 @@
         clearCode();
         try {
             const made = await api.roomCode(renew);
-            if (typeof made?.code !== 'string' || made.code.length === 0) throw new Error('Could not make the room code.');
+            if (typeof made?.code !== 'string' || made.code.length === 0) throw new Error('Couldn\'t make the room code.');
             codeLabel.textContent = 'Room code';
             inviteCode.value = made.code;
             codeLabel.hidden = inviteCode.hidden = copyInviteButton.hidden = false;
             copyInviteButton.disabled = false;
-            const until = new Date(made.expires).toLocaleDateString(undefined, { day: 'numeric', month: 'long' });
-            inviteNote.textContent = renew
-                ? `New room code copied. The old code no longer works. Valid until ${until}.`
-                : `Room code copied. Valid until ${until}.`;
+            // U5: the expiry is a tag in the code box, not a sentence.
+            const until = new Date(made.expires).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+            if (codeExpiry) {
+                codeExpiry.textContent = `Expires ${until}`;
+                codeExpiry.hidden = false;
+            }
+            inviteNote.textContent = renew ? 'New room code copied. The old code no longer works.' : 'Room code copied.';
         } catch (error) {
-            inviteNote.textContent = error?.message ? errorText(error) : 'Could not make the room code.';
+            inviteNote.textContent = error?.message ? errorText(error) : 'Couldn\'t make the room code.';
         } finally {
             busy = codeCopy.disabled = codeNew.disabled = false;
             listDevices();
@@ -228,7 +256,7 @@
             inviteNote.textContent = '';
         } catch (error) {
             autoAllow.checked = !wanted;
-            inviteNote.textContent = error?.message ? errorText(error) : 'Could not change the setting.';
+            inviteNote.textContent = error?.message ? errorText(error) : 'Couldn\'t change the setting.';
         } finally {
             autoAllowBusy = autoAllow.disabled = false;
         }
@@ -246,16 +274,16 @@
         busy = create.disabled = target.disabled = canHost.disabled = true;
         try {
             const code = await api.createMemberInvite(id, canHost.checked);
-            if (typeof code !== 'string' || code.length === 0) throw new Error('No device invite was created.');
+            if (typeof code !== 'string' || code.length === 0) throw new Error('Couldn\'t create the invite.');
             generatedFor = id;
-            codeLabel.textContent = 'Invite for this device';
+            codeLabel.textContent = 'Invite code';
             inviteCode.value = code;
             codeLabel.hidden = inviteCode.hidden = copyInviteButton.hidden = false;
             copyInviteButton.disabled = false;
-            inviteNote.textContent = 'Invite ready for this device.';
+            inviteNote.textContent = 'Invite ready. Copy it and send it.';
             copyInviteButton.focus();
         } catch (error) {
-            inviteNote.textContent = error?.message ? errorText(error) : 'Could not create the device invite.';
+            inviteNote.textContent = error?.message ? errorText(error) : 'Couldn\'t create the invite.';
         } finally {
             busy = target.disabled = canHost.disabled = false;
             create.disabled = !canInvite();

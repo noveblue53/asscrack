@@ -332,38 +332,37 @@
           </label>
         </section>
         <div id="invite-panel" hidden>
-          <p id="room-access-status" role="status" hidden></p>
+          <p id="room-access-status" class="state-tag role-badge" role="status" hidden></p>
           <!-- room-membership-ui.js: the reach of the room for the owner (can friends on the internet join?). -->
           <div id="reach-box" hidden>
-            <p id="reach-note" role="status"></p>
+            <p id="reach-note" class="reach-dot" role="status"></p>
             <button type="button" id="reach-upnp" hidden></button>
+            <p id="reach-reason" hidden></p>
           </div>
-          <p id="old-version-note" hidden>People with ASSCRACK 0.7.0 or older cannot join this room. Ask them to get the newest ASSCRACK.</p>
           <!-- easy-join part 2, room-membership-ui.js: the room code of the owner. -->
           <div id="room-code-box" hidden>
-            <p>Anyone with the room code can ask to join. Valid for 7 days.</p>
-            <button type="button" id="room-code-copy">Copy room code</button>
+            <button type="button" id="room-code-copy" title="Anyone with the room code can ask to join. Valid for 7 days.">Copy room code</button>
             <button type="button" id="room-code-new">New room code</button>
+            <span id="room-code-expiry" class="state-tag" hidden></span>
             <!-- easy-join part 3: a friend of the owner joins with no request (Allow / Deny). -->
             <label class="admission-check" id="auto-allow-label" title="Friends join without a request. Others still need Allow.">
               <input type="checkbox" id="auto-allow-friends"> Always allow my friends
             </label>
           </div>
           <form id="member-invite-form" hidden>
-            <label for="member-device-id">Friend’s device ID</label>
-            <input type="text" id="member-device-id" maxlength="128" required autocomplete="off" spellcheck="false">
-            <label class="admission-check"><input type="checkbox" id="member-can-host"> Let this device host and relay</label>
-            <button type="submit" id="member-invite-create">Create device invite</button>
-            <p>Stay connected for their first join.</p>
+            <label for="member-device-id">Device ID</label>
+            <input type="text" id="member-device-id" maxlength="128" required autocomplete="off" spellcheck="false" placeholder="Paste their device ID">
+            <label class="admission-check" title="Lets this device host and relay for the room"><input type="checkbox" id="member-can-host"> Can host</label>
+            <button type="submit" id="member-invite-create" title="Stay online until they join">Create invite</button>
           </form>
-          <label id="invite-code-label" for="invite-code">Invite code of this room</label>
+          <label id="invite-code-label" for="invite-code">Invite code</label>
           <textarea id="invite-code" rows="3" readonly spellcheck="false"></textarea>
           <div class="invite-buttons">
             <button id="copy-invite" type="button">Copy</button>
             <span id="invite-note" role="status"></span>
           </div>
-          <section id="room-members-section" aria-label="Room devices" hidden>
-            <h2>Room devices</h2>
+          <section id="room-members-section" aria-label="Devices" hidden>
+            <h2>Devices</h2>
             <ul id="room-members"></ul>
           </section>
         </div>
@@ -516,7 +515,7 @@
 
 
     <footer id="statusbar">
-      <span id="full-node-state" data-state="lan" hidden></span>
+      <span id="full-node-state" class="reach-dot" data-state="lan" hidden></span>
       <span class="net-note">Local network</span>
     </footer>
     <dialog id="room-activity" aria-labelledby="activity-title">

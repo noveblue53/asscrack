@@ -90,12 +90,13 @@ test('an owner creates a device invite and must confirm revocation of its exact 
     room.el('room-members').querySelector('button').click();
     assert.deepEqual(revocations, []);
     const confirmation = room.el('room-members').querySelector('button');
-    assert.equal(confirmation.textContent, 'Confirm revoke');
+    assert.equal(confirmation.textContent, 'Remove');
+    assert.equal(confirmation.className, 'btn-danger');
     confirmation.click();
     await settle();
     assert.deepEqual(revocations, [id]);
     assert.equal(room.el('invite-code').value, '');
-    assert.match(room.el('room-members').textContent, /Revoked/);
+    assert.match(room.el('room-members').textContent, /Removed/);
 });
 
 test('a saved admission survives a stale invite and rejects conflicts or a missing protected snapshot', () => {

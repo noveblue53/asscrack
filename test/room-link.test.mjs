@@ -22,7 +22,7 @@ test('the loader gives the core with no DOM', () => {
 
 test('revoked: the revoked text and no link key', () => {
     const r = at({ revoked: true, peers: 2, seen: true }, 0);
-    assert.equal(r.text, 'This device’s access was revoked.');
+    assert.equal(r.text, 'You were removed from this room.');
     assert.equal(r.link, '');
     assert.equal(r.details, false);
 });
@@ -49,7 +49,7 @@ test('not admitted: the owner text before 20 s, the long text and Details at 20 
     assert.equal(early.link, 'connecting');
     assert.equal(early.recheckAt, START + 20000);
     const late = at({ admitted: false }, 20000);
-    assert.equal(late.text, 'Cannot reach the room owner yet. The owner must be online for your first join. ASSCRACK tries again each few seconds.');
+    assert.equal(late.text, 'Can\'t reach the room owner yet. They need to be online for your first join. Retrying…');
     assert.equal(late.details, true);
     assert.equal(late.link, 'connecting');
     assert.equal(late.recheckAt, null);
@@ -62,7 +62,7 @@ test('joiner and reopen as member: the room text before 20 s, the long text and 
         assert.equal(early.details, false);
         assert.equal(early.link, 'connecting');
         const late = at(room, 20000);
-        assert.equal(late.text, 'Cannot reach the room yet. A different member must be online. ASSCRACK tries again each few seconds.');
+        assert.equal(late.text, 'Can\'t reach the room yet. Another member needs to be online. Retrying…');
         assert.equal(late.details, true);
         assert.equal(late.link, 'connecting');
     }

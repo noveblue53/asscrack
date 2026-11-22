@@ -46,3 +46,27 @@
   content: ''; display: inline-block; width: 12px; height: 12px; background: currentColor; vertical-align: -2px;
   mask: url('img/state-clock.svg') center / contain no-repeat;
 }
+
+/* U1: the role badge on the head of the Invite (Access) panel. */
+#room-access-status { align-self: flex-start; margin: 0; font-size: 11px; }
+#room-access-status[hidden] { display: none; }
+#room-access-status:is([data-role="owner"], [data-role="host"]) { color: var(--accent); }
+#room-access-status[data-role="removed"] { color: var(--danger); }
+#room-access-status[data-role="waiting"]::before {
+  content: ''; display: inline-block; box-sizing: border-box; width: 9px; height: 9px; margin-right: 5px;
+  border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; vertical-align: -1px;
+  animation: state-spin .9s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) { #room-access-status[data-role="waiting"]::before { animation: none; } }
+
+/* U2: the reach line in the Invite panel, and the router reason under the UPnP button. */
+#reach-note { font-weight: 600; }
+#reach-reason { margin: 0; color: var(--ink-soft); }
+#reach-reason[hidden] { display: none; }
+#room-code-expiry { margin-left: 2px; }
+
+/* A protected room: a lock before the room kind in the status bar. */
+.net-note.locked::before {
+  content: ''; display: inline-block; width: 11px; height: 11px; margin-right: 4px; background: currentColor;
+  vertical-align: -1px; mask: url('img/state-lock.svg') center / contain no-repeat;
+}

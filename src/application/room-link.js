@@ -11,13 +11,13 @@
     const RECONNECTED_MS = 5 * 1000;
 
     const TEXTS = Object.freeze({
-        revoked: 'This device’s access was revoked.',
+        revoked: 'You were removed from this room.',
         creator: 'Waiting for a peer. Select Invite to add a friend’s device.',
         ownerReopen: 'Waiting for a peer.',
         ownerWait: 'Connecting to the room owner…',
-        ownerSlow: 'Cannot reach the room owner yet. The owner must be online for your first join. ASSCRACK tries again each few seconds.',
+        ownerSlow: 'Can\'t reach the room owner yet. They need to be online for your first join. Retrying…',
         roomWait: 'Connecting to the room…',
-        roomSlow: 'Cannot reach the room yet. A different member must be online. ASSCRACK tries again each few seconds.',
+        roomSlow: 'Can\'t reach the room yet. Another member needs to be online. Retrying…',
         everyoneLeft: 'Everyone left the room. Waiting for a peer.'
     });
 

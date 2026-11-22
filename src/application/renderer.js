@@ -813,7 +813,11 @@ function roomStarted(result) {
         admitted: membership ? membership.admitted !== false : true, revoked: membership?.revoked === true });
     window.roomLink?.presence(rosterNow()?.link());
     window.roomMembership?.start(result?.membership);
-    if (result?.membership?.protected === false && internetRoom) statusBar.querySelector('.net-note').textContent = 'Legacy shared-code room';
+    if (result?.membership?.protected === false && internetRoom) {
+        const netNote = statusBar.querySelector('.net-note');
+        netNote.textContent = 'Shared-code room';
+        netNote.title = 'Anyone with the code can join';
+    }
     void window.roomChannels?.start();
     void window.voiceChannels?.start();
     window.whispers?.refresh();
@@ -2699,50 +2703,42 @@ const inviteCode = document.getElementById('invite-code');
 const copyInviteButton = document.getElementById('copy-invite');
 const inviteNote = document.getElementById('invite-note');
 const fullNodeState = document.getElementById('full-node-state');
-// A static text for protected rooms (internet and LAN): 0.7.0 and older cannot join them (DECISIONS.md item 100).
-const oldVersionNote = document.getElementById('old-version-note');
 
 // The reach state of the room from asscrack:invite (gap A1): { state, reason, proven }, or null before the first
 // answer. roomOwner: this device owns the protected room.
 let roomReach = null;
 let roomOwner = false;
 
-const NO_FULL_NODE_TEXT = 'No invite code: this room has no address that the internet can reach. '
-    + 'Use an explicit public address or opt in to UPnP when starting a room.';
-const UPNP_WAIT_TEXT = 'Asking the router to open a port. This can take up to 70 seconds. The code shows here when it is ready.';
+const NO_FULL_NODE_TEXT = 'No invite code: this room isn\'t reachable from the internet. Turn on UPnP or set a public address.';
+const UPNP_WAIT_TEXT = 'Opening port…';
 
 function hasApi(name) {
     return typeof window.asscrack?.[name] === 'function';
 }
 
-// Gap B4: the status bar item tells if friends on the internet can join. Internet rooms only. Only the state
-// 'warn' (an owner with no address and no peer) has the warning color.
+// Gap B4, U2 of the UI copy pass: the status bar item tells if friends on the internet can join, as a dot and a
+// short label (internet rooms only). The tooltip has the reason. Only the state 'warn' (an owner with no address and
+// no peer) has the red color.
+const REACH_DOTS = { self: 'ok', peer: 'ok', untested: 'none', 'upnp-wait': 'busy', 'no-port': 'warn', warn: 'bad' };
 function fullNodeView() {
     if (!internetRoom || roomReach?.state === 'lan') return { state: 'lan', text: '', tip: '' };
     const first = [...fullNodePeers].filter(id => peerItems.has(id)).sort()[0];
-    if (fullNodeSelf) {
-        return { state: 'self', text: 'Open to the internet',
-            tip: 'This computer is a full node. Friends connect to it directly, and it can relay for others.' };
-    }
+    if (fullNodeSelf) return { state: 'self', text: 'Reachable', tip: 'Others connect to this PC directly. It can relay.' };
     if (first) {
         const name = peerNames.get(first) ?? String(first).slice(0, 12);
-        return { state: 'peer', text: `Open through ${name}`, tip: `${name} is a full node. New friends join through that computer.` };
+        return { state: 'peer', text: `Via ${name}`, tip: `New members connect through ${name}` };
     }
-    if (roomReach?.state === 'ready') {
-        return { state: 'untested', text: 'Address not tested yet', tip: 'ASSCRACK tests the address when the first friend connects.' };
-    }
-    if (roomReach?.state === 'upnp-wait') return { state: 'upnp-wait', text: 'Asking the router…', tip: '' };
-    if (peerItems.size > 0) {
-        return { state: 'no-port', text: 'No open port',
-            tip: 'No computer in the room has an open port now. Connected friends stay connected. New friends from the internet cannot join.' };
-    }
-    if (roomOwner) return { state: 'warn', text: 'Friends cannot join yet', tip: 'Open Invite for the reason.' };
+    if (roomReach?.state === 'ready') return { state: 'untested', text: 'Not tested', tip: 'Checked when the first friend joins' };
+    if (roomReach?.state === 'upnp-wait') return { state: 'upnp-wait', text: 'Opening port…', tip: '' };
+    if (peerItems.size > 0) return { state: 'no-port', text: 'No open port', tip: 'New members from the internet can\'t join' };
+    if (roomOwner) return { state: 'warn', text: 'Not reachable', tip: 'See Invite' };
     return { state: 'hidden', text: '', tip: '' };
 }
 
 function showFullNodeState() {
     const { state, text, tip } = fullNodeView();
     fullNodeState.dataset.state = state;
+    fullNodeState.dataset.reach = REACH_DOTS[state] ?? '';
     fullNodeState.textContent = text;
     fullNodeState.title = tip;
     fullNodeState.hidden = state === 'lan' || state === 'hidden';
@@ -2777,7 +2773,6 @@ async function refreshInvite() {
         roomReach = info?.reach && typeof info.reach.state === 'string' ? info.reach : null;
         roomOwner = info?.membership?.protected === true && info.membership.owner === true;
         showFullNodeState();
-        if (oldVersionNote) oldVersionNote.hidden = info?.membership?.protected !== true;
         if (info?.membership?.protected) {
             window.roomMembership?.update(info.membership, roomReach);
             return;

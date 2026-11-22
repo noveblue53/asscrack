@@ -148,7 +148,7 @@ test('a joiner: "Connecting to the room…" for 19 s, the long text and Details 
     f.clock.advance(19000);
     assert.equal(f.waiting(), 'Connecting to the room…');
     f.clock.advance(1000);
-    assert.equal(f.waiting(), 'Cannot reach the room yet. A different member must be online. ASSCRACK tries again each few seconds. Details');
+    assert.equal(f.waiting(), 'Can\'t reach the room yet. Another member needs to be online. Retrying… Details');
     // The first connection: no join notes in 3 s.
     peer(f, 'peer-owner', 'Owner');
     assert.equal(f.waiting(), null);

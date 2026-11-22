@@ -8,7 +8,8 @@ import { loadRoomWindow, settle } from './helpers/renderer-fixture.mjs';
 const accessControls = [
     { id: 'copy-device-id', tag: 'button' }, { id: 'device-id-note' }, { id: 'room-access-status' },
     { id: 'reach-box', children: [{ id: 'reach-note', tag: 'p' }, { id: 'reach-upnp', tag: 'button' }] },
-    { id: 'room-code-box', children: [{ id: 'room-code-copy', tag: 'button' }, { id: 'room-code-new', tag: 'button' }] },
+    { id: 'room-code-box', children: [{ id: 'room-code-copy', tag: 'button' }, { id: 'room-code-new', tag: 'button' },
+        { id: 'room-code-expiry', hidden: true }] },
     { id: 'member-invite-form', tag: 'form' }, { id: 'member-device-id', tag: 'input' },
     { id: 'member-can-host', tag: 'input' }, { id: 'member-invite-create', tag: 'button' },
     { id: 'invite-code-label' }, { id: 'room-members-section' }, { id: 'room-members', tag: 'ul' }, { id: 'waiting-peer' },
@@ -36,11 +37,14 @@ test('the owner has "Copy room code" and "New room code"; the code shows in the 
     assert.deepEqual(asked, [false]);
     assert.equal(room.el('invite-code').value, 'asscrack3:gQroomcode');
     assert.equal(room.el('invite-code-label').textContent, 'Room code');
-    assert.match(room.el('invite-note').textContent, /^Room code copied\. Valid until .+\.$/);
+    // UI copy pass (U5): the expiry is a tag, not a sentence.
+    assert.equal(room.el('invite-note').textContent, 'Room code copied.');
+    assert.equal(room.el('room-code-expiry').hidden, false);
+    assert.equal(room.el('room-code-expiry').textContent, 'Expires 29 Nov');
     room.el('room-code-new').click();
     await settle();
     assert.deepEqual(asked, [false, true]);
-    assert.match(room.el('invite-note').textContent, /^New room code copied\. The old code no longer works\. Valid until .+\.$/);
+    assert.equal(room.el('invite-note').textContent, 'New room code copied. The old code no longer works.');
 });
 
 test('a member that is not the owner does not see "Copy room code"', async () => {

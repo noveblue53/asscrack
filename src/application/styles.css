@@ -1810,8 +1810,7 @@ body.map-open #node-map:not([data-paused]) .nm-node.speaking .nm-pulse {
   color: var(--ink-soft);
 }
 
-#room-access-status, #old-version-note, #member-invite-form p, #room-members-section h2 { margin: 0; }
-#old-version-note { color: var(--ink-soft); }
+#member-invite-form p, #room-members-section h2 { margin: 0; }
 #room-members-section h2 { font-size: 13px; }
 #member-invite-form { display: grid; gap: 5px; }
 /* A device ID has 43 or more characters: the font of the invite code shows all of it in the panel. */

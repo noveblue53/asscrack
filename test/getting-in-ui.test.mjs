@@ -10,7 +10,7 @@ const loginControls = [
 ];
 const accessControls = [
     { id: 'copy-device-id', tag: 'button' }, { id: 'device-id-note' }, { id: 'room-access-status' },
-    { id: 'reach-box', children: [{ id: 'reach-note', tag: 'p' }, { id: 'reach-upnp', tag: 'button' }] },
+    { id: 'reach-box', children: [{ id: 'reach-note', tag: 'p' }, { id: 'reach-upnp', tag: 'button' }, { id: 'reach-reason', tag: 'p' }] },
     { id: 'member-invite-form', tag: 'form' }, { id: 'member-device-id', tag: 'input' },
     { id: 'member-can-host', tag: 'input' }, { id: 'member-invite-create', tag: 'button' },
     { id: 'invite-code-label' }, { id: 'room-members-section' }, { id: 'room-members', tag: 'ul' }, { id: 'waiting-peer' }
@@ -48,23 +48,28 @@ async function startRoom({ reach, owner = true, lan = false, fullNode = { self: 
     return { room, state };
 }
 
-const NONE = 'Friends on the internet cannot join yet: this room has no address.';
-for (const [name, reach, text, button, canInvite] of [
+// UI copy pass (U2): the reach is a dot (data-reach) and a short label; a router failure gives one line under the
+// UPnP button (#reach-reason).
+const NONE = 'Not reachable';
+for (const [name, reach, text, button, canInvite, dot = '', reason = ''] of [
     ['ready and proven', { state: 'ready', reason: null, proven: true }, '', '', true],
-    ['ready, not proven', { state: 'ready', reason: null, proven: false }, 'Address ready. ASSCRACK tests it when the first friend connects.', '', true],
-    ['upnp-wait', { state: 'upnp-wait', reason: null, proven: false }, 'Asking the router to open a port. This can take up to 70 seconds.', '', false],
-    ['upnp-failed, no-gateway', { state: 'upnp-failed', reason: 'no-gateway', proven: false },
-        'The router did not answer. Turn on UPnP in the router, or forward a TCP port.', 'Try UPnP again', false],
-    ['upnp-failed, private-ip', { state: 'upnp-failed', reason: 'private-ip', proven: false },
-        'The router has no public address (a second router or the provider is between you and the internet). UPnP cannot help. A friend with an open port must create the room.',
-        'Try UPnP again', false],
-    ['upnp-failed, timeout', { state: 'upnp-failed', reason: 'timeout', proven: false }, 'The router did not open a port.', 'Try UPnP again', false],
-    ['none', { state: 'none', reason: null, proven: false }, NONE, 'Ask my router to open a port (UPnP)', false]
+    ['ready, not proven', { state: 'ready', reason: null, proven: false }, 'Not tested', '', true, 'none'],
+    ['upnp-wait', { state: 'upnp-wait', reason: null, proven: false }, 'Opening port…', '', false, 'busy'],
+    ['upnp-failed, no-gateway', { state: 'upnp-failed', reason: 'no-gateway', proven: false }, NONE, 'Try UPnP again', false, 'bad',
+        'Router didn\'t respond. Turn on UPnP in your router or forward a TCP port.'],
+    ['upnp-failed, private-ip', { state: 'upnp-failed', reason: 'private-ip', proven: false }, NONE, 'Try UPnP again', false, 'bad',
+        'Your router has no public IP. Ask a friend with an open port to create the room.'],
+    ['upnp-failed, timeout', { state: 'upnp-failed', reason: 'timeout', proven: false }, NONE, 'Try UPnP again', false, 'bad',
+        'Router refused to open a port.'],
+    ['none', { state: 'none', reason: null, proven: false }, NONE, 'Open port (UPnP)', false, 'bad']
 ]) {
     test(`the Invite panel of the owner for the reach state ${name}`, async () => {
         const { room } = await startRoom({ reach });
         assert.equal(room.el('reach-box').hidden, text === '');
         assert.equal(room.el('reach-note').textContent, text);
+        assert.equal(room.el('reach-note').dataset.reach, dot);
+        assert.equal(room.el('reach-reason').textContent, reason);
+        assert.equal(room.el('reach-reason').hidden, reason === '');
         assert.equal(room.el('reach-upnp').hidden, button === '');
         assert.equal(room.el('reach-upnp').textContent, button);
         assert.equal(room.el('member-invite-create').disabled, !canInvite);
@@ -94,43 +99,43 @@ test('the UPnP button calls enableUpnp and the panel shows the wait text', async
     room.el('reach-upnp').click();
     await settle();
     assert.equal(calls, 1);
-    assert.equal(room.el('reach-note').textContent, 'Asking the router to open a port. This can take up to 70 seconds.');
+    assert.equal(room.el('reach-note').textContent, 'Opening port…');
     assert.equal(room.el('reach-upnp').hidden, true);
     assert.equal(room.el('member-invite-create').disabled, true);
-    assert.equal(room.el('full-node-state').textContent, 'Asking the router…');
+    assert.equal(room.el('full-node-state').textContent, 'Opening port…');
     // The mapping comes: the upnp event refreshes the panel.
     state.reach = { state: 'ready', reason: null, proven: false };
     room.handlers.onUpnp({ state: 'mapped' });
     await settle();
     assert.equal(room.el('member-invite-create').disabled, false);
-    assert.equal(room.el('full-node-state').textContent, 'Address not tested yet');
+    assert.equal(room.el('full-node-state').textContent, 'Not tested');
 });
 
-test('a device invite shows the label "Invite for this device", and the button keeps the reach rule', async () => {
+test('a device invite shows the label "Invite code", and the button keeps the reach rule', async () => {
     const { room } = await startRoom({ reach: { state: 'ready', reason: null, proven: true } });
     room.window.asscrack.createMemberInvite = async () => 'asscrack2:grant';
     room.el('member-device-id').value = 'a'.repeat(43);
     room.el('member-invite-form').dispatchEvent(new room.Event('submit'));
     await settle();
-    assert.equal(room.el('invite-code-label').textContent, 'Invite for this device');
+    assert.equal(room.el('invite-code-label').textContent, 'Invite code');
     assert.equal(room.el('invite-code').value, 'asscrack2:grant');
     assert.equal(room.el('member-invite-create').disabled, false);
 });
 
 const PEER = '12D3KooWGpponMzJoSX1usSBzTdUmp9iaNvRFkvtJh75io6goVuA';
 const OTHER = '12D3KooWLMoahvBGRgYnC9FQ3WNKLUzGYaRfMkArribPUzxrxE8t';
-for (const [name, options, peers, text, tip, warn] of [
+for (const [name, options, peers, text, tip, warn, dot] of [
     ['this computer is a full node', { reach: { state: 'ready', reason: null, proven: true }, fullNode: { self: true, peers: [] } }, [],
-        'Open to the internet', 'This computer is a full node. Friends connect to it directly, and it can relay for others.', false],
+        'Reachable', 'Others connect to this PC directly. It can relay.', false, 'ok'],
     ['a connected peer is a full node', { reach: { state: 'none', reason: null, proven: false }, fullNode: { self: false, peers: [PEER] } }, [PEER],
-        'Open through Bob', 'Bob is a full node. New friends join through that computer.', false],
+        'Via Bob', 'New members connect through Bob', false, 'ok'],
     ['the address is ready and not proven', { reach: { state: 'ready', reason: null, proven: false } }, [],
-        'Address not tested yet', 'ASSCRACK tests the address when the first friend connects.', false],
-    ['the router is asked', { reach: { state: 'upnp-wait', reason: null, proven: false } }, [], 'Asking the router…', '', false],
+        'Not tested', 'Checked when the first friend joins', false, 'none'],
+    ['the router is asked', { reach: { state: 'upnp-wait', reason: null, proven: false } }, [], 'Opening port…', '', false, 'busy'],
     ['no address and 1 peer', { reach: { state: 'upnp-failed', reason: 'no-gateway', proven: false } }, [OTHER], 'No open port',
-        'No computer in the room has an open port now. Connected friends stay connected. New friends from the internet cannot join.', false],
+        'New members from the internet can\'t join', false, 'warn'],
     ['no address, no peer, owner', { reach: { state: 'none', reason: null, proven: false } }, [],
-        'Friends cannot join yet', 'Open Invite for the reason.', true]
+        'Not reachable', 'See Invite', true, 'bad']
 ]) {
     test(`the status bar item when ${name}`, async () => {
         const { room } = await startRoom(options);
@@ -144,6 +149,7 @@ for (const [name, options, peers, text, tip, warn] of [
         assert.equal(item.textContent, text);
         assert.equal(item.title, tip);
         assert.equal(item.dataset.state === 'warn', warn);
+        assert.equal(item.dataset.reach, dot);
     });
 }
 
