@@ -7,6 +7,53 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased — audit fixes for the network and the protocol (goal AF, part A, 2026-11-22)
+
+These changes fix the accepted rows of the security audits P10a and P10b for the network and the protocol. Each row
+has its own commit and test.
+
+- **M1. History and voice of the host (partial fix, items 1 to 3).** In a protected room, a history item needs the
+  device prefix of its message ID. A line of a known device shows the name that this computer knows for that device.
+  A line of an unknown device keeps the name of the host and shows "(not verified)". A voice frame from the host needs
+  the origin of a voice peer with a session. Signatures (item 4) come after 1.0.
+- **M2. Text channels.** A room has at most 64 named channels. A member keeps new channels only from the host. The host
+  accepts at most 30 add lines a minute from each member.
+- **M4. Hidden listeners.** The host sends its voice roster to each session. The window shows a member of the roster
+  with no voice line as "listening (not in voice for you)". The host forwards no frame to a deafened member.
+- **L1. Peer addresses.** A node line keeps only public TCP addresses with an IP (no DNS name, no private or loopback
+  address). A friend address can also be a LAN address. The hint file, the friend row and the invite code get an
+  address only after a connection to that peer ID reached it.
+- **L3. Device marks.** The window shows a 6-character device mark after each name, in the peer list, in the chat and
+  in the friend request bar. The peer list shows "(same name)" when two people use one name.
+- **L4. Invite expiry.** A new device invite expires after 7 days. The owner refuses an expired invite at the first
+  admission. An admitted device keeps its access.
+- **L5. LAN rooms.** A LAN room listens only on 127.0.0.1 and on the private IPv4 addresses of the PC, not on 0.0.0.0.
+- **L6. Legacy rooms.** The host rules of protected rooms apply: a peer announces only itself, with a safe-integer term.
+  A live line shows the name of the session, not its own sender field.
+- **L9. Signal line.** The unused signal line is gone. A voice stream ID has at most 64 characters.
+- **L11. Screen lines.** A share line stops the own share for a conflict only in the first 3 s. A Watch with no CONFIG
+  in 10 s removes that share. At most 30 screen lines a minute from each peer.
+- **L12. Voice channel catalogs.** The seq check comes before the signature check. After 30 failed checks in a minute,
+  a peer gets no more checks in that minute.
+- **OI1.** The libp2p error of a port in use now starts the retry with a new port for a saved UPnP port. The user
+  sees the plain text.
+
+Changes for old clients and old data (features-first rule):
+- An `asscrack3:` code of an older version gives the text of a different version (L4). An old unused device invite has
+  no expiry time and the owner refuses it. An old owner cannot admit a device with a new code.
+- An old client cannot add text channels through a member that is not the host (M2). Its signal lines and its host
+  lines for another peer have no effect (L9, L6). It ignores the voice roster (M4).
+- A full node of an old version on a private address is no longer a saved hint (L1).
+
+**Results: 127.0.0.1 and this PC.** No LAN test and no internet test.
+- Each row has a test that fails on `origin/main` and passes on the branch.
+- `npm test` on the branch with `origin/main` merged: 916 tests, 898 pass, 0 fail, 18 skipped (the timed checks).
+- One start of the app with a LAN room and Quit (this PC). The terminal, the log and the console of the window have no
+  error line.
+- The voice check of two app copies (127.0.0.1, the Steam Streaming devices, the fixed script of part B). B joins the
+  LAN room of A with a device invite. B gets the voice bytes of A: 7891 bytes in 3 s with voice activity, and 9589
+  bytes in 3 s with push to talk.
+
 ## Unreleased — audit fixes for the application, files and tools (goal AF, part B, 2026-11-22)
 
 These changes fix the accepted rows of the security audits P10a and P10b for the application, the files and the
