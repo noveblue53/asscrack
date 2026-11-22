@@ -63,3 +63,27 @@ test('the version, public address and other texts', () => {
         'Write the public address as IP:port, for example 203.0.113.5:47000.');
     assert.equal(loginErrorText(new Error('Enter a username of up to 64 characters.')), 'Enter a username of up to 64 characters.');
 });
+
+// OI1 (P10b): libp2p gives UnsupportedListenAddressesError with no code, no cause and no errors when the port is in
+// use. The message has the text EADDRINUSE. The retry with port 0 of a saved UPnP port (main.js) needs true here.
+test('OI1: the libp2p error of a node on a port in use makes isAddressInUse true', { timeout: 20000 }, async () => {
+    const { createServer } = await import('node:net');
+    const { createAsscrackNode } = await import('../src/network/node.mjs');
+    const server = createServer();
+    await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+    const port = server.address().port;
+    let err = null;
+    try {
+        const node = await createAsscrackNode({ room: 'oi1', listen: [`/ip4/127.0.0.1/tcp/${port}`], discovery: false });
+        await node.stop();
+    } catch (e) { err = e; } finally { await new Promise(resolve => server.close(resolve)); }
+    assert.ok(err, 'the node must not start on a port in use');
+    assert.equal(err.code, undefined, 'the libp2p error has no code (the case of OI1)');
+    assert.equal(isAddressInUse(err), true, `${err.name}: ${err.message}`);
+    assert.match(loginErrorText(err, { port }), new RegExp(`^Port ${port} is in use on this computer`));
+});
+
+test('OI1: the libp2p name alone, with no EADDRINUSE in the message, is not a port in use', () => {
+    const err = Object.assign(new Error('Some listen addresses are not supported'), { name: 'UnsupportedListenAddressesError' });
+    assert.equal(isAddressInUse(err), false);
+});

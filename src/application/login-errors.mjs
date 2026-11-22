@@ -3,9 +3,12 @@
 // writes the original text to the log.
 
 // True when the error, its cause or one of its errors has the code EADDRINUSE.
+// OI1: libp2p gives UnsupportedListenAddressesError with no code, no cause and no errors for a port in use. Only its
+// message has the text EADDRINUSE.
 export function isAddressInUse(err, depth = 0) {
     if (!err || typeof err !== 'object' || depth > 4) return false;
     if (err.code === 'EADDRINUSE') return true;
+    if (err.name === 'UnsupportedListenAddressesError' && /EADDRINUSE/.test(String(err.message))) return true;
     if (isAddressInUse(err.cause, depth + 1)) return true;
     return Array.isArray(err.errors) && err.errors.some(e => isAddressInUse(e, depth + 1));
 }
