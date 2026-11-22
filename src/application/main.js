@@ -602,6 +602,9 @@ function deleteHintFiles({ peers, host }) {
 
 function forgetHints(row) {
     if (row?.name && row?.roomKey) deleteHintFiles(roomHintFiles(row.name, row.roomKey));
+    // G4: the listening choices of the room go with it.
+    const tag = listeningRoomTag(row?.roomKey);
+    if (tag) listeningChoicesStore().removeRoom(tag);
 }
 
 // Saved rooms (milestone 6). The check of a roomId from the window.
@@ -879,6 +882,10 @@ handleRoomIpc('asscrack:set-voice', (_event, state) => {
 // G4: the listening choice of each person, per room, in the profile. The key is the device ID of the room membership.
 // A room with no membership has no stable identity of a person (the libp2p peer ID is new at each start): no save.
 let listeningChoices = null;
+function listeningChoicesStore() {
+    listeningChoices ??= listeningStore(path.join(app.getPath('userData'), 'listening.json'));
+    return listeningChoices;
+}
 function listeningKey(peerId) {
     if (!node || typeof peerId !== 'string' || peerId.length > 128) return null;
     const tag = listeningRoomTag(node.roomKey());
@@ -888,15 +895,13 @@ function listeningKey(peerId) {
 handleRoomIpc('asscrack:get-listening', (_event, peerId) => {
     const key = listeningKey(peerId);
     if (!key) return null;
-    listeningChoices ??= listeningStore(path.join(app.getPath('userData'), 'listening.json'));
-    return listeningChoices.get(key.tag, key.device);
+    return listeningChoicesStore().get(key.tag, key.device);
 });
 handleRoomIpc('asscrack:set-listening', (_event, peerId, muted, volume) => {
     const key = listeningKey(peerId);
     if (!key) return false;
-    listeningChoices ??= listeningStore(path.join(app.getPath('userData'), 'listening.json'));
     try {
-        return listeningChoices.set(key.tag, key.device, { muted, volume });
+        return listeningChoicesStore().set(key.tag, key.device, { muted, volume });
     } catch (err) {
         writeLog('WARN', `Listening choice not saved: ${err?.message ?? err}`);
         return false;

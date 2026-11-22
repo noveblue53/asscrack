@@ -39,6 +39,12 @@ test('a listening choice stays after a restart, per room and per device; the def
     // The file has no room key and no name.
     const text = readFileSync(file, 'utf8');
     assert.doesNotMatch(text, /key-of-room/);
+    // Forget of a saved room removes its choices, and only its choices.
+    assert.equal(again.removeRoom(roomA), true);
+    assert.equal(again.removeRoom(roomA), false);
+    const afterForget = listeningStore(file);
+    assert.equal(afterForget.get(roomA, 'device-alex'), null);
+    assert.deepEqual(afterForget.get(roomB, 'device-sam'), { muted: false, volume: 60 });
 });
 
 test('the store refuses a choice that is not valid, and a file that is not valid gives an empty store', t => {

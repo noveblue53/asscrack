@@ -29,10 +29,11 @@ and the volume of each person stays. Gap IDs C1, N1, C2, C5, C6, C7, C8, C3, C4 
   its tooltip. The volume goes from 0% to 200%, with a mark at 100%. Above 100%, a limiter stops the clipping. A
   double-click on the label of the slider sets 100%, and "Reset" removes the choice. ASSCRACK keeps the choice of
   each person in the profile, for each room. The key is the device ID of the room membership (never the name). A
-  room with no membership keeps the choice only while the app runs: its libp2p peer ID is new at each start.
+  room with no membership keeps the choice only while that person stays in the room: its libp2p peer ID is new at
+  each start. Forget of a saved room removes its choices.
 - **Cues.** A cue of my own action (join, leave, mute, unmute, deafen) plays also in Do not disturb. It is silent in
   Idle Peer. The cues play on the output device of the voice settings.
-- **Result: 127.0.0.1, this PC.** `npm test`: 545 of 545 pass (22 new G4 tests, in node:vm with fake
+- **Result: 127.0.0.1, this PC.** `npm test`: 545 of 545 pass (18 new G4 tests, in node:vm with fake
   devices and on 127.0.0.1). `node --test test/voice-gate.test.mjs test/voice-settings.test.mjs`: 16 of 16 pass. The
   two-copy voice check (its room setup repaired for the protected rooms) gives the same result as on `main`. An app
   check with two copies: 21 of 21 checks pass (no microphone, a device change, an ended track, the speakers text,

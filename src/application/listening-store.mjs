@@ -74,6 +74,12 @@ export function listeningStore(file) {
             }
             write();
             return true;
+        },
+        // Forget of a saved room removes the choices of that room.
+        removeRoom(tag) {
+            if (!rooms.delete(tag)) return false;
+            write();
+            return true;
         }
     };
 }
