@@ -19,7 +19,7 @@ test('room header and slash commands share the live topic and availability contr
         await settle()
     }
     await command('/topic no host')
-    assert.match(f.el('status').textContent, /unavailable/)
+    assert.match(f.el('status').textContent, /Can't edit the topic right now/)
     assert.equal(f.el('message-input').value, '/topic no host')
     f.handlers.onTopic({ available: true, text: 'Past' })
     f.el('topic-edit').click()

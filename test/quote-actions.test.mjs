@@ -98,7 +98,7 @@ test('a failed send keeps the full edited draft and the quote, and no line appea
     assert.equal(input.value, 'first part and more');
     assert.deepEqual(f.chip(), quoted);
     assert.equal(f.rows().length, rowsBefore);
-    assert.match(f.el('status').textContent, /^Not sent: Not logged in\./);
+    assert.equal(f.el('status').textContent, 'Not sent: Not in a room.');
 });
 
 test('Shift+Enter does not send; Enter sends the quote and clears the draft', async () => {
