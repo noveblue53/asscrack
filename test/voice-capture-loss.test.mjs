@@ -10,9 +10,9 @@ import { createClock } from './helpers/fake-clock.mjs';
 
 const worklet = await readFile(new URL('../src/application/voice-worklet.js', import.meta.url), 'utf8');
 const MOD = { ctrlKey: true, shiftKey: true };
-const NO_MIC = 'No microphone. You can listen, but the others cannot hear you. Connect a microphone and ASSCRACK uses it.';
-const MIC_GONE = 'The microphone was disconnected. ASSCRACK uses the default microphone.';
-const SPEAKERS_GONE = 'The selected speakers are not connected. ASSCRACK uses the default speakers.';
+const NO_MIC = 'No mic found. You can listen only.';
+const MIC_GONE = 'Mic disconnected. Using the default.';
+const SPEAKERS_GONE = 'Speakers disconnected. Using the default.';
 
 function domError(name) {
     return Object.assign(new Error(`${name} from the fake device`), { name });
@@ -245,14 +245,13 @@ test('Join with no microphone (NotFoundError) gives inVoice true, muted true to 
 
 test('each microphone error name gives its text, and Join does not fail (C7)', async () => {
     const texts = {
-        NotAllowedError: 'Windows does not let ASSCRACK use the microphone. Open Windows Settings, Privacy, Microphone, ' +
-            'and allow desktop apps.',
-        NotReadableError: 'The microphone did not start. A different app can have it in use. Close that app, or select ' +
-            'a different microphone in Voice settings.',
+        NotAllowedError: 'Mic blocked by Windows. Allow desktop apps in Settings › Privacy › Microphone.',
+        NotReadableError: 'Mic didn\'t start. Another app may be using it.',
         NotFoundError: NO_MIC,
-        AbortError: 'The microphone did not start.'
+        AbortError: 'Mic didn\'t start.'
     };
-    const atJoin = { NotAllowedError: ' You can listen until then.', NotReadableError: ' You can listen until then.' };
+    // UI copy pass: the text at Join has no "You can listen until then" suffix any more.
+    const atJoin = {};
     for (const [name, text] of Object.entries(texts)) {
         const f = await voiceRoom();
         f.mic.fail = name;
@@ -436,8 +435,8 @@ test('the saved choice of a person comes back at the join of that person, and ea
     assert.equal(f.line('b'), 'muted for you · 30%');
     // The tooltip of the line gives the percent.
     const rowA = f.el('peers').children.find(item => item.dataset.peerId === 'a');
-    assert.equal(rowA.title, 'a\nListening volume 150%');
-    assert.equal(f.el('peers').children.find(item => item.dataset.peerId === 'b').title, 'b\nListening volume 30%, muted for you');
+    assert.equal(rowA.title, 'Volume 150%');
+    assert.equal(f.el('peers').children.find(item => item.dataset.peerId === 'b').title, 'Volume 30% · muted by you');
 
     f.openListening('a');
     const volume = f.el('listener-volume');

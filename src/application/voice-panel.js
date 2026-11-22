@@ -127,19 +127,19 @@
         if (!text) {
             const notes = [];
             if (!settings?.pttKey) {
-                notes.push('Set a key. Until then, your voice does not go out.');
+                notes.push('Set a key to talk.');
                 warn = true;
             } else {
-                if (!settings.pttGlobal) notes.push('Push to talk works while the ASSCRACK window is in front.');
-                else if (hookStatus === 'on') notes.push('Push to talk works in all windows.');
+                // UI copy pass: the checkbox shows "all windows"; a note only for a limit or a problem.
+                if (!settings.pttGlobal) notes.push('Works only while the window is focused.');
                 else if (hookStatus === 'unavailable') {
-                    notes.push('The key hook did not start. Push to talk works while the ASSCRACK window is in front.');
+                    notes.push('Background key unavailable. Works only while the window is focused.');
                     warn = true;
                 } else if (hookStatus === 'no-key') {
-                    notes.push('This key works only while the ASSCRACK window is in front. Choose another key for all windows.');
+                    notes.push('This key works only while the window is focused.');
                     warn = true;
-                } else notes.push('Push to talk works in all windows while you are in voice.');
-                if (typesText(settings.pttKey)) notes.push('This key also types text. A side mouse button, F13 or Right Ctrl does not.');
+                }
+                if (typesText(settings.pttKey)) notes.push('This key also types text. Try a mouse side button, F13 or Right Ctrl.');
             }
             note = notes.join(' ');
         }
@@ -150,7 +150,7 @@
     function renderNoiseNote() {
         const state = voice.state();
         const failed = settings?.noiseSuppression === 'rnnoise' && Boolean(state.rnnoiseError);
-        noiseNote.textContent = failed ? 'RNNoise did not start. The standard noise suppression is in use.' : '';
+        noiseNote.textContent = failed ? 'Strong noise suppression failed. Using Light.' : '';
         noiseNote.classList.toggle('vs-warn', failed);
     }
 
@@ -158,15 +158,14 @@
     function renderMeterNote() {
         const { captureError, inVoice } = voice.state();
         if (captureError) meterNote.textContent = voice.microphoneErrorText(captureError, inVoice);
-        else meterNote.textContent = inVoice
-            ? 'The bar shows your microphone. Green: your voice goes out.'
-            : 'Speak to test your microphone. Nothing goes out while you are not in voice.';
+        // U11 of the UI copy pass: the meter is green above the line; in voice it needs no text.
+        else meterNote.textContent = inVoice ? '' : 'Speak to test your mic.';
     }
 
     function renderDeviceNote() {
         const state = voice.state();
         deviceNote.textContent = state.inputFallback
-            ? 'The selected microphone is not connected. The default microphone is in use.'
+            ? 'Mic disconnected. Using the default.'
             : '';
         deviceNote.classList.toggle('vs-warn', state.inputFallback === true);
     }
@@ -201,7 +200,7 @@
         };
         add('', defaultText);
         for (const d of devices) add(d.id, d.label);
-        if (current && !devices.some(d => d.id === current)) add(current, 'Selected device (not connected)');
+        if (current && !devices.some(d => d.id === current)) add(current, 'Selected device (disconnected)');
         select.value = current ?? '';
     }
 
@@ -305,7 +304,7 @@
         pttSet.setAttribute('aria-pressed', 'true');
         pttSet.textContent = 'Press a key';
         pttKey.textContent = '...';
-        renderPttNote('Press the key or a side mouse button. Escape stops.');
+        renderPttNote('Press a key… (Esc to cancel)');
         voice.setPushToTalk(false);
     }
 
@@ -358,7 +357,7 @@
                 return;
             }
             if (!e.code || FORBIDDEN.includes(e.code)) {
-                renderPttNote(`${e.key || 'This key'} cannot be the push-to-talk key. Press another key.`);
+                renderPttNote(`Can't use ${e.key || 'this key'}. Press another key.`);
                 return;
             }
             takeKey(e.code);
@@ -419,6 +418,8 @@
         // Escape while the panel waits for a key: the panel uses it (stops the key capture).
         capturingKey: () => capturingKey,
         // The text of a key code, for the Keyboard shortcuts dialog (app-shell.js).
-        keyName
+        keyName,
+        // The name of the push-to-talk key, or null: the tooltip of the push-to-talk icon (renderer.js).
+        pttKeyName: () => (settings?.pttKey ? keyName(settings.pttKey) : null)
     };
 })();

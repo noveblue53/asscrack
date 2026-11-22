@@ -346,7 +346,10 @@ function makePeerLine(name, title, colorName = name, self = false) {
     hostSpan.hidden = true;
     const voiceSpan = document.createElement('span');
     voiceSpan.className = 'voice-state';
-    voiceSpan.textContent = 'not in voice';
+    voiceSpan.title = 'Not in voice';
+    voiceSpan.append(makeSpan('sr-only', 'not in voice'));
+    voiceSpan.dataset.state = 'not in voice';
+    voiceSpan.dataset.extra = '';
     item.append(avatar, nameSpan, hostSpan, voiceSpan, makePresenceMark());
     item.title = String(title);
     return item;
@@ -1134,11 +1137,42 @@ function publishMonitorView(state, speakers) {
 
 // extra: the text after the state (G6 channel, G4 volume). data-state has the state only: the CSS of the voice marks
 // reads it.
+// U7 of the UI copy pass: the state is an icon. Its words are the tooltip, and they stay in the line as text for
+// screen readers only (class "sr-only"). Thus textContent is the same as before ("in voice (muted) · Raid").
+const VOICE_ICONS = {
+    'in voice': 'headset', speaking: 'headset', 'in voice (muted)': 'mic-off', 'not in voice (mic muted)': 'mic-off',
+    'in voice (no microphone)': 'mic-off', 'in voice (deafened)': 'deafened', 'muted for you': 'speaker-off',
+    'listening (not in voice for you)': 'ear'
+};
+const VOICE_TIPS = {
+    'not in voice': 'Not in voice', 'in voice': 'In voice', speaking: 'Speaking', 'in voice (muted)': 'Muted',
+    'not in voice (mic muted)': 'Not in voice · Muted', 'in voice (no microphone)': 'No mic', 'in voice (deafened)': 'Deafened',
+    'muted for you': 'Muted by you', 'listening (not in voice for you)': 'Listening only'
+};
 function setVoiceState(item, text, extra = '') {
     const span = item.querySelector('.voice-state');
     // No DOM write when the text is the same: the stats timer calls this 4 times each second.
     if (span.dataset.state === text && span.dataset.extra === extra) return;
-    span.textContent = text + extra;
+    const icon = VOICE_ICONS[text];
+    const words = makeSpan(Object.hasOwn(VOICE_TIPS, text) ? 'sr-only' : 'voice-words', text);
+    let shown = extra;
+    // The separator after the hidden words is hidden too: the line shows "[icon] Raid · 40%".
+    if (words.className === 'sr-only' && shown.startsWith(' · ')) {
+        words.textContent += ' · ';
+        shown = shown.slice(3);
+    }
+    const parts = [];
+    if (icon) {
+        const mark = document.createElement('span');
+        mark.className = 'state-icon voice-icon';
+        mark.dataset.icon = icon;
+        mark.setAttribute('aria-hidden', 'true');
+        parts.push(mark);
+    }
+    parts.push(words);
+    if (shown) parts.push(makeSpan('voice-extra', shown));
+    span.replaceChildren(...parts);
+    span.title = VOICE_TIPS[text] ? VOICE_TIPS[text] + (extra ? extra : '') : '';
     span.dataset.state = text;
     span.dataset.extra = extra;
 }
@@ -1153,11 +1187,11 @@ function voiceStateText(state) {
     if (!ownInVoice) return '';
     const texts = [];
     if (state.capturing === false && state.captureError) {
-        texts.push(window.voice.microphoneErrorText?.(state.captureError, true) ?? 'The microphone did not start.');
+        texts.push(window.voice.microphoneErrorText?.(state.captureError, true) ?? 'Mic didn\'t start.');
     } else if (state.capturing === true && state.inputFallback === true) {
-        texts.push('The microphone was disconnected. ASSCRACK uses the default microphone.');
+        texts.push('Mic disconnected. Using the default.');
     }
-    if (state.outputFallback === true) texts.push('The selected speakers are not connected. ASSCRACK uses the default speakers.');
+    if (state.outputFallback === true) texts.push('Speakers disconnected. Using the default.');
     return texts.join(' ');
 }
 
@@ -1201,7 +1235,7 @@ function updateVoiceView() {
         // G4: the tooltip of the line gives the listening choice when it is not the default.
         const choice = listeningTo(peerId);
         const tip = choice.muted || choice.volume !== 100
-            ? `${peerId}\nListening volume ${choice.volume}%${choice.muted ? ', muted for you' : ''}` : peerId;
+            ? `Volume ${choice.volume}%${choice.muted ? ' · muted by you' : ''}` : peerId;
         if (item.title !== tip) item.title = tip;
         if (speakers && talking) speakers.push(peerNames.get(peerId) || peerId.slice(-8));
         setVoiceState(item, text, extra);
@@ -1231,11 +1265,15 @@ function updateVoiceView() {
     muteButton.textContent = ownMuted ? 'Unmute' : 'Mute';
     deafenButton.hidden = !ownInVoice;
     deafenButton.setAttribute('aria-pressed', String(ownDeafened));
+    // U8 of the UI copy pass: push to talk is a mic icon that lights while the key is down. The key is the tooltip.
     const ptt = document.getElementById('ptt-state');
     if (ptt) {
         ptt.hidden = !ownInVoice || state.inputMode !== 'ptt';
         ptt.dataset.held = String(state.pttHeld === true);
-        ptt.textContent = state.pttHeld ? 'PTT held' : 'PTT released';
+        const tip = `Push to talk: ${window.voicePanel?.pttKeyName?.() ?? 'not set'}`;
+        if (ptt.title !== tip) ptt.title = tip;
+        const label = state.pttHeld ? 'Push to talk: sending' : 'Push to talk';
+        if (ptt.getAttribute('aria-label') !== label) ptt.setAttribute('aria-label', label);
     }
     muteButton.setAttribute('aria-pressed', String(ownMuted));
     if (speakers) publishMonitorView(state, speakers);

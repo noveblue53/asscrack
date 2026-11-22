@@ -203,12 +203,11 @@
           <div id="vs-meter-fill"></div>
           <div id="vs-meter-line"></div>
         </div>
-        <p id="vs-meter-note" class="vs-hint">Speak to test your microphone. Nothing goes out while you are not in voice.</p>
+        <p id="vs-meter-note" class="vs-hint">Speak to test your mic.</p>
 
         <div id="vs-voice-group">
           <label class="vs-slider" for="vs-threshold">Sensitivity <output id="vs-threshold-value" for="vs-threshold"></output></label>
-          <input type="range" id="vs-threshold" min="-80" max="-10" step="1">
-          <p class="vs-hint">Your voice goes out when the bar is to the right of the line. Move the line to the right if noise opens it.</p>
+          <input type="range" id="vs-threshold" min="-80" max="-10" step="1" title="Voice is sent above the line">
           <label class="vs-slider" for="vs-vad-release">Release delay <output id="vs-vad-release-value" for="vs-vad-release"></output></label>
           <input type="range" id="vs-vad-release" min="0" max="2000" step="50">
         </div>
@@ -219,7 +218,7 @@
             <kbd id="vs-ptt-key">Not set</kbd>
             <button id="vs-ptt-set" type="button">Set key</button>
           </div>
-          <label class="vs-check"><input type="checkbox" id="vs-ptt-global"> Also when ASSCRACK is in the back</label>
+          <label class="vs-check"><input type="checkbox" id="vs-ptt-global"> Work in the background</label>
           <p id="vs-ptt-note" class="vs-hint" role="status"></p>
           <label class="vs-slider" for="vs-ptt-release">Release delay <output id="vs-ptt-release-value" for="vs-ptt-release"></output></label>
           <input type="range" id="vs-ptt-release" min="0" max="2000" step="50">
@@ -231,8 +230,8 @@
         <label class="vs-check"><input type="checkbox" id="vs-ec"> Echo cancellation</label>
         <label class="vs-device" for="vs-ns">Noise suppression</label>
         <select id="vs-ns">
-          <option value="rnnoise">RNNoise (strong)</option>
-          <option value="standard">Standard (light, steady noise only)</option>
+          <option value="rnnoise" title="RNNoise">Strong</option>
+          <option value="standard" title="Steady noise only">Light</option>
           <option value="off">Off</option>
         </select>
         <p id="vs-ns-note" class="vs-hint" role="status"></p>
@@ -269,8 +268,8 @@
         <div id="voice-controls" aria-label="Voice controls" role="group">
           <button id="join-voice" type="button">Join voice</button>
           <button id="mute" type="button" aria-pressed="false" title="Mute (Ctrl+Shift+M)" aria-keyshortcuts="Control+Shift+M">Mute</button>
-          <button id="deafen" type="button" aria-pressed="false" title="Deafen: you hear no voice and your microphone is muted (Ctrl+Shift+D)" aria-keyshortcuts="Control+Shift+D" hidden>Deafen</button>
-          <span id="ptt-state" hidden>PTT released</span>
+          <button id="deafen" type="button" aria-pressed="false" title="Deafen (Ctrl+Shift+D)" aria-keyshortcuts="Control+Shift+D" hidden>Deafen</button>
+          <span id="ptt-state" role="img" aria-label="Push to talk" hidden></span>
           <button id="voice-settings-toggle" type="button" aria-expanded="false" aria-controls="voice-settings">Voice settings</button>
           <button id="leave-voice" type="button" hidden>Leave voice</button>
           <!-- P8b, screen-share.js: a share does not need voice. -->
@@ -598,9 +597,8 @@
     <h2 id="listening-title">Listening volume</h2>
     <label><input id="listener-muted" type="checkbox"> Mute for me</label>
     <label id="listener-volume-label" for="listener-volume" title="Double-click: 100%">Playback volume <output id="listener-percent" for="listener-volume">100%</output></label>
-    <input id="listener-volume" type="range" min="0" max="200" step="1" value="100" list="listener-volume-marks">
+    <input id="listener-volume" type="range" min="0" max="200" step="1" value="100" list="listener-volume-marks" title="Above 100% boosts a quiet mic">
     <datalist id="listener-volume-marks"><option value="100" label="100%"></option></datalist>
-    <p id="listener-note">Above 100% ASSCRACK makes a quiet microphone louder. A limiter stops the clipping.</p>
     <form method="dialog"><button type="button" id="listener-reset">Reset</button> <button>Done</button></form>
   </dialog>
 

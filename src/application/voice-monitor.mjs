@@ -37,7 +37,7 @@ export function attachVoiceMonitor({ room, roomPage, ipc, BrowserWindow, screen,
         const hasLocation = coordinate(saved?.x) && coordinate(saved?.y);
         const display = hasLocation ? screen.getDisplayNearestPoint({ x: saved.x, y: saved.y }) : screen.getDisplayMatching(room.getBounds());
         const win = new BrowserWindow({
-            ...fitVoiceBounds(saved, display.workArea), minWidth: 230, minHeight: 130, title: 'Asscrack Voice',
+            ...fitVoiceBounds(saved, display.workArea), minWidth: 230, minHeight: 130, title: 'Voice – ASSCRACK',
             alwaysOnTop: true, skipTaskbar: true, maximizable: false, minimizable: false, fullscreenable: false, show: false,
             webPreferences: { preload: path.join(assets, 'voice-monitor-preload.cjs'), nodeIntegration: false, sandbox: true, contextIsolation: true }
         });

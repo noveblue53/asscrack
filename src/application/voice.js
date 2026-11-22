@@ -414,19 +414,11 @@
         const codes = Object.values(ERROR_CODES);
         const code = codes.includes(error) || error === 'other' ? error
             : errorCode(typeof error === 'string' ? error : error?.name);
-        const until = listening ? ' You can listen until then.' : '';
-        if (code === 'not-found') {
-            return 'No microphone. You can listen, but the others cannot hear you. Connect a microphone and ASSCRACK uses it.';
-        }
-        if (code === 'not-allowed') {
-            return 'Windows does not let ASSCRACK use the microphone. Open Windows Settings, Privacy, Microphone, ' +
-                'and allow desktop apps.' + until;
-        }
-        if (code === 'not-readable') {
-            return 'The microphone did not start. A different app can have it in use. Close that app, or select a ' +
-                'different microphone in Voice settings.' + until;
-        }
-        return 'The microphone did not start.';
+        // UI copy pass: no "You can listen until then" suffix (listening is obvious). The parameter stays for the callers.
+        if (code === 'not-found') return 'No mic found. You can listen only.';
+        if (code === 'not-allowed') return 'Mic blocked by Windows. Allow desktop apps in Settings › Privacy › Microphone.';
+        if (code === 'not-readable') return 'Mic didn\'t start. Another app may be using it.';
+        return 'Mic didn\'t start.';
     }
 
     function logCapture(stream) {

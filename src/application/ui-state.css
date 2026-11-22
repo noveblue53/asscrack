@@ -70,3 +70,34 @@
   content: ''; display: inline-block; width: 11px; height: 11px; margin-right: 4px; background: currentColor;
   vertical-align: -1px; mask: url('img/state-lock.svg') center / contain no-repeat;
 }
+
+/* Text for screen readers only (the words of a state that an icon shows). */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+
+/* U7: the voice state of a buddy line is an icon; the tooltip has the words. */
+#peers .voice-state { display: flex; align-items: center; gap: 4px; position: relative; }
+#peers .voice-extra { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.state-icon[data-icon="headset"] { --state-glyph: url('img/state-headset.svg'); }
+.state-icon[data-icon="mic-off"] { --state-glyph: url('img/state-mic-off.svg'); }
+.state-icon[data-icon="deafened"] { --state-glyph: url('img/state-deafened.svg'); }
+.state-icon[data-icon="speaker-off"] { --state-glyph: url('img/state-speaker-off.svg'); }
+.state-icon[data-icon="ear"] { --state-glyph: url('img/state-ear.svg'); }
+#peers .voice-icon { width: 13px; height: 13px; }
+#peers .voice-state:is([data-state="in voice (muted)"], [data-state="not in voice (mic muted)"],
+  [data-state="in voice (no microphone)"], [data-state="in voice (deafened)"]) { color: var(--warning); }
+#peers .voice-state[data-state="muted for you"] { color: var(--ink-soft); }
+
+/* U8: push to talk is a mic icon. It lights while the key is down. */
+#ptt-state {
+  display: inline-grid; place-items: center; align-self: center; width: 24px; height: 24px; border-radius: 50%;
+  color: var(--ink-soft);
+}
+#ptt-state::before {
+  content: ''; width: 15px; height: 15px; background: currentColor;
+  mask: url('img/icon-mic-dark.svg') center / contain no-repeat;
+}
+#ptt-state[data-held="true"] { color: var(--chat); background: var(--voice-line); }
+#ptt-state[hidden] { display: none; }
