@@ -6,7 +6,7 @@ import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createUpdater, encodedCommand, oldPortableTarget, quoteArg, readExeVersion, releaseSource, removeOldPortable,
+import { createUpdater, encodedCommand, helperArgs, oldPortableTarget, quoteArg, readExeVersion, releaseSource, removeOldPortable,
     restartScript, testServerBase } from '../src/application/updater.mjs';
 
 const keys = generateKeyPairSync('ed25519');
@@ -111,6 +111,7 @@ test('a file with a wrong size or a wrong SHA-256 is refused: no ready bar, no r
         const view = s.updater.view();
         assert.equal(view.update.ready, false, label);
         assert.match(view.update.note, /did not complete/, label);
+        assert.equal(view.update.failed, true, `${label}: the window shows no bar`);
         assert.equal(await s.updater.prepareRestart(), null, label);
         const left = readdirSync(s.root, { recursive: true }).filter(name => /\.exe/.test(name));
         assert.deepEqual(left, [], label);
@@ -239,13 +240,12 @@ test('the saved state keeps the setting and a good manifest; an app at that vers
 });
 
 test('the test server option works only for a test version and only for 127.0.0.1', () => {
-    assert.equal(testServerBase(['--update-server', 'http://127.0.0.1:8123'], '1.0.0-test'), 'http://127.0.0.1:8123');
-    assert.equal(testServerBase(['--update-server', 'http://127.0.0.1:8123'], '1.0.0'), null);
-    assert.equal(testServerBase(['--update-server', 'http://127.0.0.1:8123'], '1.0.0-beta'), null);
-    assert.equal(testServerBase(['--update-server', 'http://localhost:8123'], '1.0.0-test'), null);
-    assert.equal(testServerBase(['--update-server', 'https://127.0.0.1:8123'], '1.0.0-test'), null);
-    assert.equal(testServerBase(['--update-server', 'http://127.0.0.1:8123/x'], '1.0.0-test'), null);
-    assert.equal(testServerBase(['--update-server', 'http://10.0.0.1:8123'], '1.0.0-test'), null);
+    assert.equal(testServerBase(['--update-server', '127.0.0.1:8123'], '1.0.0-test'), 'http://127.0.0.1:8123');
+    assert.equal(testServerBase(['--update-server', '127.0.0.1:8123'], '1.0.0'), null);
+    assert.equal(testServerBase(['--update-server', '127.0.0.1:8123'], '1.0.0-beta'), null);
+    for (const value of ['localhost:8123', 'http://127.0.0.1:8123', '127.0.0.1:8123/x', '10.0.0.1:8123', '127.0.0.1:0', '127.0.0.1:70000', '127.0.0.1', '']) {
+        assert.equal(testServerBase(['--update-server', value], '1.0.0-test'), null, value);
+    }
     assert.equal(testServerBase([], '1.0.0-test'), null);
     assert.equal(releaseSource().latest, 'https://api.github.com/repos/noveblue53/asscrack/releases/latest');
     assert.equal(releaseSource().file('v1.0.1', 'update.json'), 'https://github.com/noveblue53/asscrack/releases/download/v1.0.1/update.json');
@@ -300,5 +300,11 @@ test('the restart script waits, installs silently, and starts the new version wi
         "Start-Process -FilePath 'C:\\P\\asscrack\\ASSCRACK.exe' -ArgumentList '--profile \"D:\\my profile\"'"
     ]);
     assert.equal(Buffer.from(encodedCommand('ab'), 'base64').toString('utf16le'), 'ab');
+    // Two stages: the first stage starts the second stage (hidden) with the encoded restart script, and exits.
+    const args = helperArgs('C:\W\powershell.exe', "Write-Output 'x'");
+    assert.deepEqual(args.slice(0, 5), ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand']);
+    const first = Buffer.from(args[5], 'base64').toString('utf16le');
+    assert.equal(first, "Start-Process -FilePath 'C:\W\powershell.exe' -WindowStyle Hidden -ArgumentList '-NoProfile','-NonInteractive'," +
+        `'-ExecutionPolicy','Bypass','-EncodedCommand','${encodedCommand("Write-Output 'x'")}'`);
     assert.match(restartScript({ waitPids: [], start: { file: 'x.exe', args: [] } }), /Start-Process -FilePath 'x\.exe'$/);
 });

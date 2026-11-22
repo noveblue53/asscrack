@@ -1,15 +1,15 @@
 // P9C: the updater in the main process. main.js gives the electron parts; this file connects updater.mjs to the
 // window (IPC 'asscrack:update*'), to the nodes (the hub of update-spread.mjs) and to the restart.
 //
-// The restart: a hidden PowerShell process (restartScript in updater.mjs) waits until this app stopped, then runs the
-// installer silently for the current user (installed build) or starts the new portable file (portable build). It
-// starts the new version with the same test arguments (--profile, --log-dir, --update-server). The NSIS option
+// The restart: a hidden PowerShell process (restartScript and helperArgs in updater.mjs) waits until this app stopped,
+// then runs the installer silently for the current user (installed build) or starts the new portable file (portable
+// build). It starts the new version with the same test arguments (--profile, --log-dir, --update-server). The NSIS option
 // --force-run is not used: it starts the app with no arguments, thus with the default profile.
 import { spawn as spawnProcess } from 'node:child_process';
 import { mkdtempSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { UPDATE_PUBLIC_KEY } from './update-key.mjs';
-import { cleanSetupFolders, createUpdater, encodedCommand, releaseSource, removeOldPortable, restartScript,
+import { cleanSetupFolders, createUpdater, helperArgs, releaseSource, removeOldPortable, restartScript,
     SETUP_FOLDER_PREFIX, STATE_FILE, testServerBase } from './updater.mjs';
 
 export const UPDATE_OLD_FLAG = '--update-old';
@@ -78,16 +78,25 @@ export function createUpdateService({ app, shell, handle, send, log, busy, insta
             script = restartScript({ waitPids: [process.pid, process.ppid], start: { file: plan.file, args } });
         }
         const powershell = path.join(env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
-        try {
-            const child = spawn(powershell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden',
-                '-EncodedCommand', encodedCommand(script)], { detached: true, stdio: 'ignore', windowsHide: true });
-            child.on?.('error', err => log('WARN', `Update restart helper failed: ${err?.message ?? err}`));
-            child.unref?.();
-        } catch (err) {
-            log('WARN', `Update restart helper failed: ${err?.message ?? err}`);
+        // The first stage starts the second stage and exits (helperArgs in updater.mjs). The app quits only after that.
+        restarting = true;
+        const failed = await new Promise(resolve => {
+            let child;
+            try {
+                child = spawn(powershell, helperArgs(powershell, script), { stdio: 'ignore', windowsHide: true });
+            } catch (err) {
+                resolve(err?.message ?? String(err));
+                return;
+            }
+            const timer = setTimeout(() => resolve('no exit in 20 s'), 20000);
+            child.on('error', err => { clearTimeout(timer); resolve(err?.message ?? String(err)); });
+            child.on('exit', code => { clearTimeout(timer); resolve(code === 0 ? null : `exit code ${code}`); });
+        });
+        if (failed !== null) {
+            restarting = false;
+            log('WARN', `Update restart helper failed: ${failed}`);
             return { ok: false, error: 'helper' };
         }
-        restarting = true;
         log('INFO', `Update: restart to ASSCRACK ${plan.version} (${plan.kind})`);
         quit();
         return { ok: true };

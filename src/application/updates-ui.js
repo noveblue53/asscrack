@@ -44,7 +44,7 @@
         view = next ?? view;
         if (!view) return;
         const update = view.update;
-        const show = !!update && !view.dismissed && hiddenFor !== update.version;
+        const show = !!update && !update.failed && !view.dismissed && hiddenFor !== update.version;
         bar.hidden = !show;
         if (show) {
             text.textContent = barText(update);

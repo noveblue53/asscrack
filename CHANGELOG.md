@@ -7,6 +7,33 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased — Updates that the operator pushes to the clients (goal P9C, 2026-11-22)
+
+The operator publishes a release one time. Each client finds it, downloads it, checks it and installs it with one click.
+- The app reads the latest GitHub release of `noveblue53/asscrack` at the start and each 6 hours. The setting
+  "Check for updates" in About ASSCRACK controls this (default on). The request has no user data and a generic
+  User-Agent.
+- The app accepts `update.json` only with a good Ed25519 signature (`update.json.sig`) of the operator key and a higher
+  version. It accepts a file only when the size and the SHA-256 agree with the signed manifest.
+- A quiet bar shows "ASSCRACK <v> is ready." with "Restart to update", "What's new" (plain text) and "Later". In a
+  voice call or during a file transfer, Restart asks first.
+- The installed build runs the new installer silently for the current user. The portable build starts the new
+  portable file next to the old one, and the new copy deletes the old file. The profile does not change.
+- Peers spread the news: each session gets the app version. A node with a newer signed manifest sends it one time to
+  an older peer, and the peer checks the signature. The file comes only from GitHub.
+- `tools/update-key.mjs` makes the key pair, `tools/sign-update.mjs` signs a release, and
+  `tools/update-test-server.mjs` is a local test release. The steps are in `docs/RELEASE_UPDATES.md`.
+- The public key in `src/application/update-key.mjs` is a test key. The release check
+  (`node tools/sign-update.mjs --check-release`) fails until the operator key replaces it.
+
+Results (127.0.0.1 and this PC, no LAN, no GitHub upload):
+- `npm test` passes (127.0.0.1). New tests: the manifest rules, the updater with a fake server, the peer lines on real
+  nodes, the busy rule, the key and sign scripts.
+- Packaged test builds 1.0.0-test and 1.0.1-test with a local test release on 127.0.0.1: 30 checks pass. The portable
+  and the installed build update themselves. A second client gets the news only from a peer. Each refused case (a
+  changed byte, an other key, a wrong SHA-256, a wrong size, an equal version) gives no bar and no file. In voice,
+  Restart asks first. No ERROR line. The install state of this PC is the same after the checks.
+
 ## Unreleased — Per-user installer and start at sign-in (goal P9B, 2026-11-22)
 
 A per-user installer comes next to the portable build. The installed build can start in the tray when you sign in.

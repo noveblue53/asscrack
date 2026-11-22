@@ -8,7 +8,7 @@
 //   GET /api/repos/noveblue53/asscrack/releases/latest   { tag_name: "v<version of update.json>", assets: [...] }
 //   GET /download/<tag>/<file name>                       the file (only a file name of the folder, only that tag)
 // It prints one line for each request. Only a test version of the app (for example 1.0.0-test) accepts the option
-// --update-server http://127.0.0.1:<port>. The server reads the folder at each request: a change of the files applies
+// --update-server 127.0.0.1:<port>. The server reads the folder at each request: a change of the files applies
 // at once.
 import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -48,5 +48,5 @@ const server = createServer((request, response) => {
     console.log(`${new Date().toISOString()} ${request.method} ${url.pathname} ${status} UA=${request.headers['user-agent'] ?? ''}`);
 });
 server.listen(port, '127.0.0.1', () => {
-    console.log(`update test server: http://127.0.0.1:${server.address().port} (folder ${folder})`);
+    console.log(`update test server: http://127.0.0.1:${server.address().port} (app option: --update-server 127.0.0.1:${server.address().port}) (folder ${folder})`);
 });

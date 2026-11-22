@@ -38,18 +38,17 @@ export function releaseSource(testBase = null) {
         file: file(`https://github.com/${REPOSITORY}/releases/download`) };
 }
 
-// The test option --update-server http://127.0.0.1:<port>. Only a test version (a pre-release part "test", for example
+// The test option --update-server 127.0.0.1:<port> (no "http://": a packaged start with an http:// argument before an
+// other argument stops before its log, also in 0.8.0). Only a test version (a pre-release part "test", for example
 // 1.0.0-test) accepts it, and only the address 127.0.0.1. A release build thus always uses GitHub.
 export function testServerBase(argv, version) {
     const index = argv.indexOf(TEST_SERVER_FLAG);
     if (index === -1) return null;
     const parsed = parseVersion(version);
     if (!parsed || !parsed.pre.includes('test')) return null;
-    let url;
-    try { url = new URL(String(argv[index + 1] ?? '')); } catch { return null; }
-    if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || !url.port || url.pathname !== '/' || url.search ||
-        url.hash || url.username || url.password) return null;
-    return url.origin;
+    const m = /^127\.0\.0\.1:([1-9]\d{0,4})$/.exec(String(argv[index + 1] ?? ''));
+    if (!m || Number(m[1]) > 65535) return null;
+    return `http://127.0.0.1:${m[1]}`;
 }
 
 // Read a response body with a size limit. The fetch stops when the body is too large.
@@ -151,6 +150,8 @@ export function createUpdater({ currentVersion, kind = null, publicKey, source, 
             downloading: !!downloading,
             ready: !!ready,
             inDownloads: ready?.fallback === true,
+            // The last download failed (for example a wrong size or SHA-256): no bar, only the note in About.
+            failed: !ready && !downloading && downloadNote !== '',
             note: downloadNote
         } : null;
         return { current: currentVersion, enabled, buildKind: kind, checking: !!checking, lastCheck, update,
@@ -531,4 +532,15 @@ export function restartScript({ waitPids, setup = null, start }) {
 
 export function encodedCommand(script) {
     return Buffer.from(script, 'utf16le').toString('base64');
+}
+
+// The arguments of the restart helper (two stages). From the app, a PowerShell with DETACHED_PROCESS exits at once and
+// does nothing, and a child that is not detached is in the job of libuv: it stops with the app (this PC, Electron
+// 45). Thus the first stage (a normal child) starts the second stage with Start-Process and exits. The second stage
+// is not in that job: it waits for the app, then does the restart script.
+export function helperArgs(powershell, script) {
+    const base = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass'];
+    const second = [...base, '-EncodedCommand', encodedCommand(script)].map(psText).join(',');
+    const first = `Start-Process -FilePath ${psText(powershell)} -WindowStyle Hidden -ArgumentList ${second}`;
+    return [...base, '-EncodedCommand', encodedCommand(first)];
 }

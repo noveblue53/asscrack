@@ -48,14 +48,14 @@ test('Restart in voice or during a transfer asks first: no helper, no quit, unti
 
 test('the restart keeps only the test arguments, as absolute paths', () => {
     const resolve = value => path.win32.resolve('C:\\work', value);
-    assert.deepEqual(keptArgs(['exe', '.', '--profile', 'p1', '--log-dir', 'logs', '--update-server', 'http://127.0.0.1:5000',
+    assert.deepEqual(keptArgs(['exe', '.', '--profile', 'p1', '--log-dir', 'logs', '--update-server', '127.0.0.1:5000',
         '--start-idle', '--port', '9000'], resolve),
-    ['--profile', 'C:\\work\\p1', '--log-dir', 'C:\\work\\logs', '--update-server', 'http://127.0.0.1:5000']);
+    ['--profile', 'C:\\work\\p1', '--log-dir', 'C:\\work\\logs', '--update-server', '127.0.0.1:5000']);
     assert.deepEqual(keptArgs(['exe', '--profile', '--log-dir', 'x'], resolve), ['--log-dir', 'C:\\work\\x']);
 });
 
 test('the build kind comes from the build (installed, portable or none), and the node hub has the app version', t => {
-    const { s } = service(t, { argv: ['--update-server', 'http://127.0.0.1:5000'] });
+    const { s } = service(t, { argv: ['--update-server', '127.0.0.1:5000'] });
     assert.equal(s.hub.version, '1.0.0-test');
     assert.equal(s.view().buildKind, 'setup');
     const portable = service(t, { installedBuild: false, env: { PORTABLE_EXECUTABLE_FILE: 'C:\\x\\ASSCRACK-1.0.0-test-portable.exe' } });

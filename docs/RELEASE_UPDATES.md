@@ -60,13 +60,12 @@ A failed check is quiet: a line in the log and a note in About. The checks run a
 ## The local test release (127.0.0.1)
 
 Only a test version (a pre-release part `test`, for example `1.0.0-test`) accepts the test option
-`--update-server http://127.0.0.1:<port>`. Use test versions only in a worktree; do not commit them.
+`--update-server 127.0.0.1:<port>`. Use test versions only in a worktree. Do not commit them.
 
-1. Make a throwaway key in a scratch folder (`node tools/update-key.mjs --out <scratch>`) and put its public key in
-   `src/application/update-key.mjs` of the worktree (do not commit it), or use the test key of the source if you have
-   its private key.
+1. Make a throwaway key in a scratch folder: `node tools/update-key.mjs --out <scratch>`. Put its public key in
+   `src/application/update-key.mjs` of the worktree, and do not commit that change.
 2. Build version `1.0.0-test` (the client) and `1.0.1-test` (the update). Put the `1.0.1-test` files in a release
    folder and sign them: `node tools/sign-update.mjs <folder> --test --notes "Test" --key <scratch>\update-key.pem`.
 3. `node tools/update-test-server.mjs <folder> --port 8765`.
-4. Start the client with `--profile <test profile> --update-server http://127.0.0.1:8765`. Never use the default
+4. Start the client with `--profile <test profile> --update-server 127.0.0.1:8765`. Never use the default
    profile for a test.
