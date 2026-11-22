@@ -67,14 +67,20 @@ test('sound and privacy settings are per profile, validated, and retain mute and
     t.after(() => rmSync(dir, { recursive: true, force: true }));
     const file = path.join(dir, 'prefs.json');
     const prefs = attentionSettings(file);
+    // G5 (E1) adds the key flash (default true).
     assert.deepEqual(prefs.get(), { alerts: false, previews: false, sound: false, voiceCues: true, otherVoiceCues: true,
-        messageCues: true, volume: 35 });
+        messageCues: true, volume: 35, flash: true });
     prefs.set({ alerts: true, previews: 'yes', voiceCues: false, otherVoiceCues: 'no', messageCues: 0, volume: 120 });
     const reopened = attentionSettings(file).get();
     assert.equal(reopened.alerts, true); assert.equal(reopened.previews, false);
     assert.equal(reopened.voiceCues, false); assert.equal(reopened.volume, 100);
     // P11 keys: the same validation as the old keys (only a boolean changes them).
     assert.equal(reopened.otherVoiceCues, true); assert.equal(reopened.messageCues, true);
+    // E1: flash has the same validation (only a boolean changes it).
+    prefs.set({ flash: 'off' });
+    assert.equal(attentionSettings(file).get().flash, true);
+    prefs.set({ flash: false });
+    assert.equal(attentionSettings(file).get().flash, false);
     prefs.set({ otherVoiceCues: false, messageCues: false });
     assert.equal(attentionSettings(file).get().otherVoiceCues, false);
     assert.equal(attentionSettings(file).get().messageCues, false);

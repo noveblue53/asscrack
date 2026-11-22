@@ -29,6 +29,14 @@ contextBridge.exposeInMainWorld('asscrack', {
     enterIdlePeer: () => ipcRenderer.invoke('asscrack:enter-idle-peer'),
     setCloseToTray: enabled => ipcRenderer.invoke('asscrack:close-to-tray', enabled),
     quit: () => ipcRenderer.send('asscrack:quit'),
+    // G5: the Windows app shell. The window gets no path and no room ID.
+    leaveRoom: () => ipcRenderer.invoke('asscrack:leave-room'),
+    leaveRoomInfo: () => ipcRenderer.invoke('asscrack:leave-room-info'),
+    getAbout: () => ipcRenderer.invoke('asscrack:about'),
+    openDataFolder: () => ipcRenderer.invoke('asscrack:open-data-folder'),
+    flashAttention: () => ipcRenderer.send('asscrack:attention-flash'),
+    // ids: up to 64 peer IDs. Returns [{ id, alias }] with the pseudonym of the Room activity lines.
+    getActivityAliases: ids => ipcRenderer.invoke('asscrack:activity-aliases', Array.isArray(ids) ? ids.slice(0, 64).map(String) : []),
     login: ({ name, room, type, invite, publicAddress, allowUpnp, allowLegacy, save, keepHistory } = {}) =>
         ipcRenderer.invoke('asscrack:login', { name, room, type, invite, publicAddress, allowUpnp, allowLegacy, save, keepHistory }),
     // Saved rooms (milestone 6). The window gets no key, no invite and no file path.

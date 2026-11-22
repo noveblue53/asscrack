@@ -73,10 +73,14 @@ export function observeRoomActivity(node, now = Date.now) {
             record(action + remote + ' · ' + offer + ' · ' + outcome, [remote, 'this device'], { transfer: true })
         })
     }
-    return ({ peerId = null, transfersOnly = false } = {}) => {
+    const read = ({ peerId = null, transfersOnly = false } = {}) => {
         const target = peerId === null ? null : peer(peerId)
         return entries.filter(entry => (!target || entry.peers.includes(target)) && (!transfersOnly || entry.transfer))
             .map(({ time, text, count }) => new Date(time).toISOString() + '  ' + text +
                 (count > 1 ? ' ×' + (count > 99999 ? '99999+' : count) : ''))
     }
+    // Gap B5: the pseudonym of each peer ID in the lines (up to 64 IDs). The peer inspector puts the buddy name in
+    // place of each known pseudonym. The lines and the diagnostics copy do not change.
+    read.aliases = ids => Array.isArray(ids) ? ids.slice(0, 64).map(peer) : []
+    return read
 }

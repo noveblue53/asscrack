@@ -122,3 +122,25 @@ test('the saved-room calls of part 2 send the room ID as text and a strict true 
         ['asscrack:forget-room', 'r']
     ]);
 });
+
+// G5: the calls of the Windows app shell. The window gives no path and no room ID: the main process has them.
+test('the G5 calls send their IPC channel with no path, and the alias call sends at most 64 IDs as text', () => {
+    const b = loadBridge();
+    b.api.leaveRoom('C:\secret');
+    b.api.leaveRoomInfo('room-id');
+    b.api.getAbout();
+    b.api.openDataFolder('C:\other');
+    assert.deepEqual(b.invoked, [['asscrack:leave-room'], ['asscrack:leave-room-info'], ['asscrack:about'],
+        ['asscrack:open-data-folder']]);
+    b.api.flashAttention({ text: 'private' });
+    assert.deepEqual(b.sent, [['asscrack:attention-flash']]);
+    b.api.getActivityAliases(Array.from({ length: 70 }, (_, i) => i));
+    const [channel, ids] = b.invoked.at(-1);
+    assert.equal(channel, 'asscrack:activity-aliases');
+    assert.equal(ids.length, 64);
+    assert.equal(ids[3], '3');
+    b.api.getActivityAliases('not a list');
+    // The array comes from the vm context of the preload (another Array prototype): compare the JSON text.
+    assert.equal(JSON.stringify(b.invoked.at(-1)), JSON.stringify(['asscrack:activity-aliases', []]));
+    assert.deepEqual(b.touched, []);
+});

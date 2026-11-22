@@ -361,6 +361,14 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
         return active ? { roomId: active.roomId, keepHistory: active.keepHistory } : null;
     }
 
+    // Gap A7: Leave room. The archive stays open. The room is no longer active, thus Forget of it works, and a
+    // second afterLogin starts from a clean state.
+    function leave() {
+        active = null;
+        attachedNode = null;
+        releaseReplay();
+    }
+
     function close() {
         active = null;
         attachedNode = null;
@@ -370,6 +378,6 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
 
     return {
         open, rememberDownload, getDownload, status, unlock, lines, getRoom, loadChannels, persistChannels, prepareReplay, releaseReplay, afterLogin, recordSend, attachNode, setKeepHistory, setUserName, clear, forget, activeInfo,
-        deviceIdentity, isProtectedRoom, persistMembership, close, active: () => active
+        deviceIdentity, isProtectedRoom, persistMembership, leave, close, active: () => active
     };
 }

@@ -17,12 +17,13 @@ import { observeRoomActivity } from './room-activity.mjs';
 import { createSavedRooms, makeProtector } from './saved-rooms.mjs';
 import { roomFingerprint } from './room-archive.mjs';
 import * as voiceSettings from './voice-settings.mjs';
-import { attentionSettings, createAttention, registerNotificationShortcut, WINDOWS_APP_ID, WINDOWS_TOAST_ID } from './attention.mjs';
+import { attentionSettings, createAttention, overlayDotBitmap, registerNotificationShortcut, WINDOWS_APP_ID, WINDOWS_TOAST_ID } from './attention.mjs';
 import { createPttHook } from './ptt-hook.mjs';
 import { createWindowFrame } from './window-frame.mjs';
 import { attachVoiceMonitor } from './voice-monitor.mjs';
 import { installRoomPermissions, isDesktopFrame, lockDesktopNavigation } from './desktop-boundary.mjs';
 import { isAddressInUse, loginErrorText } from './login-errors.mjs';
+import { fitWindowBounds, MIN_WINDOW, readWindowBounds, saveWindowBounds } from './window-bounds.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -258,10 +259,17 @@ function sendToWindow(channel, data) {
 let idlePeer = false;
 let tray = null;
 let quitting = false;
+// The room name for the tray tooltip (gap E8), and the voice state of the window (asscrack:set-voice).
+let roomName = null;
+let inVoice = false;
+// Gap A7: the running Leave room (a promise), or null.
+let leaving = null;
 const closePreference = path.join(app.getPath('userData'), 'close-to-idle.json');
 let closeToTray = true;
 try { closeToTray = JSON.parse(readFileSync(closePreference, 'utf8')) !== false; } catch { /* new profile */ }
 const idleState = () => ({ idle: idlePeer, closeToTray });
+// Gap E8: the flag file of the first close to the tray of this profile.
+const trayHintFile = path.join(app.getPath('userData'), 'tray-hint.json');
 
 const attentionPrefs = attentionSettings(path.join(app.getPath('userData'), 'attention.json'));
 const attention = createAttention({
@@ -298,6 +306,40 @@ handleRoomIpc('asscrack:attention-set', (_event, patch) => {
 onRoomIpc('asscrack:attention-add', (_event, target) => attention.add(target));
 onRoomIpc('asscrack:attention-read', (_event, target) => attention.read(target));
 
+// Gap E1: the taskbar flash and the overlay dot for a mention or a private message. attention.js decides with
+// wanted(target) and the flash setting. Only for a window with no focus that is not hidden as Idle Peer.
+let flashing = false;
+let overlayDot = null;
+// A minimized window has no focus for the user. Windows can keep the activation on a minimized window (no other
+// window took it): then isFocused() is true, and no new focus event comes at the restore.
+const windowInFocus = () => mainWindow.isFocused() && !mainWindow.isMinimized() && mainWindow.isVisible();
+function startFlash() {
+    if (!mainWindow || mainWindow.isDestroyed() || quitting || idlePeer || !node || windowInFocus()) return;
+    if (!attentionPrefs.get().flash) return;
+    mainWindow.flashFrame(true);
+    try {
+        if (!overlayDot) {
+            const dot = overlayDotBitmap();
+            overlayDot = nativeImage.createFromBitmap(dot.buffer, { width: dot.width, height: dot.height });
+        }
+        mainWindow.setOverlayIcon(overlayDot, 'New mention or private message');
+    } catch (err) {
+        writeLog('WARN', `Overlay icon not set: ${err?.message ?? err}`);
+    }
+    if (!flashing) writeLog('EVENT', 'attention flash on');
+    flashing = true;
+}
+function stopFlash() {
+    if (!flashing) return;
+    flashing = false;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.flashFrame(false);
+        mainWindow.setOverlayIcon(null, '');
+    }
+    writeLog('EVENT', 'attention flash off');
+}
+onRoomIpc('asscrack:attention-flash', () => startFlash());
+
 function restoreRoomWindow() {
     if (!mainWindow || mainWindow.isDestroyed() || quitting) return;
     if (idlePeer) {
@@ -309,19 +351,38 @@ function restoreRoomWindow() {
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.show();
     mainWindow.focus();
+    updateTray();
+}
+
+// Gap E8: the tooltip and the menu of the tray icon.
+function updateTray() {
+    if (!tray) return;
+    tray.setToolTip(!roomName ? 'ASSCRACK' : idlePeer ? `ASSCRACK – Idle Peer in ${roomName}` : `ASSCRACK – ${roomName}`);
+    tray.setContextMenu(Menu.buildFromTemplate([
+        { label: 'Open ASSCRACK', click: restoreRoomWindow },
+        { label: 'Close to Idle Peer', type: 'checkbox', checked: closeToTray, click: item => {
+            try { setCloseToTray(item.checked); } catch (err) { writeLog('WARN', `Close preference not saved: ${err?.message ?? err}`); }
+        } },
+        { label: 'Quit ASSCRACK', click: () => app.quit() }
+    ]));
+}
+
+function showTrayBalloon(content) {
+    try {
+        tray?.displayBalloon({ iconType: 'info', title: 'ASSCRACK', content });
+        writeLog('EVENT', 'tray balloon requested');
+    } catch (err) {
+        writeLog('WARN', `Tray balloon not shown: ${err?.message ?? err}`);
+    }
 }
 
 function enterIdlePeer() {
-    if (!node || !mainWindow || mainWindow.isDestroyed() || quitting) return false;
+    if (!node || !mainWindow || mainWindow.isDestroyed() || quitting || leaving) return false;
     if (!tray) {
         try {
             tray = new Tray(path.join(__dirname, 'img', 'app.ico'));
-            tray.setToolTip('Asscrack');
-            tray.setContextMenu(Menu.buildFromTemplate([
-                { label: 'Open Asscrack', click: restoreRoomWindow },
-                { label: 'Quit Asscrack', click: () => app.quit() }
-            ]));
             tray.on('click', restoreRoomWindow);
+            tray.on('balloon-show', () => writeLog('EVENT', 'tray balloon shown'));
         } catch (err) {
             tray?.destroy();
             tray = null;
@@ -329,38 +390,97 @@ function enterIdlePeer() {
             return false;
         }
     }
+    // A close in voice ends voice with no question (the window leaves voice at the idle-peer event).
+    const leftVoice = !idlePeer && inVoice;
     if (!idlePeer) {
         idlePeer = true;
+        inVoice = false;
         voiceMonitor?.dismiss();
         attention.clear();
+        stopFlash();
         node.setIdle(true);
         updatePttHook(() => pttHook.setInVoice(false));
         sendToWindow('asscrack:idle-peer', idleState());
     }
     mainWindow.hide();
+    updateTray();
+    // The first close to the tray of the profile gives the hint. A close that ended voice says so.
+    const firstClose = !existsSync(trayHintFile);
+    if (firstClose) {
+        try { writeFileSync(trayHintFile, JSON.stringify({ shown: true })); }
+        catch (err) { writeLog('WARN', `Tray hint flag not saved: ${err?.message ?? err}`); }
+    }
+    const hint = 'ASSCRACK is still in the room as Idle Peer. Click the tray icon to open it. Right-click it to quit.';
+    if (firstClose) showTrayBalloon(leftVoice ? 'You left voice. ' + hint : hint);
+    else if (leftVoice) showTrayBalloon('You left voice. ASSCRACK is still in the room as Idle Peer.');
     return true;
 }
 
-handleRoomIpc('asscrack:idle-peer', idleState);
-handleRoomIpc('asscrack:enter-idle-peer', enterIdlePeer);
-handleRoomIpc('asscrack:close-to-tray', (_event, enabled) => {
+function setCloseToTray(enabled) {
     if (typeof enabled !== 'boolean') throw new TypeError('Expected a close preference');
     writeFileSync(closePreference + '.tmp', JSON.stringify(enabled));
     renameSync(closePreference + '.tmp', closePreference);
     closeToTray = enabled;
     sendToWindow('asscrack:idle-peer', idleState());
+    updateTray();
     return idleState();
-});
+}
+
+handleRoomIpc('asscrack:idle-peer', idleState);
+handleRoomIpc('asscrack:enter-idle-peer', enterIdlePeer);
+handleRoomIpc('asscrack:close-to-tray', (_event, enabled) => setCloseToTray(enabled));
 onRoomIpc('asscrack:quit', () => app.quit());
+
+// Gap E3: the values of the About dialog.
+handleRoomIpc('asscrack:about', () => ({
+    version: app.getVersion(),
+    electron: process.versions.electron,
+    chromium: process.versions.chrome,
+    system: `${process.platform === 'win32' ? 'Windows' : process.platform} ${process.getSystemVersion()}`,
+    debugLog: logFile !== null
+}));
+// Gap E3: open the user data folder of this profile in Explorer. The window gets no path.
+handleRoomIpc('asscrack:open-data-folder', async () => {
+    const error = await shell.openPath(app.getPath('userData'));
+    if (error) writeLog('WARN', `Data folder not opened: ${error}`);
+    return { ok: !error };
+});
+
+// Gap E2: the window bounds of the last run, fitted to the work area of the nearest display.
+function startBounds() {
+    const saved = readWindowBounds(app.getPath('userData'));
+    const area = saved ? screen.getDisplayMatching(saved).workArea : screen.getPrimaryDisplay().workArea;
+    return fitWindowBounds(saved, area, MIN_WINDOW);
+}
+let boundsTimer = null;
+function saveBoundsNow() {
+    clearTimeout(boundsTimer);
+    boundsTimer = null;
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    try {
+        saveWindowBounds(app.getPath('userData'), { ...mainWindow.getNormalBounds(), maximized: mainWindow.isMaximized() });
+    } catch (err) {
+        writeLog('WARN', `Window bounds not saved: ${err?.message ?? err}`);
+    }
+}
+function saveBoundsSoon() {
+    clearTimeout(boundsTimer);
+    boundsTimer = setTimeout(saveBoundsNow, 500);
+}
 
 function createMainWindow() {
     const frame = createWindowFrame(app.getPath('userData'));
+    const bounds = startBounds();
     mainWindow = new BrowserWindow({
         ...frame.options,
-        title: 'AssCrack',
+        title: 'ASSCRACK',
         icon: path.join(__dirname, 'img', 'app.ico'),
-        width: 800,
-        height: 600,
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
+        minWidth: MIN_WINDOW.width,
+        minHeight: MIN_WINDOW.height,
         // The middle sky blue of styles.css: no white flash before the page shows.
         backgroundColor: '#2a8fec',
         webPreferences: {
@@ -384,7 +504,14 @@ function createMainWindow() {
         writeLog('WINDOW', `${details.level} ${details.message} (${details.sourceId}:${details.lineNumber})`);
     });
 
+    if (bounds.maximized) mainWindow.maximize();
+    for (const type of ['resize', 'move', 'maximize', 'unmaximize']) mainWindow.on(type, saveBoundsSoon);
+    // Gap E1: the focus ends the taskbar flash and removes the dot.
+    mainWindow.on('focus', stopFlash);
+    mainWindow.on('restore', () => { if (windowInFocus()) stopFlash(); });
+
     mainWindow.on('close', event => {
+        saveBoundsNow();
         if (!quitting && closeToTray && enterIdlePeer()) event.preventDefault();
     });
     // Windows shutdown may bypass before-quit. Do not hide or veto session termination.
@@ -431,6 +558,7 @@ let retainRoomHints = null;
 // room after enableUpnp() (gap N2). startRoom sets both.
 let lastUpnp = null;
 let saveUpnpChoice = () => {};
+let onLive = () => {};
 async function startRoom(options, { publicAddress = '', allowUpnp = false, reopen = false, lan = false } = {}) {
     if (loginStarted) throw new Error('Already logged in');
     loginStarted = true;
@@ -496,13 +624,18 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
             options.port = 0;
             node = await createAsscrackNode(options);
         }
+        // Gap A7: each listener of this room acts only while its node is the live node. After Leave room, a late
+        // event of the old node (for example in a stop that took more than 3 s) does nothing.
+        const live = node;
+        onLive = (type, listener) => live.events.on(type, data => { if (node === live) listener(data); });
+        roomName = options.room;
         lastUpnp = null;
         saveUpnpChoice = () => {};
-        node.events.on('upnp', data => { lastUpnp = data ?? null; });
+        onLive('upnp', data => { lastUpnp = data ?? null; });
         if (hints) {
             let persistence = false, mappedPort = null;
             // For each room with hint files: an owner can turn on UPnP after the start (enableUpnp).
-            node.events.on('upnp', data => {
+            onLive('upnp', data => {
                 if (data?.state !== 'mapped' || !Number.isInteger(data.port)) return;
                 mappedPort = data.port;
                 if (persistence) saveHostFields(hints.host, { upnpPort: mappedPort });
@@ -520,15 +653,17 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
         }
     } catch (err) {
         savedRooms?.releaseReplay();
+        roomName = null;
         loginStarted = false;
         throw err;
     }
     // Record the path before the window gets the event, so that a Show in Explorer at once finds it.
-    node.events.on('attachment-status', data => sendToWindow('asscrack:attachment-status', data));
-    node.events.on('shelf', data => sendToWindow('asscrack:shelf', data));
-    node.events.on('shelf-offered', data => sendToWindow('asscrack:shelf-offered', data));
-    node.events.on('membership', () => sendToWindow('asscrack:membership', node.memberState()));
+    onLive('attachment-status', data => sendToWindow('asscrack:attachment-status', data));
+    onLive('shelf', data => sendToWindow('asscrack:shelf', data));
+    onLive('shelf-offered', data => sendToWindow('asscrack:shelf-offered', data));
+    onLive('membership', () => sendToWindow('asscrack:membership', node.memberState()));
     node.events.on('file-done', data => {
+        if (node !== live) return;
         if (data?.direction !== 'receive' || typeof data.path !== 'string') return;
         receivedFiles.set(`${data.offerId}|${data.peerId}`, data.path);
         if (receivedFiles.size > 2048) receivedFiles.delete(receivedFiles.keys().next().value);
@@ -542,10 +677,10 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
     getSavedRooms().attachNode(node);
     readRoomActivity = observeRoomActivity(node);
     // Typing goes straight to the window; transient controls never enter diagnostics or the archive.
-    node.events.on('whisper-capability', data => sendToWindow('asscrack:whisper-capability', data));
-    node.events.on('typing', data => sendToWindow('asscrack:typing', data));
+    onLive('whisper-capability', data => sendToWindow('asscrack:whisper-capability', data));
+    onLive('typing', data => sendToWindow('asscrack:typing', data));
     for (const type of EVENTS) {
-        node.events.on(type, data => {
+        onLive(type, data => {
             if (type === 'channels') savedRooms?.persistChannels(data.added);
             logEvent(type, data);
             // The diagnostic window reads a redacted projection of these local events.
@@ -819,6 +954,13 @@ handleRoomIpc('asscrack:room-activity', (_event, peerId, transfersOnly) => {
     if (peerId != null && (typeof peerId !== 'string' || !peerId || peerId.length > 128)) return [];
     return readRoomActivity({ peerId: peerId ?? null, transfersOnly: transfersOnly === true });
 });
+// Gap B5: the pseudonyms of the Recent events lines for up to 64 peer IDs: [{ id, alias }].
+handleRoomIpc('asscrack:activity-aliases', (_event, ids) => {
+    if (!Array.isArray(ids)) return [];
+    const valid = ids.slice(0, 64).filter(id => typeof id === 'string' && id.length > 0 && id.length <= 128);
+    const aliases = readRoomActivity.aliases?.(valid) ?? [];
+    return valid.map((id, i) => ({ id, alias: aliases[i] })).filter(row => typeof row.alias === 'string');
+});
 handleRoomIpc('asscrack:copy-text', (_event, text) => {
     if (typeof text !== 'string' || text.length > 10000) throw new Error('Text not copied');
     clipboard.writeText(text);
@@ -872,7 +1014,8 @@ handleRoomIpc('asscrack:set-voice', (_event, state) => {
     if (!node) throw new Error('Not logged in');
     if (idlePeer && state?.inVoice === true) throw new Error('Idle Peer has left voice');
     node.setVoice(state ?? {});
-    updatePttHook(() => pttHook.setInVoice(state?.inVoice === true));
+    inVoice = state?.inVoice === true;
+    updatePttHook(() => pttHook.setInVoice(inVoice));
 });
 
 // The voice settings of this profile (voice-settings.mjs checks each value). The file is read one time.
@@ -1064,8 +1207,75 @@ handleRoomIpc('asscrack:reveal-file', (_event, key) => {
     return { ok: true };
 });
 
+// Stop a node with the limit of 3 s. Quit and Leave room use it. The promise never rejects.
+function stopNodeWithin(current) {
+    let timer;
+    const timeout = new Promise(resolve => {
+        timer = setTimeout(() => {
+            console.error('Node stop timed out');
+            resolve();
+        }, 3000);
+    });
+    return Promise.race([
+        current.stop().catch(err => console.error('Node stop failed:', err)),
+        timeout
+    ]).finally(() => clearTimeout(timer));
+}
+
+// Gap A7: Leave room. Stop the node, reset the room state of the main process, then reload the window. The tray
+// and the profile settings stay. A later package (screenshare, ready check) adds its reset here.
+function leaveRoom() {
+    if (leaving) return leaving;
+    if (!node || quitting) return Promise.resolve(false);
+    const current = node;
+    writeLog('INFO', 'Leave room');
+    voiceMonitor?.dismiss();
+    attention.clear();
+    stopFlash();
+    inVoice = false;
+    updatePttHook(() => pttHook.setInVoice(false));
+    leaving = stopNodeWithin(current).then(() => {
+        if (node === current) node = null;
+        readRoomActivity = () => [];
+        receivedFiles.clear();
+        restoringDownloads.clear();
+        clearRoomMedia();
+        clipboardImages.clear();
+        downloadScratch?.clear();
+        downloadScratch = null;
+        retainRoomHints = null;
+        lastUpnp = null;
+        saveUpnpChoice = () => {};
+        onLive = () => {};
+        roomName = null;
+        idlePeer = false;
+        try { savedRooms?.leave(); } catch (err) { writeLog('WARN', `Saved rooms leave: ${err?.message ?? err}`); }
+        loginStarted = false;
+        updateTray();
+        return true;
+    }).finally(() => { leaving = null; });
+    return leaving;
+}
+
+handleRoomIpc('asscrack:leave-room', async () => {
+    const left = await leaveRoom();
+    // Reload after the reply goes to the window: the reload resets the whole window state.
+    if (left && !quitting) setImmediate(() => {
+        if (mainWindow && !mainWindow.isDestroyed() && !quitting) mainWindow.webContents.reload();
+    });
+    return left;
+});
+
+// The texts of the Leave room dialog need two facts of the main process: is the room saved, and is this device
+// the owner. The window gets no room ID.
+handleRoomIpc('asscrack:leave-room-info', () => ({
+    saved: savedRooms?.activeInfo() != null,
+    owner: node?.memberState().owner === true
+}));
+
 app.on('before-quit', event => {
     quitting = true;
+    saveBoundsNow();
     voiceMonitor?.dismiss();
     attention.clear();
     clearRoomMedia();
@@ -1077,25 +1287,15 @@ app.on('before-quit', event => {
         try { savedRooms.close(); } catch (err) { writeLog('WARN', `Saved rooms archive not closed: ${err?.message ?? err}`); }
     }
     if (stopping) return;
-    if (!node) {
+    if (!node && !leaving) {
         clipboardImages.clear();
         downloadScratch?.clear();
         return;
     }
     event.preventDefault();
     stopping = true;
-    let timer;
-    const timeout = new Promise(resolve => {
-        timer = setTimeout(() => {
-            console.error('Node stop timed out');
-            resolve();
-        }, 3000);
-    });
-    Promise.race([
-        node.stop().catch(err => console.error('Node stop failed:', err)),
-        timeout
-    ]).finally(() => {
-        clearTimeout(timer);
+    // A quit during Leave room waits for that stop: the node does not stop two times.
+    (leaving ?? stopNodeWithin(node)).finally(() => {
         clipboardImages.clear();
         downloadScratch?.clear();
         node = null;

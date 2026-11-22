@@ -95,3 +95,23 @@ test('the peer and transfer filters select redacted local outcomes, including pa
     assert.equal(read().length, 100)
     assert.deepEqual(read({ transfersOnly: true }), [])
 })
+
+// G5 (gap B5): the alias of a peer ID is the pseudonym in the lines. The lines do not change.
+test('the alias of a peer ID is the pseudonym of that peer in the lines', () => {
+    const node = member()
+    const feed = observeRoomActivity(node, () => 0)
+    node.events.emit('connection', { state: 'session', type: 'direct', peer: 'peer-one' })
+    node.events.emit('dial-failed', { peer: 'peer-two', via: 'relay', reason: 'timeout' })
+    const [one, two, self, bad] = feed.aliases(['peer-one', 'peer-two', 'local-peer', ''])
+    assert.match(one, /^peer [0-9a-f]{8}$/)
+    assert.notEqual(one, two)
+    assert.equal(self, 'this device')
+    assert.equal(bad, 'unknown peer')
+    const lines = feed()
+    assert.ok(lines[0].endsWith('with ' + one))
+    assert.ok(lines[1].endsWith('to ' + two))
+    assert.deepEqual(feed({ peerId: 'peer-one' }), [lines[0]])
+    // At most 64 IDs, and no throw for a value that is not a list.
+    assert.equal(feed.aliases(Array.from({ length: 100 }, (_, i) => 'p' + i)).length, 64)
+    assert.deepEqual(feed.aliases('peer-one'), [])
+})

@@ -264,6 +264,31 @@ test('forget calls forgetHints, deletes the rows, and fails for the open room', 
     assert.equal(rooms.status().rooms.length, 1);
 });
 
+// G5 (gap A7): Leave room. After leave() the room is not active: Forget of it works, and a second afterLogin works.
+test('after leave(), forget of that room works and a second afterLogin works', t => {
+    const { rooms, hints } = setup(t);
+    const nodeA = fakeNode(1);
+    const idA = start(rooms, nodeA, { key: KEY_A });
+    rooms.recordSend(nodeA.sendRecord('in A'));
+    assert.throws(() => rooms.forget(idA), /room is open/);
+    rooms.leave();
+    assert.equal(rooms.activeInfo(), null);
+    // A live line of the old node after leave() adds no row.
+    nodeA.events.emit('live', { id: 'late', from: 'peer', text: 'late line', time: 5000 });
+    assert.deepEqual(rooms.lines(idA).map(row => row.text), ['in A']);
+    // The same room again (a second login after Leave), then a different room.
+    const nodeA2 = fakeNode(1);
+    assert.equal(start(rooms, nodeA2, { key: KEY_A }), idA);
+    // The fake node counts its IDs from 1 again: give the line its own ID.
+    assert.equal(rooms.recordSend({ ...nodeA2.sendRecord('in A again'), id: 'second-run-1' }).saved, true);
+    assert.equal(rooms.lines(idA).length, 2);
+    rooms.leave();
+    assert.deepEqual(rooms.forget(idA), { forgotten: true });
+    assert.equal(hints.length, 1);
+    const idB = start(rooms, fakeNode(1), { key: KEY_B });
+    assert.equal(rooms.activeInfo()?.roomId, idB);
+});
+
 test('forget remains retryable if saved route hints cannot be removed', t => {
     let blocked = true;
     const { rooms, logs } = setup(t, { forgetHints: () => { if (blocked) throw new Error('hint error'); } });
