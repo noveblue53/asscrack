@@ -22,6 +22,7 @@
   <link rel="stylesheet" href="shared-shelf.css">
   <link rel="stylesheet" href="transcript-notes.css">
   <link rel="stylesheet" href="voice-channels.css">
+  <link rel="stylesheet" href="ready-check.css">
 </head>
 <body>
   <!-- Decoration only: the sky bubbles behind the two screens. -->
@@ -263,6 +264,7 @@
             <button type="button" id="channel-add" disabled>Create channel</button>
             <button type="button" id="openSharedShelf" aria-haspopup="dialog" aria-controls="shared-shelf">Shared</button>
             <button id="activity-open" type="button" aria-haspopup="dialog" aria-controls="room-activity">Room activity</button>
+            <button id="ready-open" type="button" title="Ask the room: Ready? (or type /ready and a text)">Ready check</button>
           </div>
           <span id="topic-unavailable" hidden>Topic editing requires a compatible host.</span>
           <div id="topic-editor" hidden>
@@ -319,6 +321,9 @@
           <button id="jump-latest" type="button" hidden>Jump to latest <span id="unread-count" class="count"></span></button>
         </div>
         <div id="typing-status" role="status" aria-live="polite"></div>
+        <!-- ready-check-ui.js: the live ready checks of the room (milestone 9), one block for each check. They are not
+             in the transcript. -->
+        <section id="ready-bar" aria-label="Ready check" hidden></section>
         <div id="composer">
           <!-- renderer.js: the quote of the next message. The remove button or Escape removes it. -->
           <div id="quote-chip" role="group" aria-labelledby="quote-head" hidden>
@@ -547,6 +552,7 @@
   <script src="channels-ui.js"></script>
   <script src="voice-channels-ui.js"></script>
   <script src="typing.js"></script>
+  <script src="ready-check-ui.js"></script>
   <script src="whispers.js"></script>
   <script src="saved-rooms-ui.js"></script>
   <script src="voice-panel.js"></script>

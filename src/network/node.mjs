@@ -5,6 +5,8 @@ import { createAttachments, PREVIEW_PROTOCOL } from './attachment.mjs'
 import { createSharedShelf } from './shared-shelf.mjs'
 import { createWhispers } from './whispers.mjs'
 import { createTyping } from './typing.mjs'
+import { createReadyCheck } from './ready-check.mjs'
+import { roomRateLimit } from './room-rate-limit.mjs'
 import { mdns } from '@libp2p/mdns'
 import { yamux } from '@chainsafe/libp2p-yamux'
 import { noise } from '@chainsafe/libp2p-noise'
@@ -214,6 +216,14 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     const memberPeers = new Map()
     const memberAllowed = peerId => !membership || (membership.admitted() && memberPeers.has(peerId) &&
         !membership.revoked(memberPeers.get(peerId).deviceId))
+    // Ready check (milestone 9): session-only state, no history. The node sends the own lines to each new session.
+    const ready = createReadyCheck({
+        selfId, peers: () => [...sessions.keys()], allow: roomRateLimit(30, 240),
+        send: (peerId, line) => sessions.get(peerId)?.send(JSON.stringify(line)) === true,
+        broadcast: line => [...sessions.values()].filter(s => s.send(JSON.stringify(line))).length,
+        changed: view => events.emit('ready', view)
+    })
+    events.on('peer-left', ({ peerId, left }) => ready.left(peerId, left))
     const memberMessageId = (peerId, id) => !membership || id.startsWith(`${memberPeers.get(peerId).deviceId}.`)
     const memberName = (peerId, displayName) => membership ? names.get(peerId) ?? peerId.slice(-8) : displayName
     const hostAllowed = membership ? peerId => peerId === selfId ? membership.canHost() :
@@ -694,6 +704,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                     else if (control.type === 'whisper') whispers.handle(peerId, session, control)
                     else if (control.type === 'topic' && sessions.get(peerId) === session) topic.handle(peerId, control)
                     else if (control.type === 'history' && sessions.get(peerId) === session) handleHistory(peerId, control)
+                    else if (control.type === 'ready' && sessions.get(peerId) === session) ready.handle(peerId, control)
                     else if (control.type === 'bye') {
                         if (sessions.get(peerId) === session) byeSessions.add(session)
                     }
@@ -854,6 +865,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         topic.sessionOpened(peerId)
         if (election.isHost()) sendHistoryTo(peerId, session)
         if (voiceState.inVoice) session.send(voiceLine())
+        ready.opened(peerId)
         broadcastLinks()
         emitTopology()
         checkFullNode(peerId)
@@ -1719,6 +1731,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         postAttachment: attachments.post, requestOriginal: attachments.requestOriginal, requestPreviewById: attachments.requestPreviewById,
         attachmentAvailable: attachments.available, attachmentDescriptor: attachments.descriptor,
         sendRecord,
+        readyCheck: ready.state, openReady: ready.open, voteReady: ready.vote, closeReady: ready.close, resetReady: ready.reset,
         setTyping: active => { if (!stopped && !selfIdle && typeof active === 'boolean') typing.edited(active) },
         // Returns the number of sessions that accepted the line.
         send: text => sendRecord(text).accepted,
@@ -1813,6 +1826,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             membership?.onChanged(null)
             whispers.stop()
             typing.stop()
+            ready.stop()
             clearTimeout(upnpRenewTimer)
             clearInterval(redialTimer)
             for (const timer of waitingDial.values()) clearTimeout(timer)

@@ -803,6 +803,13 @@ async function sendMessage() {
         if (messageInput.value === reply) messageInput.value = '';
         return;
     }
+    // Milestone 9: /ready <text> opens a ready check (ready-check-ui.js). A text that is not valid stays in the box.
+    const ready = !quote && window.readyCheckUi?.command(reply);
+    if (ready) {
+        sendBusy = true;
+        try { if (await ready && messageInput.value === reply) messageInput.value = ''; } finally { sendBusy = false; }
+        return;
+    }
     const command = !quote && /^\/(topic|away)(?:\s+([\s\S]*))?$/i.exec(reply.trim());
     if (command) {
         sendBusy = true;

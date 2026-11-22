@@ -168,3 +168,24 @@ test('the voice channel calls of G6 send the channel ID and the name as text', a
     assert.deepEqual(got, [{ seq: 1 }]);
     assert.deepEqual(b.touched, []);
 });
+
+// Milestone 9 (ready check) adds five bridge functions. Each call sends only texts; the node checks the values.
+test('the ready check calls send the text, the check ID and the vote as text, and onReady gives the view', () => {
+    const b = loadBridge();
+    b.api.getReady();
+    b.api.openReady('Race in five?');
+    b.api.openReady();
+    b.api.voteReady(7, 'ready');
+    b.api.closeReady({ toString: () => 'id-1' });
+    assert.deepEqual(b.invoked, [
+        ['asscrack:ready-state'],
+        ['asscrack:ready-open', 'Race in five?'],
+        ['asscrack:ready-open', ''],
+        ['asscrack:ready-vote', '7', 'ready'],
+        ['asscrack:ready-close', 'id-1']
+    ]);
+    const got = [];
+    b.api.onReady(view => got.push(view));
+    b.emit('asscrack:ready', { checks: [] });
+    assert.deepEqual(JSON.parse(JSON.stringify(got)), [{ checks: [] }]);
+});

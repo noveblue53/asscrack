@@ -555,6 +555,8 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
     // Typing goes straight to the window; transient controls never enter diagnostics or the archive.
     node.events.on('whisper-capability', data => sendToWindow('asscrack:whisper-capability', data));
     node.events.on('typing', data => sendToWindow('asscrack:typing', data));
+    // Ready check (milestone 9): straight to the window, not in the event log (the log must not get the text).
+    node.events.on('ready', data => sendToWindow('asscrack:ready', data));
     for (const type of EVENTS) {
         node.events.on(type, data => {
             if (type === 'channels') savedRooms?.persistChannels(data.added);
@@ -989,6 +991,21 @@ handleRoomIpc('asscrack:topic', () => node?.topic() ?? null);
 handleRoomIpc('asscrack:set-topic', (_event, text) => {
     if (!node) throw new Error('Not logged in');
     node.setTopic(text);
+});
+
+// Ready check (milestone 9). The node checks the text, the ID and the vote.
+handleRoomIpc('asscrack:ready-state', () => node?.readyCheck() ?? null);
+handleRoomIpc('asscrack:ready-open', (_event, text) => {
+    if (!node) throw new Error('Not logged in');
+    return node.openReady(typeof text === 'string' ? text : '');
+});
+handleRoomIpc('asscrack:ready-vote', (_event, id, vote) => {
+    if (!node) throw new Error('Not logged in');
+    return node.voteReady(id, vote);
+});
+handleRoomIpc('asscrack:ready-close', (_event, id) => {
+    if (!node) throw new Error('Not logged in');
+    return node.closeReady(id);
 });
 
 handleRoomIpc('asscrack:host', () => {
