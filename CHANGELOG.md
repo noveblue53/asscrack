@@ -7,6 +7,37 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased — Per-user installer and start at sign-in (goal P9B, 2026-11-22)
+
+A per-user installer comes next to the portable build. The installed build can start in the tray when you sign in.
+- `npm run dist:installer` makes `dist/ASSCRACK-<version>-setup.exe`. The installer needs no administrator rights.
+  It installs to `%LOCALAPPDATA%\Programs\asscrack`, and it adds a Start Menu shortcut, a desktop shortcut and an
+  uninstaller. The installer, the uninstaller and the shortcuts use the app icon. `npm run dist` does not change. It
+  makes only `dist/ASSCRACK-<version>-portable.exe`.
+- In the installed build only: View, "Start at sign-in…". The setting "Start as Idle Peer when I sign in" opens one
+  protected saved room or "Friends only (no room)". The portable build does not show the setting.
+- At sign-in, ASSCRACK starts in the tray. It opens the room with the normal reopen of a saved room, then it goes to
+  Idle Peer. If the protected storage stays locked, or the start fails, it tries again each 30 s and after a wake.
+- The start entry is the Run value "ASSCRACK" of the user. Its arguments are `--start-idle` and, for a test profile,
+  `--profile <folder>`. They have no room key, no invite and no name. You can turn off ASSCRACK in Task Manager
+  (Startup apps). The app does not turn it on again. The dialog then tells you that the start is off in Windows.
+- Forget of the selected room removes the start entry. The uninstaller removes the start entry and its Startup apps
+  value. An upgrade keeps them.
+
+Results (this PC, no real sign-in):
+- `npm test` passes, 743 tests (127.0.0.1). 12 new tests for the start choice, the arguments, the installed build
+  check, the Forget rule, the retry, the uninstall include and the bridge.
+- `npm run dist` makes `ASSCRACK-0.8.0-portable.exe` with the custom launcher, as before.
+- Install, start with the arguments of the start entry, Startup apps off, upgrade to a test version 0.8.1, Forget,
+  uninstall: each step passes. The checks used a test profile, not the profile of the operator. The start with the start
+  entry arguments opened the saved room with no visible window, in Idle Peer.
+- The portable build gave a native notification request after the uninstall (two copies on 127.0.0.1).
+- The installer has no code signature. A copy with Mark-of-the-Web gives "The publisher could not be verified" and
+  "Unknown Publisher" when PowerShell starts it.
+- Known Electron behavior, not from P9B: each packaged copy that starts writes the Start Menu shortcut ASSCRACK.lnk
+  with its own path. Thus the shortcut points to the copy that started last. The uninstaller removes it, and the
+  next start of the portable build writes it again.
+
 ## Unreleased — Friends offline (goal G7b, 2026-11-21)
 
 A message to a friend that is not connected waits on this computer. It goes out when both apps run and connect.

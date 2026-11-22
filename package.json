@@ -11,6 +11,7 @@
     "dev": "electron . --dev",
     "test": "node --test",
     "dist": "electron-builder --win portable --publish never",
+    "dist:installer": "electron-builder --win nsis --publish never",
     "icon": "electron build/make-icon.cjs"
   },
   "keywords": [
@@ -70,6 +71,17 @@
     },
     "portable": {
       "artifactName": "ASSCRACK-${version}-portable.exe"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "artifactName": "ASSCRACK-${version}-setup.exe",
+      "installerIcon": "src/application/img/app.ico",
+      "uninstallerIcon": "src/application/img/app.ico",
+      "shortcutName": "ASSCRACK",
+      "uninstallDisplayName": "ASSCRACK",
+      "deleteAppDataOnUninstall": false,
+      "include": "build/installer.nsh"
     }
   }
 }
