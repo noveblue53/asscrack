@@ -307,19 +307,9 @@
           <button id="jump-latest" type="button" hidden>Jump to latest <span id="unread-count" class="count"></span></button>
         </div>
         <div id="typing-status" role="status" aria-live="polite"></div>
-        <!-- ready-check-ui.js: the live ready check of the room (milestone 9). It is not in the transcript. -->
-        <section id="ready-bar" aria-label="Ready check" hidden>
-          <p id="ready-question" role="status" aria-live="polite"></p>
-          <span id="ready-state" hidden></span>
-          <div class="ready-buttons">
-            <button id="ready-yes" type="button" aria-pressed="false">Ready</button>
-            <button id="ready-minute" type="button" aria-pressed="false">Give me a minute</button>
-            <button id="ready-close" type="button" hidden>Close</button>
-          </div>
-          <p id="ready-list-ready" class="ready-list"><span class="ready-label">Ready:</span> <span class="ready-names"></span></p>
-          <p id="ready-list-minute" class="ready-list"><span class="ready-label">Give me a minute:</span> <span class="ready-names"></span></p>
-          <p id="ready-list-none" class="ready-list"><span class="ready-label">Not answered yet:</span> <span class="ready-names"></span></p>
-        </section>
+        <!-- ready-check-ui.js: the live ready checks of the room (milestone 9), one block for each check. They are not
+             in the transcript. -->
+        <section id="ready-bar" aria-label="Ready check" hidden></section>
         <div id="composer">
           <!-- renderer.js: the quote of the next message. The remove button or Escape removes it. -->
           <div id="quote-chip" role="group" aria-labelledby="quote-head" hidden>

@@ -1,6 +1,7 @@
 // Ready check (milestone 9): the bar above the composer, the /ready command and the Ready check action of the Room
-// menu. The node keeps the state (src/network/ready-check.mjs) and sends each new view (onReady). This file only shows
-// the newest check. The bar is not in the transcript and not in the history.
+// menu. The node keeps the state (src/network/ready-check.mjs) and sends each new view (onReady). The bar has one block
+// for each live check (each person has at most one): the open checks first. The bar is not in the transcript and not
+// in the history.
 // Rules: Idle Peer shows no bar (the vote stays "Not answered yet"). Do not disturb shows the bar with no sound. A new
 // check of a different person plays the message cue of P11 only when roomAttention.wanted() is true.
 // Reads the globals of renderer.js: ownName and peerNames.
@@ -9,16 +10,13 @@
     const byId = id => document.getElementById(id);
     const bar = byId('ready-bar');
     if (!bar || !api?.onReady) return;
-    const question = byId('ready-question');
-    const stateText = byId('ready-state');
-    const yes = byId('ready-yes');
-    const minute = byId('ready-minute');
-    const closeButton = byId('ready-close');
-    const lists = { ready: byId('ready-list-ready'), minute: byId('ready-list-minute'), none: byId('ready-list-none') };
     const TEXT_MAX = 120;
     const COMMAND = /^\/ready(?:\s+([\s\S]*))?$/i;
+    const LISTS = [['ready', 'Ready:'], ['minute', 'Give me a minute:'], ['none', 'Not answered yet:']];
     let view = null;
     let idle = false;
+    // check ID -> the block of the check in the bar.
+    const blocks = new Map();
     // The IDs of the checks that this window saw: a check gives one cue only (also after a new session).
     const seen = new Set();
 
@@ -39,45 +37,96 @@
 
     // The names of a list. Two people with the same name get the end of the peer ID: each person is one entry.
     function labels(people) {
-        const names = people.map(nameOf);
-        return people.map((peerId, i) => names.indexOf(names[i]) !== names.lastIndexOf(names[i])
-            ? `${names[i]} (${String(peerId).slice(-4)})` : names[i]);
+        const all = (view?.people ?? []).map(nameOf);
+        return people.map(peerId => {
+            const name = nameOf(peerId);
+            return all.indexOf(name) !== all.lastIndexOf(name) ? `${name} (${String(peerId).slice(-4)})` : name;
+        });
     }
 
-    function newest() {
-        const checks = view?.checks ?? [];
-        return checks.length ? checks[checks.length - 1] : null;
+    function element(tag, className, text) {
+        const el = document.createElement(tag);
+        el.className = className;
+        if (text !== undefined) el.textContent = text;
+        return el;
     }
 
-    function fillList(element, people) {
-        const value = element.querySelector('.ready-names');
-        value.textContent = people.length ? labels(people).join(', ') : '—';
-        element.dataset.count = String(people.length);
+    function button(className, text) {
+        const el = element('button', className, text);
+        el.type = 'button';
+        return el;
+    }
+
+    function makeBlock(id) {
+        const block = element('div', 'ready-check');
+        block.dataset.id = id;
+        block.setAttribute('role', 'group');
+        const buttons = element('div', 'ready-buttons');
+        buttons.append(button('ready-yes', 'Ready'), button('ready-minute', 'Give me a minute'), button('ready-close', 'Close'));
+        block.append(element('p', 'ready-question'), element('span', 'ready-state', 'Closed'), buttons);
+        for (const [key, label] of LISTS) {
+            const row = element('p', 'ready-list');
+            row.dataset.list = key;
+            row.append(element('span', 'ready-label', label), document.createTextNode(' '), element('span', 'ready-names'));
+            block.append(row);
+        }
+        return block;
+    }
+
+    function fillBlock(block, check) {
+        const part = name => block.querySelector('.' + name);
+        block.dataset.open = String(check.open);
+        const from = check.mine ? 'You' : nameOf(check.from);
+        const question = check.open ? `${from} ${check.mine ? 'ask' : 'asks'}: ${check.text}` : `${from} asked: ${check.text}`;
+        part('ready-question').textContent = question;
+        block.setAttribute('aria-label', question);
+        part('ready-state').hidden = check.open;
+        const own = check.votes[view.self];
+        part('ready-yes').hidden = !check.open;
+        part('ready-minute').hidden = !check.open;
+        part('ready-yes').setAttribute('aria-pressed', String(own === 'ready'));
+        part('ready-minute').setAttribute('aria-pressed', String(own === 'minute'));
+        part('ready-close').hidden = !(check.open && check.mine);
+        const people = view.people ?? [];
+        const groups = {
+            ready: people.filter(p => check.votes[p] === 'ready'),
+            minute: people.filter(p => check.votes[p] === 'minute'),
+            none: people.filter(p => !check.votes[p])
+        };
+        for (const row of block.querySelectorAll('.ready-list')) {
+            const list = groups[row.dataset.list] ?? [];
+            row.querySelector('.ready-names').textContent = list.length ? labels(list).join(', ') : '—';
+            row.dataset.count = String(list.length);
+        }
+    }
+
+    // The open checks first, then the closed checks; the older check first in each group.
+    function ordered() {
+        const checks = [...(view?.checks ?? [])];
+        return checks.sort((a, b) => (a.open === b.open ? a.openedAt - b.openedAt : a.open ? -1 : 1));
     }
 
     function render() {
-        const check = newest();
-        bar.hidden = !check || idle || !!window.idlePeer?.isIdle();
-        if (!check) {
-            bar.dataset.id = '';
-            return;
+        const checks = ordered();
+        const live = new Set(checks.map(c => c.id));
+        for (const [id, block] of blocks) {
+            if (!live.has(id)) {
+                block.remove();
+                blocks.delete(id);
+            }
         }
-        bar.dataset.id = check.id;
-        bar.dataset.open = String(check.open);
-        const from = check.mine ? 'You' : nameOf(check.from);
-        question.textContent = check.open ? `${from} ${check.mine ? 'ask' : 'asks'}: ${check.text}` : `${from} asked: ${check.text}`;
-        stateText.textContent = check.open ? '' : 'Closed';
-        stateText.hidden = check.open;
-        const own = check.votes[view.self];
-        yes.hidden = !check.open;
-        minute.hidden = !check.open;
-        yes.setAttribute('aria-pressed', String(own === 'ready'));
-        minute.setAttribute('aria-pressed', String(own === 'minute'));
-        closeButton.hidden = !(check.open && check.mine);
-        const people = view.people ?? [];
-        fillList(lists.ready, people.filter(p => check.votes[p] === 'ready'));
-        fillList(lists.minute, people.filter(p => check.votes[p] === 'minute'));
-        fillList(lists.none, people.filter(p => !check.votes[p]));
+        checks.forEach((check, index) => {
+            let block = blocks.get(check.id);
+            if (!block) {
+                block = makeBlock(check.id);
+                blocks.set(check.id, block);
+            }
+            fillBlock(block, check);
+            // Move a block only when its place is wrong: a move removes the focus from its buttons.
+            const here = bar.children[index] ?? null;
+            if (here !== block) bar.insertBefore(block, here);
+        });
+        bar.hidden = !checks.length || idle || !!window.idlePeer?.isIdle();
     }
 
     function cueNew() {
@@ -97,16 +146,18 @@
         render();
     }
 
-    async function vote(value) {
-        const check = newest();
-        if (!check?.open) return;
-        try { apply(await api.voteReady(check.id, value)); }
-        catch (err) { setStatus(`Vote not sent: ${errorText(err)}`); }
+    function find(id) {
+        return view?.checks.find(c => c.id === id) ?? null;
     }
 
-    // Open a check for the room. text: 0 to 120 characters (empty gives "Ready?"). Returns true when it opened.
+    // Open a check for the room. text: 0 to 120 characters on one line (empty gives "Ready?"). Returns true when it
+    // opened.
     async function openCheck(text) {
         const value = String(text ?? '').trim();
+        if (/[\r\n]/.test(value)) {
+            setStatus('The text of a ready check is one line.');
+            return false;
+        }
         if ([...value].length > TEXT_MAX) {
             setStatus(`The text of a ready check has at most ${TEXT_MAX} characters.`);
             return false;
@@ -133,20 +184,26 @@
         render();
     }
 
-    yes.addEventListener('click', () => vote('ready'));
-    minute.addEventListener('click', () => vote('minute'));
-    closeButton.addEventListener('click', async () => {
-        const check = newest();
-        if (!check?.mine || !check.open) return;
-        try { apply(await api.closeReady(check.id)); }
-        catch (err) { setStatus(`Ready check not closed: ${errorText(err)}`); }
+    // One listener for the buttons of all the blocks.
+    bar.addEventListener('click', async event => {
+        const target = event.target;
+        const block = target?.closest?.('.ready-check');
+        const check = block ? find(block.dataset.id) : null;
+        if (!check?.open) return;
+        try {
+            if (target.classList.contains('ready-yes')) apply(await api.voteReady(check.id, 'ready'));
+            else if (target.classList.contains('ready-minute')) apply(await api.voteReady(check.id, 'minute'));
+            else if (target.classList.contains('ready-close') && check.mine) apply(await api.closeReady(check.id));
+        } catch (err) {
+            setStatus(`Ready check: ${errorText(err)}`);
+        }
     });
     byId('ready-open')?.addEventListener('click', () => {
         byId('room-options')?.hidePopover?.();
         void openCheck('');
     });
     api.onReady(apply);
-    // The peers change the "Not answered yet" list.
+    // A new name changes the lists.
     api.onPeerName?.(() => render());
     api.onIdlePeer?.(state => {
         idle = state?.idle === true;

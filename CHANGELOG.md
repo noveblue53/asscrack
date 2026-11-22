@@ -12,7 +12,7 @@ Each result has one of these labels:
 One command asks the room if each person is ready. A check is for the session only: no history, no archive.
 
 - **Open a check.** Type `/ready Race in five?` in the message box, or select "Ready check" in the Room menu. A
-  check has a text of 0 to 120 characters. With no text, the check asks "Ready?".
+  check has a text of 0 to 120 characters on one line. With no text, the check asks "Ready?".
 - **The bar.** Each person sees one bar above the message box: "Ann asks: Race in five?", with "Ready" and "Give me
   a minute". The bar shows three lists of names: Ready, Give me a minute, Not answered yet. A changed vote replaces
   the previous vote.
@@ -22,15 +22,16 @@ One command asks the room if each person is ready. A check is for the session on
   away. The check ends at once when the initiator quits. After a lost connection, the check ends when the
   initiator does not come back in 10 seconds. A closed check never shows again: not after a reconnect, and not
   after a history replay.
-- **One check for each person.** A new check of the same person replaces the previous check.
+- **One check for each person.** A new check of the same person replaces the previous check. When two people
+  each open a check, the bar shows one block for each check. The open checks come first.
 - **Late joiners.** A person who joins later gets the open check from the initiator and the votes from each voter.
 - **Availability.** In Do not disturb the bar shows with no sound. In Idle Peer there is no bar, and the vote stays
   "Not answered yet". A new check of a different person plays the message cue only when the conversation is not in
   view.
 - **Old clients.** A client that does not know the new `ready` line ignores it.
-- **Result: 127.0.0.1, this PC.** `npm test`: 618 of 618 pass. New tests: 16 of the state (fake clock), 2 on
-  three and two nodes on 127.0.0.1, 9 of the window, 1 of the bridge. One start of the app: no error line. An app
-  check with three profiles on this PC (127.0.0.1): 16 of 16 checks pass. Three people respond, one changes the
+- **Result: 127.0.0.1, this PC.** `npm test`: 621 of 621 pass. New tests: 16 of the state (fake clock), 2 on
+  three and two nodes on 127.0.0.1, 12 of the window, 1 of the bridge. One start of the app: no error line. An app
+  check with three profiles on this PC (127.0.0.1): 19 of 19 checks pass, also two checks at the same time. Three people respond, one changes the
   vote, and two have the name "Sam". Each person counts one time. After the close, one copy quits, starts again and
   joins again. The history replay comes, and the closed check does not show again.
 
