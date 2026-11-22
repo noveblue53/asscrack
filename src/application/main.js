@@ -31,6 +31,8 @@ import { acceptScreenFrame, createScreenSources } from './screen-sources.mjs';
 import { createFriendLinks } from './friend-links.mjs';
 import { attachFriendWindows, registerFriendIpc } from './friend-windows.mjs';
 import { installInterfaceCache } from '../network/interface-cache.mjs';
+import { CHOICE_FILE, choiceAfterForget, createStartEntry, createStartRunner, isInstalledBuild, isStaleChoice, normalizeChoice,
+    readChoice, START_IDLE_FLAG, startArgs, startRooms, writeChoice } from './start-at-sign-in.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -293,6 +295,14 @@ try { closeToTray = JSON.parse(readFileSync(closePreference, 'utf8')) !== false;
 const idleState = () => ({ idle: idlePeer, closeToTray });
 // Gap E8: the flag file of the first close to the tray of this profile.
 const trayHintFile = path.join(app.getPath('userData'), 'tray-hint.json');
+// P9B: start at sign-in (start-at-sign-in.mjs). Only the installed build has it. The start entry starts this profile.
+const installedBuild = isInstalledBuild({ platform: process.platform, isPackaged: app.isPackaged, env: process.env,
+    execPath: process.execPath, exists: existsSync });
+const startIdle = installedBuild && process.argv.includes(START_IDLE_FLAG);
+const startChoiceFile = path.join(app.getPath('userData'), CHOICE_FILE);
+const startEntry = createStartEntry({ app, execPath: process.execPath,
+    args: startArgs(profileIndex !== -1 ? app.getPath('userData') : null) });
+let startRunner = null;
 
 const attentionPrefs = attentionSettings(path.join(app.getPath('userData'), 'attention.json'));
 const attention = createAttention({
@@ -477,6 +487,61 @@ function setCloseToTray(enabled) {
     return idleState();
 }
 
+// P9B: the start at sign-in. The window gets the choice, the protected saved rooms (ID and name) and the state of
+// the start entry in Windows. No path and no argument.
+function startupView() {
+    if (!installedBuild) return { available: false };
+    const status = getSavedRooms().status();
+    if (isStaleChoice(readChoice(startChoiceFile), status)) forgetStartRoom(readChoice(startChoiceFile).roomId);
+    return { available: true, ...readChoice(startChoiceFile), archive: status.state, rooms: startRooms(status.rooms),
+        entry: startEntry.state() };
+}
+function setStartup(raw) {
+    if (!installedBuild) throw new Error('Only the installed ASSCRACK can start at sign-in.');
+    const choice = normalizeChoice(raw);
+    if (choice.mode === 'room' && !startRooms(getSavedRooms().status().rooms).some(room => room.roomId === choice.roomId)) {
+        throw new Error('Saved room not found');
+    }
+    writeChoice(startChoiceFile, choice);
+    startEntry.apply(choice);
+    writeLog('INFO', `Start at sign-in set: ${choice.mode}`);
+    return startupView();
+}
+// Forget in each build clears the choice (the portable build uses the same profile). Only the installed build
+// changes the start entry.
+function forgetStartRoom(roomId) {
+    const choice = readChoice(startChoiceFile);
+    if (choiceAfterForget(choice, roomId).mode === choice.mode) return;
+    try {
+        writeChoice(startChoiceFile, { mode: 'off' });
+        if (installedBuild) startEntry.apply({ mode: 'off' });
+        writeLog('INFO', 'Start at sign-in set: off (room forgotten)');
+    } catch (err) { writeLog('WARN', `Start at sign-in not removed: ${err?.message ?? err}`); }
+}
+// With START_IDLE_FLAG: the window stays hidden, the tray opens, and the runner opens the choice.
+function beginStartAtSignIn() {
+    if (!openTray()) { mainWindow.show(); return; }
+    updateTray();
+    writeLog('INFO', 'Start at sign-in: in the tray');
+    startRunner = createStartRunner({
+        choice: readChoice(startChoiceFile),
+        status: () => getSavedRooms().status(),
+        unlock: async () => { await getSavedRooms().unlock(); startFriendLinks(); },
+        busy: () => loginStarted || !!node || quitting,
+        openRoom: roomId => sendToWindow('asscrack:start-room', roomId),
+        done: result => {
+            if (result === 'room' && !mainWindow.isDestroyed() && !mainWindow.isVisible()) enterIdlePeer();
+            else if (result === 'missing') { forgetStartRoom(readChoice(startChoiceFile).roomId); restoreRoomWindow(); }
+            else if (result === 'none') restoreRoomWindow();
+        },
+        log: writeLog
+    });
+    if (mainWindow.webContents.isLoading()) mainWindow.webContents.once('did-finish-load', () => startRunner.start());
+    else startRunner.start();
+}
+handleRoomIpc('asscrack:startup', () => startupView());
+handleRoomIpc('asscrack:set-startup', (_event, choice) => setStartup(choice));
+
 handleRoomIpc('asscrack:idle-peer', idleState);
 handleRoomIpc('asscrack:enter-idle-peer', enterIdlePeer);
 handleRoomIpc('asscrack:close-to-tray', (_event, enabled) => setCloseToTray(enabled));
@@ -525,6 +590,7 @@ function createMainWindow() {
     mainWindow = new BrowserWindow({
         ...frame.options,
         title: 'ASSCRACK',
+        show: !startIdle,
         icon: path.join(__dirname, 'img', 'app.ico'),
         x: bounds.x,
         y: bounds.y,
@@ -555,7 +621,9 @@ function createMainWindow() {
         writeLog('WINDOW', `${details.level} ${details.message} (${details.sourceId}:${details.lineNumber})`);
     });
 
-    if (bounds.maximized) mainWindow.maximize();
+    // P9B: maximize() shows the window. A start at sign-in maximizes at the first show.
+    if (bounds.maximized && startIdle) mainWindow.once('show', () => mainWindow.maximize());
+    else if (bounds.maximized) mainWindow.maximize();
     for (const type of ['resize', 'move', 'maximize', 'unmaximize']) mainWindow.on(type, saveBoundsSoon);
     // Gap E1: the focus ends the taskbar flash and removes the dot.
     taskbarFlash.attach(mainWindow);
@@ -973,7 +1041,9 @@ handleRoomIpc('asscrack:reopen-room', async (_event, roomId, allowLegacy) => {
         name: row.userName ?? '', room: row.name, roomKey: row.roomKey,
         downloadDir: downloadDir ?? app.getPath('downloads'), ...nodeFlags
     };
-    return withLoginErrors('Reopen', options, () => reopenRoom(row, options, allowLegacy));
+    const started = withLoginErrors('Reopen', options, () => reopenRoom(row, options, allowLegacy));
+    started.then(() => startRunner?.reopened(roomId, true), err => startRunner?.reopened(roomId, false, err?.message));
+    return started;
 });
 
 async function reopenRoom(row, options, allowLegacy) {
@@ -1018,6 +1088,7 @@ handleRoomIpc('asscrack:forget-room', (_event, roomId) => {
     const active = getSavedRooms().activeInfo()?.roomId === roomId;
     const result = getSavedRooms().forget(roomId);
     if (active) clearRoomMedia();
+    forgetStartRoom(roomId);
     writeLog('INFO', 'Saved room forgotten');
     return result;
 });
@@ -1615,7 +1686,8 @@ app.on('before-quit', event => {
 app.on('window-all-closed', () => app.quit());
 
 if (singleInstance && isFirstInstance) {
-    app.on('second-instance', restoreRoomWindow);
+    // P9B: a second start from the start entry does not open the window.
+    app.on('second-instance', (_event, argv) => { if (!argv.includes(START_IDLE_FLAG)) restoreRoomWindow(); });
 }
 
 app.whenReady().then(async () => {
@@ -1624,6 +1696,7 @@ app.whenReady().then(async () => {
     powerMonitor.on('resume', () => {
         interfaceCache.clear();
         node?.refreshRoutes();
+        startRunner?.wake();
     });
     protocol.handle('room-media', request => roomMedia.serve(request));
     installRoomPermissions(session.defaultSession, () => mainWindow, ROOM_PAGE, () => idlePeer, () => screenSources.hasPending());
@@ -1637,4 +1710,5 @@ app.whenReady().then(async () => {
     await getSavedRooms().open();
     startFriendLinks();
     createMainWindow();
+    if (startIdle) beginStartAtSignIn();
 });

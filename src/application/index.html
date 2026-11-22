@@ -153,6 +153,7 @@
         <li id="view-attention" role="menuitem" aria-haspopup="dialog" aria-controls="attention-settings" tabindex="-1">Sound &amp; notifications…</li>
         <li id="view-shortcuts" role="menuitem" aria-haspopup="dialog" aria-controls="shortcuts-dialog" aria-keyshortcuts="F1" tabindex="-1">Keyboard shortcuts…</li>
         <li id="view-about" role="menuitem" aria-haspopup="dialog" aria-controls="about-dialog" tabindex="-1">About ASSCRACK…</li>
+        <li id="view-startup" role="menuitem" aria-haspopup="dialog" aria-controls="startup-dialog" tabindex="-1" hidden>Start at sign-in…</li>
         <li id="view-system-buttons" role="menuitemcheckbox" aria-checked="false" tabindex="-1" hidden>Windows system buttons (next launch)</li>
         <li id="view-reset" data-room-only hidden role="menuitem" tabindex="-1">Reset layout</li>
         <li class="view-rule" role="separator"></li>
@@ -597,6 +598,18 @@
     </footer>
   </dialog>
 
+  <dialog id="startup-dialog" aria-labelledby="startup-title">
+    <h2 id="startup-title">Start at sign-in</h2>
+    <label class="check"><input id="startup-on" type="checkbox"> Start as Idle Peer when I sign in</label>
+    <label for="startup-choice">Open at the start</label>
+    <select id="startup-choice"></select>
+    <p>ASSCRACK starts in the tray. It opens the room from the saved rooms of this computer. The start has no room key
+      and no invite. If you forget the room, the start stops.</p>
+    <p id="startup-entry"></p>
+    <p id="startup-status" role="status"></p>
+    <form method="dialog"><button>Done</button></form>
+  </dialog>
+
   <dialog id="about-dialog" aria-labelledby="about-title">
     <h2 id="about-title">About ASSCRACK</h2>
     <p id="about-version"></p>
@@ -719,5 +732,6 @@
   <script src="shared-shelf.js"></script>
   <script src="title.js"></script>
   <script src="app-shell.js"></script>
+  <script src="startup-ui.js"></script>
 </body>
 </html>
