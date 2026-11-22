@@ -7,7 +7,34 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
-## Unreleased
+## 1.0.1 (2026-11-22): easy joins, one data folder and diagnostics
+
+Release 1.0.1 is the first update of 1.0.0. A 1.0.0 app gets it with the signed update (View, About ASSCRACK, Check
+now). The entries below this heading, down to the 1.0.0 entry, were "Unreleased" entries. Each entry gives its changes
+and its checks. Since 1.0.0, the app has these new items:
+
+- Easy joins: a friend invite from the friend row, a room code with knock and Allow, Join on a friend row, "Always
+  allow my friends" and the prompt for a code in the clipboard (goal easy-join).
+- One data folder next to the program: `ASSCRACK Data` next to the portable .exe, `data` in the install folder. At
+  the first start, the app can move the data of `%APPDATA%ASSCRACK` into it.
+- The installer asks for the install folder and has the look of the app.
+- A diagnostics journal on each computer, and a request for diagnostics that the other person must accept with Send.
+- A red Leave room button and a Friends window ("Pop out").
+- A fix of the tiles of the screen-share picker.
+
+Build:
+- `npm run dist` makes `ASSCRACK-1.0.1-portable.exe`. `npm run dist:installer` makes `ASSCRACK-1.0.1-setup.exe`.
+- The source of the two files is the commit of this entry. The signed `update.json` of the release gives the byte size
+  and the SHA-256 of each file. The files have no code signature.
+
+Results:
+- **127.0.0.1 and this PC only.** Each entry below gives its results with their labels.
+- A 1.0.0 app ignores the new lines of 1.0.1 with no error. A 1.0.0 app cannot use a room code, and a 1.0.0 friend has
+  no Join on a friend row.
+- Known failures: the same as 1.0.0 (check 19 of P8b, check 18 of P8a, the timed screen check 16 of
+  `test/screen-auto.test.mjs`). One case of `test/transfer-resume-restart.test.mjs` can fail under load and passes
+  alone.
+- No LAN test and no internet test of 1.0.1 occurred.
 
 ### Diagnostics for the easy joins, the dials, the failover and the screen share (1.0.1 integration)
 
