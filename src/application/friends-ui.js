@@ -33,7 +33,20 @@
         return 'Friends can reach you only on this network, or when they have an open port.';
     }
     const waitingText = name => `Waiting for ${name || 'your friend'} to accept…`;
-    window.friendsCore = Object.freeze({ stateText, reachText, waitingText, timeText });
+    // easy-join: the result of "Invite to room" (friend-links.mjs invite()).
+    function inviteText(result, name) {
+        switch (result) {
+            case 'sending': return `Invite sent to ${name}.`;
+            case 'waiting': return `${name} is not connected. ASSCRACK sends the invite when you are both online.`;
+            case 'not-owner': return 'Only the room owner can invite.';
+            case 'no-room': return 'Open your protected room first.';
+            case 'no-address': return 'No invite: this room has no address that the internet can reach. Open Invite for the reason.';
+            case 'full': return `200 messages wait for ${name}. Wait until ${name} is online.`;
+            case 'removed': return `${name} removed you as a friend.`;
+            default: return 'Could not send the invite.';
+        }
+    }
+    window.friendsCore = Object.freeze({ stateText, reachText, waitingText, timeText, inviteText });
 
     if (typeof document === 'undefined' || typeof document.getElementById !== 'function') return;
     const api = window.friends;
@@ -238,6 +251,11 @@
                 ask(`Block ${name}? ${name} is removed as a friend and cannot send you friend requests.`, 'Block',
                     () => api.block(friend.friendId));
                 return true;
+            case 'friend-invite':
+                if (!friend.canInvite || !api.invite) return false;
+                Promise.resolve(api.invite(friend.friendId)).then(answer => statusLine(inviteText(answer?.result, name)),
+                    () => statusLine(inviteText('failed', name)));
+                return true;
             default: return false;
         }
     }
@@ -278,7 +296,10 @@
 
     window.friendsUi = Object.freeze({
         relation: peerId => relations[peerId]?.kind ?? null,
-        rowInfo: row => friendById(row?.dataset?.friendId) ? { kind: 'friend' } : null,
+        rowInfo: row => {
+            const friend = friendById(row?.dataset?.friendId);
+            return friend ? { kind: 'friend', invite: friend.canInvite === true } : null;
+        },
         run, add, openFor, refresh,
         view: () => view
     });

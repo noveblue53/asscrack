@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('friendChat', {
     send: text => ipcRenderer.invoke('asscrack:friend-chat-send', String(text ?? '')),
     // G7b: Delete of a waiting line (the line ID only).
     deleteWaiting: id => ipcRenderer.invoke('asscrack:friend-chat-delete', String(id ?? '')),
+    // easy-join: Join of an invite card (the line ID only). leave: leave the current room first.
+    join: (id, leave) => ipcRenderer.invoke('asscrack:friend-chat-join', String(id ?? ''), leave === true),
     onLine: listen('asscrack:friend-chat-line'),
     onReceipt: listen('asscrack:friend-chat-receipt'),
     onState: listen('asscrack:friend-chat-state')

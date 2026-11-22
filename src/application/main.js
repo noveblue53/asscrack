@@ -36,6 +36,7 @@ import { acceptScreenFrame, createScreenSources } from './screen-sources.mjs';
 import { createFriendLinks } from './friend-links.mjs';
 import { withDeviceMarks } from './peer-marks.mjs';
 import { attachFriendWindows, registerFriendIpc } from './friend-windows.mjs';
+import { createFriendJoins } from './friend-join.mjs';
 import { installInterfaceCache } from '../network/interface-cache.mjs';
 import { createUpdateService } from './update-service.mjs';
 import { CHOICE_FILE, choiceAfterForget, createStartEntry, createStartRunner, isInstalledBuild, isStaleChoice, normalizeChoice,
@@ -955,12 +956,17 @@ handleRoomIpc('asscrack:login', async (_event, fields = {}) => {
     return withLoginErrors('Login', options, () => login(options, fields));
 });
 
-async function login(options, { name, room, type, invite, publicAddress, allowUpnp, allowLegacy, save, keepHistory } = {}) {
+async function login(options, { name, room, type, invite, friendInvite, publicAddress, allowUpnp, allowLegacy, save, keepHistory } = {}) {
     if (typeof name !== 'string' || !name.trim() || name.length > 64) throw new Error('Enter a username of up to 64 characters.');
     options.name = name.trim();
     let lan = false;
     let typedInvite = null;
     if (type === 'join') {
+        // easy-join: a Join from a friend invite gives a token. The code stays in the main process.
+        if (typeof friendInvite === 'string') {
+            invite = friendJoins.code(friendInvite);
+            if (!invite) throw new Error('This invite is not available any more. Select Join in the friend chat again.');
+        }
         if (typeof invite !== 'string' || !invite.trim()) throw new Error('Enter an invite code.');
         if (invite.length > 128 * 1024 + 10) throw new Error('The invite code is too large.');
         const code = readInvite(invite);
@@ -1018,7 +1024,21 @@ friendLinks.events.on('request', event => sendToWindow('asscrack:friend-request'
 const friendWindows = attachFriendWindows({
     BrowserWindow, ipc: ipcMain, assets: __dirname, links: friendLinks, icon: path.join(__dirname, 'img', 'app.ico'),
     warn: message => writeLog('WARN', message), openLink: value => openCheckedLink(value),
-    focused: friendId => attention.read({ kind: 'friend', friendId, id: 'focus' })
+    focused: friendId => attention.read({ kind: 'friend', friendId, id: 'focus' }),
+    join: (friendId, id, leave) => friendJoins.join(friendId, id, leave)
+});
+// easy-join part 1: Join of a friend invite (friend-join.mjs), and the tray balloon of a new invite.
+const friendJoins = createFriendJoins({
+    links: friendLinks, room: () => (node ? roomName ?? '' : null), busy: () => Boolean(leaving) || (loginStarted && !node),
+    leave: () => leaveRoom(),
+    reload: () => setImmediate(() => { if (mainWindow && !mainWindow.isDestroyed() && !quitting) mainWindow.webContents.reload(); }),
+    show: () => restoreRoomWindow(), notify: () => sendToWindow('asscrack:friend-join', null),
+    name: () => friendLinks.list().name ?? '', log: writeLog
+});
+handleRoomIpc('asscrack:friend-join-take', () => friendJoins.take());
+friendLinks.events.on('invite', ({ name, room }) => {
+    if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isVisible()) return;
+    showTrayBalloon(`${name || 'A friend'} invites you to ${room}. Open the chat with ${name || 'your friend'} to join.`);
 });
 registerFriendIpc(handleRoomIpc, {
     links: friendLinks, roomNode: () => node, openChat: friendId => friendWindows.open(friendId), query: queryRoomIpc

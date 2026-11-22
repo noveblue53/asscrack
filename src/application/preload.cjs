@@ -39,7 +39,12 @@ contextBridge.exposeInMainWorld('friends', {
     setName: name => ipcRenderer.invoke('asscrack:friend-name', text(name)),
     setUpnp: on => ipcRenderer.invoke('asscrack:friend-upnp', on === true),
     openChat: friendId => ipcRenderer.invoke('asscrack:friend-open-chat', text(friendId)),
+    // easy-join: "Invite to room" (the friend ID only).
+    invite: friendId => ipcRenderer.invoke('asscrack:friend-invite', text(friendId)),
     retry: () => ipcRenderer.invoke('asscrack:unlock-archive'),
+    // easy-join: the Join of a friend invite that waits for this window: { token, room, name } or null (one time).
+    takeJoin: () => ipcRenderer.invoke('asscrack:friend-join-take'),
+    onJoin: listen('asscrack:friend-join'),
     onChanged: listen('asscrack:friends'),
     onRequest: listen('asscrack:friend-request'),
     // G7b: a friend line for the attention rules (attention.js): { friendId, id, away, focused }. No text, no name.
@@ -75,8 +80,9 @@ contextBridge.exposeInMainWorld('asscrack', {
     flashAttention: () => ipcRenderer.send('asscrack:attention-flash'),
     // ids: up to 64 peer IDs. Returns [{ id, alias }] with the pseudonym of the Room activity lines.
     getActivityAliases: ids => ipcRenderer.invoke('asscrack:activity-aliases', Array.isArray(ids) ? ids.slice(0, 64).map(String) : []),
-    login: ({ name, room, type, invite, publicAddress, allowUpnp, allowLegacy, save, keepHistory } = {}) =>
-        ipcRenderer.invoke('asscrack:login', { name, room, type, invite, publicAddress, allowUpnp, allowLegacy, save, keepHistory }),
+    // easy-join: friendInvite is the token of a Join from a friend invite (the main process keeps the code).
+    login: ({ name, room, type, invite, friendInvite, publicAddress, allowUpnp, allowLegacy, save, keepHistory } = {}) =>
+        ipcRenderer.invoke('asscrack:login', { name, room, type, invite, friendInvite, publicAddress, allowUpnp, allowLegacy, save, keepHistory }),
     // Saved rooms (milestone 6). The window gets no key, no invite and no file path.
     listSavedRooms: () => ipcRenderer.invoke('asscrack:saved-rooms'),
     unlockArchive: () => ipcRenderer.invoke('asscrack:unlock-archive'),

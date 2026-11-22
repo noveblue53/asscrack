@@ -671,24 +671,31 @@ function rememberUserName(name) {
 
 let internetRoom = false;
 
-async function login() {
+// easy-join: friendJoin { token, room, name } is a Join from a friend invite (takeFriendJoin below). The
+// main process keeps the code; the window sends the token. A click event is not a friendJoin.
+async function login(friendJoin = null) {
     // A reopen of a saved room also disables the button: Enter in a field must not start a second room.
     if (loginBusy || loginButton.disabled) return;
-    const name = usernameInput.value.trim();
-    const type = roomTypeSelect.value;
-    let room = roomInput.value.trim();
-    const invite = inviteInput.value.trim();
-    const publicAddress = publicAddressInput.value.trim();
+    const join = typeof friendJoin?.token === 'string' ? friendJoin : null;
+    const name = usernameInput.value.trim() || (join?.name ?? '');
+    const type = join ? 'join' : roomTypeSelect.value;
+    let room = join ? join.room : roomInput.value.trim();
+    const invite = join ? '' : inviteInput.value.trim();
+    const publicAddress = join ? '' : publicAddressInput.value.trim();
+    if (join && !name) {
+        status.textContent = `Enter a username, then select Join in the friend chat again to join ${join.room}.`;
+        return;
+    }
     if (!name || (type !== 'join' && !room)) {
         // The join type has no room field: it has the invite code.
         status.textContent = type === 'join' ? 'Error: enter a username and an invite code.' : 'Error: enter a username and a room.';
         return;
     }
-    if (type === 'join' && !invite) {
+    if (type === 'join' && !invite && !join) {
         status.textContent = 'Error: enter a username and an invite code.';
         return;
     }
-    if (legacyInvite() && allowLegacy?.checked !== true) {
+    if (!join && legacyInvite() && allowLegacy?.checked !== true) {
         status.textContent = 'Confirm that everyone with this legacy room code is trusted.';
         allowLegacy?.focus();
         return;
@@ -699,7 +706,8 @@ async function login() {
         return;
     }
     const options = { name, room, type };
-    if (type === 'join') {
+    if (join) options.friendInvite = join.token;
+    else if (type === 'join') {
         options.invite = invite;
         options.allowLegacy = legacyInvite() && allowLegacy?.checked === true;
     }
@@ -728,6 +736,19 @@ async function login() {
         loginButton.textContent = loginLabel();
     }
 }
+
+// easy-join: a Join of a friend invite waits in the main process (after Leave room it waits for this new window).
+async function takeFriendJoin() {
+    if (!window.friends?.takeJoin || !chatScreen.hidden || loginBusy) return;
+    let pending = null;
+    try { pending = await window.friends.takeJoin(); } catch { pending = null; }
+    if (pending?.token) {
+        status.textContent = `Joining ${pending.room}…`;
+        await login(pending);
+    }
+}
+window.friends?.onJoin?.(() => { void takeFriendJoin(); });
+void takeFriendJoin();
 
 // Show the chat screen for the user name and the room. The login and the reopen of a saved room use it.
 function showChat(name, room) {
@@ -1830,7 +1851,7 @@ function runRowAction(action, row) {
         case 'delete-voice-channel': return window.voiceChannels?.remove(row) ?? false;
         case 'add-friend': return window.friendsUi?.add(buddyId(row)) ?? false;
         case 'open-friend-chat': return window.friendsUi?.openFor(buddyId(row)) ?? false;
-        case 'friend-open': case 'friend-rename': case 'friend-remove': case 'friend-block':
+        case 'friend-open': case 'friend-rename': case 'friend-remove': case 'friend-block': case 'friend-invite':
             return window.friendsUi?.run(action, row) ?? false;
         default: return false;
     }

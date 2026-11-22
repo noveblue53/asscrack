@@ -7,6 +7,26 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased — friend invite (goal easy-join, part 1, 2026-11-22)
+
+The owner of a running protected room can invite a friend with no device ID and no paste.
+
+- **Invite to room.** The menu of a friend row has "Invite to room" when you own the protected room that is open now.
+  A member that is not the owner does not see the item. The app makes a device invite with no host rights for the
+  saved device of the friend. The invite goes on the friend link, or it waits in the offline queue of the friend.
+- **Invite card.** The friend sees "<name> invites you to <room>." with Join and Not now in the friend chat. When the
+  window is in the tray, a tray balloon also tells the friend. Join uses the invite with no paste. In a room, Join
+  asks "Leave <room> and join <room>?" first. The chat window and the room window never get the invite code.
+- **Checks of the receiver.** The card has no Join for an invite to a different device. It also has no Join when the
+  owner of the room is not the friend that sent it. An expired invite has no Join. The expiry stays at 7 days.
+- **Friend link line.** A new "invite" line in the private messages, with the same ID, receipt and queue as a message.
+  A 1.0.0 app ignores this line with no error. It does not send a receipt, thus the invite stays in the queue of the
+  sender until the sender deletes it.
+
+Checks (127.0.0.1 on this PC, not LAN): `test/friend-invite.test.mjs` passes 11 of 11. It has these cases: online
+friend, offline friend, wrong device, forwarded invite, expired invite, member that is not the owner. Two app copies on
+this PC: A invites B from the friend row, B selects Join, then chat in both directions.
+
 ## 1.0.0 (2026-11-22): the full-featured release
 
 Release 1.0.0 is the full-featured release before the friends get the app (operator, 2026-11-21). The entries below

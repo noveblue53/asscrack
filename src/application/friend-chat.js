@@ -27,7 +27,31 @@
     // Operator decision 3 (2026-11-21): the app tells why the friend cannot be reached.
     const REACH_NOTE = 'A link needs one computer with an open port (UPnP or a forwarded port), or the same network. ' +
         'Two computers with no open port cannot connect.';
-    window.friendChatCore = Object.freeze({ stateText, MARKS, REACH_NOTE, AWAY_MARK, awayNoteText, notDeliveredText, fullText });
+    // easy-join: the text of an invite card. invite: { state, room } from the main process (never the code).
+    function inviteCardText(invite, own, name) {
+        const who = name || 'Your friend';
+        if (own) {
+            if (invite.state === 'sent') return `You invited ${name || 'your friend'} to ${invite.room}.`;
+            if (invite.state === 'expired') return `You invited ${name || 'your friend'} to a room. This invite expired.`;
+            return 'You sent a room invite.';
+        }
+        if (invite.state === 'ok') return `${who} invites you to ${invite.room}.`;
+        if (invite.state === 'expired') return `This invite expired. Ask ${name || 'your friend'} for a new invite.`;
+        return 'This room invite is not for this computer. You cannot join with it.';
+    }
+    // The answer of Join (friend-join.mjs), as a note of the card. null: no note.
+    function joinNoteText(answer) {
+        switch (answer?.result) {
+            case 'joining': return `Joining ${answer.room}…`;
+            case 'busy': return 'ASSCRACK opens or leaves a room now. Try again in a moment.';
+            case 'expired': return 'This invite expired.';
+            case 'gone': return 'This invite is not available any more.';
+            case 'wrong-device': case 'wrong-owner': case 'invalid': return 'This room invite is not for this computer.';
+            default: return 'Could not join the room.';
+        }
+    }
+    window.friendChatCore = Object.freeze({ stateText, MARKS, REACH_NOTE, AWAY_MARK, awayNoteText, notDeliveredText, fullText,
+        inviteCardText, joinNoteText });
 
     if (typeof document === 'undefined' || !window.friendChat) return;
     const api = window.friendChat;
@@ -59,9 +83,15 @@
         from.textContent = line.own ? 'You' : (line.from || state.name);
         const text = document.createElement('span');
         text.className = 'text';
-        text.textContent = line.text;
-        window.chatLinks?.apply(text);
+        if (line.invite) {
+            row.classList.add('invite');
+            text.textContent = inviteCardText(line.invite, line.own, state.name);
+        } else {
+            text.textContent = line.text;
+            window.chatLinks?.apply(text);
+        }
         row.append(time, from, text);
+        if (line.invite && !line.own && line.invite.state === 'ok') row.append(inviteButtons(line.id));
         if (line.away && !line.own) {
             row.dataset.away = line.away.batch;
             const away = document.createElement('span');
@@ -95,6 +125,39 @@
             button.addEventListener('click', () => { deleteWaiting(id).catch(() => {}); });
             row.append(button);
         } else if (!waiting && button) button.remove();
+    }
+    // easy-join: Join / Not now of an invite card. In a room, Join asks "Leave <room> and join?" first.
+    function inviteButtons(id) {
+        const box = document.createElement('span');
+        box.className = 'invite-actions';
+        const note = document.createElement('span');
+        note.className = 'invite-note';
+        const button = (label, run) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.textContent = label;
+            b.addEventListener('click', run);
+            return b;
+        };
+        async function join(leave) {
+            for (const b of box.querySelectorAll('button')) b.disabled = true;
+            let answer;
+            try { answer = await api.join(id, leave); } catch { answer = { result: 'failed' }; }
+            if (answer?.result === 'confirm') {
+                note.textContent = `Leave ${answer.current} and join ${answer.room}?`;
+                box.replaceChildren(note, button('Leave and join', () => join(true)), button('Cancel', show));
+                return;
+            }
+            note.textContent = joinNoteText(answer);
+            const again = answer?.result === 'busy' || answer?.result === 'failed';
+            box.replaceChildren(note, ...(again ? [button('Join', () => join(false))] : []));
+        }
+        function show() {
+            note.textContent = '';
+            box.replaceChildren(button('Join', () => join(false)), button('Not now', () => box.replaceChildren()));
+        }
+        show();
+        return box;
     }
     async function deleteWaiting(id) {
         const result = await api.deleteWaiting(id);
