@@ -122,3 +122,16 @@ test('the saved-room calls of part 2 send the room ID as text and a strict true 
         ['asscrack:forget-room', 'r']
     ]);
 });
+
+// Goal G3 (gaps D2 and N7) adds two bridge functions. openLink sends only a text to asscrack:open-link; the main
+// process checks it (link-policy.mjs). canSendFile gives only true or false, never the path of the file.
+test('openLink sends the href as text, and canSendFile gives a boolean and never the path', () => {
+    const b = loadBridge();
+    b.api.openLink('https://example.com/a(b)');
+    b.api.openLink({ toString: () => 'https://example.com/x' });
+    assert.deepEqual(b.invoked, [['asscrack:open-link', 'https://example.com/a(b)'], ['asscrack:open-link', 'https://example.com/x']]);
+    assert.equal(b.api.canSendFile({ path: 'C:/Users/x/report.docx' }), true);
+    assert.equal(b.api.canSendFile({ name: 'screenshot.png' }), false);
+    assert.equal(b.api.canSendFile(null), false);
+    assert.deepEqual(b.touched, []);
+});
