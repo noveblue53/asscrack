@@ -88,7 +88,7 @@ test('friend knock to the owner: the same proofs; Allow gives a device invite fo
     assert.equal(p.relay.count(), 0, 'the relay has no open knock after the end')
 })
 
-test('friend knock to the owner: Deny gives "The owner did not let you in."', async () => {
+test('friend knock to the owner: Deny gives "The owner declined."', async () => {
     const o = ownerRoom()
     const { desk: d, prompts } = desk(o)
     const p = pipe({ o, connect: ownDesk(d) })
@@ -96,15 +96,15 @@ test('friend knock to the owner: Deny gives "The owner did not let you in."', as
     d.answer(prompts[0].id, false)
     const outcome = await p.knock.result
     assert.deepEqual(outcome, { result: 'denied' })
-    assert.equal(knockResultText(outcome), 'The owner did not let you in.')
+    assert.equal(knockResultText(outcome), 'The owner declined.')
 })
 
-test('friend knock: no route to the owner (the owner is not online) gives "The owner is not online. Try again later."', async () => {
+test('friend knock: no route to the owner (the owner is not online) gives "Owner is offline. Try again later."', async () => {
     const o = ownerRoom()
     const p = pipe({ o, connect: () => null })
     const outcome = await p.knock.result
     assert.deepEqual(outcome, { result: 'offline' })
-    assert.equal(knockResultText(outcome), 'The owner is not online. Try again later.')
+    assert.equal(knockResultText(outcome), 'Owner is offline. Try again later.')
     // An async route that resolves null: the same.
     const q = pipe({ o, connect: async () => null })
     assert.deepEqual(await q.knock.result, { result: 'offline' })
@@ -190,7 +190,7 @@ test('window: the friend row texts, the Join and "Ask" states, the menu item', a
     assert.equal(friendsCore.knockStateText('looking', 'R'), 'Looking for the owner of R…')
     assert.equal(friendsCore.knockStateText('waiting', 'R'), 'Waiting for the owner of R…')
     assert.equal(friendsCore.joinText({ result: 'joining', room: 'R' }, 'Ann'), 'Allowed. Joining R…')
-    assert.equal(friendsCore.joinText({ result: 'knock', text: 'The owner did not let you in.' }, 'Ann'), 'The owner did not let you in.')
+    assert.equal(friendsCore.joinText({ result: 'knock', text: 'The owner declined.' }, 'Ann'), 'The owner declined.')
     assert.equal(friendsCore.joinText({ result: 'ask' }, 'Ann'), 'Ask Ann for an invite.')
     const { menuCore } = await load('menu.js')
     assert.equal(JSON.stringify(menuCore.actionsFor({ kind: 'friend', join: true, invite: false })),

@@ -53,13 +53,32 @@ function firstLetter(name) {
 
 // The text of an error for the user. Electron puts "Error invoking remote method '<channel>': Error: " before the
 // message of an error from the main process. That part is for a programmer, not for the user.
+// P4 of the UI copy pass: the guard texts of the main process (only in a race) get one short text in the window.
+const GUARD_TEXTS = [
+    [/^Not logged in/, 'Not in a room.'],
+    [/^Saved room not found/, 'Room not found.'],
+    [/^(Already logged in|Invalid peer ID|Invalid offer ID|A local file is required|The file path is not an absolute path|The file has no path)/,
+        'Something went wrong. Try again.']
+];
 function errorText(err) {
-    return String(err?.message ?? err).replace(/^Error invoking remote method '[^']*': (?:\w*Error: )?/, '');
+    const text = String(err?.message ?? err).replace(/^Error invoking remote method '[^']*': (?:\w*Error: )?/, '');
+    return GUARD_TEXTS.find(([re]) => re.test(text))?.[1] ?? text;
 }
+
+// P1: an error in the status line has no "Error:" prefix. The class "error" makes it red. The next text removes it.
+let statusErrorText = null;
+function showStatusError(text) {
+    statusErrorText = String(text);
+    status.textContent = statusErrorText;
+    status.classList.add('error');
+}
+window.statusError = showStatusError;
+window.statusErrorText = errorText;
 
 // The status band cuts a long status text with an ellipsis: the tooltip has the full text.
 new MutationObserver(() => {
     status.title = status.textContent;
+    if (status.textContent !== statusErrorText) status.classList.remove('error');
 }).observe(status, { childList: true, characterData: true, subtree: true });
 
 // #waiting-peer and the link key of the status bar come from room-link.js (window.roomLink), not from this count.
@@ -634,7 +653,7 @@ function loginLabel() {
 
 // Gap N9: Create with the name of a saved room starts no room at the first click. A second click starts it.
 // A change of the room name or of the room type resets this.
-const SAME_NAME_TEXT = 'A saved room has this name. Create makes a new, different room. To open the saved room, select Reopen room.';
+const SAME_NAME_TEXT = 'You have a saved room with this name. Use Reopen to open it.';
 let sameNameWarned = false;
 
 function showRoomType() {
@@ -683,20 +702,20 @@ async function login(friendJoin = null) {
     const invite = join ? '' : inviteInput.value.trim();
     const publicAddress = join ? '' : publicAddressInput.value.trim();
     if (join && !name) {
-        status.textContent = `Enter a username, then select Join again to join ${join.room}.`;
+        status.textContent = 'Enter a name, then click Join again.';
         return;
     }
     if (!name || (type !== 'join' && !room)) {
         // The join type has no room field: it has the invite code.
-        status.textContent = type === 'join' ? 'Error: enter a username and an invite code.' : 'Error: enter a username and a room.';
+        showStatusError(type === 'join' ? 'Enter a name and an invite code.' : 'Enter a name and a room name.');
         return;
     }
     if (type === 'join' && !invite && !join) {
-        status.textContent = 'Error: enter a username and an invite code.';
+        showStatusError('Enter a name and an invite code.');
         return;
     }
     if (!join && legacyInvite() && allowLegacy?.checked !== true) {
-        status.textContent = 'Confirm that everyone with this legacy room code is trusted.';
+        showStatusError('Tick “I trust everyone with this code” first.');
         allowLegacy?.focus();
         return;
     }
@@ -730,7 +749,7 @@ async function login(friendJoin = null) {
         showChat(name, room);
         roomStarted(result);
     } catch (err) {
-        status.textContent = `Error: ${errorText(err)}`;
+        showStatusError(errorText(err));
         loginBusy = false;
         loginButton.disabled = false;
         loginButton.textContent = loginLabel();
@@ -1490,7 +1509,7 @@ async function callFile(fn, offerId) {
     try {
         return await fn(offerId);
     } catch (err) {
-        status.textContent = `Error: ${errorText(err)}`;
+        showStatusError(errorText(err));
         return false;
     }
 }
@@ -1623,7 +1642,7 @@ async function cancelReceive(key) {
     } catch (err) {
         entry.cancelRequested = false;
         if (entry.state === 'receiving') setTransferState(entry, 'receiving', 'Receiving');
-        status.textContent = `Error: ${errorText(err)}`;
+        showStatusError(errorText(err));
         return false;
     }
 }
@@ -1641,7 +1660,7 @@ async function cancelToReceiver(key) {
         return true;
     } catch (err) {
         entry.cancelRequested = false;
-        status.textContent = `Error: ${errorText(err)}`;
+        showStatusError(errorText(err));
         renderTransferActions(entry, entry.item);
         return false;
     }
@@ -1676,7 +1695,7 @@ async function revealTransfer(key) {
         if (result?.ok === true) return true;
         status.textContent = REVEAL_TEXT[result?.reason] ?? REVEAL_TEXT.unknown;
     } catch (err) {
-        status.textContent = `Error: ${errorText(err)}`;
+        showStatusError(errorText(err));
     }
     return false;
 }
@@ -2536,7 +2555,7 @@ async function sendFile() {
         status.textContent = '';
         return result;
     } catch (err) {
-        status.textContent = `Error: ${errorText(err)}`;
+        showStatusError(errorText(err));
         return null;
     } finally {
         offeringFile = false;

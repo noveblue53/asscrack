@@ -58,7 +58,7 @@
     function joinText(answer, name) {
         switch (answer?.result) {
             case 'joining': return `Allowed. Joining ${answer.room}…`;
-            case 'knock': return answer.text || 'The owner is not online. Try again later.';
+            case 'knock': return answer.text || 'Owner is offline. Try again later.';
             case 'ask': return `${askText(name)}.`;
             case 'gone': return `${name} is not in a room you can join.`;
             case 'saved': return 'This room is in your saved rooms. Open it there.';

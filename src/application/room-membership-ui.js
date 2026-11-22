@@ -39,9 +39,9 @@
             await api.copyText(id);
             if (typeof setRoomType === 'function' && roomTypeSelect.value !== 'join') setRoomType('join');
             inviteInput?.focus();
-            enrollmentNote.textContent = 'Device ID copied. Send it to the room owner. Then paste the invite here.';
+            enrollmentNote.textContent = 'Copied. Send it to the room owner.';
         } catch (error) {
-            enrollmentNote.textContent = error?.message ? errorText(error) : 'Could not copy your device ID.';
+            enrollmentNote.textContent = error?.message ? errorText(error) : 'Couldn\'t copy.';
         } finally { enrollment.disabled = false; }
     });
 

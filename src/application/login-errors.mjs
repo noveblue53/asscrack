@@ -26,12 +26,12 @@ function errorPort(err, depth = 0) {
     return null;
 }
 
-const NOT_INVITE = 'This is not an ASSCRACK invite. Copy the whole code from the person who invited you.';
-const INCOMPLETE = 'The invite code is not complete. Copy the whole code again from the person who invited you.';
-const VERSION = 'This invite comes from a different ASSCRACK version. You and the room owner must use the same version.';
-const OTHER_DEVICE = 'This invite is for a different device. Select “Copy my device ID”, send the ID to the room owner, '
-    + 'and ask for a new invite.';
-const PUBLIC_ADDRESS = 'Write the public address as IP:port, for example 203.0.113.5:47000.';
+const NOT_INVITE = 'Not a valid invite code.';
+const INCOMPLETE = 'Invite code is incomplete. Copy all of it.';
+const VERSION = 'This invite is from another app version. Both of you need the latest update.';
+const OTHER_DEVICE = 'This invite is for another device. Send the owner your device ID.';
+const PUBLIC_ADDRESS = 'Use IP:port, for example 203.0.113.5:47000.';
+const EXPIRED = 'Invite expired. Ask for a new one.';
 
 // err: the error of the login or the reopen. port: the listen port of the start, if known.
 export function loginErrorText(err, { port } = {}) {
@@ -39,37 +39,38 @@ export function loginErrorText(err, { port } = {}) {
     if (isAddressInUse(err)) {
         const n = Number.isInteger(port) && port > 0 ? port : errorPort(err);
         const which = n !== null ? `Port ${n} is` : 'The port is';
-        return `${which} in use on this computer. Close the other program or the other ASSCRACK, or use a different port.`;
+        return `${which} in use. Close the other app or choose another port.`;
     }
     if (/wrong prefix|not text/.test(text)) return NOT_INVITE;
     if (/damaged|not valid JSON|characters that are not valid|has a bad|no valid node list|too large/.test(text)) return INCOMPLETE;
     if (/unknown version/.test(text)) return VERSION;
     if (/for another device/.test(text)) return OTHER_DEVICE;
     if (/The public address must be/.test(text)) return PUBLIC_ADDRESS;
-    // L4 (P10a): the text of invite.mjs is already plain text for the user.
-    if (/This invite has expired/.test(text)) return text;
+    if (/This device has been removed from the room/.test(text)) return KNOCK_TEXTS.removed;
+    // L4 (P10a), UI copy 4.19: the expiry text of invite.mjs gets the short window text.
+    if (/This invite has expired/.test(text)) return EXPIRED;
     return text;
 }
 
 // easy-join part 2: the text for the joiner when a knock with a room code ends with no Allow (knock-client.mjs).
 // outcome: { result: 'denied' | 'timeout' | 'offline' | 'refused', reason? }.
 export const KNOCK_TEXTS = Object.freeze({
-    denied: 'The owner did not let you in.',
-    offline: 'The owner is not online. Try again later.',
+    denied: 'The owner declined.',
+    offline: 'Owner is offline. Try again later.',
     'old-code': 'This room code was replaced. Ask the owner for the new one.',
     expired: 'This room code expired. Ask the owner for a new one.',
     busy: 'The owner has too many join requests. Try again in a few minutes.',
     rate: 'Too many join requests. Try again in a few minutes.',
     pending: 'You already asked to join. Wait for the owner.',
     owner: 'Open your own room from your saved rooms.',
-    removed: 'This device was removed from the room.',
-    role: 'This device already has a role in this room. Ask the owner for a device invite.'
+    removed: 'You were removed from this room.',
+    role: 'This PC needs a device invite for this room.'
 });
 export function knockResultText(outcome) {
     if (outcome?.result === 'denied') return KNOCK_TEXTS.denied;
     if (outcome?.result === 'refused' && Object.hasOwn(KNOCK_TEXTS, outcome.reason) && outcome.reason !== 'denied' &&
         outcome.reason !== 'offline') return KNOCK_TEXTS[outcome.reason];
-    if (outcome?.result === 'refused') return 'The owner could not answer. Try again later.';
+    if (outcome?.result === 'refused') return 'The owner couldn\'t answer. Try again later.';
     // 'timeout' (no answer in 2 minutes) and 'offline' (no peer proved the owner key).
     return KNOCK_TEXTS.offline;
 }

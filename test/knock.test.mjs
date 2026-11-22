@@ -64,7 +64,7 @@ test('the device invite parse of this app (the same parse as 1.0.0) refuses a ro
     assert.throws(() => readInvite(text), /unknown version/)
     let error
     try { readInvite(text) } catch (err) { error = err }
-    assert.equal(loginErrorText(error), 'This invite comes from a different ASSCRACK version. You and the room owner must use the same version.')
+    assert.equal(loginErrorText(error), 'This invite is from another app version. Both of you need the latest update.')
 })
 
 test('the room code ID: Copy gives the same ID, "New room code" a new one, an expired code gets a new one, and the ID is saved', () => {
@@ -317,13 +317,13 @@ test('the knock size cap: the stream closes at a long line, at too many bytes, o
 
 test('the texts of the joiner for each knock result', async () => {
     const { knockResultText } = await import('../src/application/login-errors.mjs')
-    assert.equal(knockResultText({ result: 'denied' }), 'The owner did not let you in.')
-    assert.equal(knockResultText({ result: 'timeout' }), 'The owner is not online. Try again later.')
-    assert.equal(knockResultText({ result: 'offline' }), 'The owner is not online. Try again later.')
+    assert.equal(knockResultText({ result: 'denied' }), 'The owner declined.')
+    assert.equal(knockResultText({ result: 'timeout' }), 'Owner is offline. Try again later.')
+    assert.equal(knockResultText({ result: 'offline' }), 'Owner is offline. Try again later.')
     assert.equal(knockResultText({ result: 'refused', reason: 'old-code' }), 'This room code was replaced. Ask the owner for the new one.')
     assert.equal(knockResultText({ result: 'refused', reason: 'busy' }), 'The owner has too many join requests. Try again in a few minutes.')
-    assert.equal(knockResultText({ result: 'refused', reason: 'denied' }), 'The owner could not answer. Try again later.')
-    assert.equal(knockResultText({ result: 'refused', reason: 'toString' }), 'The owner could not answer. Try again later.')
+    assert.equal(knockResultText({ result: 'refused', reason: 'denied' }), 'The owner couldn\'t answer. Try again later.')
+    assert.equal(knockResultText({ result: 'refused', reason: 'toString' }), 'The owner couldn\'t answer. Try again later.')
     // loginErrorText keeps these texts.
-    for (const text of ['The owner did not let you in.', 'The owner is not online. Try again later.']) assert.equal(loginErrorText(new Error(text)), text)
+    for (const text of ['The owner declined.', 'Owner is offline. Try again later.']) assert.equal(loginErrorText(new Error(text)), text)
 })

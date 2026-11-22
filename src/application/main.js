@@ -1207,8 +1207,8 @@ async function login(options, { name, room, type, invite, friendInvite, publicAd
             options.membership = joinAdmission(code, getAdmissionIdentity(), saved);
             lan = options.membership.lan;
         } else {
-            if (allowLegacy !== true) throw new Error('Confirm that everyone with this legacy room code is trusted.');
-            if (getSavedRooms().isProtectedRoom(code.room, code.key)) throw new Error('This saved room requires a protected device invite.');
+            if (allowLegacy !== true) throw new Error('Tick “I trust everyone with this code” first.');
+            if (getSavedRooms().isProtectedRoom(code.room, code.key)) throw new Error('This room needs a device invite.');
         }
     } else if (type === 'new' || type === 'lan') {
         if (typeof room !== 'string' || !room.trim() || room.length > 64) throw new Error('Enter a room name of up to 64 characters.');
@@ -1466,7 +1466,7 @@ async function reopenRoom(row, options, allowLegacy) {
     if (row.protected) {
         options.membership = restoreSavedAdmission(row, getAdmissionIdentity());
         lan = options.membership.lan;
-    } else if (allowLegacy !== true) throw new Error('Confirm that everyone with this legacy room code is trusted.');
+    } else if (allowLegacy !== true) throw new Error('Tick “I trust everyone with this code” first.');
     if (row.invite) {
         try {
             options.inviteNodes = readInvite(row.invite).nodes;

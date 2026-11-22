@@ -28,6 +28,7 @@
   <link rel="stylesheet" href="updates.css">
   <link rel="stylesheet" href="diagnostics.css">
   <link rel="stylesheet" href="clipboard-join.css">
+  <link rel="stylesheet" href="ui-state.css">
 </head>
 <body>
   <!-- Decoration only: the sky bubbles behind the two screens. -->
@@ -49,41 +50,41 @@
 
       <div class="field">
         <label for="username">Username</label>
-        <input type="text" id="username" maxlength="64" placeholder="Enter your username" autocomplete="off" spellcheck="false">
+        <input type="text" id="username" maxlength="64" autocomplete="off" spellcheck="false">
       </div>
       <div class="field">
         <label for="room-type">Room type</label>
         <select id="room-type">
-          <option value="new" selected>Create protected internet room</option>
-          <option value="join">Join with invite code</option>
-          <option value="lan">Create protected LAN room</option>
+          <option value="new" selected>New room</option>
+          <option value="join">Join a room</option>
+          <option value="lan">New LAN room</option>
         </select>
       </div>
       <div class="field" id="room-field">
-        <label for="room">Room</label>
-        <input type="text" id="room" maxlength="64" placeholder="Enter the room" autocomplete="off" spellcheck="false">
+        <label for="room">Room name</label>
+        <input type="text" id="room" maxlength="64" autocomplete="off" spellcheck="false">
       </div>
       <div class="field" id="invite-field" hidden>
-        <label for="invite-input">Invite code or room code</label>
-        <textarea id="invite-input" rows="3" maxlength="131082" placeholder="Paste the invite code or the room code" spellcheck="false"></textarea>
-        <label class="admission-check" id="legacy-consent" hidden>
-          <input type="checkbox" id="allow-legacy"> I trust everyone who has this legacy shared code.
+        <label for="invite-input">Invite or room code</label>
+        <textarea id="invite-input" rows="3" maxlength="131082" placeholder="Paste a code" spellcheck="false"></textarea>
+        <label class="admission-check" id="legacy-consent" title="Old shared code: anyone who has it can join" hidden>
+          <input type="checkbox" id="allow-legacy"> I trust everyone with this code
         </label>
       </div>
       <div class="field" id="public-address-field">
-        <label for="public-address">Public address (optional)</label>
-        <input type="text" id="public-address" placeholder="Public IP:port, for the computer with the forwarded port" autocomplete="off" spellcheck="false">
+        <label for="public-address" title="Only if you forwarded a port">Public address (optional)</label>
+        <input type="text" id="public-address" placeholder="203.0.113.5:47000" autocomplete="off" spellcheck="false">
       </div>
       <div class="field" id="upnp-field">
-        <label class="admission-check"><input type="checkbox" id="allow-upnp"> Ask my router to open a TCP port with UPnP, including on saved reopen</label>
-        <p id="upnp-off-note" class="login-note" hidden>With no public address and no UPnP, friends on the internet cannot join. You can turn on UPnP later in the Invite panel.</p>
+        <label class="admission-check" title="Asks your router to forward a port, also when you reopen this room"><input type="checkbox" id="allow-upnp"> Open port (UPnP)</label>
+        <p id="upnp-off-note" class="login-note warn-line" hidden>Without UPnP or a public address, only your LAN can join.</p>
       </div>
 
       <!-- Saved rooms (milestone 6): only for a keyed room. saved-rooms-ui.js shows and fills these. -->
       <div class="field save-fields" id="save-room-fields" hidden>
-        <label class="check"><input type="checkbox" id="save-room"> Save room on this device</label>
-        <label class="check"><input type="checkbox" id="keep-history" checked> Keep local history</label>
-        <p id="save-off-note" class="login-note" hidden>If you do not save the room, it is gone when you quit. You must then create a new room and invite each device again.</p>
+        <label class="check"><input type="checkbox" id="save-room"> Save room</label>
+        <label class="check"><input type="checkbox" id="keep-history" checked> Keep history</label>
+        <p id="save-off-note" class="login-note warn-line" hidden>Unsaved rooms are gone when you quit.</p>
       </div>
 
       <!-- renderer.js sets the label for the room type: Create room, Join room or Create LAN room. -->
@@ -91,8 +92,8 @@
       <!-- renderer.js moves #status into #statusbar after the login. -->
       <p id="status" role="status"></p>
       <div class="device-enrollment">
-        <span id="device-id-note" role="status">Joining a friend’s room? Send your device ID to the room owner to get your invite.</span>
-        <button type="button" id="copy-device-id">Copy my device ID</button>
+        <span id="device-id-note" role="status"></span>
+        <button type="button" id="copy-device-id" title="Send it to the room owner to get an invite">Copy device ID</button>
       </div>
 
       <!-- Saved rooms (milestone 6). -->

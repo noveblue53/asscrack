@@ -175,7 +175,8 @@ test('the login button names the room type and says that the room starts while t
     await settle();
     assert.equal(room.el('login').textContent, 'Create room');
     assert.equal(room.el('login').disabled, false);
-    assert.equal(room.el('status').textContent, 'Error: Port 47000 is in use on this computer.');
+    assert.equal(room.el('status').textContent, 'Port 47000 is in use on this computer.');
+    assert.equal(room.el('status').classList.contains('error'), true, 'the error class makes the text red');
 });
 
 test('Enter with no Shift in the invite box logs in', async () => {
@@ -206,7 +207,7 @@ test('the device ID button copies the ID, selects the join type and puts the foc
     assert.equal(room.el('invite-field').hidden, false);
     assert.equal(room.el('login').textContent, 'Join room');
     assert.equal(room.document.activeElement, room.el('invite-input'));
-    assert.equal(room.el('device-id-note').textContent, 'Device ID copied. Send it to the room owner. Then paste the invite here.');
+    assert.equal(room.el('device-id-note').textContent, 'Copied. Send it to the room owner.');
 });
 
 test('the user name of the last successful login comes back from localStorage', async () => {
@@ -253,7 +254,7 @@ async function savedRoomsWindow() {
     return room;
 }
 
-test('"Save room on this device" is on for the Create types and off for Join, with the note when it is off', async () => {
+test('"Save room" is on for the Create types and off for Join, with the note when it is off', async () => {
     const room = await savedRoomsWindow();
     const box = room.el('save-room');
     const note = room.el('save-off-note');
@@ -282,7 +283,7 @@ test('Create with the name of a saved room starts the room only at the second cl
     await settle();
     assert.deepEqual(logins, []);
     assert.equal(room.el('status').textContent,
-        'A saved room has this name. Create makes a new, different room. To open the saved room, select Reopen room.');
+        'You have a saved room with this name. Use Reopen to open it.');
     room.el('login').click();
     await settle();
     assert.deepEqual(logins, ['garage']);

@@ -73,7 +73,9 @@ test('L4: the asscrack3 code carries the expiry time; a code that expired more t
     let err = null
     try { readInvite(oldCode) } catch (e) { err = e }
     assert.ok(err, 'an expired code is refused')
-    assert.equal(loginErrorText(err), EXPIRED)
+    assert.equal(err.message, EXPIRED)
+    // UI copy pass: the window shows the short text of login-errors.mjs.
+    assert.equal(loginErrorText(err), 'Invite expired. Ask for a new one.')
 })
 
 test('L4: 127.0.0.1: the owner node does not admit a device with an expired invite', { timeout: 20000 }, async t => {

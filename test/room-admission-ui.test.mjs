@@ -50,7 +50,7 @@ test('a modified legacy code requires fresh affirmative trust and protected invi
     assert.equal(room.el('legacy-consent').hidden, false);
     await room.login('Laptop');
     assert.equal(loggedIn, undefined);
-    assert.match(room.el('status').textContent, /legacy room code/);
+    assert.match(room.el('status').textContent, /I trust everyone with this code/);
     consent.checked = true;
     invite.value = 'asscrack1:legacy-two';
     invite.dispatchEvent(new room.Event('input'));
@@ -118,9 +118,9 @@ test('a saved admission survives a stale invite and rejects conflicts or a missi
     assert.equal(joined.revoked(other.id), true);
     assert.deepEqual(joined.revocations(), owner.revocations());
     const differentOwner = createRoomMembership({ identity: createDeviceIdentity(), room, roomKey: key, lan: true });
-    assert.throws(() => joinAdmission({ ...code, membership: differentOwner.issue(device.id) }, device, saved), /does not match/);
-    assert.throws(() => restoreSavedAdmission({ ...saved, membership: null }, device), /missing its saved admission/);
+    assert.throws(() => joinAdmission({ ...code, membership: differentOwner.issue(device.id) }, device, saved), /doesn't match/);
+    assert.throws(() => restoreSavedAdmission({ ...saved, membership: null }, device), /saved access is missing/);
     assert.equal(owner.revoke(device.id), true);
     const revoked = { ...stale, revocations: owner.revocations() };
-    assert.throws(() => joinAdmission({ ...code, membership: revoked }, device, saved), /removed from the room/);
+    assert.throws(() => joinAdmission({ ...code, membership: revoked }, device, saved), /removed from (this|the) room/);
 });

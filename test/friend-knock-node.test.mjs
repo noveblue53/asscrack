@@ -110,7 +110,7 @@ test('127.0.0.1 friend Join to a friend that is the owner: the row shows Join, t
     await joinAndChat(t, B.identity, outcome.invite, R.node);
 });
 
-test('127.0.0.1 friend Join to a friend that is the owner: Deny gives "The owner did not let you in."', { timeout: 90000 }, async t => {
+test('127.0.0.1 friend Join to a friend that is the owner: Deny gives "The owner declined."', { timeout: 90000 }, async t => {
     const { A, linksA, linksB, friendB } = await friends(t);
     const R = await ownerRoom(t, A.identity);
     const prompts = answerPrompts(R.node, false);
@@ -118,7 +118,7 @@ test('127.0.0.1 friend Join to a friend that is the owner: Deny gives "The owner
     await waitFor(() => linksB.friend(friendB).join?.room === R.room, 'B sees Join');
     const outcome = await linksB.knock(friendB, { name: 'Ben' });
     assert.equal(outcome.result, 'denied');
-    assert.equal(knockResultText(outcome), 'The owner did not let you in.');
+    assert.equal(knockResultText(outcome), 'The owner declined.');
     assert.equal(prompts.length, 1);
     assert.equal(R.membership.issued().length, 0, 'no grant');
 });
@@ -169,7 +169,7 @@ test('127.0.0.1 friend Join: a member that is not admitted shows "Ask <friend> f
     const started = Date.now();
     const outcome = await linksJ.knock(friendJ, { name: 'Jo' });
     assert.deepEqual(outcome, { result: 'offline', room: R.room });
-    assert.equal(knockResultText(outcome), 'The owner is not online. Try again later.');
+    assert.equal(knockResultText(outcome), 'Owner is offline. Try again later.');
     assert.ok(Date.now() - started < 15000, 'the answer comes at once, not after the prompt time');
 });
 

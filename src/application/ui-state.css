@@ -1,0 +1,9 @@
+/* UI copy pass (1.0.2): the controls that show a state instead of a sentence (a dot, a badge, an icon). All colors come
+   from the theme variables of themes.css, thus each theme keeps its contrast. The label text names the state too: the
+   color is never the only sign (Amber Terminal has a warning color near the danger color). */
+
+/* P1: an error in the status line is red. */
+#statusbar #status.error { color: var(--danger); }
+
+/* U20: a short warning line on the login card. */
+.warn-line::before { content: '⚠\FE0E  '; color: var(--warning); font-weight: 700; }

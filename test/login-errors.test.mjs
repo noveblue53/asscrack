@@ -6,9 +6,9 @@ import { makeMemberInvite, newRoomKey, readInvite } from '../src/network/invite.
 import { createDeviceIdentity, createRoomMembership, restoreRoomMembership } from '../src/network/room-membership.mjs';
 import { isAddressInUse, loginErrorText } from '../src/application/login-errors.mjs';
 
-const NOT_INVITE = 'This is not an ASSCRACK invite. Copy the whole code from the person who invited you.';
-const INCOMPLETE = 'The invite code is not complete. Copy the whole code again from the person who invited you.';
-const OTHER_DEVICE = 'This invite is for a different device. Select “Copy my device ID”, send the ID to the room owner, and ask for a new invite.';
+const NOT_INVITE = 'Not a valid invite code.';
+const INCOMPLETE = 'Invite code is incomplete. Copy all of it.';
+const OTHER_DEVICE = 'This invite is for another device. Send the owner your device ID.';
 
 const room = 'Garage';
 const roomKey = newRoomKey();
@@ -53,14 +53,14 @@ test('EADDRINUSE in a cause gives the port text', () => {
     const err = new Error('listen failed', { cause: { code: 'EADDRINUSE' } });
     assert.equal(isAddressInUse(err), true);
     assert.equal(loginErrorText(err, { port: 47000 }),
-        'Port 47000 is in use on this computer. Close the other program or the other ASSCRACK, or use a different port.');
+        'Port 47000 is in use. Close the other app or choose another port.');
 });
 
 test('the version, public address and other texts', () => {
     assert.equal(loginErrorText(new Error('The invite code has an unknown version')),
-        'This invite comes from a different ASSCRACK version. You and the room owner must use the same version.');
+        'This invite is from another app version. Both of you need the latest update.');
     assert.equal(loginErrorText(new Error('The public address must be <IPv4>:<port>')),
-        'Write the public address as IP:port, for example 203.0.113.5:47000.');
+        'Use IP:port, for example 203.0.113.5:47000.');
     assert.equal(loginErrorText(new Error('Enter a username of up to 64 characters.')), 'Enter a username of up to 64 characters.');
 });
 
@@ -80,7 +80,7 @@ test('OI1: the libp2p error of a node on a port in use makes isAddressInUse true
     assert.ok(err, 'the node must not start on a port in use');
     assert.equal(err.code, undefined, 'the libp2p error has no code (the case of OI1)');
     assert.equal(isAddressInUse(err), true, `${err.name}: ${err.message}`);
-    assert.match(loginErrorText(err, { port }), new RegExp(`^Port ${port} is in use on this computer`));
+    assert.match(loginErrorText(err, { port }), new RegExp(`^Port ${port} is in use\\.`));
 });
 
 test('OI1: the libp2p name alone, with no EADDRINUSE in the message, is not a port in use', () => {

@@ -44,7 +44,7 @@ export function loginErrorCode(err, depth = 0) {
     if (/The public address must be/.test(text)) return 'public-address';
     if (/has expired/.test(text)) return 'invite-expired';
     if (/Enter a username|Enter a room name|Enter an invite|Choose how/.test(text)) return 'form';
-    if (/legacy room code|requires a protected device invite/.test(text)) return 'legacy';
+    if (/legacy room code|requires a protected device invite|I trust everyone with this code|needs a device invite/.test(text)) return 'legacy';
     if (/Already logged in/.test(text)) return 'already';
     if (/Saved room not found/.test(text)) return 'saved-room-missing';
     return 'other';

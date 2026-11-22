@@ -89,9 +89,9 @@ test('the joiner sees the state of its knock while the login waits for the owner
     assert.equal(room.el('status').textContent, 'Looking for the owner of Game night…');
     room.handlers.onKnockState({ state: 'waiting', room: 'Game night' });
     assert.equal(room.el('status').textContent, 'Waiting for the owner of Game night…');
-    finish.reject(new Error('The owner did not let you in.'));
+    finish.reject(new Error('The owner declined.'));
     await settle();
-    assert.equal(room.el('status').textContent, 'Error: The owner did not let you in.');
+    assert.equal(room.el('status').textContent, 'The owner declined.');
     room.handlers.onKnockState({ state: 'waiting', room: 'Game night' });
-    assert.equal(room.el('status').textContent, 'Error: The owner did not let you in.', 'no state text after the login ends');
+    assert.equal(room.el('status').textContent, 'The owner declined.', 'no state text after the login ends');
 });
