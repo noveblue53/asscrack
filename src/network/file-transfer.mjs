@@ -489,13 +489,14 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
 
     // A failed leg stays open to a retry for OFFER_TTL_MS. P7c: a paused leg stays open for resumeTtl, and in a
     // protected room the grant is saved with the device ID of the receiver.
-    function markFailedOffer(offer, peerId, { pause = false } = {}) {
+    // `device`: the device ID from the start of the stream (the peer can be gone at the failure).
+    function markFailedOffer(offer, peerId, { pause = false, device: known = null } = {}) {
         if (offer.attachmentId) return
         offer.failed.add(peerId)
         const until = Date.now() + (pause ? resumeTtl : OFFER_TTL_MS)
         offer.failedUntil.set(peerId, until)
         offer.expiresAt = Math.max(offer.expiresAt, until)
-        const device = pause ? deviceOf(peerId) : null
+        const device = pause ? known ?? deviceOf(peerId) : null
         if (device) offer.paused.set(peerId, device)
         else if (!offer.paused.delete(peerId)) return
         saveGrants()
@@ -727,6 +728,7 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
         offer.started.add(peerId)
         const key = `send|${offerId}|${peerId}`
         t.offerId = offerId
+        t.device = deviceOf(peerId)
         // Register before sending any bytes. A fast receiver can confirm before our close() returns.
         if (request.ack === 1) t.receipt = Promise.withResolvers()
         if (t.receipt && request.flow === 1) t.window = sendWindow(fileAckTimeout)
@@ -796,14 +798,15 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
             } else if (t.signal === 'pause' && !t.selfCancel && !stopping) {
                 // The receiver keeps its partial. The leg stays open to a retry, thus a Resume can continue it.
                 active.delete(key)
-                if (offer.targets.has(peerId)) markFailedOffer(offer, peerId, { pause: true })
+                if (offer.targets.has(peerId)) markFailedOffer(offer, peerId, { pause: true, device: t.device })
                 events.emit('file-paused', { offerId, peerId, direction: 'send', bytes: t.offset + t.offeredBytes, size: offer.size })
             } else if (t.selfCancel || stopping) {
                 active.delete(key)
                 events.emit('file-cancelled', { offerId, peerId, direction: 'send', by: 'self' })
             } else {
                 active.delete(key)
-                if (offer.targets.has(peerId)) markFailedOffer(offer, peerId)
+                // P7c: the receiver keeps its part after a failed resume (P7a-6), thus the grant stays as for a pause.
+                if (offer.targets.has(peerId)) markFailedOffer(offer, peerId, resumable ? { pause: true, device: t.device } : {})
                 events.emit('file-failed', { offerId, peerId, direction: 'send', reason: t.idleExpired ? 'transfer stalled' : shortReason(err) })
             }
         } finally {
@@ -858,6 +861,8 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
         }
         try {
             claimed = store && offer.size > 0 ? await store.claim(offer.sha256, offer.size) : null
+            // P7c: a receive that uses a kept part keeps it at a node stop. stop() then tells the sender "pause".
+            t.keepsPart = !!claimed
             if (claimed) {
                 try {
                     fh = await fsp.open(claimed.path, 'r+')
@@ -1316,7 +1321,9 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
         }
         for (const t of active.values()) {
             if (!t.finalizing) {
-                sendLine(t.peerId, { type: 'file-cancel', offerId: t.offerId })
+                // P7c: the part of a resumed receive stays (P7a). The sender keeps its grant as for a Pause.
+                const type = t.direction === 'receive' && t.keepsPart ? 'file-pause' : 'file-cancel'
+                sendLine(t.peerId, { type, offerId: t.offerId })
                 interruptTransfer(t, 'Node stopped')
             }
             if (t.promise) waits.push(t.promise)

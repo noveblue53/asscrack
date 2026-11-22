@@ -332,3 +332,53 @@ test('a room with no membership keeps no retry state: a restart needs a new offe
         await cleanup(ctx)
     }
 })
+
+// The last attempt of the kept part was itself a resume. B quits during it (case 1) or the link drops (case 2).
+// The grant of the sender must stay with the device of B, thus a Resume after the next restart works.
+for (const mode of ['quit', 'drop']) {
+    test(`a kept part whose resumed attempt ended by a ${mode === 'quit' ? 'quit of the receiver' : 'lost link'} can resume after a restart (127.0.0.1)`,
+        { timeout: 90000 }, async () => {
+        const ctx = { nodes: [], dirs: [] }
+        try {
+            const { account } = await protectedRoom(ctx)
+            const alice = await account('Alice')
+            const bob = await account('Bob')
+            const a = await alice.start()
+            let b = await bob.start()
+            await meet(a, b)
+            const size = 24 * MiB
+            const { offer } = await sendAndPause(a, b, size)
+            await b.stop()
+            b = await bob.start()
+            await meet(a, b)
+            // The resumed attempt ends near 70 % of the file.
+            let ended = false
+            const node = b
+            tapFileStreams(node, (total, entry) => {
+                if (ended || entry.protocol !== FILE_PROTOCOLS[1] || total < size * 0.3) return
+                ended = true
+                if (mode === 'quit') node.stop().catch(() => {})
+                else for (const c of node.libp2p.getConnections()) if (c.remotePeer.toString() === a.peerId) c.abort(new Error('link lost'))
+            })
+            assert.equal(b.resumeFile(offer.offerId), true)
+            await waitUntil(() => ended, 20000, 'resumed attempt ended')
+            if (mode === 'drop') await waitUntil(() => b.log.failed.length > 0, 10000, 'failed resumed attempt')
+            await b.stop()
+            await waitUntil(async () => (await createGrantStore({ file: alice.grantsFile }).load()).length === 1, 5000,
+                'the sender keeps the grant of the resumed attempt')
+            b = await bob.start()
+            const [kept] = await b.partials()
+            assert.equal(kept.resumable, true)
+            assert.ok(kept.bytes > size * 0.6, `kept ${kept.bytes}`)
+            await meet(a, b)
+            assert.equal(b.resumeFile(kept.offerId), true)
+            await waitUntil(() => b.log.done.length === 1, 20000, 'third attempt done')
+            const done = a.log.done.find(d => d.direction === 'send')
+            assert.equal(done.offset, kept.bytes)
+            assert.equal(done.sent, size - kept.bytes)
+            assert.equal(await sha(b.log.done[0].path), offer.sha256)
+        } finally {
+            await cleanup(ctx)
+        }
+    })
+}

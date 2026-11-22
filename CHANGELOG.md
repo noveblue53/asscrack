@@ -23,6 +23,10 @@ when the sender offered the same file again.
 - Not changed: the final SHA-256 check of the full file, a changed source deletes the kept part, Discard and expiry
   delete the part and its retry state. A room with no membership has no device ID: it behaves as before (a new offer
   of the same file continues the part).
+- A resumed download that stops again (a quit of the receiver or a lost link) keeps the grant of the sender. Thus
+  Resume works also after the next restart.
+- Known limit: the sender has no Pause. When the sender quits during a send, the receiver row shows "Cancelled". The
+  part stays, and a new offer of the same file continues it.
 
 Results:
 - `npm test` passes, 687 of 687 (127.0.0.1).
