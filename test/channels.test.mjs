@@ -139,3 +139,61 @@ test('replacing the same host identity disables named Send until the new session
     c.handle('host', { v: 1, op: 'hello' })
     assert.deepEqual(visible, [true, false, true])
 })
+
+// M2 (P10a): channels.mjs had no limit on the total count and no rate limit. 2000 add lines of one member gave 128 001
+// channels, 57.9 s of CPU and 2001 lines to each other peer. The fix: at most 64 channels, a member keeps new channels
+// only from the host, and the host has a rate limit for the add lines of each member.
+const rows = n => Array.from({ length: n }, (_, i) => ({ id: randomUUID(), name: `Junk ${i}` }))
+
+test('M2: 2000 add lines of one member give at most 64 channels at the host and few lines to the other peers', () => {
+    const sent = []
+    const host = createChannels({ self: 'host', host: () => 'host', send: (id, msg) => sent.push({ id, msg }), ready() {}, changed() {} })
+    host.handle('attacker', { v: 1, op: 'hello' })
+    host.handle('other', { v: 1, op: 'hello' })
+    sent.length = 0
+    for (let i = 0; i < 2000; i++) host.handle('attacker', { v: 1, op: 'add', rows: rows(64) })
+    assert.equal(host.view().channels.length, 1 + 64)
+    const toOther = sent.filter(s => s.id === 'other')
+    assert.ok(toOther.length <= 30, `lines to the other peer: ${toOther.length}`)
+    assert.throws(() => host.create('One more'), /at most 64 channels/)
+})
+
+test('M2: a member keeps new channels only from the host', () => {
+    const member = createChannels({ self: 'member', host: () => 'host', send() {}, ready() {}, changed() {} })
+    member.handle('host', { v: 1, op: 'hello' })
+    member.handle('other', { v: 1, op: 'hello' })
+    const [fromOther, fromHost] = rows(2)
+    member.handle('other', { v: 1, op: 'add', rows: [fromOther] })
+    member.handle('host', { v: 1, op: 'add', rows: [fromHost] })
+    assert.deepEqual(member.view().channels.map(c => c.id), ['general', fromHost.id])
+})
+
+test('M2: a seed of more than 64 channels keeps 64', () => {
+    const c = createChannels({ self: 'me', host: () => null, send() {}, ready() {}, changed() {}, seed: rows(100) })
+    assert.equal(c.view().channels.length, 1 + 64)
+})
+
+test('M2: the new channel of a member reaches the other member through the host; a new host gets the lists', async () => {
+    const nodes = {}
+    let hostId = 'host'
+    const make = self => {
+        nodes[self] = createChannels({ self, host: () => hostId, ready() {}, changed() {},
+            send: (id, msg) => queueMicrotask(() => nodes[id]?.handle(self, msg)) })
+    }
+    for (const id of ['host', 'a', 'b']) make(id)
+    for (const x of ['host', 'a', 'b']) for (const y of ['host', 'a', 'b']) if (x !== y) nodes[x].handle(y, { v: 1, op: 'hello' })
+    const created = nodes.a.create('Raid')
+    for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve))
+    for (const id of ['host', 'a', 'b']) assert.ok(nodes[id].known(created), `${id} knows the channel`)
+    // A list that came before the host was known: the member sends it to the new host.
+    const late = createChannels({ self: 'late', host: () => hostId, ready() {}, changed() {}, seed: [{ id: randomUUID(), name: 'Old' }],
+        send: (id, msg) => queueMicrotask(() => nodes[id]?.handle('late', msg)) })
+    nodes.late = late
+    nodes.host.handle('late', { v: 1, op: 'hello' })
+    late.handle('host', { v: 1, op: 'hello' })
+    hostId = 'host'
+    late.changedHost()
+    for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve))
+    assert.equal(nodes.host.view().channels.length, 3, 'the host has Raid and Old')
+    assert.ok(nodes.a.view().channels.some(c => c.name === 'Old'), 'the host sent Old on to a')
+})
