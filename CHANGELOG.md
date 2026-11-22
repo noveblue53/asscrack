@@ -26,11 +26,20 @@ A member can share a screen or a window with the room. Design: `work-orders/astr
   "Sharing your screen" and Stop sharing. The taskbar button has a red overlay while the share is on. A pending
   mention dot comes back after the stop.
 - **Result: 127.0.0.1, this PC.** No LAN test and no internet test.
-  - `npm test`: 817 tests, 800 pass, 0 fail, 17 skipped (the timed checks of P8a).
+  - `npm test`: 862 tests, 844 pass, 0 fail, 18 skipped (the timed checks).
   - The app check has three app copies (`work-orders/astra/P8/checks/screen-check.mjs`, local). 15 of 15 checks
     pass: W3 check 6, W4 checks 4 to 10, W5 checks 5, 6 and 8 to 11. It found two faults that are now fixed: the
     tier ID type in the bridge, and Fill window inside an animated panel.
-  - The timed checks (frame rates, latency, CPU and Auto steps of W7, and check 19 three times) wait for a calm PC.
+  - Timed checks with the real capture and encoder (`checks/timed.mjs`, load 15 % to 38 %). Standard: 14.9 fps
+    direct and 15.0 fps on a circuit, about 1.5 Mbit/s. Latency p95: 200 and 201 ms. Sharer CPU: 20 % and 22 % of a
+    core. Smooth: 29.6 fps. High and Max (the screen of this PC): 57.7 and 57.8 fps, CPU 121 % and 169 %.
+  - Auto: Max at 21 s on a direct route, Balanced on a circuit (the relay part). The minimized sharer gave 15.3 fps.
+  - **Check 19 fails: 2 of 2 valid runs.** Two circuit viewers, the link of viewer 2 at 6 and 2 Mbit/s in turn.
+    Viewer 1 had 15 and 14 frames in its lowest second after 15 s (limit 28). It reaches Smooth at 27 to 30 fps only
+    from about 22 s, after the start split at about 20 s. This is a known failure (decision P8b-14). The time of the
+    split is a 1.0.x item.
+  - Report only: check 17 passes 3 of 3, check 24 passes 3 of 3 (Max at 21.3 s, then 57 fps). Check 21 fails 3 of 3:
+    a text share on a 1.5 Mbit/s link stays at Standard.
   - Known gaps: the return from Idle Peer was not driven (it needs the tray). The two-copy voice check did not
     connect its copies on this PC, on this branch and on `origin/main`.
 
