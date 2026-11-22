@@ -85,6 +85,9 @@ CREATE TABLE IF NOT EXISTS messages(room_id TEXT NOT NULL REFERENCES rooms(room_
 CREATE INDEX IF NOT EXISTS messages_order ON messages(room_id, time, msg_id);
 CREATE TABLE IF NOT EXISTS channels(room_id TEXT NOT NULL REFERENCES rooms(room_id) ON DELETE CASCADE,
   channel_id TEXT NOT NULL, name TEXT NOT NULL, PRIMARY KEY(room_id,channel_id));
+-- G6: the owner-signed voice channel catalog of a protected room (JSON). The node checks it again at each start.
+CREATE TABLE IF NOT EXISTS voice_channels(room_id TEXT PRIMARY KEY REFERENCES rooms(room_id) ON DELETE CASCADE,
+  catalog TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS channel_messages(room_id TEXT NOT NULL, msg_id TEXT NOT NULL, sender TEXT, body TEXT NOT NULL,
   time INTEGER NOT NULL, own INTEGER NOT NULL, source TEXT NOT NULL, peer_id TEXT, channel_id TEXT NOT NULL,
   PRIMARY KEY(room_id,msg_id), FOREIGN KEY(room_id,channel_id) REFERENCES channels(room_id,channel_id) ON DELETE CASCADE);
@@ -439,6 +442,26 @@ function makeRoomArchive({ dir, protector, limits = null }) {
       d.transaction(() => { for (const row of rows) {
         if (validChannelId(row?.id) && validChannelName(row.name)) put.run(roomId, row.id, row.name);
       } })();
+    },
+    // G6: the saved voice channel catalog, or null. A row that does not read gives null.
+    voiceChannels(roomId) {
+      const row = need().prepare('SELECT catalog FROM voice_channels WHERE room_id=?').get(roomId);
+      if (!row) return null;
+      try { return JSON.parse(row.catalog); } catch { return null; }
+    },
+    // Keeps the catalog with the higher seq. The caller gives only a catalog that the node accepted.
+    saveVoiceChannels(roomId, catalog) {
+      if (!catalog || !Number.isSafeInteger(catalog.seq)) return false;
+      const d = need();
+      return d.transaction(() => {
+        const old = d.prepare('SELECT catalog FROM voice_channels WHERE room_id=?').get(roomId);
+        let oldSeq = -1;
+        try { oldSeq = old ? JSON.parse(old.catalog).seq : -1; } catch { /* a bad row is replaced */ }
+        if (Number.isSafeInteger(oldSeq) && oldSeq >= catalog.seq) return false;
+        d.prepare(`INSERT INTO voice_channels(room_id,catalog) VALUES(?,?)
+          ON CONFLICT(room_id) DO UPDATE SET catalog=excluded.catalog`).run(roomId, JSON.stringify(catalog));
+        return true;
+      })();
     },
     addMessage(roomId, { id, from = null, text, time, own = false, source, peerId = null, channelId = null, attachment = null }) {
       const d = need();

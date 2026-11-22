@@ -84,6 +84,12 @@ contextBridge.exposeInMainWorld('asscrack', {
     onHistory: listen('asscrack:history'),
     signal: (peerId, data) => ipcRenderer.invoke('asscrack:signal', { peerId, data }),
     setVoice: state => ipcRenderer.invoke('asscrack:set-voice', state),
+    // G6: the voice channels of the room: { owner, editable, seq, channels: [{ id, name }] }.
+    getVoiceChannels: () => ipcRenderer.invoke('asscrack:voice-channels'),
+    onVoiceChannels: listen('asscrack:voice-channels'),
+    createVoiceChannel: name => ipcRenderer.invoke('asscrack:voice-channel-create', String(name)),
+    renameVoiceChannel: (id, name) => ipcRenderer.invoke('asscrack:voice-channel-rename', String(id), String(name)),
+    deleteVoiceChannel: id => ipcRenderer.invoke('asscrack:voice-channel-delete', String(id)),
     // G4: the saved listening choice (volume, "Mute for me") of a person in this room. The main process finds the
     // device ID of the peer: the window never gives a name or a device ID.
     getListening: peerId => ipcRenderer.invoke('asscrack:get-listening', String(peerId)),

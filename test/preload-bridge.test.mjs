@@ -147,3 +147,24 @@ test('openLink sends the href as text, and canSendFile gives a boolean and never
     assert.equal(b.api.canSendFile(null), false);
     assert.deepEqual(b.touched, []);
 });
+
+// Goal G6 adds five bridge functions for the voice channels. Each call sends only text to its own IPC channel; the
+// main process asks the node, and the node checks the owner and the name.
+test('the voice channel calls of G6 send the channel ID and the name as text', async () => {
+    const b = loadBridge();
+    assert.deepEqual(await b.api.getVoiceChannels(), { channel: 'asscrack:voice-channels' });
+    b.api.createVoiceChannel('Raid');
+    b.api.renameVoiceChannel({ toString: () => 'id-1' }, 42);
+    b.api.deleteVoiceChannel('id-2');
+    assert.deepEqual(b.invoked, [
+        ['asscrack:voice-channels'],
+        ['asscrack:voice-channel-create', 'Raid'],
+        ['asscrack:voice-channel-rename', 'id-1', '42'],
+        ['asscrack:voice-channel-delete', 'id-2']
+    ]);
+    const got = [];
+    b.api.onVoiceChannels(view => got.push(view));
+    b.emit('asscrack:voice-channels', { seq: 1 });
+    assert.deepEqual(got, [{ seq: 1 }]);
+    assert.deepEqual(b.touched, []);
+});

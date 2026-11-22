@@ -184,6 +184,21 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
         try { archive.saveChannels(active.roomId, rows); }
         catch (err) { log('WARN', 'Could not save the room channel catalog: ' + errText(err)); }
     }
+    // G6: the saved voice channel catalog of a room, or null.
+    function loadVoiceChannels(room, key) {
+        const a = ensure();
+        if (!a || a.state().state !== 'open') return null;
+        try { return a.voiceChannels(roomFingerprint(room, key)); }
+        catch (err) {
+            log('WARN', 'Saved voice channels unavailable: ' + errText(err));
+            return null;
+        }
+    }
+    function persistVoiceChannels(catalog) {
+        if (!active || !catalog) return;
+        try { archive.saveVoiceChannels(active.roomId, catalog); }
+        catch (err) { log('WARN', 'Could not save the voice channels: ' + errText(err)); }
+    }
     function releaseReplay() {
         replay = null;
     }
@@ -369,7 +384,7 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
     }
 
     return {
-        open, rememberDownload, getDownload, status, unlock, lines, getRoom, loadChannels, persistChannels, prepareReplay, releaseReplay, afterLogin, recordSend, attachNode, setKeepHistory, setUserName, clear, forget, activeInfo,
+        open, rememberDownload, getDownload, status, unlock, lines, getRoom, loadChannels, persistChannels, loadVoiceChannels, persistVoiceChannels, prepareReplay, releaseReplay, afterLogin, recordSend, attachNode, setKeepHistory, setUserName, clear, forget, activeInfo,
         deviceIdentity, isProtectedRoom, persistMembership, close, active: () => active
     };
 }

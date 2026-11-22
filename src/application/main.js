@@ -42,7 +42,7 @@ if (process.platform === 'win32') {
 
 const EVENTS = ['channels', 'peer-discovered', 'peer-joined', 'peer-left', 'message', 'history', 'signal', 'voice-state', 'host-changed', 'peer-name',
     'file-offer', 'file-retried', 'file-progress', 'file-done', 'file-failed', 'file-refused', 'file-cancelled', 'topology', 'full-node', 'full-node-addrs',
-    'voice-frame', 'connection', 'dial-failed', 'upnp', 'presence', 'topic'];
+    'voice-frame', 'connection', 'dial-failed', 'upnp', 'presence', 'topic', 'voice-channels'];
 
 // Test option: --profile <dir> gives each instance its own user data folder.
 const profileIndex = process.argv.indexOf('--profile');
@@ -463,6 +463,7 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
                 try { deleteHintFiles(hints); } catch { writeLog('WARN', 'Could not remove old unsaved room hints'); }
             }
             options.seedChannels = rooms.loadChannels(options.room, options.roomKey);
+            options.seedVoiceChannels = rooms.loadVoiceChannels(options.room, options.roomKey);
             options.seedHistory = removeHistory => rooms.prepareReplay(options.room, options.roomKey, removeHistory);
         }
         const hostFile = alreadySaved ? hints.host : null;
@@ -557,6 +558,14 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
     for (const type of EVENTS) {
         node.events.on(type, data => {
             if (type === 'channels') savedRooms?.persistChannels(data.added);
+            // G6: the archive gets the signed catalog. The window gets the view only.
+            if (type === 'voice-channels') {
+                const { catalog, ...view } = data;
+                savedRooms?.persistVoiceChannels(catalog);
+                logEvent(type, { seq: view.seq, channels: view.channels.length, movedFrom: view.movedFrom?.id });
+                sendToWindow('asscrack:voice-channels', view);
+                return;
+            }
             logEvent(type, data);
             // The diagnostic window reads a redacted projection of these local events.
             if (type === 'connection' || type === 'dial-failed' || (idlePeer && type === 'voice-frame')) return;
@@ -639,6 +648,7 @@ function afterRoomStart(result, { invite = null, userName, save = false, keepHis
     catch { writeLog('WARN', 'Saved room address hints could not be stored'); }
     finally { retainRoomHints = null; }
     getSavedRooms().persistChannels(node.channels().channels);
+    getSavedRooms().persistVoiceChannels(node.voiceChannelCatalog());
     return { ...result, ...saveInfo };
 }
 
@@ -847,6 +857,11 @@ handleRoomIpc('asscrack:whisper-send', (_event, peerId, text, id) => node?.sendW
 
 handleRoomIpc('asscrack:channels', () => node?.channels());
 handleRoomIpc('asscrack:create-channel', (_event, name) => node.createChannel(name));
+// G6: the voice channels. Only the room owner edits them; the node throws a plain text error for the window.
+handleRoomIpc('asscrack:voice-channels', () => node?.voiceChannels());
+handleRoomIpc('asscrack:voice-channel-create', (_event, name) => node.createVoiceChannel(String(name ?? '')));
+handleRoomIpc('asscrack:voice-channel-rename', (_event, id, name) => node.renameVoiceChannel(String(id ?? ''), String(name ?? '')));
+handleRoomIpc('asscrack:voice-channel-delete', (_event, id) => node.deleteVoiceChannel(String(id ?? '')));
 handleRoomIpc('asscrack:send', (_event, text, channelId) => {
     if (!node) throw new Error('Not logged in');
     // Saved rooms (milestone 6): the window gets the record. An archive error does not stop the send.
