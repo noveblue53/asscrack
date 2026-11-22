@@ -91,6 +91,17 @@ Use Node 24 and the lockfile of the project.
 npm ci
 ```
 
+On a Windows PC with no VC++ build tools, `npm ci` alone fails. npm 11 runs a `node-gyp rebuild` for
+`better-sqlite3-multiple-ciphers`, because its lockfile entry does not keep `"gypfile": false`, and node-gyp needs a
+compiler. The package has a prebuilt binary, so the build is not necessary. Use this command on such a PC:
+
+```bash
+npm run install:clean
+```
+
+It runs `npm ci --ignore-scripts`, then the Electron download (`node node_modules/electron/install.js`), then the
+libp2p patch (`node src/network/libp2p-relay-fix.mjs`). It does not change the dependencies or the lockfile.
+
 ```bash
 npm start
 ```

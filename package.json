@@ -7,6 +7,7 @@
   "scripts": {
     "postinstall": "node src/network/libp2p-relay-fix.mjs",
     "pretest": "node src/network/libp2p-relay-fix.mjs",
+    "install:clean": "npm ci --ignore-scripts && node node_modules/electron/install.js && node src/network/libp2p-relay-fix.mjs",
     "start": "electron .",
     "dev": "electron . --dev",
     "test": "node --test",
