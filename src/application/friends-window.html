@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en" data-theme="aero-classic">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Friends – ASSCRACK</title>
+  <link rel="stylesheet" href="themes.css">
+  <link rel="stylesheet" href="friends.css">
+  <link rel="stylesheet" href="friends-window.css">
+</head>
+<body>
+  <!-- 1.0.1: the Friends window (friends-popout.mjs). friends-ui.js fills the panel, as in the room window. -->
+  <aside id="friends-panel" data-mode="window" aria-labelledby="friends-title">
+    <div class="friends-head">
+      <h2 id="friends-title">Friends</h2>
+    </div>
+    <p id="friends-locked" hidden>Friends need the protected storage of this computer.</p>
+    <button id="friends-retry" type="button" hidden>Try again</button>
+    <p id="friends-empty" hidden>No friends yet. In a room, right-click a person and select “Add friend…”.</p>
+    <ul id="friend-list" aria-label="Friends"></ul>
+    <ul id="friend-waiting" aria-label="Friend requests that wait"></ul>
+    <div id="friends-settings" hidden>
+      <p id="friends-reach" role="status"></p>
+      <button id="friends-upnp" type="button" hidden>Ask my router to open ports (UPnP)</button>
+      <p class="friends-name-line">Your name for friends: <span id="friends-name"></span> <button id="friends-name-change" type="button">Change</button></p>
+      <details id="friends-blocked" hidden>
+        <summary>Blocked</summary>
+        <ul id="friend-blocked-list"></ul>
+      </details>
+    </div>
+    <p id="friends-status" role="status"></p>
+  </aside>
+
+  <dialog id="friend-confirm" aria-labelledby="friend-confirm-text">
+    <p id="friend-confirm-text"></p>
+    <form method="dialog" class="dialog-buttons">
+      <button id="friend-confirm-yes" type="button"></button>
+      <button value="cancel">Cancel</button>
+    </form>
+  </dialog>
+  <dialog id="friend-name-dialog" aria-labelledby="friend-name-title">
+    <form id="friend-name-form" class="dialog-buttons">
+      <h2 id="friend-name-title"></h2>
+      <label>Name <input type="text" id="friend-name-input" required maxlength="64" autocomplete="off" spellcheck="false"></label>
+      <p id="friend-name-error" role="status"></p>
+      <button id="friend-name-cancel" type="button">Cancel</button>
+      <button id="friend-name-save">Save</button>
+    </form>
+  </dialog>
+  <script src="friends-window.js"></script>
+  <script src="friends-ui.js"></script>
+</body>
+</html>
