@@ -46,5 +46,7 @@ export function loginErrorText(err, { port } = {}) {
     if (/unknown version/.test(text)) return VERSION;
     if (/for another device/.test(text)) return OTHER_DEVICE;
     if (/The public address must be/.test(text)) return PUBLIC_ADDRESS;
+    // L4 (P10a): the text of invite.mjs is already plain text for the user.
+    if (/This invite has expired/.test(text)) return text;
     return text;
 }

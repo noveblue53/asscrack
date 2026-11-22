@@ -2,6 +2,11 @@ import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, sig
 
 const VERSION = 2
 const MAX_MEMBERS = 128
+// L4 (P10a): a new grant (the device invite) has a signed expiry time. The owner refuses an expired grant, and a grant
+// with no expiry, at the first admission. An admitted device keeps its access after the expiry time.
+export const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000
+export const INVITE_EXPIRED = 'This invite has expired. Ask the room owner for a new invite.'
+const validExpiry = value => Number.isSafeInteger(value) && value > 0
 
 function canonicalBytes(value, size) {
     if (typeof value !== 'string' || value.length !== Math.ceil(size * 4 / 3) || !/^[\w-]+$/.test(value)) return null
@@ -46,7 +51,9 @@ function authority(room, roomKey, owner, lan) {
         throw new Error('Invalid protected room')
     }
     const id = createHash('sha256').update(JSON.stringify(['asscrack-room-membership/2', room, key, owner, lan])).digest('base64url')
-    const grantFields = grant => ['asscrack-room-grant/2', id, grant.deviceId, grant.canHost]
+    // L4: a grant with an expiry time signs it too. A grant of an older version has no expiry.
+    const grantFields = grant => grant.expires === undefined ? ['asscrack-room-grant/2', id, grant.deviceId, grant.canHost]
+        : ['asscrack-room-grant/3', id, grant.deviceId, grant.canHost, grant.expires]
     const admissionFields = grant => ['asscrack-room-admission/2', id, grant.signature]
     const revokeFields = state => ['asscrack-room-revocations/2', id, state.sequence, state.devices]
     const proofFields = (nonce, sender, receiver) => ['asscrack-room-peer-proof/2', id, nonce, sender, receiver]
@@ -59,10 +66,11 @@ function authority(room, roomKey, owner, lan) {
 
 function inspectGrant(room, value) {
     if (!value || value.deviceId === room.owner || typeof value.canHost !== 'boolean' ||
+        (value.expires !== undefined && !validExpiry(value.expires)) ||
         !verified(room.owner, room.grantFields(value), value.signature)) return null
-    const { deviceId, canHost, signature } = value
+    const { deviceId, canHost, signature, expires } = value
     if (!validDeviceId(deviceId)) return null
-    return { deviceId, canHost, signature }
+    return expires === undefined ? { deviceId, canHost, signature } : { deviceId, canHost, expires, signature }
 }
 
 function inspectRevocations(room, value) {
@@ -97,16 +105,17 @@ export function inspectMembershipDescriptor(room, roomKey, descriptor, { invite 
     return { v: VERSION, owner: access.owner, lan: access.lan, grant, admission, revocations, issued }
 }
 
-export function createRoomMembership({ identity, room, roomKey, lan = false }) {
+export function createRoomMembership({ identity, room, roomKey, lan = false, now = Date.now }) {
     const access = authority(room, roomKey, identity.id, lan)
     const initial = { sequence: 0, devices: [] }
     const revocations = { ...initial, signature: identity.sign(access.revokeFields(initial)) }
-    return restoreRoomMembership({ identity, room, roomKey, descriptor: {
+    return restoreRoomMembership({ identity, room, roomKey, now, descriptor: {
         v: VERSION, owner: identity.id, lan, grant: null, admission: null, revocations, issued: []
     } })
 }
 
-export function restoreRoomMembership({ identity, room, roomKey, descriptor }) {
+// now: the clock of the expiry check (L4), for the tests.
+export function restoreRoomMembership({ identity, room, roomKey, descriptor, now = Date.now }) {
     let current = inspectMembershipDescriptor(room, roomKey, descriptor)
     const access = authority(room, roomKey, current.owner, current.lan)
     const owner = identity.id === current.owner
@@ -176,6 +185,8 @@ export function restoreRoomMembership({ identity, room, roomKey, descriptor }) {
 
     function admit(member) {
         if (!owner || !member?.grant || revoked(member.deviceId)) throw new Error('Membership is unavailable')
+        // L4: the first admission needs a grant with an expiry time that is not past.
+        if (!validExpiry(member.grant.expires) || now() > member.grant.expires) throw new Error(INVITE_EXPIRED)
         const issued = current.issued.find(grant => grant.deviceId === member.deviceId)
         if (issued && issued.signature !== member.grant.signature) throw new Error('The device grant has changed')
         if (!issued) {
@@ -196,11 +207,14 @@ export function restoreRoomMembership({ identity, room, roomKey, descriptor }) {
         if (revoked(deviceId)) throw new Error('This device has been removed from the room')
         let grant = current.issued.find(value => value.deviceId === deviceId)
         if (grant && grant.canHost !== canHost) throw new Error('This device already has a different role')
-        if (!grant) {
-            if (current.issued.length >= MAX_MEMBERS) throw new Error('Room member limit reached')
-            const fields = { deviceId, canHost: canHost === true }
-            grant = { ...fields, signature: identity.sign(access.grantFields(fields)) }
-            update({ ...current, issued: [...current.issued, grant] })
+        // L4: a grant with no expiry time or with a past expiry time gets a new grant. The new invite replaces the old one.
+        const stale = grant && (!validExpiry(grant.expires) || now() > grant.expires)
+        if (!grant || stale) {
+            if (!grant && current.issued.length >= MAX_MEMBERS) throw new Error('Room member limit reached')
+            const fields = { deviceId, canHost: canHost === true, expires: now() + INVITE_TTL_MS }
+            grant = { deviceId: fields.deviceId, canHost: fields.canHost, expires: fields.expires,
+                signature: identity.sign(access.grantFields(fields)) }
+            update({ ...current, issued: [...current.issued.filter(value => value.deviceId !== deviceId), grant] })
         }
         return { v: VERSION, owner: access.owner, lan: access.lan, grant: { ...grant }, admission: null,
             revocations: structuredClone(current.revocations) }

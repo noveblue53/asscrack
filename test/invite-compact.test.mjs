@@ -83,7 +83,8 @@ test('a room name with characters outside ASCII makes a round trip', () => {
 test('asscrack3 length for one host node with one IPv4 address is 425 characters or fewer', () => {
     // The setup of the 850 figure: room name of 20 characters, issue(deviceId, false).
     const value = { ...setup({ room: 'r'.repeat(20) }), nodes: [{ id: IDS[0], addrs: ['/ip4/203.0.113.5/tcp/4001'] }] }
-    assert.equal(v2(value).length, 850)
+    // L4 (P10a): the grant has an expiry time now (32 more characters in the JSON form).
+    assert.equal(v2(value).length, 850 + 32)
     assert.ok(makeMemberInvite(value).length <= 425, `length ${makeMemberInvite(value).length}`)
 })
 
@@ -110,8 +111,10 @@ test('a damaged asscrack3 code is refused', () => {
     assert.throws(() => readInvite(reseal(Buffer.concat([plain, Buffer.from([7])]))), /data after the last field/)
     assert.throws(() => readInvite(reseal(plain.subarray(0, plain.length - 1))), /too short/)
     assert.throws(() => readInvite(reseal(plain.subarray(0, 40))), /too short/)
-    assert.throws(() => readInvite(reseal(Buffer.from([3]))), /too short/)
-    const version = Buffer.from(plain); version[0] = 4
+    // L4 (P10a): the compact version is 4 now (the grant has an expiry time). Version 3 and 5 are unknown.
+    assert.throws(() => readInvite(reseal(Buffer.from([4]))), /too short/)
+    assert.throws(() => readInvite(reseal(Buffer.from([3, 0]))), /unknown version/)
+    const version = Buffer.from(plain); version[0] = 5
     assert.throws(() => readInvite(reseal(version)), /unknown version/)
     const flags = Buffer.from(plain); flags[1] |= 0x80
     assert.throws(() => readInvite(reseal(flags)), /unknown flags/)

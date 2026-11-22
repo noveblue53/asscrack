@@ -6,14 +6,18 @@ import { createHash, randomBytes } from 'node:crypto'
 import { multiaddr } from '@multiformats/multiaddr'
 import { fromString } from 'uint8arrays/from-string'
 import { toString } from 'uint8arrays/to-string'
-import { inspectMembershipDescriptor } from './room-membership.mjs'
+import { INVITE_EXPIRED, inspectMembershipDescriptor } from './room-membership.mjs'
 
 export const INVITE_PREFIX = 'asscrack1:'
 export const PROTECTED_INVITE_PREFIX = 'asscrack2:'
 export const COMPACT_INVITE_PREFIX = 'asscrack3:'
 const MAX_NODES = 16
 const MAX_REVOCATIONS = 128
-const COMPACT_VERSION = 3
+// L4 (P10a): version 4 adds the expiry time of the grant. A version 3 code (no expiry) gives "unknown version".
+const COMPACT_VERSION = 4
+// The member refuses an invite that expired more than this time ago (the clocks of two PCs can differ). The owner
+// checks the expiry time exactly at the first admission.
+const EXPIRY_GRACE_MS = 60 * 60 * 1000
 const MEMBERSHIP_VERSION = 2
 const FLAG_LAN = 1
 const FLAG_CAN_HOST = 2
@@ -75,7 +79,7 @@ function packAddr(addr) {
 
 // Layout (all numbers are unsigned, big-endian):
 //   version (1) = 3, flags (1): bit 0 lan, bit 1 canHost, room length (1), room (UTF-8),
-//   room key (32), owner (32), grant device ID (32), grant signature (64),
+//   room key (32), owner (32), grant device ID (32), grant expiry time (6, ms since 1970), grant signature (64),
 //   revocation count (1), revoked device IDs (32 each), revocation signature (64),
 //   node count (1), for each node: peer ID length (1), peer ID (multihash),
 //     address count (1), for each address: type (1) then 4 + 2 bytes (ip4/tcp) or length (2) + multiaddr bytes,
@@ -87,7 +91,10 @@ function packCompact({ room, key, nodes, membership }) {
     if (roomBytes.toString('utf8') !== room || roomBytes.length > 255) throw new Error('The invite has a bad room name')
     const d = membership
     if (!d || d.v !== MEMBERSHIP_VERSION || d.admission !== null || typeof d.lan !== 'boolean' ||
-        !d.grant || typeof d.grant.canHost !== 'boolean' || !d.revocations) throw new Error('The invite has a bad membership')
+        !d.grant || typeof d.grant.canHost !== 'boolean' || !d.revocations ||
+        !Number.isSafeInteger(d.grant.expires) || d.grant.expires < 1 || d.grant.expires >= 2 ** 48) throw new Error('The invite has a bad membership')
+    const expires = Buffer.alloc(6)
+    expires.writeUIntBE(d.grant.expires, 0, 6)
     const devices = d.revocations.devices
     if (!Array.isArray(devices) || devices.length > MAX_REVOCATIONS || d.revocations.sequence !== devices.length) {
         throw new Error('The invite has a bad membership')
@@ -99,6 +106,7 @@ function packCompact({ room, key, nodes, membership }) {
         rawBytes(key, 32, 'room key'),
         rawBytes(d.owner, 32, 'owner'),
         rawBytes(d.grant.deviceId, 32, 'device ID'),
+        expires,
         rawBytes(d.grant.signature, 64, 'signature'),
         Buffer.from([devices.length]),
         ...devices.map(id => rawBytes(id, 32, 'device ID')),
@@ -146,7 +154,9 @@ function unpackCompact(data) {
     }
     const key = b64(32)
     const owner = b64(32)
-    const grant = { deviceId: b64(32), canHost: (flags & FLAG_CAN_HOST) !== 0, signature: b64(64) }
+    const deviceId = b64(32)
+    const expires = take(6).readUIntBE(0, 6)
+    const grant = { deviceId, canHost: (flags & FLAG_CAN_HOST) !== 0, expires, signature: b64(64) }
     const count = byte()
     const devices = []
     for (let i = 0; i < count; i++) devices.push(b64(32))
@@ -230,6 +240,10 @@ export function readInvite(code) {
         throw new Error('The invite code has a bad room key')
     }
     const membership = protectedRoom ? inspectMembershipDescriptor(room, key, value.membership, { invite: true }) : null
+    // L4 (P10a): an invite with an expiry time that is past (with a grace time for the clocks).
+    if (membership?.grant?.expires !== undefined && Date.now() > membership.grant.expires + EXPIRY_GRACE_MS) {
+        throw new Error(INVITE_EXPIRED)
+    }
     if (!Array.isArray(nodes) || (!nodes.length && !membership?.lan) || nodes.length > MAX_NODES) {
         throw new Error('The invite code has no valid node list')
     }
