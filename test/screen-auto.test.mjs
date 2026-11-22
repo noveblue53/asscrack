@@ -141,7 +141,9 @@ test('check 24 (X8): one direct viewer with no limit', opts(40), async () => {
     const [v] = r.viewers
     const at = firstAt(tierTrack(r, v.peerId), x => x.preset === 'max')
     console.log(`max at ${at} ms`)
-    assert.ok(at !== null && at <= 30000, 'max in 30 s')
+    // Revision 3 (DECISIONS.md P8a-20): 45 s, not 30 s. The 30 s came from the ramp of the prototype, and that ramp
+    // used the overshoot of the smoothed use that rule U2 removes (checks 18 and 20).
+    assert.ok(at !== null && at <= 45000, 'max in 45 s')
     const after = secondsFrom(v, Math.ceil(at / 1000) + 2, 40)
     assert.ok(after.length > 0 && avg(after) >= 57, `${avg(after).toFixed(1)} frames each second after max`)
 })
