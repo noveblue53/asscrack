@@ -62,8 +62,8 @@
 #friends-panel.friends-drawer #friend-list > li[data-state="online"] .friend-state,
 #friends-panel.friends-drawer #friend-list > li[data-state="room"] .friend-state { color: var(--accent); }
 
-/* The friend request bar above the composer. */
-#friend-request-bar {
+/* The friend request bar above the composer. easy-join part 2: the knock bar has the same look. */
+#friend-request-bar, #knock-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -75,7 +75,8 @@
   color: var(--ink);
   background: var(--surface-raised);
 }
-#friend-request-bar[hidden] { display: none; }
-#friend-request-bar p { flex: 1 1 260px; margin: 0; }
+#friend-request-bar[hidden], #knock-bar[hidden] { display: none; }
+#friend-request-bar p, #knock-bar p { flex: 1 1 260px; margin: 0; }
+#room-code-box[hidden] { display: none; }
 
 #friend-name-form label { display: grid; gap: 4px; margin: 8px 0; }

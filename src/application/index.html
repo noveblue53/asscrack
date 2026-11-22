@@ -62,8 +62,8 @@
         <input type="text" id="room" maxlength="64" placeholder="Enter the room" autocomplete="off" spellcheck="false">
       </div>
       <div class="field" id="invite-field" hidden>
-        <label for="invite-input">Invite code</label>
-        <textarea id="invite-input" rows="3" maxlength="131082" placeholder="Paste the invite code" spellcheck="false"></textarea>
+        <label for="invite-input">Invite code or room code</label>
+        <textarea id="invite-input" rows="3" maxlength="131082" placeholder="Paste the invite code or the room code" spellcheck="false"></textarea>
         <label class="admission-check" id="legacy-consent" hidden>
           <input type="checkbox" id="allow-legacy"> I trust everyone who has this legacy shared code.
         </label>
@@ -329,6 +329,12 @@
             <button type="button" id="reach-upnp" hidden></button>
           </div>
           <p id="old-version-note" hidden>People with ASSCRACK 0.7.0 or older cannot join this room. Ask them to get the newest ASSCRACK.</p>
+          <!-- easy-join part 2, room-membership-ui.js: the room code of the owner. -->
+          <div id="room-code-box" hidden>
+            <p>A room code lets people ask to join. You see each request and select Allow or Deny. A code works for 7 days.</p>
+            <button type="button" id="room-code-copy">Copy room code</button>
+            <button type="button" id="room-code-new">New room code</button>
+          </div>
           <form id="member-invite-form" hidden>
             <label for="member-device-id">Friend’s device ID</label>
             <input type="text" id="member-device-id" maxlength="128" required autocomplete="off" spellcheck="false">
@@ -391,6 +397,12 @@
           <p id="friend-request-text"></p>
           <button id="friend-request-accept" type="button">Accept</button>
           <button id="friend-request-decline" type="button">Decline</button>
+        </div>
+        <!-- easy-join part 2, knock-ui.js: a request to join with a room code (owner only). -->
+        <div id="knock-bar" role="group" aria-labelledby="knock-text" hidden>
+          <p id="knock-text"></p>
+          <button id="knock-allow" type="button">Allow</button>
+          <button id="knock-deny" type="button">Deny</button>
         </div>
         <div id="composer">
           <!-- renderer.js: the quote of the next message. The remove button or Escape removes it. -->
@@ -759,6 +771,7 @@
   <script src="voice-panel.js"></script>
   <script src="friends-ui.js"></script>
   <script src="friend-requests-ui.js"></script>
+  <script src="knock-ui.js"></script>
   <script src="menu.js"></script>
   <script src="shared-shelf.js"></script>
   <script src="title.js"></script>

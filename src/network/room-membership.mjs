@@ -1,4 +1,4 @@
-import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, sign, verify } from 'node:crypto'
+import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, sign, verify } from 'node:crypto'
 
 const VERSION = 2
 const MAX_MEMBERS = 128
@@ -7,6 +7,8 @@ const MAX_MEMBERS = 128
 export const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000
 export const INVITE_EXPIRED = 'This invite has expired. Ask the room owner for a new invite.'
 const validExpiry = value => Number.isSafeInteger(value) && value > 0
+// easy-join part 2: the ID of the room code of the owner (16 bytes, base64url). "New room code" makes a new ID.
+const validCodeId = value => canonicalBytes(value, 16) !== null
 
 function canonicalBytes(value, size) {
     if (typeof value !== 'string' || value.length !== Math.ceil(size * 4 / 3) || !/^[\w-]+$/.test(value)) return null
@@ -61,7 +63,31 @@ function authority(room, roomKey, owner, lan) {
     // order of the properties or of the rows on the wire.
     const voiceChannelFields = state => ['asscrack-voice-channels/1', id, state.seq,
         [...state.channels].map(row => ({ id: row.id, name: row.name })).sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)]
-    return { owner, lan, grantFields, admissionFields, revokeFields, proofFields, voiceChannelFields }
+    // easy-join part 2: the room code (the owner signs the SHA-256 of the code bytes), the knock proof of the owner
+    // (over the nonce of the knocker) and the knock proof of the knocker device (over the nonce of the owner).
+    const roomCodeFields = bodyHash => ['asscrack-room-code/1', id, bodyHash]
+    const knockOwnerFields = (codeId, nonce) => ['asscrack-knock-owner/1', id, codeId, nonce]
+    const knockFields = (codeId, nonce) => ['asscrack-knock/1', id, codeId, nonce]
+    return { id, owner, lan, grantFields, admissionFields, revokeFields, proofFields, voiceChannelFields,
+        roomCodeFields, knockOwnerFields, knockFields }
+}
+
+// easy-join part 2: the checks of a room code and of a knock for a device that has no membership yet (the knocker).
+// The owner device ID comes from the room code. roomId: the ID that the knock lines name.
+export function roomCodeAccess(room, roomKey, owner, lan) {
+    const access = authority(room, roomKey, owner, lan)
+    return Object.freeze({
+        roomId: access.id,
+        verifyCode: (bodyHash, signature) => verified(access.owner, access.roomCodeFields(bodyHash), signature),
+        verifyOwnerKnock: (codeId, nonce, signature) => verified(access.owner, access.knockOwnerFields(codeId, nonce), signature),
+        knockProof: (identity, codeId, nonce) => identity.sign(access.knockFields(codeId, nonce))
+    })
+}
+
+function inspectRoomCode(value) {
+    if (value === undefined) return undefined
+    if (!value || !validCodeId(value.id) || !validExpiry(value.expires)) throw new Error('Invalid protected room code')
+    return { id: value.id, expires: value.expires }
 }
 
 function inspectGrant(room, value) {
@@ -102,7 +128,10 @@ export function inspectMembershipDescriptor(room, roomKey, descriptor, { invite 
             issued.push(checked)
         }
     }
-    return { v: VERSION, owner: access.owner, lan: access.lan, grant, admission, revocations, issued }
+    // easy-join part 2: only the owner keeps a room code. An older descriptor has none.
+    const roomCode = !invite && grant === null ? inspectRoomCode(descriptor.roomCode) : undefined
+    return { v: VERSION, owner: access.owner, lan: access.lan, grant, admission, revocations, issued,
+        ...(roomCode ? { roomCode } : {}) }
 }
 
 export function createRoomMembership({ identity, room, roomKey, lan = false, now = Date.now }) {
@@ -241,7 +270,32 @@ export function restoreRoomMembership({ identity, room, roomKey, descriptor, now
         return verified(access.owner, access.voiceChannelFields(catalog), catalog.signature)
     }
 
-    return Object.freeze({ id: identity.id, owner, ownerId: access.owner, lan: access.lan,
+    // easy-join part 2: the room code of the owner. renew: "New room code" (the old code stops working). A code that
+    // expired also gets a new ID. Returns { id, expires }.
+    function roomCode({ renew = false } = {}) {
+        if (!owner) throw new Error('Only the room owner can make a room code.')
+        const old = current.roomCode
+        if (!renew && old && now() <= old.expires) return { ...old }
+        const next = { id: randomBytes(16).toString('base64url'), expires: now() + INVITE_TTL_MS }
+        update({ ...current, roomCode: next })
+        return { ...next }
+    }
+    // 'ok', 'old-code' (not the current code ID) or 'expired'. The owner clock decides the expiry.
+    function checkRoomCode(codeId) {
+        if (!owner || !current.roomCode || codeId !== current.roomCode.id) return 'old-code'
+        return now() > current.roomCode.expires ? 'expired' : 'ok'
+    }
+    function signRoomCode(bodyHash) {
+        if (!owner || typeof bodyHash !== 'string') throw new Error('Only the room owner can make a room code.')
+        return identity.sign(access.roomCodeFields(bodyHash))
+    }
+    function knockOwnerProof(codeId, nonce) {
+        if (!owner) throw new Error('Only the room owner can answer a knock.')
+        return identity.sign(access.knockOwnerFields(codeId, nonce))
+    }
+    const verifyKnock = (deviceId, codeId, nonce, signature) => verified(deviceId, access.knockFields(codeId, nonce), signature)
+
+    return Object.freeze({ id: identity.id, owner, ownerId: access.owner, lan: access.lan, roomId: access.id,
         hostGrant: owner || current.grant.canHost,
         admitted: () => !revoked(identity.id) && (owner || current.admission !== null),
         canHost: () => !revoked(identity.id) && (owner || (current.admission !== null && current.grant.canHost)),
@@ -250,6 +304,7 @@ export function restoreRoomMembership({ identity, room, roomKey, descriptor, now
         issued: () => current.issued.map(({ deviceId, canHost }) => ({ deviceId, canHost, revoked: revoked(deviceId) })),
         revoked, memberProof, verifyMember, observe, admit, acceptAdmission, issue, revoke,
         signVoiceChannels, verifyVoiceChannels,
+        roomCode, checkRoomCode, signRoomCode, knockOwnerProof, verifyKnock,
         setPersistence(callback) { persist = callback },
         onChanged(callback) { changed = callback }
     })

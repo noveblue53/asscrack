@@ -6,7 +6,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { multiaddr } from '@multiformats/multiaddr'
 import { fromString } from 'uint8arrays/from-string'
 import { toString } from 'uint8arrays/to-string'
-import { INVITE_EXPIRED, inspectMembershipDescriptor } from './room-membership.mjs'
+import { INVITE_EXPIRED, inspectMembershipDescriptor, roomCodeAccess } from './room-membership.mjs'
 
 export const INVITE_PREFIX = 'asscrack1:'
 export const PROTECTED_INVITE_PREFIX = 'asscrack2:'
@@ -99,7 +99,6 @@ function packCompact({ room, key, nodes, membership }) {
     if (!Array.isArray(devices) || devices.length > MAX_REVOCATIONS || d.revocations.sequence !== devices.length) {
         throw new Error('The invite has a bad membership')
     }
-    if (!Array.isArray(nodes) || nodes.length > MAX_NODES) throw new Error('The invite has a bad node list')
     const parts = [
         Buffer.from([COMPACT_VERSION, (d.lan ? FLAG_LAN : 0) | (d.grant.canHost ? FLAG_CAN_HOST : 0), roomBytes.length]),
         roomBytes,
@@ -111,17 +110,30 @@ function packCompact({ room, key, nodes, membership }) {
         Buffer.from([devices.length]),
         ...devices.map(id => rawBytes(id, 32, 'device ID')),
         rawBytes(d.revocations.signature, 64, 'signature'),
-        Buffer.from([nodes.length])
+        ...packNodes(nodes)
     ]
-    for (const n of nodes) {
-        if (!n || !validPeerId(n.id)) throw new Error('The invite has a bad peer ID')
-        const id = Buffer.from(fromString(n.id, 'base58btc'))
-        if (toString(id, 'base58btc') !== n.id || id.length > 255) throw new Error('The invite has a bad peer ID')
-        if (!Array.isArray(n.addrs) || n.addrs.length < 1 || n.addrs.length > MAX_NODES) throw new Error('The invite has a bad address')
-        parts.push(Buffer.from([id.length]), id, Buffer.from([n.addrs.length]), ...n.addrs.map(packAddr))
-    }
     const body = Buffer.concat(parts)
     return Buffer.concat([body, checksum(body)])
+}
+
+function packPeerId(value) {
+    if (!validPeerId(value)) throw new Error('The invite has a bad peer ID')
+    const id = Buffer.from(fromString(value, 'base58btc'))
+    if (toString(id, 'base58btc') !== value || id.length > 255) throw new Error('The invite has a bad peer ID')
+    return [Buffer.from([id.length]), id]
+}
+
+// node count (1), for each node: peer ID length (1), peer ID, address count (1), the addresses (packAddr).
+function packNodes(nodes) {
+    if (!Array.isArray(nodes) || nodes.length > MAX_NODES) throw new Error('The invite has a bad node list')
+    const parts = [Buffer.from([nodes.length])]
+    for (const n of nodes) {
+        if (!n) throw new Error('The invite has a bad peer ID')
+        const id = packPeerId(n.id)
+        if (!Array.isArray(n.addrs) || n.addrs.length < 1 || n.addrs.length > MAX_NODES) throw new Error('The invite has a bad address')
+        parts.push(...id, Buffer.from([n.addrs.length]), ...n.addrs.map(packAddr))
+    }
+    return parts
 }
 
 function compactError(cause) {
@@ -161,6 +173,13 @@ function unpackCompact(data) {
     const devices = []
     for (let i = 0; i < count; i++) devices.push(b64(32))
     const revocations = { sequence: count, devices, signature: b64(64) }
+    const nodes = unpackNodes(take, byte)
+    if (at !== body.length) throw compactError('data after the last field')
+    const membership = { v: MEMBERSHIP_VERSION, owner, lan: (flags & FLAG_LAN) !== 0, grant, admission: null, revocations }
+    return { room, key, nodes, membership }
+}
+
+function unpackNodes(take, byte) {
     const nodes = []
     const nodeCount = byte()
     for (let i = 0; i < nodeCount; i++) {
@@ -183,9 +202,104 @@ function unpackCompact(data) {
         }
         nodes.push({ id, addrs })
     }
+    return nodes
+}
+
+// easy-join part 2: the room code. The prefix and the checksum are the same as a device invite ("asscrack3:"), but the
+// first byte is ROOM_CODE_VERSION. Thus a 1.0.0 app gives its normal error for an unknown version. Layout (unsigned,
+// big-endian): version (1), flags (1): bit 0 lan, room length (1), room (UTF-8), room key (32), owner device ID (32),
+// code ID (16), expiry time (6, ms since 1970), owner peer ID length (1), owner peer ID (multihash), the nodes
+// (packNodes), signature (64): the owner device signs the SHA-256 of all bytes before it, checksum (4).
+// The code is not for one device. The owner gives the device grant after a knock (knock.mjs).
+export const ROOM_CODE_VERSION = 0x81
+export const ROOM_CODE_EXPIRED = 'This room code has expired. Ask the room owner for a new room code.'
+const roomCodeHash = bytes => createHash('sha256').update(bytes).digest('base64url')
+
+// sign(bodyHash): the signature of the owner device (membership.signRoomCode).
+export function makeRoomCode({ room, key, owner, lan, codeId, expires, ownerPeer, nodes }, sign) {
+    const k = typeof key === 'string' ? key : Buffer.from(key).toString('base64url')
+    if (typeof room !== 'string' || room.length < 1 || room.length > 64) throw new Error('The invite has a bad room name')
+    const roomBytes = Buffer.from(room, 'utf8')
+    if (roomBytes.toString('utf8') !== room || roomBytes.length > 255) throw new Error('The invite has a bad room name')
+    if (typeof lan !== 'boolean' || !Number.isSafeInteger(expires) || expires < 1 || expires >= 2 ** 48) throw new Error('The invite has a bad membership')
+    const time = Buffer.alloc(6)
+    time.writeUIntBE(expires, 0, 6)
+    const body = Buffer.concat([
+        Buffer.from([ROOM_CODE_VERSION, lan ? FLAG_LAN : 0, roomBytes.length]),
+        roomBytes,
+        rawBytes(k, 32, 'room key'),
+        rawBytes(owner, 32, 'owner'),
+        rawBytes(codeId, 16, 'code ID'),
+        time,
+        ...packPeerId(ownerPeer),
+        ...packNodes(nodes)
+    ])
+    const signed = Buffer.concat([body, rawBytes(sign(roomCodeHash(body)), 64, 'signature')])
+    return COMPACT_INVITE_PREFIX + Buffer.concat([signed, checksum(signed)]).toString('base64url')
+}
+
+// True when the text is a room code (a parse of the first byte only, no other check).
+export function isRoomCode(code) {
+    if (typeof code !== 'string') return false
+    const text = code.replace(/\s+/g, '')
+    if (!text.startsWith(COMPACT_INVITE_PREFIX)) return false
+    const head = Buffer.from(text.slice(COMPACT_INVITE_PREFIX.length, COMPACT_INVITE_PREFIX.length + 4), 'base64url')
+    return head.length > 0 && head[0] === ROOM_CODE_VERSION
+}
+
+// Returns { room, key, lan, owner, codeId, expires, ownerPeer, nodes, roomId }. Throws the texts of readInvite.
+export function readRoomCode(code) {
+    if (typeof code !== 'string') throw new Error('The invite code is not text')
+    const text = code.replace(/\s+/g, '')
+    if (!text.startsWith(COMPACT_INVITE_PREFIX)) throw new Error('The invite code has a wrong prefix')
+    const body64 = text.slice(COMPACT_INVITE_PREFIX.length)
+    if (body64.length > 16 * 1024) throw new Error('The invite code is too large')
+    if (!/^[A-Za-z0-9_-]+$/.test(body64)) throw new Error('The invite code has characters that are not valid')
+    const data = Buffer.from(body64, 'base64url')
+    if (data.toString('base64url') !== body64) throw compactError('bad length')
+    if (data.length < 1 + 64 + CHECKSUM_BYTES) throw compactError('too short')
+    const signed = data.subarray(0, data.length - CHECKSUM_BYTES)
+    if (!checksum(signed).equals(data.subarray(signed.length))) throw compactError('wrong checksum')
+    const body = signed.subarray(0, signed.length - 64)
+    const signature = signed.subarray(body.length).toString('base64url')
+    let at = 0
+    const take = size => {
+        if (at + size > body.length) throw compactError('too short')
+        const out = body.subarray(at, at + size)
+        at += size
+        return out
+    }
+    const byte = () => take(1)[0]
+    if (byte() !== ROOM_CODE_VERSION) throw new Error('The invite code has an unknown version')
+    const flags = byte()
+    if (flags & ~FLAG_LAN) throw compactError('unknown flags')
+    let room
+    try {
+        room = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(take(byte()))
+    } catch (err) {
+        if (err.message?.startsWith('The invite code')) throw err
+        throw new Error('The invite code has a bad room name')
+    }
+    const key = take(32).toString('base64url')
+    const owner = take(32).toString('base64url')
+    const codeId = take(16).toString('base64url')
+    const expires = take(6).readUIntBE(0, 6)
+    const ownerPeer = toString(take(byte()), 'base58btc')
+    const nodes = unpackNodes(take, byte)
     if (at !== body.length) throw compactError('data after the last field')
-    const membership = { v: MEMBERSHIP_VERSION, owner, lan: (flags & FLAG_LAN) !== 0, grant, admission: null, revocations }
-    return { room, key, nodes, membership }
+    if (room.length < 1 || room.length > 64) throw new Error('The invite code has a bad room name')
+    if (!validPeerId(ownerPeer)) throw new Error('The invite code has a bad peer ID')
+    const lan = (flags & FLAG_LAN) !== 0
+    let access
+    try { access = roomCodeAccess(room, key, owner, lan) } catch { throw new Error('The invite code has a bad owner') }
+    if (!access.verifyCode(roomCodeHash(body), signature)) throw new Error('The invite code has a bad signature')
+    if (Date.now() > expires + EXPIRY_GRACE_MS) throw new Error(ROOM_CODE_EXPIRED)
+    if (nodes.length > MAX_NODES || (!lan && !nodes.length)) throw new Error('The invite code has no valid node list')
+    for (const n of nodes) {
+        if (!validPeerId(n.id)) throw new Error('The invite code has a bad peer ID')
+        if (n.addrs.length < 1 || n.addrs.length > MAX_NODES || !n.addrs.every(validAddr)) throw new Error('The invite code has a bad address')
+    }
+    return { room, key, lan, owner, codeId, expires, ownerPeer, nodes, roomId: access.roomId }
 }
 
 export function validPeerId(id) {

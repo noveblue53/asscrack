@@ -50,3 +50,26 @@ export function loginErrorText(err, { port } = {}) {
     if (/This invite has expired/.test(text)) return text;
     return text;
 }
+
+// easy-join part 2: the text for the joiner when a knock with a room code ends with no Allow (knock-client.mjs).
+// outcome: { result: 'denied' | 'timeout' | 'offline' | 'refused', reason? }.
+export const KNOCK_TEXTS = Object.freeze({
+    denied: 'The owner did not let you in.',
+    offline: 'The owner is not online. Try again later.',
+    'old-code': 'This room code does not work now. Ask the room owner for a new room code.',
+    expired: 'This room code has expired. Ask the room owner for a new room code.',
+    busy: 'The owner has too many join requests now. Try again in a few minutes.',
+    rate: 'Too many join requests. Try again in a few minutes.',
+    pending: 'You asked to join already. Wait for the answer of the owner.',
+    owner: 'You own this room. Open it from your saved rooms.',
+    removed: 'This device has been removed from the room.',
+    role: 'This device has a different role in this room. Ask the room owner for a device invite.'
+});
+export function knockResultText(outcome) {
+    if (outcome?.result === 'denied') return KNOCK_TEXTS.denied;
+    if (outcome?.result === 'refused' && Object.hasOwn(KNOCK_TEXTS, outcome.reason) && outcome.reason !== 'denied' &&
+        outcome.reason !== 'offline') return KNOCK_TEXTS[outcome.reason];
+    if (outcome?.result === 'refused') return 'The owner could not answer now. Try again later.';
+    // 'timeout' (no answer in 2 minutes) and 'offline' (no peer proved the owner key).
+    return KNOCK_TEXTS.offline;
+}

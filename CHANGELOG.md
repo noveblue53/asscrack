@@ -7,6 +7,29 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased — knock and approve (goal easy-join, part 2, 2026-11-22)
+
+A person with a room code asks the owner to join. The owner sees the request and selects Allow or Deny.
+
+- **Room code.** The owner of a protected room selects "Copy room code" in the Invite panel. The code names the room,
+  the owner and the addresses of the owner. It is not for one device. It works for 7 days. "New room code" makes a new
+  code, and the old code stops at once. A member that is not the owner does not see the two buttons.
+- **Knock.** The person pastes the room code in the same field as a device invite. The app proves the device key to the
+  owner, and the owner proves the owner key to the app. The owner sees "<name> #<mark> wants to join." with Allow and
+  Deny above the composer. Allow gives a device invite with no host rights, and the normal join starts. Deny gives
+  "The owner did not let you in." No owner or no answer in 2 minutes gives "The owner is not online. Try again later."
+- **Limits.** At most 5 requests wait at one time. A knock has a size cap and rate limits. After Deny, the same device
+  gets no new request for 10 minutes. A knock over a limit gets a clear answer and no request.
+- **Relay.** A relay lets a device that is not admitted connect only to the owner, for 150 s and 64 KiB. Each other
+  connection of that device stays refused. A LAN room uses no relay.
+- **1.0.0 apps.** A 1.0.0 app shows "This invite comes from a different ASSCRACK version" for a room code.
+
+Checks (127.0.0.1 on this PC, not LAN, not internet): `test/knock.test.mjs` has 15 tests. `test/knock-node.test.mjs`
+has 6 tests: Allow through a relaying member, Deny, owner offline, flood, old code, LAN room.
+`test/knock-relay.test.mjs` has 2 tests: the relay rule and the circuit limits. `test/knock-ui.test.mjs` has 4 tests.
+Three app copies on this PC: B knocks and A selects Allow, then chat in both directions. C knocks with an old code,
+then with the new code, and A selects Deny.
+
 ## Unreleased — friend invite (goal easy-join, part 1, 2026-11-22)
 
 The owner of a running protected room can invite a friend with no device ID and no paste.

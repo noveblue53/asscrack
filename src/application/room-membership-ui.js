@@ -14,6 +14,10 @@
     const reachBox = get('reach-box');
     const reachNote = get('reach-note');
     const reachButton = get('reach-upnp');
+    // easy-join part 2: "Copy room code" and "New room code" (owner only). Optional: older test pages have no box.
+    const codeBox = get('room-code-box');
+    const codeCopy = get('room-code-copy');
+    const codeNew = get('room-code-new');
     let state = null;
     // The reach state of asscrack:invite (gap A1), or null before the first answer.
     let reach = null;
@@ -160,6 +164,7 @@
             ? 'Waiting for the room owner to admit this device.' : next.owner ? 'You own this protected room.'
                 : next.canHost ? 'This device is admitted and can host or relay.' : 'This device is admitted.';
         form.hidden = !next.owner;
+        if (codeBox) codeBox.hidden = !next.owner;
         statusBar.querySelector('.net-note').textContent = next.lan ? 'Protected LAN room' : 'Protected internet room';
         // Gap A2: room-link.js writes #waiting-peer from these facts and the peer facts.
         window.roomLink?.membership({ owner: next.owner, admitted: next.admitted, revoked: next.revoked });
@@ -184,6 +189,32 @@
             if (confirming === null) target.focus();
         }
     }
+
+    // easy-join part 2: the room code. The main process copies it; the box also shows it.
+    async function roomCode(renew) {
+        if (!state?.owner || busy || !codeCopy) return;
+        busy = codeCopy.disabled = codeNew.disabled = true;
+        clearCode();
+        try {
+            const made = await api.roomCode(renew);
+            if (typeof made?.code !== 'string' || made.code.length === 0) throw new Error('No room code was made.');
+            codeLabel.textContent = 'Room code of this room';
+            inviteCode.value = made.code;
+            codeLabel.hidden = inviteCode.hidden = copyInviteButton.hidden = false;
+            copyInviteButton.disabled = false;
+            const until = new Date(made.expires).toLocaleDateString(undefined, { day: 'numeric', month: 'long' });
+            inviteNote.textContent = renew
+                ? `New room code copied. The old room code does not work now. The new code works until ${until}.`
+                : `Room code copied. It works until ${until}. A person with the code can ask to join. You select Allow or Deny.`;
+        } catch (error) {
+            inviteNote.textContent = error?.message ? errorText(error) : 'Could not make the room code.';
+        } finally {
+            busy = codeCopy.disabled = codeNew.disabled = false;
+            listDevices();
+        }
+    }
+    codeCopy?.addEventListener('click', () => roomCode(false));
+    codeNew?.addEventListener('click', () => roomCode(true));
 
     target.addEventListener('input', clearCode);
     canHost.addEventListener('change', clearCode);

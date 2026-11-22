@@ -104,6 +104,15 @@ contextBridge.exposeInMainWorld('asscrack', {
     getDeviceId: () => ipcRenderer.invoke('asscrack:device-id'),
     createMemberInvite: (deviceId, canHost) => ipcRenderer.invoke('asscrack:member-invite', deviceId, canHost === true),
     revokeMember: deviceId => ipcRenderer.invoke('asscrack:member-revoke', deviceId),
+    // easy-join part 2: "Copy room code" (renew false) and "New room code" (renew true): { code, expires }. The main
+    // process copies the code.
+    roomCode: renew => ipcRenderer.invoke('asscrack:room-code', renew === true),
+    // The knock prompts of the owner: [{ id, name, mark }]. answerKnock: Allow (true) or Deny (false).
+    getKnocks: () => ipcRenderer.invoke('asscrack:knocks'),
+    answerKnock: (id, allow) => ipcRenderer.invoke('asscrack:knock-answer', String(id), allow === true),
+    onKnocks: listen('asscrack:knocks'),
+    // The state of the own knock during the login: { state: 'looking' | 'waiting' | 'allowed', room }.
+    onKnockState: listen('asscrack:knock-state'),
     onMembership: listen('asscrack:membership'),
     getFullNode: () => ipcRenderer.invoke('asscrack:full-node'),
     onFullNode: listen('asscrack:full-node'),

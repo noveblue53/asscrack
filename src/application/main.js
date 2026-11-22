@@ -14,7 +14,9 @@ import os from 'os';
 import { mkdirSync, appendFileSync, existsSync, readFileSync, writeFileSync, renameSync, rmSync } from 'fs';
 import { format } from 'util';
 import { createAsscrackNode, keyedServiceTag } from '../network/node.mjs';
-import { newRoomKey, readInvite } from '../network/invite.mjs';
+import { isRoomCode, newRoomKey, readInvite, readRoomCode } from '../network/invite.mjs';
+import { knockRoom } from '../network/knock-client.mjs';
+import { checkAllowedInvite } from '../network/knock.mjs';
 import { createDeviceIdentity, importDeviceIdentity, createRoomMembership } from '../network/room-membership.mjs';
 import { joinAdmission, restoreSavedAdmission } from './room-admission.mjs';
 import { observeRoomActivity } from './room-activity.mjs';
@@ -28,7 +30,7 @@ import { createPttHook } from './ptt-hook.mjs';
 import { createWindowFrame } from './window-frame.mjs';
 import { attachVoiceMonitor } from './voice-monitor.mjs';
 import { installRoomPermissions, isDesktopFrame, lockDesktopNavigation } from './desktop-boundary.mjs';
-import { isAddressInUse, loginErrorText } from './login-errors.mjs';
+import { isAddressInUse, knockResultText, loginErrorText } from './login-errors.mjs';
 import { createLinkPolicy } from './link-policy.mjs';
 import { fitWindowBounds, MIN_WINDOW, readWindowBounds, saveWindowBounds } from './window-bounds.mjs';
 import { createTaskbarFlash } from './taskbar-flash.mjs';
@@ -287,6 +289,8 @@ handleRoomIpc('asscrack:media-preview', async (_event, id) => {
 });
 const MAX_RECEIVED_KEY = 300;
 let loginStarted = false;
+// easy-join part 2: true while a knock with a room code waits for the owner (up to 2.5 minutes).
+let knocking = false;
 let stopping = false;
 
 function sendToWindow(channel, data) {
@@ -761,6 +765,8 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
         const fromSavedUpnpPort = options.savedUpnpPort === true;
         delete options.savedUpnpPort;
         options.updates = updates.hub;
+        // easy-join part 2: the owner answers knocks; a relay lets a knock circuit reach the owner.
+        options.knock = true;
         try {
             node = await createAsscrackNode(options);
         } catch (err) {
@@ -809,6 +815,15 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
     onLive('shelf', data => sendToWindow('asscrack:shelf', data));
     onLive('shelf-offered', data => sendToWindow('asscrack:shelf-offered', data));
     onLive('membership', () => sendToWindow('asscrack:membership', node.memberState()));
+    // easy-join part 2: the knock prompts of the owner. The window gets the name and the device mark, no device ID.
+    onLive('knocks', ({ pending, added }) => {
+        sendToWindow('asscrack:knocks', knockView(pending));
+        if (!added) return;
+        writeLog('INFO', `Knock prompt shown (${pending.length} waiting)`);
+        if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
+            showTrayBalloon(`${added.name} #${added.mark} wants to join ${roomName ?? 'the room'}. Open ASSCRACK to answer.`);
+        }
+    });
     // P7b fix: `live` is a const of the try block above. A ReferenceError here failed each received file at its end
     // ("stream ended" on both ends). This listener keeps its own copy of the live node.
     const doneNode = node;
@@ -952,6 +967,7 @@ async function withLoginErrors(what, options, start) {
 
 handleRoomIpc('asscrack:login', async (_event, fields = {}) => {
     if (loginStarted) throw new Error('Already logged in');
+    if (knocking) throw new Error('ASSCRACK is waiting for the room owner. Wait for the answer.');
     const options = { downloadDir: downloadDir ?? app.getPath('downloads'), ...nodeFlags };
     return withLoginErrors('Login', options, () => login(options, fields));
 });
@@ -969,6 +985,8 @@ async function login(options, { name, room, type, invite, friendInvite, publicAd
         }
         if (typeof invite !== 'string' || !invite.trim()) throw new Error('Enter an invite code.');
         if (invite.length > 128 * 1024 + 10) throw new Error('The invite code is too large.');
+        // easy-join part 2: a room code. Knock, then join with the device invite of Allow (the normal path below).
+        if (isRoomCode(invite)) invite = await knockForInvite(invite, options.name);
         const code = readInvite(invite);
         options.room = code.room;
         options.roomKey = code.key;
@@ -993,6 +1011,58 @@ async function login(options, { name, room, type, invite, friendInvite, publicAd
     const result = await startRoom(options, { publicAddress: publicAddress?.trim(), allowUpnp: type === 'new' && allowUpnp === true, lan });
     return afterRoomStart(result, { invite: typedInvite, userName: options.name, save, keepHistory: keepHistory !== false });
 }
+
+// easy-join part 2: the knock of a room code. Returns the device invite of Allow; else throws the text for the user.
+// The log gets the result, not the codes.
+async function knockForInvite(text, name) {
+    const roomCode = readRoomCode(text);
+    const saved = getSavedRooms().getRoom(roomFingerprint(roomCode.room, roomCode.key));
+    if (saved?.protected) throw new Error('This room is in your saved rooms. Select it there to open it.');
+    const identity = getAdmissionIdentity();
+    const state = value => sendToWindow('asscrack:knock-state', { state: value, room: roomCode.room });
+    knocking = true;
+    state('looking');
+    try {
+        const outcome = await knockRoom({ code: roomCode, identity, name, serviceTag: keyedServiceTag(roomCode.room, roomCode.key),
+            onState: state, log: line => writeLog('INFO', line) });
+        writeLog('INFO', `Knock result: ${outcome.result}${outcome.reason ? ` (${outcome.reason})` : ''}`);
+        if (outcome.result !== 'allowed') throw new Error(knockResultText(outcome));
+        checkAllowedInvite(roomCode, identity, outcome.invite);
+        state('allowed');
+        return outcome.invite;
+    } finally {
+        knocking = false;
+    }
+}
+
+// easy-join part 2: the prompts for the window: [{ id, name, mark }].
+function knockView(pending) {
+    return (pending ?? []).map(({ id, name, mark }) => ({ id, name, mark }));
+}
+queryRoomIpc('asscrack:knocks', () => knockView(node?.knocks()));
+handleRoomIpc('asscrack:knock-answer', (_event, id, allow) => {
+    if (!node?.memberState().owner) throw new Error('Only the room owner can answer.');
+    if (typeof id !== 'string' || id.length > 64) return false;
+    const done = node.answerKnock(id, allow === true);
+    writeLog('INFO', `Knock ${allow === true ? 'allowed' : 'denied'}${done ? '' : ' (not waiting now)'}`);
+    return done;
+});
+// "Copy room code" (renew false) and "New room code" (renew true). The main process copies the code.
+handleRoomIpc('asscrack:room-code', (_event, renew) => {
+    if (!node?.memberState().owner) throw new Error('Only the room owner can make a room code.');
+    let made;
+    try {
+        made = node.roomCode({ renew: renew === true });
+    } catch (err) {
+        if (/reachable owner address/.test(String(err?.message))) {
+            throw new Error('No room code: this room has no address that the internet can reach. Open Invite for the reason.');
+        }
+        throw err;
+    }
+    clipboard.writeText(made.code);
+    writeLog('INFO', renew === true ? 'New room code copied' : 'Room code copied');
+    return made;
+});
 
 // Saved rooms (milestone 6). The window gets no key, no invite and no file path.
 handleRoomIpc('asscrack:saved-rooms', () => getSavedRooms().status());
@@ -1029,7 +1099,7 @@ const friendWindows = attachFriendWindows({
 });
 // easy-join part 1: Join of a friend invite (friend-join.mjs), and the tray balloon of a new invite.
 const friendJoins = createFriendJoins({
-    links: friendLinks, room: () => (node ? roomName ?? '' : null), busy: () => Boolean(leaving) || (loginStarted && !node),
+    links: friendLinks, room: () => (node ? roomName ?? '' : null), busy: () => Boolean(leaving) || (loginStarted && !node) || knocking,
     leave: () => leaveRoom(),
     reload: () => setImmediate(() => { if (mainWindow && !mainWindow.isDestroyed() && !quitting) mainWindow.webContents.reload(); }),
     show: () => restoreRoomWindow(), notify: () => sendToWindow('asscrack:friend-join', null),
