@@ -633,11 +633,9 @@
       <button id="about-copy" type="button">Copy version info</button>
       <button id="about-data" type="button">Open data folder</button>
     </div>
-    <p>To report a problem: select Save diagnostics and send the zip file to the person who helps you. A room member
-      can also ask you for diagnostics. Nothing goes out without your Send.</p>
     <div class="about-actions">
-      <button id="about-diag-save" type="button">Save diagnostics…</button>
-      <label><input id="about-diag-dumps" type="checkbox"> Add crash memory files (can contain parts of chats)</label>
+      <button id="about-diag-save" type="button" title="A zip file to send to whoever helps you">Save diagnostics…</button>
+      <label><input id="about-diag-dumps" type="checkbox"> Include crash memory (may contain chat text)</label>
     </div>
     <p>For a full debug log, start ASSCRACK with --log-dir and a folder. The log can contain network addresses.</p>
     <p id="about-log" hidden>A debug log is on for this run.</p>
@@ -647,19 +645,22 @@
 
   <!-- Diagnostics (1.0.1, diagnostics-ui.js): the prompt of the asked person. The text is local and fixed. -->
   <dialog id="diag-prompt" aria-labelledby="diag-prompt-title">
-    <h2 id="diag-prompt-title">A room member asks for your diagnostics</h2>
+    <h2 id="diag-prompt-title">Diagnostics request</h2>
     <p id="diag-prompt-who"></p>
     <details open>
       <summary>What is in it</summary>
-      <p>The diagnostics journal of this computer: what went right and what went wrong (connections, voice quality, file
-        transfers, errors, crashes), with the times. The ASSCRACK and Windows versions, the CPU and the memory. The kind
-        of each network address (LAN, public, relay) and the ports, but no address. The peer IDs of the room members
-        (each member sees them already).</p>
-      <p>Not in it: no chat text, no names, no file names, no room keys, no invites, no clipboard text.</p>
+      <ul>
+        <li>Connection, voice and transfer stats, with times</li>
+        <li>Errors and crashes</li>
+        <li>App and Windows version, CPU, memory</li>
+        <li>Address types (LAN, public, relay) and ports</li>
+        <li>Peer IDs of room members</li>
+      </ul>
+      <p>Not included: chat, names, file names, room keys, invites, clipboard, IP addresses.</p>
       <p>Files: <span id="diag-files"></span></p>
       <pre id="diag-preview" tabindex="0"></pre>
     </details>
-    <label><input id="diag-prompt-dumps" type="checkbox"> Add crash memory files (can contain parts of chats)</label>
+    <label><input id="diag-prompt-dumps" type="checkbox"> Include crash memory (may contain chat text)</label>
     <p id="diag-prompt-status" role="status"></p>
     <div class="diag-actions">
       <button id="diag-prompt-send" type="button">Send</button>
@@ -669,7 +670,7 @@
 
   <dialog id="mark-dialog" aria-labelledby="mark-title">
     <h2 id="mark-title">Mark a problem</h2>
-    <p>ASSCRACK writes the time and what went wrong in your diagnostics. Nothing goes out.</p>
+    <p>Saved locally with the time. Nothing is sent.</p>
     <fieldset>
       <legend>What went wrong?</legend>
       <label><input type="radio" name="mark-category" value="voice-bad"> Voice is bad</label>

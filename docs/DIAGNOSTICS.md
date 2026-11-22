@@ -23,8 +23,8 @@ the bundles of two computers can go on one timeline (kit skill `field-analysis`)
     apart in one bundle.
   - Peer IDs stay raw. Each room member sees them already, and they line up the bundles of two computers.
 - Crash dumps (Crashpad minidumps) can hold parts of the memory: chats and keys. A bundle has only their metadata
-  (name, size, time). The raw `.dmp` files go into a bundle only with the second checkbox "Add crash memory files
-  (can contain parts of chats)". Electron uploads nothing (`uploadToServer: false`).
+  (name, size, time). The raw `.dmp` files go into a bundle only with the second checkbox "Include crash memory
+  (may contain chat text)". Electron uploads nothing (`uploadToServer: false`).
 - The test `test/diag-canary.test.mjs` starts two real nodes with canary strings in each private field. It scans each
   journal byte and each bundle byte (raw zip and inflated files) for each canary in UTF-8 and UTF-16LE.
 
@@ -140,7 +140,7 @@ The control line `diag` (`v: 1`) on the room session (`src/network/diag-requests
 | `{ op: 'grant', id, offerId, size, sha256 }` | "Send". The normal file offer of the bundle follows |
 
 - Only a proved member device of a protected room can ask. The peer must have `diag: 1` in its `hello` line.
-- A 1.0.0 peer has no `diag`. The status bar of the asker then shows "has an older ASSCRACK".
+- A 1.0.0 peer has no `diag`. The status bar of the asker then shows "<name> needs to update first".
 - Limits of the asked side: one pending request for each asker, and a cool-down of 1 h after "Not now". At most 3
   prompts each hour from all askers. A request expires after 15 min. At most 6 lines each minute from one peer.
 - The prompt waits while the room window does not have the focus (a game or a screen share in front).

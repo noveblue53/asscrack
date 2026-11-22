@@ -55,8 +55,8 @@ test('the bundle has the fixed file list, a manifest with the hash of each file,
     const summary = entries.get('summary.txt').toString();
     assert.match(summary, /Run abcdef12/);
     assert.match(summary, /Opened a room \(join, protected, internet\)/);
-    assert.match(summary, /Lost the link to/);
-    assert.match(summary, /You marked a problem: voice is bad/);
+    assert.match(summary, /Lost connection to/);
+    assert.match(summary, /Problem marked: voice is bad/);
     assert.match(summary, /1\.0 % lost/);
     assert.match(summary, /0 files done, 1 failed \(1 peer left\)/);
     assert.equal(plain.summary, summary);
@@ -111,6 +111,6 @@ test('the summary is plain text with the local time of each run', () => {
         { v: 1, run: 'r1', n: 3, t: t0 + 120000, type: 'quit' }
     ]);
     assert.match(text, /Run r1, 2026-11-22 20:01 \(UTC\+1\)/);
-    assert.match(text, /20:02 The previous run did not end cleanly/);
+    assert.match(text, /20:02 Previous run ended unexpectedly/);
     assert.match(text, /20:03 Quit cleanly/);
 });

@@ -21,12 +21,12 @@ Each result has one of these labels:
   class replaces each IP address, and an error text has no path. A test sends canary strings through two real nodes
   and finds none of them in the journal or in the bundle (127.0.0.1). The raw log of `--log-dir` does not change.
 - "Ask for diagnostics…" on a buddy line, and "Ask everyone for diagnostics" in the Room options. Only a member device
-  of a protected room can ask. The other person sees "<name> asks for your diagnostics" with Send and Not now. The
+  of a protected room can ask. The other person sees "<name> asks for diagnostics" with Send and Not now. The
   prompt shows what is in the bundle and its summary. Nothing goes out without Send. Limits: one pending request for
   each person, 1 hour of quiet after Not now, at most 3 prompts each hour.
 - The bundle is a zip file. It has a manifest with the hash of each file and of the program file, and a plain
-  summary. It also has the journal, the system and reach data, and the crash list. The crash memory files go into it only with a second
-  checkbox. The asker gets it in `diagnostics\received`.
+  summary. It also has the journal, the system and reach data, and the crash list. The crash memory files go into it
+  only with a second checkbox. The asker gets it in `diagnostics\received`.
 - "Mark a problem…" (Room options and voice controls) writes the time and a category in the journal.
 - "Save diagnostics…" in the About dialog makes the same zip in a folder that the user selects.
 - The crash reporter of Electron writes crash dumps to the data folder. It uploads nothing.

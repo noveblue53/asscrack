@@ -14,7 +14,7 @@
 
     const label = peerId => {
         const info = window.roomActions?.peerLabel?.(peerId) ?? {};
-        const name = info.name || 'A room member';
+        const name = info.name || 'Someone';
         return info.mark ? `${name} (${info.mark})` : name;
     };
 
@@ -33,18 +33,18 @@
     byId('diag-bar-close')?.addEventListener('click', () => { byId('diag-bar').hidden = true; });
 
     const ASK_REASONS = {
-        offline: 'is not connected now', 'not-member': 'is not a member device of this protected room',
-        'old-version': 'has an older ASSCRACK with no diagnostics', pending: 'has a request from you already'
+        offline: who => `${who} is offline.`, 'not-member': who => `${who} can't be asked in this room.`,
+        'old-version': who => `${who} needs to update first.`, pending: who => `Already asked ${who}.`
     };
     async function ask(peerId) {
         if (typeof peerId !== 'string' || !peerId) return false;
         try {
             const result = await api.diagAsk(peerId);
-            if (result?.ok) status(`Asked ${label(peerId)} for diagnostics. They select Send or Not now.`);
-            else status(`${label(peerId)} ${ASK_REASONS[result?.reason] ?? 'cannot get the request now'}.`);
+            if (result?.ok) status(`Asked ${label(peerId)} for diagnostics.`);
+            else status((ASK_REASONS[result?.reason] ?? (who => `Can't ask ${who} now.`))(label(peerId)));
             return result?.ok === true;
         } catch (err) {
-            status(`The request did not go out: ${errorText(err)}`);
+            status(`Request failed: ${errorText(err)}`);
             return false;
         }
     }
@@ -52,10 +52,11 @@
     async function askAll() {
         try {
             const result = await api.diagAskAll();
-            const own = result?.saved ? ' Your own diagnostics are in the same folder.' : '';
-            status(`Asked ${result?.asked ?? 0} people for diagnostics (${result?.skipped ?? 0} cannot get it).${own}`, { folder: result?.saved === true });
+            const skipped = result?.skipped ? ` ${result.skipped} skipped.` : '';
+            const own = result?.saved ? ' Your own copy is saved.' : '';
+            status(`Asked ${result?.asked ?? 0} people.${skipped}${own}`, { folder: result?.saved === true });
         } catch (err) {
-            status(`The requests did not go out: ${errorText(err)}`);
+            status(`Request failed: ${errorText(err)}`);
         }
     }
 
@@ -68,12 +69,12 @@
         // A game or a screen share has the focus: the prompt waits for the window.
         if (!document.hasFocus()) return;
         current = queue.shift();
-        byId('diag-prompt-title').textContent = `${label(current.peerId)} asks for your diagnostics`;
-        const friend = window.friendsUi?.relation?.(current.peerId) === 'open' ? 'This person is your friend. ' : '';
-        byId('diag-prompt-who').textContent = `${friend}Send only when you know this person and want help with a problem.`;
+        byId('diag-prompt-title').textContent = `${label(current.peerId)} asks for diagnostics`;
+        const friend = window.friendsUi?.relation?.(current.peerId) === 'open' ? 'Friend. ' : '';
+        byId('diag-prompt-who').textContent = `${friend}Only send to someone you trust.`;
         byId('diag-prompt-dumps').checked = false;
         byId('diag-prompt-status').textContent = '';
-        byId('diag-preview').textContent = 'Loading the summary…';
+        byId('diag-preview').textContent = 'Loading…';
         byId('diag-prompt-send').disabled = false;
         refreshPreview();
         dialog.showModal();
@@ -81,10 +82,10 @@
     async function refreshPreview() {
         try {
             const preview = await api.diagPreview(byId('diag-prompt-dumps').checked);
-            byId('diag-preview').textContent = preview?.summary || '(The journal has no lines yet.)';
+            byId('diag-preview').textContent = preview?.summary || 'Nothing logged yet.';
             byId('diag-files').textContent = (preview?.files ?? []).join(', ');
         } catch {
-            byId('diag-preview').textContent = 'The summary could not be made.';
+            byId('diag-preview').textContent = 'Preview unavailable.';
         }
     }
     byId('diag-prompt-dumps')?.addEventListener('change', refreshPreview);
@@ -95,7 +96,7 @@
         try {
             const result = await api.diagAnswer(request.id, send, send && byId('diag-prompt-dumps').checked);
             if (send && !result?.ok) {
-                byId('diag-prompt-status').textContent = result?.reason === 'expired' ? 'The request expired.' : 'The diagnostics could not be sent.';
+                byId('diag-prompt-status').textContent = result?.reason === 'expired' ? 'Request expired.' : 'Send failed. Try again.';
                 byId('diag-prompt-send').disabled = false;
                 if (result?.reason !== 'expired') return;
             }
@@ -106,7 +107,7 @@
         }
         current = null;
         byId('diag-prompt').close();
-        if (send) status(`Your diagnostics go to ${label(request.peerId)}.`);
+        if (send) status(`Sending diagnostics to ${label(request.peerId)}…`);
         showNext();
     }
     byId('diag-prompt-send')?.addEventListener('click', () => answer(true));
@@ -118,7 +119,7 @@
     // ---- The events of the main process ----
     api.onDiag(event => {
         if (!event || typeof event !== 'object') return;
-        const who = typeof event.peerId === 'string' ? label(event.peerId) : 'A room member';
+        const who = typeof event.peerId === 'string' ? label(event.peerId) : 'Someone';
         switch (event.event) {
             case 'prompt':
                 queue.push({ id: event.id, peerId: event.peerId });
@@ -130,13 +131,13 @@
                     const i = queue.findIndex(q => q.id === event.id);
                     if (i >= 0) queue.splice(i, 1);
                     if (current?.id === event.id) { current = null; byId('diag-prompt').close(); showNext(); }
-                } else status(`${who} did not answer the request for diagnostics.`);
+                } else status(`${who} didn't answer.`);
                 break;
-            case 'declined': if (event.by === 'peer') status(`${who} did not send diagnostics now.`); break;
-            case 'refused': if (event.by === 'peer') status(`${who} cannot get a new request now. Try again later.`); break;
-            case 'granted': status(`${who} sends diagnostics…`, { sticky: true }); break;
+            case 'declined': if (event.by === 'peer') status(`${who} declined.`); break;
+            case 'refused': if (event.by === 'peer') status(`Can't ask ${who} right now. Try later.`); break;
+            case 'granted': status(`Receiving diagnostics from ${who}…`, { sticky: true }); break;
             case 'saved': status(`Diagnostics from ${who} saved.`, { folder: true, sticky: true }); break;
-            case 'failed': if (event.side !== 'asked') status(`The diagnostics from ${who} did not arrive (${event.reason ?? 'error'}).`); break;
+            case 'failed': if (event.side !== 'asked') status(`Transfer from ${who} failed (${event.reason ?? 'error'}).`); break;
             default: break;
         }
     });
@@ -155,7 +156,7 @@
         try {
             await api.diagMark(chosen.value);
             byId('mark-dialog').close();
-            status('Problem marked with the time. It is in your diagnostics.');
+            status('Problem marked.');
         } catch (err) {
             byId('mark-status').textContent = errorText(err);
         }
@@ -177,9 +178,9 @@
         const out = byId('about-status');
         try {
             const result = await api.diagSave(byId('about-diag-dumps').checked);
-            out.textContent = result?.ok ? 'Diagnostics saved.' : result?.canceled ? '' : 'The diagnostics could not be saved.';
+            out.textContent = result?.ok ? 'Diagnostics saved.' : result?.canceled ? '' : "Couldn't save diagnostics.";
         } catch {
-            out.textContent = 'The diagnostics could not be saved.';
+            out.textContent = "Couldn't save diagnostics.";
         }
     });
 

@@ -133,17 +133,17 @@ export function summarize(lines, { maxLines = 400 } = {}) {
         const at = t => clockText(t, offset);
         out.push('');
         out.push(`Run ${run}, ${dayText(first.t, offset)} ${at(first.t)} (${zoneText(offset)})` +
-            (start ? `, ASSCRACK ${start.version ?? '?'} (${start.build ?? '?'} build), Windows ${start.os ?? '?'}` : ''));
+            (start ? `, v${start.version ?? '?'} ${start.build ?? '?'}, Windows ${start.os ?? '?'}` : ''));
         const sessions = { direct: 0, relay: 0, other: 0 };
         let voiceFrames = 0, voiceGaps = 0, voiceMinutes = 0, badMinutes = 0;
         const files = { done: 0, failed: 0, reasons: new Map() };
         let errors = 0, dialFailed = 0;
         for (const l of list) {
             switch (l.type) {
-                case 'previous-run-unclean': out.push(`  ${at(l.t)} The previous run did not end cleanly (a crash, a kill or a power loss).`); break;
+                case 'previous-run-unclean': out.push(`  ${at(l.t)} Previous run ended unexpectedly.`); break;
                 case 'room':
                     if (l.event === 'start') out.push(`  ${at(l.t)} Opened a room (${l.kind ?? 'room'}${l.protected ? ', protected' : ''}${l.lan ? ', LAN' : ', internet'}).`);
-                    else if (l.event === 'start-failed') out.push(`  ${at(l.t)} Could not open a room (${l.reason ?? 'other'}).`);
+                    else if (l.event === 'start-failed') out.push(`  ${at(l.t)} Room failed to open (${l.reason ?? 'other'}).`);
                     else if (l.event === 'leave') out.push(`  ${at(l.t)} Left the room.`);
                     break;
                 case 'session':
@@ -153,16 +153,16 @@ export function summarize(lines, { maxLines = 400 } = {}) {
                     }
                     break;
                 case 'peer-left':
-                    out.push(`  ${at(l.t)} ${l.left === 'bye' ? 'Left' : 'Lost the link to'}: ${short(l.peer)}${l.left === 'bye' ? '' : ' (no bye)'}.`);
+                    out.push(`  ${at(l.t)} ${l.left === 'bye' ? `${short(l.peer)} left.` : `Lost connection to ${short(l.peer)}.`}`);
                     break;
                 case 'session-refused': out.push(`  ${at(l.t)} Refused a session from ${short(l.peer)} (${l.cause}).`); break;
                 case 'dial': dialFailed++; break;
                 case 'upnp': if (l.state === 'mapped' || l.state === 'none') out.push(`  ${at(l.t)} UPnP: ${l.state === 'mapped' ? 'the router opened a port' : `no port (${l.reason ?? 'other'})`}.`); break;
-                case 'host': if (l.self) out.push(`  ${at(l.t)} This computer became the host (${l.reason ?? '?'}).`); break;
+                case 'host': if (l.self) out.push(`  ${at(l.t)} Became host (${l.reason ?? '?'}).`); break;
                 case 'voice-state': out.push(`  ${at(l.t)} ${l.in ? 'Joined voice' : 'Left voice'}.`); break;
                 case 'voice-device':
-                    if (l.ok === false) out.push(`  ${at(l.t)} The ${l.dir === 'out' ? 'speaker' : 'microphone'} did not open (${l.error ?? 'other'}).`);
-                    else if (l.fallback) out.push(`  ${at(l.t)} The chosen ${l.dir === 'out' ? 'speaker' : 'microphone'} was not found; the default device is used.`);
+                    if (l.ok === false) out.push(`  ${at(l.t)} ${l.dir === 'out' ? 'Speaker' : 'Microphone'} failed to open (${l.error ?? 'other'}).`);
+                    else if (l.fallback) out.push(`  ${at(l.t)} Chosen ${l.dir === 'out' ? 'speaker' : 'microphone'} missing, using default.`);
                     break;
                 case 'voice-summary':
                     if (!l.own) {
@@ -179,12 +179,12 @@ export function summarize(lines, { maxLines = 400 } = {}) {
                         files.reasons.set(l.reason ?? 'other', (files.reasons.get(l.reason ?? 'other') ?? 0) + 1);
                     }
                     break;
-                case 'crash': out.push(`  ${at(l.t)} A ${l.process ?? '?'} process stopped (${l.reason ?? '?'}).`); break;
-                case 'hang': if (l.state === 'unresponsive') out.push(`  ${at(l.t)} The window did not respond.`); break;
+                case 'crash': out.push(`  ${at(l.t)} Crash: ${l.process ?? '?'} process (${l.reason ?? '?'}).`); break;
+                case 'hang': if (l.state === 'unresponsive') out.push(`  ${at(l.t)} Window not responding.`); break;
                 case 'error': errors++; break;
-                case 'mark': out.push(`  ${at(l.t)} You marked a problem: ${MARKS[l.category] ?? 'other'}.`); break;
-                case 'clock-jump': out.push(`  ${at(l.t)} The clock of Windows jumped ${Math.round(l.deltaMs / 1000)} s.`); break;
-                case 'power': if (l.state === 'suspend' || l.state === 'resume') out.push(`  ${at(l.t)} Windows ${l.state === 'suspend' ? 'went to sleep' : 'woke up'}.`); break;
+                case 'mark': out.push(`  ${at(l.t)} Problem marked: ${MARKS[l.category] ?? 'other'}.`); break;
+                case 'clock-jump': out.push(`  ${at(l.t)} System clock jumped ${Math.round(l.deltaMs / 1000)} s.`); break;
+                case 'power': if (l.state === 'suspend' || l.state === 'resume') out.push(`  ${at(l.t)} PC ${l.state === 'suspend' ? 'went to sleep' : 'woke up'}.`); break;
                 case 'diag':
                     if (l.event === 'sent') out.push(`  ${at(l.t)} Sent diagnostics to ${short(l.peer)}.`);
                     else if (l.event === 'received') out.push(`  ${at(l.t)} Received diagnostics from ${short(l.peer)}.`);

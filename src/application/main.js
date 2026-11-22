@@ -749,7 +749,7 @@ handleRoomIpc('asscrack:diag-open-received', async () => {
 // "Mark a problem": a category, the time and the room state. No free text.
 handleRoomIpc('asscrack:diag-mark', (_event, category) => {
     if (EVENT_FIELDS.mark.category(category) === undefined) throw new Error('Select what went wrong.');
-    if (!journal('mark', { category, inVoice, sharing: screenOwn, peers: node?.peers().length ?? 0 })) throw new Error('The journal is off.');
+    if (!journal('mark', { category, inVoice, sharing: screenOwn, peers: node?.peers().length ?? 0 })) throw new Error('Diagnostics are off.');
     diag?.flushSync();
     return true;
 });
