@@ -387,6 +387,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     const peerChannel = new Map()
     const channelOfPeer = peerId => peerChannel.get(peerId) ?? GENERAL_VOICE_CHANNEL
     const MAX_CHANNEL_ID = 64
+    // L9 (P10a): the stream ID of a voice line is a string of at most 64 characters (the window uses a UUID).
+    const MAX_STREAM_ID = 64
+    const validStreamId = value => typeof value === 'string' && value.length <= MAX_STREAM_ID
     let voiceRelay = null
     // peerId -> the last valid 'direct' list of that peer: the peers that get its frames on a direct stream.
     const peerDirect = new Map()
@@ -765,9 +768,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                             setPeerFull(peerId, control.fullNode, control.fullNode ? validAddrList(control.addrs) : null)
                         }
                     }
-                    else if (control.type === 'signal') {
-                        if (control.data !== null && typeof control.data === 'object') events.emit('signal', { peerId, data: control.data })
-                    } else if (typeof control.type === 'string' && control.type.startsWith('file-')) {
+                    // L9 (P10a): no 'signal' line. The window had no listener for it, and each line went to the window IPC.
+                    else if (typeof control.type === 'string' && control.type.startsWith('file-')) {
                         if (sessions.get(peerId) === session) {
                             const kind = control.type === 'file-offer' ? shelf.classifyOffer(peerId, control) : 'ordinary'
                             if (kind !== 'reject' && files.handleControl(peerId, control) && kind === 'requested') {
@@ -795,7 +797,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                         events.emit('voice-state', {
                             peerId,
                             inVoice: control.inVoice === true,
-                            streamId: typeof control.streamId === 'string' ? control.streamId : null,
+                            streamId: validStreamId(control.streamId) ? control.streamId : null,
                             muted: control.muted === true,
                             deafened: control.deafened === true,
                             channel: control.inVoice === true ? channel : GENERAL_VOICE_CHANNEL
@@ -1032,7 +1034,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         if (inVoice === true && membership && !membership.admitted()) throw new Error('This device is not admitted to the room')
         const active = !selfIdle && inVoice === true
         const before = voiceState
-        voiceState = { inVoice: active, streamId: typeof streamId === 'string' ? streamId : null, muted: muted === true,
+        voiceState = { inVoice: active, streamId: validStreamId(streamId) ? streamId : null, muted: muted === true,
             deafened: active && deafened === true,
             channel: active && voiceChannels.has(channel) ? channel : GENERAL_VOICE_CHANNEL }
         const line = voiceLine()

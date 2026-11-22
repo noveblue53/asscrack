@@ -49,7 +49,7 @@ if (process.platform === 'win32') {
     app.setToastActivatorCLSID(WINDOWS_TOAST_ID);
 }
 
-const EVENTS = ['channels', 'peer-discovered', 'peer-joined', 'peer-left', 'message', 'history', 'signal', 'voice-state', 'host-changed', 'peer-name',
+const EVENTS = ['channels', 'peer-discovered', 'peer-joined', 'peer-left', 'message', 'history', 'voice-state', 'host-changed', 'peer-name',
     'file-offer', 'file-retried', 'file-progress', 'file-done', 'file-failed', 'file-refused', 'file-cancelled', 'topology', 'full-node', 'full-node-addrs',
     'voice-frame', 'connection', 'dial-failed', 'upnp', 'presence', 'topic', 'voice-channels',
     // P7b: pause and resume of a received file (P7a). The Partial objects have no path.
@@ -129,7 +129,7 @@ const interfaceCache = installInterfaceCache();
 // 'voice-frame' comes 50 times each second for each speaker.
 // G7a: 'friend' and 'pm' carry room keys and private text. They never go in the log or to the window as raw events.
 // P8b: 'screen-frame' carries the picture bytes of a screen share (design section 2.9). It never goes in the log.
-const UNLOGGED_EVENTS = new Set(['signal', 'file-progress', 'voice-frame', 'friend', 'pm', 'screen-frame']);
+const UNLOGGED_EVENTS = new Set(['file-progress', 'voice-frame', 'friend', 'pm', 'screen-frame']);
 
 function logEvent(type, data) {
     if (!logFile || UNLOGGED_EVENTS.has(type)) return;
@@ -1198,11 +1198,6 @@ function archiveSend(record) {
     }
     return { ...record, ...save };
 }
-
-handleRoomIpc('asscrack:signal', (_event, { peerId, data } = {}) => {
-    if (!node) throw new Error('Not logged in');
-    return node.sendTo(peerId, { type: 'signal', data });
-});
 
 // One Opus frame of the own microphone. An ipc send, not invoke: 50 frames each second.
 onRoomIpc('asscrack:voice-frame', (_event, bytes) => {

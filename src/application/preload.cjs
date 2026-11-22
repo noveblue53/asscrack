@@ -128,7 +128,6 @@ contextBridge.exposeInMainWorld('asscrack', {
     onPeerLeft: listen('asscrack:peer-left'),
     onMessage: listen('asscrack:message'),
     onHistory: listen('asscrack:history'),
-    signal: (peerId, data) => ipcRenderer.invoke('asscrack:signal', { peerId, data }),
     setVoice: state => ipcRenderer.invoke('asscrack:set-voice', state),
     // G6: the voice channels of the room: { owner, editable, seq, channels: [{ id, name }] }.
     getVoiceChannels: () => ipcRenderer.invoke('asscrack:voice-channels'),
@@ -169,7 +168,6 @@ contextBridge.exposeInMainWorld('asscrack', {
     onPushToTalk: listen('asscrack:ptt'),
     onPushToTalkStatus: listen('asscrack:ptt-status'),
     getPushToTalkStatus: () => ipcRenderer.invoke('asscrack:ptt-status'),
-    onSignal: listen('asscrack:signal'),
     onVoiceState: listen('asscrack:voice-state'),
     onHostChanged: listen('asscrack:host-changed'),
     // Ready check (milestone 9).

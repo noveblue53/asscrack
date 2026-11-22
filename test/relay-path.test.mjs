@@ -90,20 +90,17 @@ test('history: a late relay-only member gets the earlier lines through R', { tim
     }
 })
 
-test('voice signal: voice state and signal go from A to B through R', { timeout: 60000 }, async () => {
+// L9 (P10a): the signal line is gone. The voice state still goes through R.
+test('voice state goes from A to B through R', { timeout: 60000 }, async () => {
     const nodes = []
     try {
         const { A, B } = await relayRoom(nodes)
         const states = []
-        const signals = []
         B.events.on('voice-state', e => { if (e.peerId === A.peerId) states.push(e) })
-        B.events.on('signal', e => signals.push(e))
         A.setVoice({ inVoice: true, streamId: 'stream-r' })
-        assert.equal(A.sendTo(B.peerId, { type: 'signal', data: { sdp: 'offer', n: 1 } }), true)
-        await waitFor(() => states.some(s => s.inVoice) && signals.length === 1, 10000, 'B gets voice state and signal')
+        await waitFor(() => states.some(s => s.inVoice), 10000, 'B gets voice state')
         const s = states.find(x => x.inVoice)
         assert.equal(s.streamId, 'stream-r')
-        assert.deepEqual(signals, [{ peerId: A.peerId, data: { sdp: 'offer', n: 1 } }])
         assertRelayed(A, B)
     } finally {
         await stopAll(nodes)
