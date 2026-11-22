@@ -217,6 +217,25 @@ test('the installer is a per-user nsis build next to the unchanged portable buil
     assert.equal(UNINSTALLER_NAME, `Uninstall ${pkg.build.productName}.exe`);
 });
 
+test('the installer asks for the install folder and stays per user', () => {
+    const pkg = JSON.parse(readFileSync(new URL('package.json', root), 'utf8'));
+    assert.equal(pkg.build.nsis.oneClick, false);
+    assert.equal(pkg.build.nsis.allowToChangeInstallationDirectory, true);
+    assert.equal(pkg.build.nsis.perMachine, false);
+    assert.equal(pkg.build.nsis.allowElevation, false);
+    const nsh = readFileSync(new URL('build/installer.nsh', root), 'utf8');
+    // No install mode page: the installer forces the per-user mode (electron-builder multiUserUi.nsh).
+    const mode = nsh.slice(nsh.indexOf('!macro customInstallMode'));
+    assert.match(mode.slice(0, mode.indexOf('!macroend')), /StrCpy \$isForceCurrentInstall "1"/);
+    // The folder page refuses the folders that need administrator rights, and its text tells the user why.
+    const verify = nsh.slice(nsh.indexOf('Function .onVerifyInstDir'));
+    const body = verify.slice(0, verify.indexOf('FunctionEnd'));
+    for (const root of ['$PROGRAMFILES32', '$PROGRAMFILES64', '$WINDIR']) assert.ok(body.includes(`Push ${root}`), root);
+    assert.match(body, /Abort/);
+    assert.match(nsh, /!define MUI_DIRECTORYPAGE_TEXT_TOP "[^"]*Program Files[^"]*"/);
+    assert.ok(nsh.indexOf('!ifndef BUILD_UNINSTALLER') < nsh.indexOf('Function .onVerifyInstDir'));
+});
+
 test('the bridge sends the start choice as text and plain fields only', async () => {
     const source = readFileSync(new URL('src/application/preload.cjs', root), 'utf8');
     const worlds = {}, invoked = [], listeners = {};

@@ -7,6 +7,21 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased
+
+### The installer asks for the install folder
+
+- The Windows installer (`npm run dist:installer`) is now an assisted installer. It shows a folder page. The user can
+  select the install folder. The install stays per user: the installer does not show the "for all users" choice and
+  does not use administrator rights.
+- The folder page does not accept a folder in Program Files or in the Windows folder: the Next button stays off, and
+  the page text gives the reason. The user must be able to write to the install folder.
+- An upgrade reads the folder of the last install. The silent update installs into the folder of the running app. The
+  "Start as Idle Peer when I sign in" entry uses the path of the running app.
+- Checks (this PC): `npm test` 917 tests, 899 pass, 0 fail, 18 skipped. The installer build passes. A small NSIS test
+  program on this PC refuses Program Files, Program Files (x86) and the Windows folder, and accepts other folders.
+  No real install test: this PC has an installed copy of the operator.
+
 ## 1.0.0 (2026-11-22): the full-featured release
 
 Release 1.0.0 is the full-featured release before the friends get the app (operator, 2026-11-21). The entries below
