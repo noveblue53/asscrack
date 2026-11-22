@@ -724,3 +724,24 @@ test('revision 3e: the 10 s conditions of U1 and A4 hold for 90 % of the last 10
     s.rate.setCap('standard')
     assert.equal(s.v('a').hist.length, 0, 'a step down resets the window')
 })
+
+test('revision 3f: a step down after a held probe is not a failed step up; one step up fails one time at most', () => {
+    const s = autoAt(2400000)
+    s.run(12500, { frameBytes: () => 2000 })
+    assert.equal(s.tier().preset, 'smooth')
+    // The probe holds for 5 s. Then the link drops (a late frame and a long ack delay): steps down in 10 s after the up.
+    s.run(5600, { frameBytes: () => 2000 })
+    assert.equal(s.tier().probe, undefined)
+    const before = s.rate.stats().tiers[0].upBlockedUntil
+    s.conf.get('a').delay = 400
+    while (s.tier().preset === 'smooth' && s.now() < 30000) s.run(50, { frameBytes: () => 2000 })
+    assert.equal(s.tier().preset, 'standard')
+    assert.equal(s.rate.stats().tiers[0].upBlockedUntil, before, 'no wait: the up step was good')
+    // A failed probe: two steps down in the probe time give one wait of 30 s, not 30 s and then 60 s.
+    const f = autoAt(2400000)
+    f.run(12500, { frameBytes: () => 2000 })
+    f.conf.get('a').delay = 400
+    while (f.tier().preset !== 'standard' && f.now() < 20000) f.run(50, { frameBytes: () => 2000 })
+    f.run(2000, { frameBytes: () => 2000 })
+    assert.equal(f.rate.stats().tiers[0].upBackoffMs, 60000, 'one failure: the next wait is 60 s')
+})

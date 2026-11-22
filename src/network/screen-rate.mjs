@@ -477,6 +477,8 @@ export function createScreenRate({ quality = 'auto', source = null, now, params 
     function failedUp(tier, t) {
         tier.upBlockedUntil = t + tier.upBackoff
         tier.upBackoff = Math.min(P.upBackoffMaxMs, tier.upBackoff * 2)
+        // Revision 3f: one step up counts as a failure at most one time.
+        tier.lastUpAt = -Infinity
     }
 
     function evaluate() {
@@ -659,7 +661,8 @@ export function createScreenRate({ quality = 'auto', source = null, now, params 
                     continue
                 }
                 // Rule U4: a probe that holds for 5 s resets the wait.
-                if (t - tier.probe.at >= P.probeMs) { tier.probe = null; tier.upBackoff = P.upBackoffMs }
+                // Revision 3f: a held probe is a good step up. A later step down is not a failed step up.
+                if (t - tier.probe.at >= P.probeMs) { tier.probe = null; tier.upBackoff = P.upBackoffMs; tier.lastUpAt = -Infinity }
             }
             const up = nextUp(tier.preset)
             const next = up === null ? null : ladder[up]
