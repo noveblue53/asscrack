@@ -22,7 +22,7 @@ scripts in the fake DOM. No change in `src/`.
 - **Removed.** 12 text checks in `test/app-events.test.mjs` and `test/saved-rooms-ui.test.mjs`. A behavior test now
   covers each one. The three code rules stay: one Escape listener in `renderer.js`, no inline style, and the debug
   log text of `main.js`. The checks of `main.js` stay, because `main.js` does not load with no Electron.
-- **Result: 127.0.0.1, this PC.** `npm test`: 476 of 476 pass. 28 breaks in a copy of the code: each break makes a
+- **Result: 127.0.0.1, this PC.** `npm test`: 476 of 476 pass. 30 breaks in a copy of the code: each break makes a
   test fail. One start of the app: no error line. No LAN test.
 
 ## Unreleased — getting in: room reach and clear login texts (goal G1, 2026-11-21)
