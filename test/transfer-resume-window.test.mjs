@@ -317,3 +317,92 @@ test('a Shared download has no Pause: the Shared panel has no paused state', asy
     assert.equal(row.dataset.state, 'receiving');
     assert.deepEqual(actions(row), ['cancel-receive']);
 });
+
+// ---- P7c: Resume after a restart of the app (each restart gives a new peer ID) ----
+const OLD_SAM = '12D3KooWsamOLDDDDDDdddd02';
+const NEW_SAM = '12D3KooWsamNEWWWWWWwwww03';
+
+test('P7c: a kept part with a retry state has Resume, finds the sender by its name and continues on the same row', async () => {
+    const kept = partial({ resumable: true, from: 'Sam', peerId: OLD_SAM });
+    const f = await room({ listPartials: async () => [kept] });
+    await settle();
+    const [row] = f.el('transfers').children;
+    assert.equal(row.dataset.state, 'paused');
+    assert.equal(row.querySelector('.peer-name').textContent, 'from Sam (an earlier session)');
+    assert.equal(text(row), `Paused · 40.0 MB of 100.0 MB · kept until ${new Date(EXPIRES).toLocaleString()}`);
+    assert.deepEqual(actions(row), ['resume', 'discard']);
+    button(row, 'resume').click();
+    await settle();
+    assert.deepEqual(f.log.filter(([name]) => name === 'resumeFile'), [['resumeFile', OFFER.offerId]]);
+    assert.equal(row.dataset.state, 'requesting');
+    // The node uses the part, then the attempt of Sam (peer ID of this run) continues the row.
+    f.handlers.onFilePartials({ partials: [{ ...kept, active: true }] });
+    assert.equal(row.isConnected, true, 'a kept row that resumes stays');
+    f.handlers.onFileResumed({ offerId: NEXT, peerId: SAM, direction: 'receive', offset: 40 * MIB, size: SIZE, resumeOf: OFFER.offerId });
+    assert.equal(row.dataset.offerId, NEXT);
+    assert.equal(row.dataset.peerId, SAM);
+    assert.equal(text(row), 'Receiving · continues from 40.0 MB');
+    f.handlers.onFileDone({ offerId: NEXT, peerId: SAM, direction: 'receive', savedName: 'big.iso', resumeOf: OFFER.offerId });
+    assert.equal(text(row), 'Saved as big.iso');
+    assert.equal(f.el('transfers').children.length, 1);
+});
+
+test('P7c: with the sender away, a kept row waits, and Resume starts when the sender comes back with a new peer ID', async () => {
+    const kept = partial({ resumable: true, from: 'Sam', peerId: OLD_SAM });
+    const f = await room({ listPartials: async () => [kept] });
+    await settle();
+    f.handlers.onPeerLeft({ peerId: SAM });
+    const [row] = f.el('transfers').children;
+    button(row, 'resume').click();
+    await settle();
+    assert.equal(row.dataset.state, 'waiting');
+    assert.equal(text(row), 'Waiting for Sam');
+    assert.deepEqual(f.log.filter(([name]) => name === 'resumeFile'), [], 'no request while Sam is away');
+    f.handlers.onPeerJoined({ peerId: NEW_SAM });
+    await settle();
+    assert.deepEqual(f.log.filter(([name]) => name === 'resumeFile'), [], 'no name yet: an unknown peer');
+    f.handlers.onPeerName({ peerId: NEW_SAM, name: 'Sam' });
+    await settle();
+    assert.deepEqual(f.log.filter(([name]) => name === 'resumeFile'), [['resumeFile', OFFER.offerId]]);
+    assert.equal(row.dataset.state, 'requesting');
+});
+
+test('P7c: a kept part with no retry state stays as in P7b (Discard only)', async () => {
+    const f = await room({ listPartials: async () => [partial({ offerId: 'old-offer' })] });
+    await settle();
+    const [row] = f.el('transfers').children;
+    assert.equal(row.querySelector('.peer-name').textContent, 'from an earlier session');
+    assert.deepEqual(actions(row), ['discard']);
+});
+
+test('P7c: the "Paused by" row of the sender continues when the receiver resumes after its restart', async () => {
+    const f = await room();
+    const offer = { offerId: OFFER.offerId, name: 'big.iso', size: SIZE };
+    f.handlers.onFileProgress({ ...offer, peerId: SAM, direction: 'send', bytes: 40 * MIB });
+    const [row] = f.el('transfers').children;
+    f.handlers.onFilePaused({ ...offer, peerId: SAM, direction: 'send', bytes: 40 * MIB });
+    assert.equal(text(row), 'Paused by Sam · 40.0 MB of 100.0 MB');
+    f.handlers.onPeerLeft({ peerId: SAM });
+    f.handlers.onPeerJoined({ peerId: NEW_SAM });
+    f.handlers.onPeerName({ peerId: NEW_SAM, name: 'Sam' });
+    f.handlers.onFileRetried({ offerId: NEXT, retryOf: OFFER.offerId, peerId: NEW_SAM, previousPeerId: SAM, direction: 'send',
+        name: 'big.iso', size: SIZE });
+    assert.equal(row.dataset.offerId, NEXT);
+    assert.equal(row.dataset.peerId, NEW_SAM);
+    assert.equal(text(row), 'Resume offered');
+    f.handlers.onFileResumed({ offerId: NEXT, peerId: NEW_SAM, direction: 'send', offset: 40 * MIB, size: SIZE });
+    assert.equal(text(row), 'Sending · continues from 40.0 MB');
+    f.handlers.onFileDone({ offerId: NEXT, peerId: NEW_SAM, direction: 'send', confirmed: true, offset: 40 * MIB, sent: 60 * MIB });
+    assert.equal(text(row), 'Delivered · 60.0 MB sent after the resume');
+    assert.equal(f.el('transfers').children.length, 1, 'no second row');
+});
+
+test('P7c: a "Paused by" row ends when the grant of the paused leg expires', async () => {
+    const f = await room();
+    const offer = { offerId: OFFER.offerId, name: 'big.iso', size: SIZE };
+    f.handlers.onFilePaused({ ...offer, peerId: SAM, direction: 'send', bytes: 40 * MIB });
+    const [row] = f.el('transfers').children;
+    f.handlers.onFileFailed({ ...offer, peerId: SAM, direction: 'send', reason: 'resume expired' });
+    assert.equal(row.dataset.state, 'failed');
+    assert.equal(text(row), 'Failed: resume expired');
+});

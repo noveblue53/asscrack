@@ -1869,10 +1869,12 @@ window.asscrack.onFileOffer(data => {
 });
 
 window.asscrack.onFileRetried?.(data => {
-    // P7b: the row that the receiver paused continues as the new attempt.
-    const paused = liveTransfer(`${data.retryOf}|${data.peerId}`);
+    // P7b: the row that the receiver paused continues as the new attempt. P7c: after a restart of the receiver, the
+    // node gives the peer ID of the paused row in previousPeerId, and the row moves to the new peer ID.
+    const previousPeer = typeof data.previousPeerId === 'string' ? data.previousPeerId : data.peerId;
+    const paused = liveTransfer(`${data.retryOf}|${previousPeer}`);
     if (paused && paused.direction === 'send' && paused.state === 'paused') {
-        moveTransfer(paused, data.offerId);
+        moveTransfer(paused, data.offerId, data.peerId);
         setTransferState(paused, 'offered', 'Resume offered');
         return;
     }
@@ -1936,24 +1938,33 @@ window.asscrack.onFileCancelled(data => {
 // ---- P7b: Pause, Resume and Discard of a received file (P7a is the node part) ----
 // A paused receive keeps its part on disk. The key of the part is the SHA-256 and the size of the offer. A resume
 // attempt has a new offer ID and no file-offer event: its first event has resumeOf, and linkResume moves the row
-// to the new ID. A part of an earlier session gets its own row ("kept row"): only a new offer of the same file from
-// the sender can continue it (after a restart the node knows no older offer).
+// to the new ID. A part of an earlier session gets its own row ("kept row"). P7c: in a protected room the node keeps
+// the retry state of the part, thus the kept row has Resume. Else only a new offer of the same file continues it.
 const keptPartials = new Map(); // key -> the Partial of the node (no path)
 let discardKey = null;
 let discardBound = false;
 
-function moveTransfer(entry, offerId) {
+function moveTransfer(entry, offerId, peerId) {
     const oldKey = transferKey(entry.item);
-    for (const row of [entry.item, entry.card].filter(Boolean)) row.dataset.offerId = String(offerId);
+    for (const row of [entry.item, entry.card].filter(Boolean)) {
+        row.dataset.offerId = String(offerId);
+        if (typeof peerId === 'string') row.dataset.peerId = peerId;
+    }
     transfers.delete(oldKey);
     transfers.set(transferKey(entry.item), entry);
 }
 
 function linkResume(data) {
     if (typeof data?.resumeOf !== 'string' || data.direction !== 'receive') return null;
-    const entry = liveTransfer(`${data.resumeOf}|${data.peerId}`);
-    if (!entry || entry.direction !== 'receive' || transfers.has(`${data.offerId}|${data.peerId}`)) return null;
-    moveTransfer(entry, data.offerId);
+    if (transfers.has(`${data.offerId}|${data.peerId}`)) return null;
+    // P7c: after a restart of the sender, the resume attempt comes from a new peer ID of the same device.
+    let entry = liveTransfer(`${data.resumeOf}|${data.peerId}`);
+    if (!entry) {
+        entry = [...transfers.values()].find(item => item.direction === 'receive' && item.item.isConnected &&
+            item.item.dataset.offerId === data.resumeOf) ?? null;
+    }
+    if (!entry || entry.direction !== 'receive') return null;
+    moveTransfer(entry, data.offerId, data.peerId);
     return entry;
 }
 
@@ -1982,8 +1993,17 @@ function pausedText(entry) {
     const parts = ['Paused', `${formatSize(bytes)} of ${formatSize(size)}`];
     const expiresAt = Number(partial?.expiresAt);
     if (partial && Number.isFinite(expiresAt) && expiresAt > 0) parts.push(`kept until ${new Date(expiresAt).toLocaleString()}`);
-    if (entry.kept) parts.push('it continues when the sender offers the file again');
+    if (entry.kept && !entry.resumable) parts.push('it continues when the sender offers the file again');
     return parts.join(' · ');
+}
+
+// P7c: the sender of a row is in the room with its peer ID, or with a new peer ID after its restart (the same name;
+// the node then finds the sender by its device ID and refuses all other peers).
+function senderPresent(entry) {
+    const peerId = entry.item.dataset.peerId;
+    if (peerItems.has(peerId)) return true;
+    const name = entry.from || peerNames.get(peerId);
+    return Boolean(name) && [...peerItems.keys()].some(id => peerNames.get(id) === name);
 }
 
 async function pauseTransfer(key) {
@@ -2007,19 +2027,22 @@ async function resumeTransfer(key, fromJoin = false) {
     if (!entry || entry.direction !== 'receive' || (entry.state !== 'paused' && entry.state !== 'waiting') ||
         !entry.resumable || !hasApi('resumeFile')) return false;
     const peerId = entry.item.dataset.peerId;
-    const waiting = () => setTransferState(entry, 'waiting', `Waiting for ${transferPeerName(peerId)}`);
-    if (!fromJoin && !peerItems.has(peerId)) {
+    entry.from ||= peerNames.get(peerId) ?? '';
+    const waiting = () => setTransferState(entry, 'waiting', `Waiting for ${transferPeerName(peerId, entry.from)}`);
+    if (!fromJoin && !senderPresent(entry)) {
         waiting();
         return false;
     }
     setTransferState(entry, 'requesting', 'Resuming…');
+    // P7c: a kept row that resumes is a normal row from now on. Its part is in use during the receive.
+    entry.kept = false;
     const ok = await callFile(window.asscrack.resumeFile, entry.item.dataset.offerId);
     if (ok === true) {
         entry.waitRetried = false;
         return true;
     }
     if (entry.state !== 'requesting' || transferKey(entry.item) !== key) return false;
-    if (fromJoin || !peerItems.has(peerId)) {
+    if (fromJoin || !senderPresent(entry)) {
         waiting();
         // The session of a peer that came back can need a moment before the node accepts a file line.
         if (fromJoin && !entry.waitRetried) {
@@ -2032,11 +2055,15 @@ async function resumeTransfer(key, fromJoin = false) {
 
 function resumeWaiting(peerId) {
     for (const [key, entry] of [...transfers]) {
-        if (entry.state === 'waiting' && entry.item.dataset.peerId === peerId) void resumeTransfer(key, true);
+        if (entry.state !== 'waiting') continue;
+        // P7c: a sender with a new peer ID (its restart) has the same name. Its name comes after the join.
+        const name = entry.from || peerNames.get(entry.item.dataset.peerId);
+        if (entry.item.dataset.peerId === peerId || (name && peerNames.get(peerId) === name)) void resumeTransfer(key, true);
     }
 }
 
 window.asscrack.onPeerJoined(data => resumeWaiting(data?.peerId));
+window.asscrack.onPeerName?.(data => { if (typeof data?.peerId === 'string') queueMicrotask(() => resumeWaiting(data.peerId)); });
 
 function discardTransfer(key) {
     const entry = liveTransfer(key);
@@ -2096,11 +2123,17 @@ function removeKeptRow(key, entry) {
 }
 
 function keptRow(partial) {
-    const entry = getTransfer(`kept-${partial.key}`, 'kept', 'receive', { name: partial.name, size: partial.size });
-    if (entry.kept) return;
-    Object.assign(entry, { kept: true, partialKey: partial.key, resumable: false });
+    // P7c: a part with a retry state gets the offer ID and the sender of its last attempt, thus Resume works.
+    const resumable = partial.resumable === true && typeof partial.offerId === 'string' && typeof partial.peerId === 'string' &&
+        hasApi('resumeFile');
+    const from = typeof partial.from === 'string' ? partial.from : '';
+    const entry = resumable
+        ? getTransfer(partial.offerId, partial.peerId, 'receive', { name: partial.name, size: partial.size, from })
+        : getTransfer(`kept-${partial.key}`, 'kept', 'receive', { name: partial.name, size: partial.size });
+    if (entry.kept || entry.state !== null) return;
+    Object.assign(entry, { kept: true, partialKey: partial.key, resumable, retryable: resumable, from });
     const peer = entry.item.querySelector('.peer-name');
-    peer.textContent = 'from an earlier session';
+    peer.textContent = resumable ? `from ${transferPeerName(partial.peerId, from)} (an earlier session)` : 'from an earlier session';
     peer.title = peer.textContent;
     setProgress(entry, partial.bytes, partial.size);
     setTransferState(entry, 'paused', pausedText(entry));

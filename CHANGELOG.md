@@ -27,14 +27,51 @@ A message to a friend that is not connected waits on this computer. It goes out 
 - When a friend ends the friendship, each waiting line shows "Not delivered" and the reason.
 
 Results:
-- `npm test` passes, 715 tests (127.0.0.1).
+- `npm test` passes, 715 tests on the branch and 730 after the merge with P7c (127.0.0.1).
 - 13 new tests. 7 use real friend nodes and a real archive in a temp folder (127.0.0.1 on this PC). 6 test the
   window part with a stub bridge or the room window fixture.
-- Two copies (this PC, 127.0.0.1), 3 runs: B quits, A writes 3 lines ("Waiting"). B starts: A shows "Delivered" for
+- One `npm start` gives no error line in the terminal or the developer console (this PC).
+- Two copies (this PC, 127.0.0.1), 5 runs: B quits, A writes 3 lines ("Waiting"). B starts: A shows "Delivered" for
   the 3 lines, B shows the note and the 3 lines once, and B logs one notification. A closes the window on the login
-  screen: A stays in the tray as "online for friends", and B still shows A as "Online". In 2 of 3 runs, A logged the
-  older `asscrack:invite` "Unknown room window" line at the Quit of the room part (the G7a flow). It is not a G7b
-  change.
+  screen: A stays in the tray as "online for friends", and B still shows A as "Online". All G7b steps pass in the
+  5 runs.
+- Known older fault, not from G7b: at the Quit of the room part, A logged the `asscrack:invite` "Unknown room window"
+  line in 3 of 5 runs. The G7a check on `main` gave the same line in 2 of 3 runs. One run on each tree also gave a
+  Chromium GPU error line in the terminal.
+
+## Unreleased — Resume of a kept download after a restart of the app (package P7c, 2026-11-21)
+
+Resume of a paused download now works after a restart of the app, on both ends. Before, a kept part continued only
+when the sender offered the same file again.
+- The receiver keeps the retry state of each kept part next to it: the last offer, the sender name, the peer ID
+  and the room device ID of the sender. After a restart, the kept row has "Resume".
+- In a protected room the sender keeps its grant for the paused file in its profile (one file for each room), for the
+  same 72 hours as the kept part. Only the receiver device can use the grant, and only while the source file is
+  unchanged.
+- Each restart gives a new peer ID. The node finds the other end by its device ID. When the sender is not in the room,
+  the row shows "Waiting for <name>", and the download continues when the sender comes back.
+- Fix (the open point of P7b): on the sender, the "Paused by" row continues as the resumed send after a restart of the
+  receiver, and it ends when the grant expires.
+- Not changed: the final SHA-256 check of the full file, a changed source deletes the kept part, Discard and expiry
+  delete the part and its retry state. A room with no membership has no device ID: it behaves as before (a new offer
+  of the same file continues the part).
+- A resumed download that stops again (a quit of the receiver or a lost link) keeps the grant of the sender. Thus
+  Resume works also after the next restart.
+- Known limit: the sender has no Pause. When the sender quits during a send, the receiver row shows "Cancelled". The
+  part stays, and a new offer of the same file continues it.
+
+Results:
+- `npm test` passes, 717 of 717 after the merge with G7a (127.0.0.1).
+- One `npm start` gives no error line in the terminal or the developer console (this PC).
+- Two copies (127.0.0.1): A offers a 600 MiB file (629,145,600 bytes) to B. B pauses at 258,605,056 bytes (41.1 %),
+  quits and starts again, and selects Resume on the kept row. B got no new offer. A sent 370,540,544 bytes after the
+  resume: the remainder exactly. The SHA-256 of the saved file and of the source agree. The one row of A went from
+  "Paused by Bob" to "Delivered".
+- Two copies (127.0.0.1), the sender offline: B pauses at 258,277,376 bytes, then B and A quit. B starts alone, and
+  Resume shows "Waiting for Alice". A starts again, and the download continues with no action: A sent 370,868,224
+  bytes (the remainder), and the SHA-256 agrees.
+- The two checks again after the merge with G7a (127.0.0.1): A sent 373,948,416 and 375,062,528 bytes, each the
+  remainder exactly, and the SHA-256 agrees in both.
 
 ## Unreleased — Friends (goal G7a, 2026-11-21)
 

@@ -626,6 +626,10 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
             options.seedChannels = rooms.loadChannels(options.room, options.roomKey);
             options.seedVoiceChannels = rooms.loadVoiceChannels(options.room, options.roomKey);
             options.seedHistory = removeHistory => rooms.prepareReplay(options.room, options.roomKey, removeHistory);
+            // P7c: the resume grants of a sender, one file for each room in the profile. The node writes a grant
+            // only in a protected room (it needs the device ID of the receiver).
+            options.partials = { grantsFile: path.join(app.getPath('userData'), 'resume-grants',
+                `${roomFingerprint(options.room, options.roomKey)}.json`) };
         }
         const hostFile = alreadySaved ? hints.host : null;
         // Older saved host data has no affirmative UPnP preference. Restoring an
