@@ -84,7 +84,8 @@ test('127.0.0.1 block refuses a later request with no bar; unblock; the cap', as
     linksA.attachRoom(roomA);
     linksB.attachRoom(roomB);
     const { friendA, friendB } = await befriend(linksA, linksB, roomA, roomB);
-    await waitFor(() => linksA.friend(friendA).state === 'online', 'online');
+    // Both sides: B sends 'unfriend' only on a session that B knows.
+    await waitFor(() => linksA.friend(friendA).state === 'online' && linksB.friend(friendB).state === 'online', 'online');
     assert.equal(await linksB.block(friendB), true);
     assert.deepEqual(linksB.list().blocked.map(b => b.name), ['Ann']);
     assert.equal(linksB.relation(roomA.peerId), null, 'no Add friend line for a blocked person');
