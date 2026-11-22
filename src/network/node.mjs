@@ -510,7 +510,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         openPeers: () => [...sessions.keys()].filter(filePeerAllowed),
         isPeerOpen: filePeerAllowed,
         peerNames: () => Object.fromEntries([...names].filter(([peerId]) => sessions.has(peerId))),
-        downloadDir, scratchDir, fileAckTimeout, partials
+        downloadDir, scratchDir, fileAckTimeout, partials,
+        // P7c: the room device ID of a peer (protected rooms). A paused file can then resume after a restart.
+        peerDevice: peerId => (membership && memberAllowed(peerId) ? memberPeers.get(peerId)?.deviceId ?? null : null)
     })
 
     const shelf = createSharedShelf({ self: selfId, name: senderName, peerName: peer => names.get(peer), sessions, files, events })

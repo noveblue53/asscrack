@@ -98,3 +98,35 @@ test('a new store reads the partials of an earlier run and removes damaged ones'
     assert.deepEqual((await fsp.readdir(dir)).sort(), [`.asscrack-resume-${partialKey(SHA_A, 900)}.json`,
         `.asscrack-resume-${partialKey(SHA_A, 900)}.part`, 'notes.txt'].sort())
 })
+
+// P7c: the retry state of a partial (the sender of its last attempt) is in its description. The window gets the
+// sender name and peer ID, not the device ID.
+test('P7c: the retry state survives a restart, a bad retry state keeps the part, and forgetSource keeps the bytes', async t => {
+    const dir = await folder(t)
+    const source = { peerId: '12D3KooWsender', device: 'device-of-sender', from: 'Sam', flow: true }
+    const first = store(dir).partials
+    const file = await temp(dir, '.asscrack-11111111-1111-4111-8111-111111111111.part', 4096)
+    assert.equal(await first.adopt(file, { sha256: SHA_A, size: 10000, name: 'big.bin', offerId: 'o1', bytes: 4096, source }), true)
+    const [kept] = await store(dir).partials.list()
+    assert.equal(kept.resumable, true)
+    assert.equal(kept.from, 'Sam')
+    assert.equal(kept.peerId, source.peerId)
+    assert.equal(Object.hasOwn(kept, 'device'), false)
+    const again = store(dir)
+    await again.partials.list()
+    assert.deepEqual(again.partials.source(kept.key), { ...source, offerId: 'o1' })
+    await again.partials.forgetSource(kept.key)
+    const [after] = await store(dir).partials.list()
+    assert.equal(after.resumable, undefined)
+    assert.equal(after.bytes, 4096, 'the bytes stay')
+
+    // A description of P7b (no retry state) and one with a bad retry state both load, with no retry state.
+    const meta = path.join(dir, `.asscrack-resume-${kept.key}.json`)
+    const description = JSON.parse(await fsp.readFile(meta, 'utf8'))
+    for (const bad of [{ ...source, device: 'x'.repeat(129) }, { ...source, peerId: 7 }, 'text']) {
+        await fsp.writeFile(meta, JSON.stringify({ ...description, source: bad }))
+        const [loaded] = await store(dir).partials.list()
+        assert.equal(loaded?.bytes, 4096, JSON.stringify(bad))
+        assert.equal(loaded.resumable, undefined)
+    }
+})

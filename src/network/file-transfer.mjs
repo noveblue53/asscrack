@@ -3,7 +3,8 @@ import { constants } from 'node:fs'
 import * as fsp from 'node:fs/promises'
 import * as path from 'node:path'
 import { roomRateLimit } from './room-rate-limit.mjs'
-import { createPartialStore, partialKey } from './partial-store.mjs'
+import { createPartialStore, partialKey, PARTIAL_TTL_MS } from './partial-store.mjs'
+import { createGrantStore, GRANT_LIMIT } from './send-grants.mjs'
 
 export const FILE_PROTOCOL = '/asscrack/file/1.0.0'
 // Version 1.1.0 adds the offset negotiation for a paused partial. The receiver asks for 1.1.0 only when it has a
@@ -228,7 +229,7 @@ export async function moveToFreeName(temp, dir, name, fs = fsp) {
 // The file transfer part of a node. The node sends the file control lines to handleControl().
 export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOpen = peerId => openPeers().includes(peerId),
     peerNames, downloadDir, scratchDir = downloadDir, fileAckTimeout = 30000, fileOpenTimeout = OPEN_TIMEOUT_MS,
-    fileIdleTimeout = DATA_IDLE_MS, partials = {} }) {
+    fileIdleTimeout = DATA_IDLE_MS, partials = {}, peerDevice = () => null }) {
     // Offer and download state lives for the current room session.
     const ownOffers = new Map()
     const received = new Map()
@@ -255,6 +256,113 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
             if (type === 'expired' || type === 'discarded') events.emit(`file-${type}`, partial)
             events.emit('file-partials', { partials: store.snapshot() })
         } }) : null
+    // P7c: one time on both ends. The sender keeps the grant of a paused leg, and the receiver keeps the part and its
+    // retry state, for the same time after the pause.
+    const resumeTtl = Number.isSafeInteger(partials?.ttl) && partials.ttl >= 0 ? partials.ttl : PARTIAL_TTL_MS
+    const deviceOf = peerId => {
+        try {
+            const device = peerDevice(peerId)
+            return typeof device === 'string' && device !== '' ? device : null
+        } catch { return null }
+    }
+
+    // P7c: the saved grants of the sender (protected rooms only: a grant needs the device ID of the receiver).
+    const grants = partials && typeof partials.grantsFile === 'string' && partials.grantsFile !== '' ?
+        createGrantStore({ file: partials.grantsFile }) : null
+    let grantsLoaded = !grants
+    const grantsReady = grants ? grants.load().then(restoreGrants).catch(() => {}).finally(() => { grantsLoaded = true }) : Promise.resolve()
+
+    // A restored grant has no peer ID yet. Its key in `failed` is `device:<id>` until the device asks again.
+    function restoreGrants(list) {
+        for (const g of list) {
+            const key = `device:${g.device}`
+            let offer = ownOffers.get(g.offerId)
+            if (!offer) {
+                if (ownOffers.size >= MAX_OUTGOING_OFFERS) break
+                offer = { filePath: g.filePath, name: g.name, size: g.size, sha256: g.sha256, dev: g.dev, ino: g.ino,
+                    mtimeMs: g.mtimeMs, ctimeMs: g.ctimeMs, offerId: g.offerId, attachmentId: null, retryOf: null,
+                    targets: new Set(), started: new Set(), failed: new Set(), failedUntil: new Map(), paused: new Map(),
+                    retries: new Map(), retryClaimed: false, expiresAt: g.expiresAt }
+                ownOffers.set(g.offerId, offer)
+            }
+            offer.failed.add(key)
+            offer.failedUntil.set(key, g.expiresAt)
+            offer.paused.set(key, g.device)
+            offer.expiresAt = Math.max(offer.expiresAt, g.expiresAt)
+        }
+    }
+
+    function grantList() {
+        const list = []
+        const time = Date.now()
+        for (const offer of ownOffers.values()) {
+            if (offer.attachmentId || typeof offer.filePath !== 'string' || !offer.paused) continue
+            for (const [peerId, device] of offer.paused) {
+                const expiresAt = offer.failedUntil.get(peerId)
+                if (!offer.failed.has(peerId) || !(expiresAt > time)) continue
+                const { offerId, filePath, name, size, sha256, dev, ino, mtimeMs, ctimeMs } = offer
+                list.push({ offerId, device, filePath, name, size, sha256, dev, ino, mtimeMs, ctimeMs, expiresAt })
+            }
+        }
+        return list.slice(-GRANT_LIMIT)
+    }
+
+    function saveGrants() {
+        if (grants) grantsReady.then(() => grants.save(grantList())).catch(() => {})
+    }
+
+    // P7c: the receiver restarted (or the sender restarted) and has a new peer ID. The paused leg of the same device
+    // moves to the new peer ID. Only a paused leg with a device ID moves, and only from a peer that is not open.
+    // Returns the old peer ID, or null.
+    function moveGrant(prior, peerId) {
+        const device = deviceOf(peerId)
+        if (!device || !prior.paused) return null
+        for (const [old, pausedDevice] of prior.paused) {
+            if (pausedDevice !== device || old === peerId || !prior.failed.has(old) || isPeerOpen(old)) continue
+            prior.failed.delete(old)
+            prior.failed.add(peerId)
+            prior.failedUntil.set(peerId, prior.failedUntil.get(old))
+            prior.failedUntil.delete(old)
+            prior.paused.delete(old)
+            prior.paused.set(peerId, device)
+            if (prior.targets.delete(old)) prior.targets.add(peerId)
+            if (prior.started.delete(old)) prior.started.add(peerId)
+            const pending = prior.retries.get(old)
+            if (pending && !pending.checking) prior.retries.delete(old)
+            saveGrants()
+            return old
+        }
+        return null
+    }
+
+    // P7c: the retry state of the receiver for each kept part with a sender device (a protected room). Resume can
+    // then ask the sender after a restart of the app.
+    function restoreRetry(partial) {
+        const source = partial ? store?.source(partial.key) : null
+        if (!source || !UUID_RE.test(source.offerId)) return null
+        const known = retryable.get(source.offerId)
+        if (known) return known
+        if (retryable.size >= MAX_RETRYABLE_OFFERS || partial.expiresAt <= Date.now()) return null
+        const offer = { offerId: source.offerId, peerId: source.peerId, device: source.device, name: partial.name,
+            size: partial.size, sha256: partial.sha256, flow: source.flow, retry: true, paused: true, restored: true,
+            expiresAt: partial.expiresAt }
+        retryable.set(offer.offerId, offer)
+        return offer
+    }
+    store?.list().then(list => { for (const partial of list) restoreRetry(partial) }).catch(() => {})
+
+    // The retry state for a kept part: only with the device ID of the sender. Null: no retry state. Undefined:
+    // keep the state that the store has.
+    function sourceOf(offer) {
+        if (!offer.retry) return null
+        const device = deviceOf(offer.peerId)
+        if (!device) return undefined
+        return { peerId: offer.peerId, device, from: peerNames()[offer.peerId] ?? '', flow: offer.flow === true }
+    }
+
+    function forgetSource(offer) {
+        if (store && offer?.paused) store.forgetSource(partialKey(offer.sha256, offer.size)).catch(() => {})
+    }
 
     function countForPeer(entries, peerId) {
         let count = 0
@@ -269,6 +377,7 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
     function pruneOffers() {
         const now = Date.now()
         const sending = new Set([...active.values()].filter(transfer => transfer.direction === 'send').map(transfer => transfer.offerId))
+        let grantsChanged = false
         for (const [id, offer] of ownOffers) {
             if (offer.expiresAt > now || sending.has(id)) continue
             ownOffers.delete(id)
@@ -277,7 +386,15 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
                 sendLine(peerId, { type: 'file-cancel', offerId: id })
                 events.emit('file-failed', { offerId: id, peerId, direction: 'send', reason: 'offer expired' })
             }
+            // P7c: a paused leg ends here. The row of the sender gets an end, not "Paused by" for ever.
+            for (const peerId of offer.paused?.keys() ?? []) {
+                grantsChanged = true
+                if (offer.failed.has(peerId) && !peerId.startsWith('device:')) {
+                    events.emit('file-failed', { offerId: id, peerId, direction: 'send', reason: 'resume expired' })
+                }
+            }
         }
+        if (grantsChanged) saveGrants()
         for (const [id, offer] of received) {
             if (offer.state !== 'offered' || offer.expiresAt > now) continue
             received.delete(id)
@@ -286,6 +403,7 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
         }
         for (const [id, offer] of retryable) {
             if (offer.expiresAt > now) continue
+            forgetSource(offer)
             forgetRetry(id)
         }
     }
@@ -369,10 +487,18 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
         return timer
     }
 
-    function markFailedOffer(offer, peerId) {
+    // A failed leg stays open to a retry for OFFER_TTL_MS. P7c: a paused leg stays open for resumeTtl, and in a
+    // protected room the grant is saved with the device ID of the receiver.
+    function markFailedOffer(offer, peerId, { pause = false } = {}) {
         if (offer.attachmentId) return
         offer.failed.add(peerId)
-        offer.expiresAt = Date.now() + OFFER_TTL_MS
+        const until = Date.now() + (pause ? resumeTtl : OFFER_TTL_MS)
+        offer.failedUntil.set(peerId, until)
+        offer.expiresAt = Math.max(offer.expiresAt, until)
+        const device = pause ? deviceOf(peerId) : null
+        if (device) offer.paused.set(peerId, device)
+        else if (!offer.paused.delete(peerId)) return
+        saveGrants()
     }
 
     function matchesOriginal(stat, prepared) {
@@ -431,7 +557,8 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
         if (pending > MAX_PENDING_SENDS) throw new Error('Too many recipients have pending file offers')
         const { name, size, sha256 } = prepared
         const offer = { ...prepared, offerId, attachmentId, retryOf, targets: new Set(), started: new Set(),
-            failed: new Set(), retries: new Map(), expiresAt: Date.now() + OFFER_TTL_MS }
+            failed: new Set(), failedUntil: new Map(), paused: new Map(), retries: new Map(), retryClaimed: false,
+            expiresAt: Date.now() + OFFER_TTL_MS }
         const line = { type: 'file-offer', offerId, name, size, sha256, flow: 1 }
         if (attachmentId) line.attachmentId = attachmentId
         else line.retry = 1
@@ -471,6 +598,8 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
         if (prior?.retries.get(peerId)?.attemptId !== offer.offerId || !prior.failed.has(peerId)) return false
         prior.failed.delete(peerId)
         prior.retries.delete(peerId)
+        prior.failedUntil.delete(peerId)
+        if (prior.paused.delete(peerId)) saveGrants()
         offer.retryClaimed = true
         return true
     }
@@ -480,9 +609,14 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
     async function offerRetry(peerId, offerId, attemptId) {
         if (!UUID_RE.test(offerId) || typeof attemptId !== 'string' || !UUID_RE.test(attemptId) || attemptId === offerId || ownOffers.has(attemptId) ||
             received.has(attemptId) || retryable.has(attemptId)) return
+        if (!grantsLoaded) await grantsReady
         const prior = ownOffers.get(offerId)
         const deny = reason => sendLine(peerId, { type: 'file-retry-unavailable', offerId, attemptId, ...(reason ? { reason } : {}) })
-        if (!prior || prior.attachmentId || !prior.failed.has(peerId) || prior.expiresAt <= Date.now()) return deny()
+        if (!prior || prior.attachmentId) return deny()
+        // P7c: a paused leg of the same device with an older peer ID (a restart of one end).
+        const moved = prior.failed.has(peerId) ? null : moveGrant(prior, peerId)
+        if (!prior.failed.has(peerId) || prior.expiresAt <= Date.now() ||
+            (prior.failedUntil.get(peerId) ?? Infinity) <= Date.now()) return deny()
         const pending = prior.retries.get(peerId)
         if (pending?.checking) return
         if (pending) {
@@ -499,7 +633,10 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
             const previous = active.get(`send|${offerId}|${peerId}`)
             if (previous) await previous.promise
             if (!authorized()) return deny()
-            if (!await unchanged(prior)) return deny('changed')
+            if (!await unchanged(prior)) {
+                if (prior.paused.delete(peerId)) saveGrants()
+                return deny('changed')
+            }
             if (!authorized() || !isPeerOpen(peerId) ||
                 ownOffers.has(attemptId) || received.has(attemptId) || retryable.has(attemptId)) return deny()
             // A retry may itself disconnect before its stream opens. The request for that
@@ -507,8 +644,9 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
             if (!prior.started.has(peerId) && !consumeRetryGrant(prior, peerId)) return deny()
             const next = publishOffer(prior, [peerId], attemptId, null, offerId)
             if (next.peers) {
+                // P7c: `previousPeerId` is the peer ID of the paused row before the restart of the receiver.
                 events.emit('file-retried', { offerId: attemptId, retryOf: offerId, peerId, direction: 'send',
-                    name: next.name, size: next.size })
+                    name: next.name, size: next.size, ...(moved && !moved.startsWith('device:') ? { previousPeerId: moved } : {}) })
             }
         } catch {
             deny()
@@ -658,7 +796,7 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
             } else if (t.signal === 'pause' && !t.selfCancel && !stopping) {
                 // The receiver keeps its partial. The leg stays open to a retry, thus a Resume can continue it.
                 active.delete(key)
-                if (offer.targets.has(peerId)) markFailedOffer(offer, peerId)
+                if (offer.targets.has(peerId)) markFailedOffer(offer, peerId, { pause: true })
                 events.emit('file-paused', { offerId, peerId, direction: 'send', bytes: t.offset + t.offeredBytes, size: offer.size })
             } else if (t.selfCancel || stopping) {
                 active.delete(key)
@@ -856,7 +994,7 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
             if (claimed) {
                 // A partial that the user paused stays after a failure of its resume. Cancel and bad bytes delete it.
                 if ((cancelled === 'self' && !stopping) || t.discard) await store.drop(claimed.key, t.discard ?? 'cancelled')
-                else await store.release(claimed.key, { bytes: position, offerId }).catch(() => {})
+                else await store.release(claimed.key, { bytes: position, offerId, source: sourceOf(offer) }).catch(() => {})
             } else if (tempCreated) await fsp.unlink(temp).catch(() => {})
             cancelSignals.delete(signalKey)
             active.delete(t.key)
@@ -875,9 +1013,11 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
         const { offerId, peerId } = offer
         let kept = position === 0
         try {
-            if (claimed) kept = await store.release(claimed.key, { bytes: position, offerId })
+            const source = sourceOf(offer)
+            if (claimed) kept = await store.release(claimed.key, { bytes: position, offerId, source })
             else if (tempCreated && position > 0) {
-                kept = await store.adopt(temp, { sha256: offer.sha256, size: offer.size, name: offer.name, offerId, bytes: position })
+                kept = await store.adopt(temp, { sha256: offer.sha256, size: offer.size, name: offer.name, offerId, bytes: position,
+                    source: source ?? null })
             }
         } catch { kept = false }
         if (claimed && !kept) await store.drop(claimed.key, 'budget')
@@ -886,11 +1026,13 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
         active.delete(t.key)
         received.delete(offerId)
         if (!kept) return failReceive(offer, 'the paused part is over the storage budget')
+        const partial = store.snapshot().find(item => item.key === partialKey(offer.sha256, offer.size))
         if (offer.retry) {
             if (retryable.size >= MAX_RETRYABLE_OFFERS) forgetRetry(retryable.keys().next().value)
-            retryable.set(offerId, { ...offer, paused: true, expiresAt: Date.now() + OFFER_TTL_MS })
+            // P7c: the retry of a paused offer lasts as long as its part (the sender keeps its grant as long).
+            retryable.set(offerId, { ...offer, paused: true, device: deviceOf(peerId),
+                expiresAt: partial?.expiresAt ?? Date.now() + OFFER_TTL_MS })
         }
-        const partial = store.snapshot().find(item => item.key === partialKey(offer.sha256, offer.size))
         events.emit('file-paused', { offerId, peerId, direction: 'receive', bytes: position, size: offer.size,
             key: partialKey(offer.sha256, offer.size), expiresAt: partial?.expiresAt ?? null, resumable: offer.retry,
             ...(offer.resumeOf ? { resumeOf: offer.resumeOf } : {}) })
@@ -931,8 +1073,17 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
 
     // Resume asks the sender of a paused or failed offer for a new attempt and accepts it at once. The new attempt
     // continues the partial of the same content, if the store has one.
+    // P7c: after a restart, the retry state comes from the kept part. When the sender has a new peer ID (a restart
+    // of the sender), the node finds it by its device ID.
     function resumeFile(offerId) {
-        return retryable.has(offerId) && retryFile(offerId, true)
+        const offer = retryable.get(offerId) ??
+            restoreRetry(store?.snapshot().find(item => item.offerId === offerId && item.resumable && !item.active))
+        if (!offer) return false
+        if (offer.device && !isPeerOpen(offer.peerId)) {
+            const next = openPeers().find(peerId => deviceOf(peerId) === offer.device)
+            if (next) offer.peerId = next
+        }
+        return retryFile(offerId, true)
     }
 
     async function discardPartial(key) {
@@ -1009,7 +1160,11 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
                     // The sender cannot give the remainder of this content. The partial is of no more use from it.
                     finishRetry(offerId, 'the source file changed', false)
                     store?.discard(partialKey(offer.sha256, offer.size), 'changed').catch(() => {})
-                } else finishRetry(offerId, 'the sender can no longer offer this file', false)
+                } else {
+                    // P7c: the part stays. Only its retry state goes: a new offer of the same file continues it.
+                    if (retry.resume) forgetSource(offer)
+                    finishRetry(offerId, 'the sender can no longer offer this file', false)
+                }
             }
         } else if (control.type === 'file-offer') {
             const { size, sha256 } = control
@@ -1053,7 +1208,7 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
             // A pause before the stream opened. As for a lost peer, the leg fails and stays open to a retry.
             const own = ownOffers.get(offerId)
             if (own && !own.started.has(peerId) && own.targets.delete(peerId)) {
-                markFailedOffer(own, peerId)
+                markFailedOffer(own, peerId, { pause: true })
                 events.emit('file-paused', { offerId, peerId, direction: 'send', bytes: 0, size: own.size })
             }
         } else if (control.type === 'file-written') {

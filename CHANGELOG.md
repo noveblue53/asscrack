@@ -7,6 +7,34 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased — Resume of a kept download after a restart of the app (package P7c, 2026-11-21)
+
+Resume of a paused download now works after a restart of the app, on both ends. Before, a kept part continued only
+when the sender offered the same file again.
+- The receiver keeps the retry state of each kept part next to it: the last offer, the sender name, the peer ID
+  and the room device ID of the sender. After a restart, the kept row has "Resume".
+- In a protected room the sender keeps its grant for the paused file in its profile (one file for each room), for the
+  same 72 hours as the kept part. Only the receiver device can use the grant, and only while the source file is
+  unchanged.
+- Each restart gives a new peer ID. The node finds the other end by its device ID. When the sender is not in the room,
+  the row shows "Waiting for <name>", and the download continues when the sender comes back.
+- Fix (the open point of P7b): on the sender, the "Paused by" row continues as the resumed send after a restart of the
+  receiver, and it ends when the grant expires.
+- Not changed: the final SHA-256 check of the full file, a changed source deletes the kept part, Discard and expiry
+  delete the part and its retry state. A room with no membership has no device ID: it behaves as before (a new offer
+  of the same file continues the part).
+
+Results:
+- `npm test` passes, 687 of 687 (127.0.0.1).
+- One `npm start` gives no error line in the terminal or the developer console (this PC).
+- Two copies (127.0.0.1): A offers a 600 MiB file (629,145,600 bytes) to B. B pauses at 258,605,056 bytes (41.1 %),
+  quits and starts again, and selects Resume on the kept row. B got no new offer. A sent 370,540,544 bytes after the
+  resume: the remainder exactly. The SHA-256 of the saved file and of the source agree. The one row of A went from
+  "Paused by Bob" to "Delivered".
+- Two copies (127.0.0.1), the sender offline: B pauses at 258,277,376 bytes, then B and A quit. B starts alone, and
+  Resume shows "Waiting for Alice". A starts again, and the download continues with no action: A sent 370,868,224
+  bytes (the remainder), and the SHA-256 agrees.
+
 ## Unreleased — pause and resume of large downloads: the window (package P7b, 2026-11-21)
 
 The window now shows the pause and the resume of a received file (P7a made the network part).
