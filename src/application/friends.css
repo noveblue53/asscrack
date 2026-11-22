@@ -3,7 +3,9 @@
 /* The login screen: the panel is a column at the side of the login card, below it under 760 px of width. */
 #login-screen { flex-wrap: wrap; align-content: center; gap: 16px; overflow: auto; }
 @media (max-width: 759px) {
+  /* The screen scrolls: the card keeps its full height above the panel. */
   #login-screen { flex-direction: column; flex-wrap: nowrap; justify-content: flex-start; }
+  #login-screen > .login-card, #login-screen > #friends-panel { flex-shrink: 0; max-height: none; }
 }
 
 #friends-panel {
