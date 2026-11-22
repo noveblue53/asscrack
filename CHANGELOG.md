@@ -22,6 +22,13 @@ The owner of a running protected room can invite a friend with no device ID and 
 - **Friend link line.** A new "invite" line in the private messages, with the same ID, receipt and queue as a message.
   A 1.0.0 app ignores this line with no error. It does not send a receipt, thus the invite stays in the queue of the
   sender until the sender deletes it.
+- **Invite in the clipboard (part 3, item 3).** When the main window opens or gets the focus, the app reads the
+  clipboard text. If the text is a device invite for this computer, the window shows "Join <room>?" with Join and Not
+  now. The app parses the text only: it uses no network before Join. It asks one time for each code, also after a
+  restart. It does not ask for an expired invite, a damaged text, an invite for a different device, or the room that
+  is open now. The log and the window never get the text. Checks (127.0.0.1 and pure logic on this PC, not LAN):
+  `test/clipboard-join.test.mjs` passes 6 of 6. Two app copies on this PC: B shows the prompt, selects Join, and is in
+  the room of A.
 
 Checks (127.0.0.1 on this PC, not LAN): `test/friend-invite.test.mjs` passes 11 of 11. It has these cases: online
 friend, offline friend, wrong device, forwarded invite, expired invite, member that is not the owner. Two app copies on

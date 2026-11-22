@@ -51,6 +51,15 @@ contextBridge.exposeInMainWorld('friends', {
     onAttention: listen('asscrack:friend-attention')
 });
 
+// easy-join part 3: the prompt for a device invite in the clipboard (clipboard-join-ui.js). The window gets
+// { id, room } only. The main process keeps the code.
+contextBridge.exposeInMainWorld('clipboardJoin', {
+    take: () => ipcRenderer.invoke('asscrack:clipboard-join-take'),
+    join: (id, leave) => ipcRenderer.invoke('asscrack:clipboard-join', String(id ?? ''), leave === true),
+    dismiss: id => ipcRenderer.invoke('asscrack:clipboard-join-dismiss', String(id ?? '')),
+    onPrompt: listen('asscrack:clipboard-join')
+});
+
 contextBridge.exposeInMainWorld('asscrack', {
     getIdlePeer: () => ipcRenderer.invoke('asscrack:idle-peer'),
     onIdlePeer: listen('asscrack:idle-peer'),

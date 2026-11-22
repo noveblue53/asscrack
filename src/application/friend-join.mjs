@@ -12,6 +12,24 @@ export function createFriendJoins({ links, room, busy = () => false, leave, relo
     name = () => '', log = () => {} }) {
     let waiting = null; // { token, code, room }
 
+    async function start(code, codeRoom, leaveFirst) {
+        const current = room();
+        if (current !== null && !leaveFirst) return { result: 'confirm', room: codeRoom, current };
+        if (busy()) return { result: 'busy', room: codeRoom };
+        waiting = { token: randomUUID(), code, room: codeRoom };
+        if (current !== null) {
+            let left = false;
+            try { left = await leave(); } catch (err) { log('WARN', `Leave room for a friend invite failed: ${err?.message ?? err}`); }
+            if (!left) { waiting = null; return { result: 'failed', room: codeRoom }; }
+            log('INFO', 'Friend invite: left the room, join now');
+            reload();
+        } else {
+            notify();
+        }
+        show();
+        return { result: 'joining', room: codeRoom };
+    }
+
     return {
         // Join of the invite line id of a friend. leave: the user agreed to leave the current room.
         // Returns { result: 'joining' | 'confirm' | 'busy' | 'expired' | 'wrong-device' | 'wrong-owner' | 'invalid' |
@@ -19,22 +37,10 @@ export function createFriendJoins({ links, room, busy = () => false, leave, relo
         async join(friendId, id, leaveFirst = false) {
             const found = links.inviteCode(friendId, id);
             if (found.state !== 'ok') return { result: found.state, room: found.room ?? '' };
-            const current = room();
-            if (current !== null && !leaveFirst) return { result: 'confirm', room: found.room, current };
-            if (busy()) return { result: 'busy', room: found.room };
-            waiting = { token: randomUUID(), code: found.code, room: found.room };
-            if (current !== null) {
-                let left = false;
-                try { left = await leave(); } catch (err) { log('WARN', `Leave room for a friend invite failed: ${err?.message ?? err}`); }
-                if (!left) { waiting = null; return { result: 'failed', room: found.room }; }
-                log('INFO', 'Friend invite: left the room, join now');
-                reload();
-            } else {
-                notify();
-            }
-            show();
-            return { result: 'joining', room: found.room };
+            return start(found.code, found.room, leaveFirst);
         },
+        // easy-join part 3 (clipboard-join.mjs): the same Join for a code that the main process checked.
+        joinCode: (code, codeRoom, leaveFirst = false) => start(code, codeRoom, leaveFirst),
         // The main window takes the waiting Join one time: { token, room, name }, or null.
         take() {
             if (!waiting || waiting.taken) return null;
