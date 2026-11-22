@@ -52,7 +52,10 @@ export function mediaBody(stream) {
     return Readable.toWeb(stream, { strategy: { highWaterMark: 64 * 1024, size: chunk => chunk.byteLength } });
 }
 
-export function createRoomMedia({ nativeImage, changed = () => {} }) {
+// decodeImage(info, limit): L7, the decoder outside the main process (image-decoder.mjs). It gets { bytes, width,
+// height } of inspectImage and gives PNG bytes or null. The main process does not decode a peer image: it checks the
+// PNG with the wire rules only. With no decoder, no preview is made.
+export function createRoomMedia({ decodeImage = async () => null, changed = () => {} }) {
     const entries = new Map(), routes = new Map(), cache = new Map(), streams = new Set();
     let bytesUsed = 0, decoding = 0, epoch = 0, thumbnailEpoch = 0, openingOriginals = 0;
     const hashWaiters = [];
@@ -78,20 +81,12 @@ export function createRoomMedia({ nativeImage, changed = () => {} }) {
         return entry;
     }
 
-    function encode(info) {
+    async function encode(info) {
         if (!info) return null;
-        let image = nativeImage.createFromBuffer(info.bytes);
-        const { width, height } = image.getSize();
-        if (image.isEmpty() || width !== info.width || height !== info.height) return null;
-        let ratio = Math.min(1, 1024 / Math.max(width, height), Math.sqrt(1_000_000 / (width * height)));
-        if (ratio < 1) image = image.resize({ width: Math.max(1, Math.floor(width * ratio)), height: Math.max(1, Math.floor(height * ratio)) });
-        for (let i = 0; i < 8; i++) {
-            const bytes = image.toPNG();
-            if (bytes.length && bytes.length <= PREVIEW_LIMIT) return bytes;
-            const size = image.getSize();
-            image = image.resize({ width: Math.max(1, Math.floor(size.width * 0.72)), height: Math.max(1, Math.floor(size.height * 0.72)) });
-        }
-        return null;
+        const out = await decodeImage({ bytes: info.bytes, width: info.width, height: info.height }, PREVIEW_LIMIT);
+        if (!out?.length || out.length > PREVIEW_LIMIT) return null;
+        // The wire rules: a static CRC-valid PNG of at most 1024 px and 1 000 000 pixels. No decode here.
+        return inspectImage(Buffer.from(out), true)?.bytes ?? null;
     }
 
     async function makePreview(file, descriptor) {
@@ -104,7 +99,7 @@ export function createRoomMedia({ nativeImage, changed = () => {} }) {
             if (!st.isFile() || st.size < 1 || st.size > IMAGE_INPUT_LIMIT) return null;
             const bytes = await readPart(fh, st.size);
             if (bytes.length !== descriptor?.size || createHash('sha256').update(bytes).digest('hex') !== descriptor.sha256) return null;
-            return encode(inspectImage(bytes));
+            return await encode(inspectImage(bytes));
         } catch { return null; }
         finally { await fh?.close(); decoding--; }
     }
@@ -119,10 +114,15 @@ export function createRoomMedia({ nativeImage, changed = () => {} }) {
         return true;
     }
 
-    function storePreview(d, bytes) {
+    async function storePreview(d, bytes) {
         if (decoding >= 2 || d?.kind !== 'image') return false;
         decoding++;
-        try { return saveThumbnail(d, encode(inspectImage(bytes, true))); }
+        const version = epoch, thumbnailVersion = thumbnailEpoch;
+        try {
+            const thumb = await encode(inspectImage(bytes, true));
+            // A Leave room or a Clear previews during the decode drops the result.
+            return version === epoch && thumbnailVersion === thumbnailEpoch && saveThumbnail(d, thumb);
+        }
         catch { return false; }
         finally { decoding--; }
     }

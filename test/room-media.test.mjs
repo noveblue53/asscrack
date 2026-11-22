@@ -81,8 +81,9 @@ test('publisher derivative and restored local identity check the exact original 
     const file=path.join(dir,'shot.png');
     const d=descriptor(png,'image');
     let decodes=0;
-    const nativeImage={createFromBuffer() { decodes++; return { getSize:()=>({width:1,height:1}),isEmpty:()=>false,toPNG:()=>png }; }};
-    const media=createRoomMedia({nativeImage});
+    // L7: the decoder is outside the main process (image-decoder.mjs). The fake gives the PNG back.
+    const decodeImage=async info=>{ decodes++; assert.equal(info.width,1); return png; };
+    const media=createRoomMedia({decodeImage});
     await writeFile(file,png);assert.deepEqual(await media.makePreview(file,d),png);
     assert.equal(await media.restore(d,file),true);assert.ok(media.info(d.id).thumbnailUrl);
     assert.equal(decodes,2);

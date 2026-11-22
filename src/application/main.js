@@ -1,6 +1,7 @@
 import { app, BrowserWindow, Menu, Notification, nativeImage, protocol, Tray, screen, powerMonitor, clipboard, desktopCapturer, dialog, ipcMain, safeStorage, session, shell } from 'electron';
 import { createRoomMedia } from './room-media.mjs';
 import { createRoomIpc } from './room-ipc.mjs';
+import { createImageDecoder } from './image-decoder.mjs';
 import { APP_PRIVILEGES, APP_SCHEME, appPage, createAppHandler } from './app-scheme.mjs';
 import { createClipboardStaging } from './clipboard-image.mjs';
 import { createDownloadScratch } from './download-scratch.mjs';
@@ -233,7 +234,13 @@ const clipboardImages = createClipboardStaging(path.join(app.getPath('userData')
 let downloadScratch = null;
 const receivedFiles = new Map();
 const restoringDownloads = new Map();
-const roomMedia = createRoomMedia({ nativeImage, changed: id => sendToWindow('asscrack:media-changed', id) });
+// L7: the previews of peer images are decoded in a hidden sandboxed window (image-decoder.mjs), not here.
+const DECODER_PAGE = appPage('image-decoder.html');
+const imageDecoder = createImageDecoder({ BrowserWindow, ipc: ipcMain, page: DECODER_PAGE,
+    preload: path.join(__dirname, 'image-decoder-preload.cjs'), lock: lockDesktopNavigation,
+    isFrame: (win, event) => isDesktopFrame(win, event.sender, event.senderFrame, DECODER_PAGE) });
+const roomMedia = createRoomMedia({ decodeImage: (info, limit) => imageDecoder.decode(info, limit),
+    changed: id => sendToWindow('asscrack:media-changed', id) });
 let mediaGeneration = 0;
 function clearRoomMedia() { mediaGeneration++; roomMedia.clear(); }
 function savedDownload(messageId, descriptorId) {
@@ -270,7 +277,7 @@ handleRoomIpc('asscrack:media-preview', async (_event, id) => {
     if (!roomMedia.info(id).thumbnailUrl) {
         const result = await node.requestPreviewById(id);
         if (version !== mediaGeneration) return {};
-        if (result) roomMedia.storePreview(result.descriptor, result.bytes);
+        if (result) await roomMedia.storePreview(result.descriptor, result.bytes);
     }
     return roomMedia.info(id);
 });
@@ -643,7 +650,7 @@ function createMainWindow() {
         if (!quitting && closeToTray && (enterIdlePeer() || hideForFriends())) event.preventDefault();
     });
     // G7a: the friend chat windows close with the main window (then the app quits as before).
-    mainWindow.on('closed', () => friendWindows.closeAll());
+    mainWindow.on('closed', () => { friendWindows.closeAll(); imageDecoder.close(); });
     // Windows shutdown may bypass before-quit. Do not hide or veto session termination.
     mainWindow.on('session-end', () => { quitting = true; });
 
@@ -1666,6 +1673,7 @@ app.on('before-quit', event => {
     tray = null;
     pttHook.stop();
     friendWindows.closeAll();
+    imageDecoder.dispose();
     // Saved rooms (milestone 6): close the archive. G7a: after the friend nodes stop (they write to it).
     const closeArchive = () => {
         if (!savedRooms) return;
