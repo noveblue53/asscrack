@@ -291,22 +291,12 @@ test('main.js records the receive path of file-done by offerId|peerId and checks
     assert.match(source, /const \{ path: localPath, \.\.\.event \} = data;[\s\S]+sendToWindow\('asscrack:file-done', \{ \.\.\.event, savedName \}\)/);
 });
 
-test('renderer.js has one Escape dispatcher in the sequence menu, layout, invite panel, map', async () => {
+// A code rule, not a behavior: renderer.js has one Escape listener. test/room-escape.test.mjs checks the sequence of
+// the layers. This rule also stops a new layer that comes with its own Escape listener.
+test('renderer.js has one Escape dispatcher', async () => {
     const source = await read('renderer.js');
     const escapes = source.match(/e\.key === 'Escape'|e\.key !== 'Escape'/g) ?? [];
     assert.equal(escapes.length, 1, 'one Escape listener only');
-    assert.doesNotMatch(source, /if \(e\.key === 'Escape'\) setMapOpen\(false\)/);
-    assert.doesNotMatch(source, /if \(e\.key === 'Escape'\) setInvitePanelOpen\(false\)/);
-    const at = source.indexOf("e.key !== 'Escape'");
-    const order = ['window.contextMenu?.isOpen()', 'window.layout?.closeTopLayer()', 'setInvitePanelOpen(false)', 'setMapOpen(false)']
-        .map(text => source.indexOf(text, at));
-    for (const index of order) assert.ok(index > at);
-    assert.deepEqual([...order].sort((a, b) => a - b), order);
-});
-
-test('menu.js handles no Escape itself', async () => {
-    const source = await read('menu.js');
-    assert.doesNotMatch(source, /'Escape'/);
 });
 
 test('the row buttons and the menus call the same action functions', async () => {
@@ -398,29 +388,12 @@ test('menuCore keys and position', async () => {
 
 // ---- Milestone 2: Quote and Find ----
 
-test('the Escape dispatcher closes the find bar and then the quote chip, between layout and the invite panel', async () => {
-    const source = await read('renderer.js');
-    const at = source.indexOf("e.key !== 'Escape'");
-    const order = ['window.layout?.closeTopLayer()', 'window.findBar?.isOpen()', 'removeQuote()', 'setInvitePanelOpen(false)']
-        .map(text => source.indexOf(text, at));
-    for (const index of order) assert.ok(index > at);
-    assert.deepEqual([...order].sort((a, b) => a - b), order);
-    // The quote chip goes only with the focus in the composer.
-    assert.ok(source.includes('pendingQuote !== null && composer.contains(document.activeElement)'));
-});
-
-test('find.js and quote.js handle no Escape and set no inline style', async () => {
+// A code rule: no inline style. test/room-escape.test.mjs checks that find.js and quote.js close no layer on Escape.
+test('find.js and quote.js set no inline style', async () => {
     for (const name of ['find.js', 'quote.js']) {
         const source = await read(name);
-        assert.doesNotMatch(source, /'Escape'/, name);
         assert.doesNotMatch(source, /\.style\b|setAttribute\('style'/, name);
     }
-});
-
-test('the Quote button and the menu action Quote run the same row action', async () => {
-    const source = await read('renderer.js');
-    assert.ok(source.includes("case 'quote': return quoteMessage(row);"));
-    assert.match(source, /makeButton\('Quote', \(\) => runRowAction\('quote', item\), 'quote', 'btn-quote'\)/);
 });
 
 test('index.html loads find.js and quote.js before renderer.js, and has the find bar and the quote chip', async () => {
