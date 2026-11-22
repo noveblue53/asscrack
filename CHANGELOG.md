@@ -7,6 +7,43 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased — audit fixes for the application, files and tools (goal AF, part B, 2026-11-22)
+
+These changes fix the accepted rows of the security audits P10a and P10b for the application, the files and the
+tools. Each row has its own commit and test.
+
+- **M3. Mark-of-the-Web.** On Windows, each received file gets the stream `Zone.Identifier` with `ZoneId=3`
+  before it gets its final name. Windows then warns before it opens a program from a peer. Attachments, Shared
+  downloads and resumed files use the same path. A volume with no alternate data streams gets no mark.
+- **L2. Hidden format characters.** File names lose each Unicode format character (for example U+202E). Ready
+  texts and friend request names lose the bidi controls, U+200B and U+FEFF. U+200D stays for emoji. A chat link
+  ends at such a character. The window shows the extension of a received file apart from its name, and a warning
+  for a program file type (`.exe`, `.scr`, `.lnk` and others).
+- **L7. Peer images.** A hidden sandboxed window decodes the image previews. The main process only checks the PNG
+  that comes back.
+- **L8. Chosen files (partial fix).** The main process refuses a path that is not a regular file, and a device path.
+  It also refuses each file in the profile, in the default profile and in the folder of the release key. A drop and a paste
+  still give the path from the window. The full fix removes these 1.0 features, so it is not in this change.
+- **L10. Terminal demo.** The demo replaces control characters in the peer text before it prints the text.
+- **I4. App scheme.** The room window, the friend chat window, the voice panel and the image decoder load from
+  `asscrack-app://app/`, not from `file://`. The fuse `grantFileProtocolExtraPrivileges` is off in the build.
+- **OI2.** A call of `asscrack:invite` from a window that closes at Quit gets no error line in the terminal.
+- **OI4. Clean install.** `npm run install:clean` installs on a PC with no VC++ build tools. See the README.
+
+Changes for old data (features-first rule):
+- The pages have a new origin. Thus the window does not find the saved user name, theme, layout and highlight
+  words of an earlier version. It starts one time with the default values.
+- A history item or a Shared entry from an older version with a format character in its file name is not valid.
+
+**Results: 127.0.0.1 and this PC.** No LAN test and no internet test.
+- `npm test`: 883 tests, 865 pass, 0 fail, 18 skipped (the timed checks).
+- One start of the app with a LAN room and Quit: no error line in the terminal or the log. The developer console
+  has only the two CSP lines of one check. In that check, script in the window cannot read a local `file:` URL.
+  On the base, it read `C:/Windows/win.ini`.
+- The image decoder window (this PC): a 1500 x 900 JPEG and PNG give a preview in a sandboxed renderer.
+- The voice check of two app copies (127.0.0.1, the Steam Streaming devices) with the fixed script (OI3): B
+  gets the voice bytes of A. The old script made two LAN rooms, because each "Create LAN room" makes a new key.
+
 ## Unreleased — screenshare in the app (package P8b, 2026-11-22)
 
 A member can share a screen or a window with the room. Design: `work-orders/astra/P8/DESIGN.md`, W3 to W7 (local).
