@@ -77,6 +77,14 @@ export function choiceAfterForget(choice, roomId) {
     return current.mode === 'room' && current.roomId === roomId ? { ...OFF } : current;
 }
 
+// A room choice whose room is not in the open profile is stale: a Forget in an other build (the portable build uses
+// the same profile) or in an older version. Then the choice is off, and the installed build removes the start entry.
+export function isStaleChoice(choice, status) {
+    const current = normalizeChoice(choice);
+    if (current.mode !== 'room' || status?.state !== 'open') return false;
+    return !startRooms(status.rooms).some(room => room.roomId === current.roomId);
+}
+
 // What a start with START_IDLE_FLAG does now. status: the status() of the saved rooms.
 // 'wait': the protected profile is missing or locked. 'friends': only the friend links. 'room': open roomId.
 // 'missing': the selected room is not in the profile (or is not protected).

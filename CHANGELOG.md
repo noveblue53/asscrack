@@ -21,11 +21,12 @@ A per-user installer comes next to the portable build. The installed build can s
 - The start entry is the Run value "ASSCRACK" of the user. Its arguments are `--start-idle` and, for a test profile,
   `--profile <folder>`. They have no room key, no invite and no name. You can turn off ASSCRACK in Task Manager
   (Startup apps). The app does not turn it on again. The dialog then tells you that the start is off in Windows.
-- Forget of the selected room removes the start entry. The uninstaller removes the start entry and its Startup apps
+- Forget of the selected room removes the start entry. A Forget in the portable build clears the choice, and the
+  installed build then removes the start entry. The uninstaller removes the start entry and its Startup apps
   value. An upgrade keeps them.
 
 Results (this PC, no real sign-in):
-- `npm test` passes, 743 tests (127.0.0.1). 12 new tests for the start choice, the arguments, the installed build
+- `npm test` passes, 744 tests (127.0.0.1). 13 new tests for the start choice, the arguments, the installed build
   check, the Forget rule, the retry, the uninstall include and the bridge.
 - `npm run dist` makes `ASSCRACK-0.8.0-portable.exe` with the custom launcher, as before.
 - Install, start with the arguments of the start entry, Startup apps off, upgrade to a test version 0.8.1, Forget,

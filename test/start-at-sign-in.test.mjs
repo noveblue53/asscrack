@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
 import {
-    choiceAfterForget, CHOICE_FILE, createStartEntry, createStartRunner, isInstalledBuild, normalizeChoice, readChoice,
+    choiceAfterForget, CHOICE_FILE, isStaleChoice, createStartEntry, createStartRunner, isInstalledBuild, normalizeChoice, readChoice,
     RUN_VALUE_NAME, START_IDLE_FLAG, startArgs, startRooms, startStep, UNINSTALLER_NAME, writeChoice
 } from '../src/application/start-at-sign-in.mjs';
 
@@ -66,6 +66,15 @@ test('the start can open only protected saved rooms, and Forget of the selected 
     assert.deepEqual(startStep({ mode: 'room', roomId: 'p' }, open), { action: 'room', roomId: 'p' });
     assert.deepEqual(startStep({ mode: 'room', roomId: 'l' }, open), { action: 'missing' }, 'a legacy room needs a confirmation');
     assert.deepEqual(startStep({ mode: 'room', roomId: 'gone' }, open), { action: 'missing' });
+});
+
+test('a room choice of a room that is gone from the open profile is stale (a Forget in the portable build)', () => {
+    const open = { state: 'open', rooms: [{ roomId: 'p', name: 'Games', protected: true }] };
+    assert.equal(isStaleChoice({ mode: 'room', roomId: 'gone' }, open), true);
+    assert.equal(isStaleChoice({ mode: 'room', roomId: 'p' }, open), false);
+    assert.equal(isStaleChoice({ mode: 'room', roomId: 'gone' }, { state: 'locked', rooms: [] }), false, 'a locked profile waits');
+    assert.equal(isStaleChoice({ mode: 'friends' }, open), false);
+    assert.equal(isStaleChoice({ mode: 'off' }, open), false);
 });
 
 function fakeApp() {

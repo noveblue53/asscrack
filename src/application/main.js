@@ -30,8 +30,8 @@ import { createTaskbarFlash } from './taskbar-flash.mjs';
 import { createFriendLinks } from './friend-links.mjs';
 import { attachFriendWindows, registerFriendIpc } from './friend-windows.mjs';
 import { installInterfaceCache } from '../network/interface-cache.mjs';
-import { CHOICE_FILE, choiceAfterForget, createStartEntry, createStartRunner, isInstalledBuild, normalizeChoice, readChoice,
-    START_IDLE_FLAG, startArgs, startRooms, writeChoice } from './start-at-sign-in.mjs';
+import { CHOICE_FILE, choiceAfterForget, createStartEntry, createStartRunner, isInstalledBuild, isStaleChoice, normalizeChoice,
+    readChoice, START_IDLE_FLAG, startArgs, startRooms, writeChoice } from './start-at-sign-in.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -483,6 +483,7 @@ function setCloseToTray(enabled) {
 function startupView() {
     if (!installedBuild) return { available: false };
     const status = getSavedRooms().status();
+    if (isStaleChoice(readChoice(startChoiceFile), status)) forgetStartRoom(readChoice(startChoiceFile).roomId);
     return { available: true, ...readChoice(startChoiceFile), archive: status.state, rooms: startRooms(status.rooms),
         entry: startEntry.state() };
 }
@@ -497,11 +498,16 @@ function setStartup(raw) {
     writeLog('INFO', `Start at sign-in set: ${choice.mode}`);
     return startupView();
 }
+// Forget in each build clears the choice (the portable build uses the same profile). Only the installed build
+// changes the start entry.
 function forgetStartRoom(roomId) {
-    if (!installedBuild) return;
     const choice = readChoice(startChoiceFile);
     if (choiceAfterForget(choice, roomId).mode === choice.mode) return;
-    try { setStartup({ mode: 'off' }); } catch (err) { writeLog('WARN', `Start at sign-in not removed: ${err?.message ?? err}`); }
+    try {
+        writeChoice(startChoiceFile, { mode: 'off' });
+        if (installedBuild) startEntry.apply({ mode: 'off' });
+        writeLog('INFO', 'Start at sign-in set: off (room forgotten)');
+    } catch (err) { writeLog('WARN', `Start at sign-in not removed: ${err?.message ?? err}`); }
 }
 // With START_IDLE_FLAG: the window stays hidden, the tray opens, and the runner opens the choice.
 function beginStartAtSignIn() {
@@ -516,6 +522,7 @@ function beginStartAtSignIn() {
         openRoom: roomId => sendToWindow('asscrack:start-room', roomId),
         done: result => {
             if (result === 'room' && !mainWindow.isDestroyed() && !mainWindow.isVisible()) enterIdlePeer();
+            else if (result === 'missing') { forgetStartRoom(readChoice(startChoiceFile).roomId); restoreRoomWindow(); }
             else if (result === 'none') restoreRoomWindow();
         },
         log: writeLog
