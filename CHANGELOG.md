@@ -7,7 +7,38 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
-## Unreleased — audit fixes for the network and the protocol (goal AF, part A, 2026-11-22)
+## 1.0.0 (2026-11-22): the full-featured release
+
+Release 1.0.0 is the full-featured release before the friends get the app (operator, 2026-11-21). The entries below
+this heading, down to the 0.8.0 entry, were "Unreleased" entries. Each entry gives its changes and its checks. Since
+0.8.0, the app has these new items:
+
+- Screenshare: the picker with Auto and five presets, the share bar and the viewer stage (P8a, P8b). The share has no
+  sound.
+- Pause and resume of large downloads, also after a restart of the app (P7a, P7b, P7c).
+- The ready check (P9A).
+- A per-user installer and the start as Idle Peer at Windows sign-in (P9B).
+- Signed updates that the operator publishes on GitHub Releases (P9C).
+- Sound cues for other people and for messages (P11).
+- Voice channels, Deafen, listen with no microphone and a volume for each person (G4, G6).
+- Friends, a private chat for each friend, and messages to an offline friend (G7a, G7b).
+- Room reach, login texts, transcript notes, chat links, the Windows app shell and the app icon (G1, G2, G3, G5).
+- The fixes of the accepted rows of the security audits P10a and P10b (goal AF, parts A and B).
+
+Build:
+- `npm run dist` makes `ASSCRACK-1.0.0-portable.exe`. `npm run dist:installer` makes `ASSCRACK-1.0.0-setup.exe`.
+- The source of the two files is the commit of this entry. The signed `update.json` of the release gives the byte size
+  and the SHA-256 of each file. The files have no code signature.
+
+Results:
+- **127.0.0.1 and this PC only.** Each entry below gives its results with their labels.
+- Known failures: check 19 of P8b (decision P8b-14) and check 18 of P8a (decision P8a-31). Check 18 measures the
+  return of the screen quality to Balanced after a link drop. The timed screen check 16 of `test/screen-auto.test.mjs`
+  does not always pass, also on the build before goal AF.
+- No LAN test and no internet test of 1.0.0 occurred. The game nights and the field checks with the friends come
+  after 1.0. A fault from a field check gives a 1.0.x build.
+
+### Audit fixes for the network and the protocol (goal AF, part A, 2026-11-22)
 
 These changes fix the accepted rows of the security audits P10a and P10b for the network and the protocol. Each row
 has its own commit and test.
@@ -54,7 +85,7 @@ Changes for old clients and old data (features-first rule):
   LAN room of A with a device invite. B gets the voice bytes of A: 7891 bytes in 3 s with voice activity, and 9589
   bytes in 3 s with push to talk.
 
-## Unreleased — audit fixes for the application, files and tools (goal AF, part B, 2026-11-22)
+### Audit fixes for the application, files and tools (goal AF, part B, 2026-11-22)
 
 These changes fix the accepted rows of the security audits P10a and P10b for the application, the files and the
 tools. Each row has its own commit and test.
@@ -94,7 +125,7 @@ Changes for old data (features-first rule):
 - The voice check of two app copies (127.0.0.1, the Steam Streaming devices) with the fixed script (OI3): B
   gets the voice bytes of A. The old script made two LAN rooms, because each "Create LAN room" makes a new key.
 
-## Unreleased — screenshare in the app (package P8b, 2026-11-22)
+### Screenshare in the app (package P8b, 2026-11-22)
 
 A member can share a screen or a window with the room. Design: `work-orders/astra/P8/DESIGN.md`, W3 to W7 (local).
 
@@ -130,7 +161,7 @@ A member can share a screen or a window with the room. Design: `work-orders/astr
   - Known gaps: the return from Idle Peer was not driven (it needs the tray). The two-copy voice check did not
     connect its copies on this PC, on this branch and on `origin/main`.
 
-## Unreleased — Updates that the operator pushes to the clients (goal P9C, 2026-11-22)
+### Updates that the operator pushes to the clients (goal P9C, 2026-11-22)
 
 The operator publishes a release one time. Each client finds it, downloads it, checks it and installs it with one click.
 - The app reads the latest GitHub release of `noveblue53/asscrack` at the start and each 6 hours. The setting
@@ -157,7 +188,7 @@ Results (127.0.0.1 and this PC, no LAN, no GitHub upload):
   changed byte, an other key, a wrong SHA-256, a wrong size, an equal version) gives no bar and no file. In voice,
   Restart asks first. No ERROR line. The install state of this PC is the same after the checks.
 
-## Unreleased — screenshare, network part (package P8a, 2026-11-22)
+### Screenshare, network part (package P8a, 2026-11-22)
 
 The network layer can now share a screen in a room. The window part (the picker, the share bar and the stage) is
 package P8b. It comes later. Design: `work-orders/astra/P8/DESIGN.md`, revisions 2 and 3 to 3f (local).
@@ -185,7 +216,7 @@ package P8b. It comes later. Design: `work-orders/astra/P8/DESIGN.md`, revisions
   - Checks 17, 19, 21 and 24 (the speed of the quality) are not measured in the merge gate of P8a. P8b measures
     them with the real encoder. The speed of the return after a drop of the link is a 1.0.x item (field data).
 
-## Unreleased — Per-user installer and start at sign-in (goal P9B, 2026-11-22)
+### Per-user installer and start at sign-in (goal P9B, 2026-11-22)
 
 A per-user installer comes next to the portable build. The installed build can start in the tray when you sign in.
 - `npm run dist:installer` makes `dist/ASSCRACK-<version>-setup.exe`. The installer needs no administrator rights.
@@ -217,7 +248,7 @@ Results (this PC, no real sign-in):
   with its own path. Thus the shortcut points to the copy that started last. The uninstaller removes it, and the
   next start of the portable build writes it again.
 
-## Unreleased — Friends offline (goal G7b, 2026-11-21)
+### Friends offline (goal G7b, 2026-11-21)
 
 A message to a friend that is not connected waits on this computer. It goes out when both apps run and connect.
 - The chat window shows a waiting line with "Waiting: ASSCRACK sends it when you are both online" and "Delete".
@@ -251,7 +282,7 @@ Results:
   line in 3 of 5 runs. The G7a check on `main` gave the same line in 2 of 3 runs. One run on each tree also gave a
   Chromium GPU error line in the terminal.
 
-## Unreleased — Resume of a kept download after a restart of the app (package P7c, 2026-11-21)
+### Resume of a kept download after a restart of the app (package P7c, 2026-11-21)
 
 Resume of a paused download now works after a restart of the app, on both ends. Before, a kept part continued only
 when the sender offered the same file again.
@@ -285,7 +316,7 @@ Results:
 - The two checks again after the merge with G7a (127.0.0.1): A sent 373,948,416 and 375,062,528 bytes, each the
   remainder exactly, and the SHA-256 agrees in both.
 
-## Unreleased — Friends (goal G7a, 2026-11-21)
+### Friends (goal G7a, 2026-11-21)
 
 Two people in a protected room can agree to be friends. Friends send private messages outside of rooms, from the
 login screen and from inside a room.
@@ -318,7 +349,7 @@ Results:
   and 0.47 % for 32 links. The memory of 32 links is about 16 MB.
 - The node, relay and election tests pass with the cache (64 tests, 127.0.0.1).
 
-## Unreleased — pause and resume of large downloads: the window (package P7b, 2026-11-21)
+### Pause and resume of large downloads: the window (package P7b, 2026-11-21)
 
 The window now shows the pause and the resume of a received file (P7a made the network part).
 - A receive row has "Pause". A paused row shows "Paused · <bytes> of <size> · kept until <local date and time>"
@@ -348,7 +379,7 @@ Results:
   remainder). A kept part stays after Leave room, and the next room shows it.
 - A Shared download has no Pause: the Shared panel has no paused state.
 
-## Unreleased — Windows app shell (goal G5, 2026-11-21)
+### Windows app shell (goal G5, 2026-11-21)
 
 ASSCRACK now acts like a Windows app.
 - The window keeps its size, its position and its maximized state. A window on a display that is gone comes back
@@ -374,7 +405,7 @@ Results:
 - Windows sent the event of a shown tray balloon (this PC). The look of the flash and the balloon is for the
   operator.
 
-## Unreleased — voice channels (goal G6, 2026-11-21)
+### Voice channels (goal G6, 2026-11-21)
 
 A protected room gets named voice channels, like Discord. Each person is in one channel at a time. The room window
 shows each channel with its people, and one click joins a channel or moves to it.
@@ -404,7 +435,7 @@ shows each channel with its people, and one click joins a channel or moves to it
   General gets no audio of A in Raid. After the move, B gets it with no new microphone. The delete moves both to
   General. No LAN result: the operator tests voice channels on a real relay route.
 
-## Unreleased — ready check (package P9A, milestone 9, 2026-11-21)
+### Ready check (package P9A, milestone 9, 2026-11-21)
 
 One command asks the room if each person is ready. A check is for the session only: no history, no archive.
 
@@ -432,7 +463,7 @@ One command asks the room if each person is ready. A check is for the session on
   vote, and two have the name "Sam". Each person counts one time. After the close, one copy quits, starts again and
   joins again. The history replay comes, and the closed check does not show again.
 
-## Unreleased — voice (goal G4, 2026-11-21)
+### Voice (goal G4, 2026-11-21)
 
 Voice tells the user when the microphone or the speakers fail. A user with no microphone can listen. Deafen is new,
 and the volume of each person stays. Gap IDs C1, N1, C2, C5, C6, C7, C8, C3, C4 of `work-orders/gaps-1.0-20261121`.
@@ -467,7 +498,7 @@ and the volume of each person stays. Gap IDs C1, N1, C2, C5, C6, C7, C8, C3, C4 
   administrator to turn off a device. No LAN test. A test with real speakers and a real microphone is for the
   operator.
 
-## Unreleased — resume of large transfers, network part (package P7a, 2026-11-21)
+### Resume of large transfers, network part (package P7a, 2026-11-21)
 
 The receiver can pause a large download and continue it later from the same byte, on the same route or on a
 different route. This is the network part. The window part (Pause, Resume and Discard buttons) is package P7b.
@@ -488,7 +519,7 @@ different route. This is the network part. The window part (Pause, Resume and Di
   negotiation, the budget, the expiry, Discard, Cancel, a receiver restart. No LAN or internet result
   yet: the 1 GiB measurement on two networks is a field check after 1.0.
 
-## Unreleased — chat links, files with text, and keys of the message box (goal G3, 2026-11-21)
+### Chat links, files with text, and keys of the message box (goal G3, 2026-11-21)
 
 Links in the chat open in the system browser. A file and the text of the message box go to the correct people. Gap
 IDs D1, D2, D3, D4, D5, D7, N5, N7 of `work-orders/gaps-1.0-20261121`.
@@ -515,7 +546,7 @@ IDs D1, D2, D3, D4, D5, D7, N5, N7 of `work-orders/gaps-1.0-20261121`.
   image viewer with Escape. The check
   used `Set-Clipboard -Path` in place of a copy in Explorer (the same clipboard format). No LAN test.
 
-## Unreleased — sound cues for other people and for messages (goal P11, 2026-11-21)
+### Sound cues for other people and for messages (goal P11, 2026-11-21)
 
 ASSCRACK plays a short local cue when a different person joins or leaves voice, and for a mention or a whisper to
 me. The cues are oscillator tones (no sound file). Only the local user hears them: the voice capture does not get
@@ -542,7 +573,7 @@ them.
   plays for the replay of saved lines. One start of the app: no error line. No LAN test. The sound of the cues
   on real speakers is not tested.
 
-## Unreleased — room link and transcript notes (goal G2, 2026-11-21)
+### Room link and transcript notes (goal G2, 2026-11-21)
 
 The room tells what the connection does, and the chat shows who came and who went. Gap IDs A2, A4, B1, B2, B3, D6,
 N4 of `work-orders/gaps-1.0-20261121`.
@@ -564,7 +595,7 @@ N4 of `work-orders/gaps-1.0-20261121`.
   the room." and "Everyone left the room.". An ended process gives the grey line, "Connection lost at …" and
   "Reconnecting…" (11 of 11 checks pass). One start of the app: no error line. No LAN test.
 
-## Unreleased — behavior tests for the room window (goal P3, 2026-11-21)
+### Behavior tests for the room window (goal P3, 2026-11-21)
 
 Some tests of the room window only read the source text. A change of the code text made them fail, and a broken
 behavior with the same text did not. P3 replaces the most important of these checks with tests that run the real
@@ -582,7 +613,7 @@ scripts in the fake DOM. No change in `src/`.
 - **Result: 127.0.0.1, this PC.** `npm test`: 476 of 476 pass. 30 breaks in a copy of the code: each break makes a
   test fail. One start of the app: no error line. No LAN test.
 
-## Unreleased — getting in: room reach and clear login texts (goal G1, 2026-11-21)
+### Getting in: room reach and clear login texts (goal G1, 2026-11-21)
 
 A room owner can see if friends on the internet can join, and can repair it in the room. A friend gets plain texts
 for a bad invite. Gap IDs A1, B4, A3, A5, A6, A8, N2, N3, N8, N9 of `work-orders/gaps-1.0-20261121`.
@@ -618,7 +649,7 @@ Results (**127.0.0.1**, this PC):
   error lines. `origin/main` gives the same 2 lines (older code, not in this goal).
 - No LAN result and no internet result. UPnP with a real router is not tested.
 
-## Unreleased — Find keeps the unread marker (2026-11-21)
+### Find keeps the unread marker (2026-11-21)
 
 Fault: open Find while the list is at the end. A new line comes. Press Escape. Before, the list went to the new end,
 and the late scroll event of Chromium counted the new line as read. The marker went away.
@@ -634,7 +665,7 @@ and the late scroll event of Chromium counted the new line as read. The marker w
   line and 1 line is unread.
 - **Result: 127.0.0.1.** The new tests fail on the code of `main` and pass with the fix. No LAN test.
 
-## Unreleased — the 1.0 release order (2026-11-21)
+### The 1.0 release order (2026-11-21)
 
 The operator decided that 1.0 is a full-featured release that comes before the friends get it.
 `docs/WORK_PLAN_1.0.md` and the README roadmap give the new order:
@@ -648,7 +679,7 @@ The operator decided that 1.0 is a full-featured release that comes before the f
 
 The upgrade checks from 0.7.0 and 0.6.0 and the mixed-version checks move after 1.0.
 
-## Unreleased — app icon in Windows (2026-11-21)
+### App icon in Windows (2026-11-21)
 
 The app has its own icon. Before, the portable .exe, the taskbar button and the window showed the default Electron
 icon, and the tray used a 32 x 32 PNG.
@@ -671,7 +702,7 @@ Results (**this PC**, 127.0.0.1 for the network part):
 - The test build is not a release: it keeps the version 0.8.0 (123647234 bytes, SHA-256 `ac118adb...`). It does not
   replace the 0.8.0 build in the shared `dist/`.
 
-## Unreleased — polish pass on the room window (2026-11-21)
+### Polish pass on the room window (2026-11-21)
 
 A review of the window found 37 visual and keyboard faults. This change repairs 27 of them in the renderer files only.
 It has no new feature, no protocol change and no new dependency.
