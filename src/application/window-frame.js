@@ -31,7 +31,7 @@
             if (saving || !current?.canChooseSystemButtons) return;
             saving = true;
             try { show(await api.useSystemButtons(!current.systemButtons)); }
-            catch { document.getElementById('status').textContent = 'Could not save the window button preference.'; }
+            catch { document.getElementById('status').textContent = 'Couldn\'t save this setting.'; }
             finally { saving = false; }
         }
     };

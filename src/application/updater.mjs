@@ -233,9 +233,9 @@ export function createUpdater({ currentVersion, kind = null, publicKey, source, 
             }
             accept(r, 'github');
             const cmp = compareVersions(r.manifest.version, currentVersion);
-            setLast(cmp > 0 ? 'found' : 'none', cmp > 0 ? `ASSCRACK ${r.manifest.version} is available.` : 'ASSCRACK is up to date.');
+            setLast(cmp > 0 ? 'found' : 'none', cmp > 0 ? `Update ${r.manifest.version} available.` : 'Up to date.');
         } catch (err) {
-            setLast('failed', 'The check did not get an answer. ASSCRACK tries again later.');
+            setLast('failed', 'No answer. Retrying later.');
             log('WARN', `Update check failed: ${err?.message ?? err}`);
         }
     }
@@ -347,7 +347,7 @@ export function createUpdater({ currentVersion, kind = null, publicKey, source, 
                     log('INFO', `Update: ASSCRACK ${version} is ready (${kind}${fallback ? ', in Downloads' : ''})`);
                 }
             } catch (err) {
-                downloadNote = 'The download did not complete. ASSCRACK tries again at the next check.';
+                downloadNote = 'Download didn\'t complete. Retrying at the next check.';
                 log('WARN', `Update download failed: ${err?.message ?? err}`);
                 if (part) { try { rmSync(part, { force: true }); } catch { /* ignore */ } }
             } finally {
@@ -389,7 +389,7 @@ export function createUpdater({ currentVersion, kind = null, publicKey, source, 
             try { have = await hashFile(current.file); } catch { have = null; }
             if (!have || !fileMatches(current.entry, have.size, have.sha256)) {
                 ready = null;
-                downloadNote = 'The downloaded file changed. ASSCRACK downloads it again at the next check.';
+                downloadNote = 'Downloaded file changed. Downloading again at the next check.';
                 log('WARN', 'Update: the downloaded file changed before the restart');
                 emit();
                 return null;

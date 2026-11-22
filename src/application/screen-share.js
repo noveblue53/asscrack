@@ -153,7 +153,7 @@
             pickStatus.hidden = list.length > 0;
         } catch (err) {
             if (token !== pickerToken) return;
-            pickStatus.textContent = `Could not list the sources: ${errorName(err)}`;
+            pickStatus.textContent = `Couldn't list the sources: ${errorName(err)}`;
             pickStatus.hidden = false;
         }
     }
@@ -198,7 +198,7 @@
             for (const track of stream?.getTracks?.() ?? []) track.stop();
             starting = false;
             closePicker();
-            showError(`Could not start the share: ${errorName(err)}`);
+            showError(`Couldn't start the share: ${errorName(err)}`);
         } finally {
             starting = false;
             goButton.textContent = 'Share';

@@ -95,7 +95,7 @@
         notice.textContent = '';
         dialog.showModal();
         try { render(await api.refreshShelf()); }
-        catch { notice.textContent = 'Could not refresh the shared files.'; }
+        catch { notice.textContent = 'Couldn\'t refresh the shared files.'; }
     });
     dialog.addEventListener('close', () => {
         if (showTransfers) {

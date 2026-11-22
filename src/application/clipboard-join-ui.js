@@ -11,9 +11,9 @@
     function answerText(answer) {
         switch (answer?.result) {
             case 'joining': case 'gone': return null;
-            case 'busy': return 'ASSCRACK opens or leaves a room now. Try again in a moment.';
-            case 'failed': return 'Could not leave the room. Try again.';
-            default: return 'Could not join the room.';
+            case 'busy': return 'Already joining or leaving a room. Try again in a moment.';
+            case 'failed': return 'Couldn\'t leave the room. Try again.';
+            default: return 'Couldn\'t join the room.';
         }
     }
     const NAME_TEXT = 'Enter a username first.';

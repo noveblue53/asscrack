@@ -212,7 +212,7 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
         if (!saved) return;
         membership ??= restoreSavedAdmission(saved, identity);
         membership.setPersistence(snapshot => {
-            if (!archive?.updateMembership(entry.row.roomId, snapshot)) throw new Error('Could not save friend access.');
+            if (!archive?.updateMembership(entry.row.roomId, snapshot)) throw new Error('Couldn\'t save friend access.');
         });
         let storePath = null;
         if (hintFiles) {

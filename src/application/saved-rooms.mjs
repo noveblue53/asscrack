@@ -348,7 +348,7 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
             try { forgetHints(row); }
             catch (err) {
                 log('WARN', `Room hints not deleted: ${errText(err)}`);
-                throw new Error('Could not remove saved room connection hints. Try Forget again.');
+                throw new Error('Couldn\'t forget all of the room. Try Forget again.');
             }
         }
         a.removeRoom(roomId);

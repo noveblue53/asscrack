@@ -82,7 +82,7 @@ export function registerNotificationShortcut({ appData, executable, args = '', s
     const ok = shell.writeShortcutLink(file, present ? 'update' : 'create', {
         target: executable, args, appUserModelId: WINDOWS_APP_ID, toastActivatorClsid: WINDOWS_TOAST_ID
     });
-    if (!ok) throw new Error('Windows could not register the notification shortcut.');
+    if (!ok) throw new Error('Windows couldn\'t add the notification shortcut.');
 }
 
 function targetOf(raw) {

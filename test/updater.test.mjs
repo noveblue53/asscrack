@@ -110,7 +110,7 @@ test('a file with a wrong size or a wrong SHA-256 is refused: no ready bar, no r
         await waitReady(s.updater);
         const view = s.updater.view();
         assert.equal(view.update.ready, false, label);
-        assert.match(view.update.note, /did not complete/, label);
+        assert.match(view.update.note, /didn't complete/, label);
         assert.equal(view.update.failed, true, `${label}: the window shows no bar`);
         assert.equal(await s.updater.prepareRestart(), null, label);
         const left = readdirSync(s.root, { recursive: true }).filter(name => /\.exe/.test(name));
@@ -147,7 +147,7 @@ test('a check with no answer is quiet: a WARN line and a note, no error', async 
     const view = s.updater.view();
     assert.equal(view.update, null);
     assert.equal(view.lastCheck.result, 'failed');
-    assert.match(view.lastCheck.note, /tries again later/);
+    assert.match(view.lastCheck.note, /Retrying later/);
     assert.ok(s.logs.some(line => line.startsWith('WARN Update check failed')));
     assert.ok(!s.logs.some(line => line.startsWith('ERROR')));
     const none = setup({ routes: { [source.latest]: 404 } });

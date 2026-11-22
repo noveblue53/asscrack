@@ -1140,7 +1140,7 @@ function afterRoomStart(result, { invite = null, userName, save = false, keepHis
         const membership = node.membershipSnapshot();
         saveInfo = getSavedRooms().afterLogin({ room: result.room, roomKey, invite, userName, save: save === true, keepHistory, membership });
         if (membership && saveInfo.savedRoom) node.setMembershipPersistence(snapshot => {
-            if (!getSavedRooms().persistMembership(snapshot)) throw new Error('Could not save protected room access.');
+            if (!getSavedRooms().persistMembership(snapshot)) throw new Error('Couldn\'t save room access.');
         });
     } catch (err) {
         writeLog('WARN', `Saved rooms: ${err?.message ?? err}`);
@@ -1439,7 +1439,7 @@ handleRoomIpc('asscrack:saved-room-lines', (_event, roomId, opts) => {
         return getSavedRooms().lines(roomId, { before, limit: before ? 100 : 200, channelId });
     } catch (err) {
         writeLog('WARN', `Saved lines not read: ${err?.message ?? err}`);
-        throw new Error('Could not read this page from the saved room.');
+        throw new Error('Couldn\'t read this page of the saved room.');
     }
 });
 

@@ -258,7 +258,7 @@ test('W4 check 1 and 2.8: a refusal of the capture closes the picker and shows t
     f.context.navigator.mediaDevices.getDisplayMedia = async () => { throw Object.assign(new Error('denied'), { name: 'NotAllowedError' }); };
     await startShare(f);
     assert.equal(f.picker.open, false);
-    assert.equal(f.el('share-error').textContent, 'Could not start the share: NotAllowedError');
+    assert.equal(f.el('share-error').textContent, 'Couldn\'t start the share: NotAllowedError');
     assert.equal(f.el('share-error').hidden, false);
     assert.equal(names(f.calls, 'startScreenShare').length, 0, 'no screen line');
     assert.equal(f.el('share-bar').hidden, true);
