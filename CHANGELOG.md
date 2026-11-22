@@ -7,6 +7,32 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased — screenshare, network part (package P8a, 2026-11-21)
+
+The network layer can now share a screen in a room. The window part (the picker, the share bar and the stage) is
+package P8b. It comes later. Design: `work-orders/astra/P8/DESIGN.md`, revisions 2, 3, 3b, 3c and 3d (local).
+
+- **Protocol.** A `screen` control line tells each member that a member shares. A viewer opens the stream
+  `/asscrack/screen/1.0.0` to the sharer on its session connection (direct TCP or a circuit). The records have a
+  length prefix: WATCH, CONFIG, FRAME, ACK, KEYREQ and END. Only a peer with an open, permitted session can watch.
+  A share has at most 6 viewers. A room has one share at a time: when two members start at the same time, the lower
+  peer ID continues. A share stops at Stop, in Idle Peer, at Quit, and after 10 s with no session.
+- **Rate control and voice first.** The sharer paces its writes, measures the ack delay of each viewer, drops frames
+  for a late viewer and changes the bitrate. Voice keeps its own streams and does not change.
+- **Auto quality.** Five presets from 720p at 15 fps to 1440p at 60 fps. Each viewer has its own rate. There are at
+  most two encoder tiers, thus a slow viewer does not lower the picture of the others. Each up step is a probe that
+  goes back at once when the ack delay rises (revision 3). A slow viewer that comes back is also a probe.
+- **Result: 127.0.0.1, this PC.** No LAN test and no window test (P8b).
+  - `node --test test/screen-share.test.mjs test/screen-rate.test.mjs`: 39 of 39 pass. `npm test` on the merge
+    result: 758 of 775 pass, 0 fail, 17 skipped. The skipped tests are the timed checks. Each timed file runs
+    with `node --test` on its file.
+  - The timed checks use real nodes, a proxy for each limited link and a synthetic encoder (revision 3d). Checks 7
+    to 18 pass, and checks 20 to 24 pass. Check 20: 3 of 3 runs pass (voice p95 47 ms, at 22 % to 32 %
+    load). Check 24 has a limit of 45 s (not 30 s) for Max: the reason is in `DECISIONS.md` P8a-20.
+  - **Check 19: 2 of 3 runs pass.** Run 1 missed by 1 frame in 1 s at 26.8 % load (27 frames, limit 28). Runs 2
+    and 3 passed at 18.0 % and 35.6 % load. Package P8b runs check 19 three times with the real encoder. A second
+    miss there stops the merge of P8b.
+
 ## Unreleased — Resume of a kept download after a restart of the app (package P7c, 2026-11-21)
 
 Resume of a paused download now works after a restart of the app, on both ends. Before, a kept part continued only
