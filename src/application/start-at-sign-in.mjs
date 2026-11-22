@@ -118,7 +118,25 @@ export function createStartEntry({ app, execPath, args, name = RUN_VALUE_NAME })
         else app.setLoginItemSettings({ openAtLogin: false, path: execPath, args, name });
         return state();
     }
-    return { state, apply };
+    // One data folder: the install folder can move on the same PC. At each start of the installed build, when the
+    // choice is on and the entry starts an other exe (or has other arguments), write the path of this exe. The
+    // enabled state of the user (Task Manager) stays. Gives true when it wrote the entry.
+    function repair(choice) {
+        if (normalizeChoice(choice).mode === 'off') return false;
+        let item;
+        try {
+            item = (app.getLoginItemSettings({ path: execPath, args })?.launchItems ?? []).find(entry => entry?.name === name);
+        } catch {
+            return false;
+        }
+        if (!item) return false;
+        const samePath = typeof item.path === 'string' && path.win32.resolve(item.path).toLowerCase() === path.win32.resolve(execPath).toLowerCase();
+        const sameArgs = Array.isArray(item.args) && item.args.length === args.length && item.args.every((arg, i) => arg === args[i]);
+        if (samePath && sameArgs) return false;
+        app.setLoginItemSettings({ openAtLogin: true, path: execPath, args, name, enabled: item.enabled === true });
+        return true;
+    }
+    return { state, apply, repair };
 }
 
 // The start with START_IDLE_FLAG. It waits for the protected profile, then opens the friend links only or asks the

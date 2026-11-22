@@ -38,6 +38,8 @@ import { withDeviceMarks } from './peer-marks.mjs';
 import { attachFriendWindows, registerFriendIpc } from './friend-windows.mjs';
 import { installInterfaceCache } from '../network/interface-cache.mjs';
 import { createUpdateService } from './update-service.mjs';
+import { chooseDataFolder, cleanHoldFolders, dataPaths, holdFolder, legacyFolder, moveFailedText, moveOldData, needsMove,
+    notWritableText, probeWritable, writeKeptMarker } from './data-folder.mjs';
 import { CHOICE_FILE, choiceAfterForget, createStartEntry, createStartRunner, isInstalledBuild, isStaleChoice, normalizeChoice,
     readChoice, START_IDLE_FLAG, startArgs, startRooms, writeChoice } from './start-at-sign-in.mjs';
 
@@ -65,8 +67,33 @@ const EVENTS = ['channels', 'peer-discovered', 'peer-joined', 'peer-left', 'mess
 
 // Test option: --profile <dir> gives each instance its own user data folder.
 const profileIndex = process.argv.indexOf('--profile');
-if (profileIndex !== -1 && process.argv[profileIndex + 1]) {
-    app.setPath('userData', path.resolve(process.argv[profileIndex + 1]));
+// One data folder (data-folder.mjs): the portable build uses "ASSCRACK Data" next to the .exe, the installed build
+// <install folder>\data, --profile its folder, npm start the Electron default. Each path is set before ready.
+const dataFolder = chooseDataFolder({ argv: process.argv, env: process.env, isPackaged: app.isPackaged,
+    platform: process.platform, execPath: process.execPath, exists: existsSync });
+// The move question of the first start with an empty data folder: { from, to }, or null. Then this run uses a hold
+// folder in %TEMP% (Chromium must not open the new folder before the move) and stops after the answer.
+let moveOffer = null;
+function useDataFolder(dir) {
+    const paths = dataPaths(dir);
+    app.setPath('userData', paths.userData);
+    app.setPath('sessionData', paths.sessionData);
+    app.setAppLogsPath(paths.logs);
+    app.setPath('crashDumps', paths.crashDumps);
+}
+if (dataFolder.dir) {
+    const probe = probeWritable(dataFolder.dir);
+    if (!probe.ok) {
+        dialog.showErrorBox('ASSCRACK cannot start', notWritableText(dataFolder.dir, probe.error));
+        process.exit(1);
+    }
+    const legacy = legacyFolder({ env: process.env, appData: app.getPath('appData') });
+    if (dataFolder.kind !== 'profile' && needsMove({ dir: dataFolder.dir, legacy })) {
+        moveOffer = { from: legacy, to: dataFolder.dir };
+        useDataFolder(holdFolder(app.getPath('temp'), process.pid));
+    } else {
+        useDataFolder(dataFolder.dir);
+    }
 }
 
 // Single instance lock (F1, goal 7): only for the packaged build with the default user data folder. Electron keys the
@@ -1708,6 +1735,43 @@ app.on('before-quit', event => {
 
 app.on('window-all-closed', () => app.quit());
 
+function processRuns(pid) {
+    try { process.kill(pid, 0); return true; } catch (err) { return err?.code !== 'ESRCH'; }
+}
+
+// One data folder: the question of the first start with an empty data folder when %APPDATA%\ASSCRACK has data. This
+// run has a hold folder in %TEMP% as user data: Chromium has not opened the new folder (the safeStorage key is in its
+// "Local State" file, and it moves with the data). After the answer this run starts the app again and stops.
+async function offerMove({ from, to }) {
+    writeLog('INFO', 'Data folder: old data found, asking for the move');
+    const { response } = await dialog.showMessageBox({
+        type: 'question', title: 'ASSCRACK', noLink: true, buttons: ['Move', 'Keep there'], defaultId: 0, cancelId: 1,
+        message: `Move your rooms and history to ${to}?`,
+        detail: 'ASSCRACK now keeps all its data in one folder next to the program. Your rooms, history, friends and ' +
+            `settings are in ${from}.\n\nMove: copy them to the new folder, check the copy, then remove the old folder.\n` +
+            'Keep there: the old folder does not change, and this copy starts with no saved rooms.'
+    });
+    let restart = true;
+    if (response === 0) {
+        const result = moveOldData({ from, to });
+        writeLog(result.ok ? 'INFO' : 'WARN', `Data folder: move ${result.ok ? `done, ${result.files} files` : `failed (${result.reason})`}`);
+        if (!result.ok) {
+            restart = false;
+            await dialog.showMessageBox({ type: 'warning', title: 'ASSCRACK', noLink: true, buttons: ['OK'],
+                message: 'Your rooms and history did not move.', detail: moveFailedText(result, from) });
+        } else if (result.leftover) {
+            writeLog('WARN', 'Data folder: the old folder was not removed completely');
+            await dialog.showMessageBox({ type: 'info', title: 'ASSCRACK', noLink: true, buttons: ['OK'],
+                message: 'Your rooms and history moved.',
+                detail: `ASSCRACK could not remove all of the old folder. You can delete it: ${result.leftover}` });
+        }
+    } else {
+        try { writeKeptMarker(to, from); } catch (err) { writeLog('WARN', `Data folder: marker not written: ${err?.message ?? err}`); }
+    }
+    if (restart) app.relaunch();
+    app.exit(0);
+}
+
 if (singleInstance && isFirstInstance) {
     // P9B: a second start from the start entry does not open the window.
     app.on('second-instance', (_event, argv) => { if (!argv.includes(START_IDLE_FLAG)) restoreRoomWindow(); });
@@ -1715,6 +1779,12 @@ if (singleInstance && isFirstInstance) {
 
 app.whenReady().then(async () => {
     if (!isFirstInstance) return;
+    if (moveOffer) { await offerMove(moveOffer); return; }
+    cleanHoldFolders(app.getPath('temp'), { alive: processRuns, own: process.pid });
+    if (installedBuild) {
+        try { if (startEntry.repair(readChoice(startChoiceFile))) writeLog('INFO', 'Start at sign-in: the entry now starts this exe'); }
+        catch (err) { writeLog('WARN', `Start at sign-in entry not repaired: ${err?.message ?? err}`); }
+    }
     if (profileIndex === -1) clearLegacyDebugLogs(app.getPath('logs'));
     powerMonitor.on('resume', () => {
         interfaceCache.clear();

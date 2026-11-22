@@ -9,6 +9,33 @@ Each result has one of these labels:
 
 ## Unreleased
 
+### One data folder next to the program
+
+- ASSCRACK keeps all its data in one folder. This includes the settings, the history, the saved rooms and the friends.
+  It also includes the device identity, the window data of Chromium, the logs and the clipboard staging. The portable build uses the folder
+  `ASSCRACK Data` next to the .exe. The installed build uses the folder `data` in the install folder. `npm start` keeps
+  the Electron default. `--profile <folder>` overrides each case.
+- The folder can move on the same PC: move the folder of the .exe, then start the .exe again. The installed build
+  writes the new path into the "Start as Idle Peer when I sign in" entry at the start. The state that the user set in
+  Task Manager does not change.
+- At the first start with an empty data folder, when `%APPDATA%\ASSCRACK` has data, the app asks "Move your rooms and
+  history to <folder>?". Move copies the data, checks each file, then removes the old folder. Keep there does not
+  change the old folder. When an other copy uses the old folder, nothing changes, and the app tells the user.
+- When the app cannot write to the data folder, it shows the path and the reason, and it stops.
+- The uninstaller of the installer keeps the folder `data` at an update and at an uninstall.
+- Saved rooms from an other Windows user account or an other computer show a plain text. They cannot open there.
+- Some files stay outside the folder. The received files and their download scratch stay in the download folder.
+  The reason: the last step of a received file is a rename on the same drive. The start menu shortcut for notifications stays in the
+  Windows folder for it. The update setup file and the unpack folder of the portable build stay in `%TEMP%`. The start
+  entry stays in the registry.
+- Checks (this PC): `npm test` 932 tests, 914 pass, 0 fail, 18 skipped. New tests: `test/data-folder.test.mjs`, and
+  the entry repair in `test/start-at-sign-in.test.mjs`. On the base, these tests fail. The portable build in a folder
+  `a`: a LAN room on this PC with a second copy, a line, Quit. Then the folder `a` moved to `b`: the saved room and the
+  line are there. `%APPDATA%\ASSCRACK` did not change (names, sizes and times). The move question with a fake
+  `APPDATA`: Move gives the saved room and the line in the new folder. Keep there does not change the old folder. The
+  installer build passes, and a small NSIS test program keeps the folder `data`. No real install test: this PC has an
+  installed copy of the operator. These are not LAN results.
+
 ### The installer asks for the install folder
 
 - The Windows installer (`npm run dist:installer`) is now an assisted installer. It shows a folder page. The user can

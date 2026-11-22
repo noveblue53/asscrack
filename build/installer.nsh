@@ -9,6 +9,32 @@
   ${endIf}
 !macroend
 
+; One data folder (src/application/data-folder.mjs): the installed build keeps its data in $INSTDIR\data. The stock
+; uninstaller of electron-builder removes all of $INSTDIR, also at the silent update (--updated) before the new files
+; come. This macro removes the program files and keeps the data folder. A normal uninstall also keeps it (package.json
+; nsis deleteAppDataOnUninstall false, as the old %APPDATA% data stayed). Then $INSTDIR stays with the data folder only.
+!macro customRemoveFiles
+  SetOutPath $TEMP
+  FindFirst $R1 $R2 "$INSTDIR\*.*"
+  asscrackRemoveLoop:
+    StrCmp $R2 "" asscrackRemoveDone
+    StrCmp $R2 "." asscrackRemoveNext
+    StrCmp $R2 ".." asscrackRemoveNext
+    StrCmp $R2 "data" asscrackRemoveNext
+    IfFileExists "$INSTDIR\$R2\*.*" 0 asscrackRemoveFile
+      RMDir /r "$INSTDIR\$R2"
+      Goto asscrackRemoveNext
+    asscrackRemoveFile:
+      Delete "$INSTDIR\$R2"
+  asscrackRemoveNext:
+    FindNext $R1 $R2
+    Goto asscrackRemoveLoop
+  asscrackRemoveDone:
+  FindClose $R1
+  ; Removes $INSTDIR only when it is empty (no data folder).
+  RMDir $INSTDIR
+!macroend
+
 ; The assisted installer (package.json nsis: oneClick false, allowToChangeInstallationDirectory true) shows a folder
 ; page. The install stays per user: no install mode page, no elevation (allowElevation false). The silent update
 ; (src/application/updater.mjs) runs "--updated /S /D=<folder of the running exe>" without elevation. An upgrade

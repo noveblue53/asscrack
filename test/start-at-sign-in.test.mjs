@@ -264,3 +264,26 @@ test('the bridge sends the start choice as text and plain fields only', async ()
     for (const fn of listeners['asscrack:start-room']) fn({ sender: 'main' }, 'room-1');
     assert.deepEqual(got, ['room-1']);
 });
+
+// One data folder: the install folder moved on the same PC. The entry gets the new exe path at the next start.
+test('the repair writes the new exe path into a start entry of an other folder and keeps the state of the user', () => {
+    const OLD = 'D:\Old\ASSCRACK\ASSCRACK.exe';
+    const NEW = 'E:\New place\ASSCRACK\ASSCRACK.exe';
+    const calls = [];
+    let item = { name: RUN_VALUE_NAME, path: OLD, args: startArgs(), scope: 'user', enabled: false };
+    const app = {
+        setLoginItemSettings(settings) { calls.push(settings); item = { ...item, path: settings.path, args: settings.args, enabled: settings.enabled }; },
+        getLoginItemSettings() { return { launchItems: item ? [item] : [] }; }
+    };
+    const entry = createStartEntry({ app, execPath: NEW, args: startArgs() });
+    assert.equal(entry.repair({ mode: 'off' }), false, 'choice off: no write');
+    assert.equal(calls.length, 0);
+    assert.equal(entry.repair({ mode: 'friends' }), true);
+    assert.deepEqual(calls[0], { openAtLogin: true, path: NEW, args: startArgs(), name: RUN_VALUE_NAME, enabled: false });
+    assert.equal(entry.repair({ mode: 'friends' }), false, 'the same path: no second write');
+    assert.equal(createStartEntry({ app, execPath: NEW.toLowerCase(), args: startArgs() }).repair({ mode: 'friends' }), false);
+    // The user removed the entry: the repair does not make it again.
+    item = null;
+    assert.equal(entry.repair({ mode: 'friends' }), false);
+    assert.equal(calls.length, 1);
+});

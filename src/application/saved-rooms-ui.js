@@ -80,6 +80,12 @@
         if (result.state === 'unavailable') {
             return 'Protected storage is not available on this computer. Rooms cannot be saved.';
         }
+        // One data folder: a copy of the folder on an other computer or for an other Windows user cannot open the
+        // protected key (safeStorage).
+        if (result.reason === 'key-unwrap-failed') {
+            return 'Saved rooms: locked. This data folder comes from an other Windows user account or an other computer. ' +
+                'Only that account on that computer can open its saved rooms.';
+        }
         return `Saved rooms: locked (${result.reason ?? 'unknown'})`;
     }
 
