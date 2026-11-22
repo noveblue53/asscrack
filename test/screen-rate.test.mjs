@@ -512,3 +512,19 @@ test('check A6a, rule A9: CPU overload lowers the cap, 60 s with no overload rai
     assert.equal(fixed.tiers()[0].preset, 'max')
     assert.equal(fixed.cpu().tooSlow, true)
 })
+
+test('rules R4 and A4: the use of a tier counts each frame one time, also with two viewers', () => {
+    const usage = n => {
+        let t = 0
+        const rate = createScreenRate({ quality: 'auto', now: () => t, configRecord: () => Uint8Array.of(0, 0, 0, 1, 2) })
+        for (let i = 0; i < n; i++) rate.addViewer(`v${i}`, { send: () => true })
+        const tier = rate.tiers()[0].tier
+        rate.setSize(tier, 1280, 720)
+        for (let k = 0; k < 7; k++) { t += 66; rate.pushFrame(tier, { key: k === 0, timestampMs: t, data: new Uint8Array(2000) }) }
+        t = 500
+        rate.evaluate()
+        return rate.stats().tiers[0].usage
+    }
+    assert.equal(usage(2), usage(1))
+    assert.equal(usage(3), usage(1))
+})

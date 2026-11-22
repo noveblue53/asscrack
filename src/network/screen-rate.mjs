@@ -297,6 +297,8 @@ export function createScreenRate({ quality = 'auto', source = null, now, params 
         const t = now()
         tier.lastFrameAt = t
         tier.frames++
+        // Rules R4 and A4: "used" is the stream of the tier, thus each frame counts one time (not for each viewer).
+        tier.windowBytes += 5 + FRAME_HEAD_BYTES + data.length
         for (const v of viewers.values()) {
             if (v.tier !== tier.id) continue
             if (v.needKey && !key) continue
@@ -320,7 +322,6 @@ export function createScreenRate({ quality = 'auto', source = null, now, params 
             const seq = v.nextSeq
             v.nextSeq = (seq + 1) >>> 0
             const wire = frameRecord({ key, seq, timestampMs, data })
-            tier.windowBytes += wire.length
             v.queue.push({ wire, seq })
             v.queuedBytes += wire.length
             v.maxQueuedBytes = Math.max(v.maxQueuedBytes, v.queuedBytes)
@@ -445,7 +446,8 @@ export function createScreenRate({ quality = 'auto', source = null, now, params 
         }
         if (fixed !== null && cpu.tooSlow && t - cpu.lastOverloadAt >= P.cpuRecoverMs) cpu.tooSlow = false
         for (const tier of tiers) {
-            tier.usage = 0.5 * tier.usage + 0.5 * (tier.windowBytes * 8 / (P.evalMs / 1000) / tier.bitrate)
+            tier.usageNow = tier.windowBytes * 8 / (P.evalMs / 1000) / tier.bitrate
+            tier.usage = 0.5 * tier.usage + 0.5 * tier.usageNow
             tier.windowBytes = 0
             tier.reports = tier.reports.filter(r => t - r.t < P.downHoldMs)
             const slots = tier.reports.reduce((a, r) => a + r.slots, 0)
@@ -492,7 +494,7 @@ export function createScreenRate({ quality = 'auto', source = null, now, params 
                 if (t >= v.noIncreaseUntil && ++v.calm >= P.calmEvals) {
                     v.calm = 0
                     // Rule A2: the rate goes up only when the tier used its bitrate and this viewer sets it.
-                    if (tier && tier.usage >= P.usedBelow && got >= 0.9 * v.rate) {
+                    if (tier && (P.usedNow ? Math.min(tier.usage, tier.usageNow) : tier.usage) >= P.usedBelow && got >= 0.9 * v.rate) {
                         const near = v.limit !== null && v.rate >= P.nearFactor * v.limit
                         v.rate = Math.min(targetOf(v), Math.round(v.rate * (near ? P.increaseNear : P.increase)))
                         if (v.limit !== null && v.rate >= P.limitClearFactor * v.limit) v.limit = null

@@ -62,7 +62,9 @@ export async function runScreenScenario(s) {
     const nodes = []
     const proxies = []
     const timers = []
-    const screenOptions = s.relayLimit === undefined ? {} : { rate: { relayLimit: s.relayLimit ?? Infinity } }
+    // SCREEN_RATE_PARAMS: rate parameters for a comparison run (JSON), for example {"usedNow":true}.
+    const extraRate = JSON.parse(process.env.SCREEN_RATE_PARAMS ?? '{}')
+    const screenOptions = { rate: { ...(s.relayLimit === undefined ? {} : { relayLimit: s.relayLimit ?? Infinity }), ...extraRate } }
     const add = async extra => { const n = await createAsscrackNode({ ...options, ...extra }); nodes.push(n); return n }
     const startRef = { t: 0 }
     try {
