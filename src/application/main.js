@@ -30,6 +30,8 @@ import { createTaskbarFlash } from './taskbar-flash.mjs';
 import { createFriendLinks } from './friend-links.mjs';
 import { attachFriendWindows, registerFriendIpc } from './friend-windows.mjs';
 import { installInterfaceCache } from '../network/interface-cache.mjs';
+import { CHOICE_FILE, choiceAfterForget, createStartEntry, createStartRunner, isInstalledBuild, isStaleChoice, normalizeChoice,
+    readChoice, START_IDLE_FLAG, startArgs, startRooms, writeChoice } from './start-at-sign-in.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -277,6 +279,8 @@ function sendToWindow(channel, data) {
 // Participation belongs to the room. Minimizing the window leaves voice and capture alone.
 let idlePeer = false;
 let tray = null;
+// G7b: the last tooltip of the tray (one log line for each change).
+let lastTooltip = null;
 let quitting = false;
 // The room name for the tray tooltip (gap E8), and the voice state of the window (asscrack:set-voice).
 let roomName = null;
@@ -289,20 +293,33 @@ try { closeToTray = JSON.parse(readFileSync(closePreference, 'utf8')) !== false;
 const idleState = () => ({ idle: idlePeer, closeToTray });
 // Gap E8: the flag file of the first close to the tray of this profile.
 const trayHintFile = path.join(app.getPath('userData'), 'tray-hint.json');
+// P9B: start at sign-in (start-at-sign-in.mjs). Only the installed build has it. The start entry starts this profile.
+const installedBuild = isInstalledBuild({ platform: process.platform, isPackaged: app.isPackaged, env: process.env,
+    execPath: process.execPath, exists: existsSync });
+const startIdle = installedBuild && process.argv.includes(START_IDLE_FLAG);
+const startChoiceFile = path.join(app.getPath('userData'), CHOICE_FILE);
+const startEntry = createStartEntry({ app, execPath: process.execPath,
+    args: startArgs(profileIndex !== -1 ? app.getPath('userData') : null) });
+let startRunner = null;
 
 const attentionPrefs = attentionSettings(path.join(app.getPath('userData'), 'attention.json'));
 const attention = createAttention({
     settings: attentionPrefs.get,
     room: () => node,
     quiet: () => quitting || stopping || idlePeer || node?.presence().state === 'dnd',
-    allowed: target => target.kind === 'whisper'
+    allowed: target => target.kind === 'friend' ? friendLinks.friend(target.friendId) !== null
+        : target.kind === 'whisper'
         ? node?.whisperPeers().includes(target.peerId)
         : target.channelId === 'general' || node?.channels().channels.some(channel => channel.id === target.channelId),
-    notify: options => new Notification(options),
+    // G7b: one log line for each notification (no name, no text).
+    notify: options => { writeLog('EVENT', 'notification requested'); return new Notification(options); },
+    // G7b: a friend notification opens the chat window of that friend (the main window stays as it is).
     navigate: target => {
+        if (target.kind === 'friend') { friendWindows.open(target.friendId); return; }
         restoreRoomWindow();
         sendToWindow('asscrack:attention-open', target);
-    }
+    },
+    friendName: friendId => friendLinks.friend(friendId)?.name ?? ''
 });
 
 function registerAlerts() {
@@ -344,6 +361,7 @@ function restoreRoomWindow() {
     if (idlePeer) {
         idlePeer = false;
         node?.setIdle(false);
+        friendLinks.setAvailability({ idle: false });
         sendToWindow('asscrack:idle-peer', idleState());
         node?.refreshRoutes();
     }
@@ -354,9 +372,21 @@ function restoreRoomWindow() {
 }
 
 // Gap E8: the tooltip and the menu of the tray icon.
+// G7b: on the login screen with 1 or more friends, the friend links stay online (design F11).
+const FRIENDS_TOOLTIP = 'ASSCRACK – online for friends';
+const friendCount = () => (friendLinks.state() === 'open' ? friendLinks.list().count : 0);
+function trayTooltip() {
+    if (!roomName) return friendCount() > 0 ? FRIENDS_TOOLTIP : 'ASSCRACK';
+    return idlePeer ? `ASSCRACK – Idle Peer in ${roomName}` : `ASSCRACK – ${roomName}`;
+}
 function updateTray() {
     if (!tray) return;
-    tray.setToolTip(!roomName ? 'ASSCRACK' : idlePeer ? `ASSCRACK – Idle Peer in ${roomName}` : `ASSCRACK – ${roomName}`);
+    const tooltip = trayTooltip();
+    tray.setToolTip(tooltip);
+    if (tooltip !== lastTooltip) {
+        lastTooltip = tooltip;
+        writeLog('EVENT', `tray tooltip: ${tooltip === FRIENDS_TOOLTIP ? 'online for friends' : roomName ? 'room' : 'plain'}`);
+    }
     tray.setContextMenu(Menu.buildFromTemplate([
         { label: 'Open ASSCRACK', click: restoreRoomWindow },
         { label: 'Close to Idle Peer', type: 'checkbox', checked: closeToTray, click: item => {
@@ -375,20 +405,42 @@ function showTrayBalloon(content) {
     }
 }
 
+function openTray() {
+    if (tray) return true;
+    try {
+        tray = new Tray(path.join(__dirname, 'img', 'app.ico'));
+        tray.on('click', restoreRoomWindow);
+        tray.on('balloon-show', () => writeLog('EVENT', 'tray balloon shown'));
+        return true;
+    } catch (err) {
+        tray?.destroy();
+        tray = null;
+        writeLog('WARN', 'Cannot open the tray: ' + (err?.message ?? err));
+        return false;
+    }
+}
+
+// G7b (operator decision 4, 2026-11-21): Close on the login screen with 1 or more friends and "Close to Idle Peer" on
+// hides the window to the tray. The friend links stay online. The first time gives a note. Quit is in the tray menu.
+const friendsTrayHintFile = path.join(app.getPath('userData'), 'tray-friends-hint.json');
+function hideForFriends() {
+    if (node || leaving || quitting || !mainWindow || mainWindow.isDestroyed() || friendCount() < 1) return false;
+    if (!openTray()) return false;
+    // Not Idle Peer: there is no room, and the friends see the availability of the login screen ('available').
+    mainWindow.hide();
+    updateTray();
+    writeLog('INFO', 'Window in the tray on the login screen (online for friends)');
+    if (!existsSync(friendsTrayHintFile)) {
+        try { writeFileSync(friendsTrayHintFile, JSON.stringify({ shown: true })); }
+        catch (err) { writeLog('WARN', `Tray hint flag not saved: ${err?.message ?? err}`); }
+        showTrayBalloon('ASSCRACK stays online for your friends. Click the tray icon to open it. Right-click it to quit.');
+    }
+    return true;
+}
+
 function enterIdlePeer() {
     if (!node || !mainWindow || mainWindow.isDestroyed() || quitting || leaving) return false;
-    if (!tray) {
-        try {
-            tray = new Tray(path.join(__dirname, 'img', 'app.ico'));
-            tray.on('click', restoreRoomWindow);
-            tray.on('balloon-show', () => writeLog('EVENT', 'tray balloon shown'));
-        } catch (err) {
-            tray?.destroy();
-            tray = null;
-            writeLog('WARN', 'Cannot open the tray: ' + (err?.message ?? err));
-            return false;
-        }
-    }
+    if (!openTray()) return false;
     // A close in voice ends voice with no question (the window leaves voice at the idle-peer event).
     const leftVoice = !idlePeer && inVoice;
     if (!idlePeer) {
@@ -398,6 +450,7 @@ function enterIdlePeer() {
         attention.clear();
         stopFlash();
         node.setIdle(true);
+        friendLinks.setAvailability({ idle: true });
         updatePttHook(() => pttHook.setInVoice(false));
         sendToWindow('asscrack:idle-peer', idleState());
     }
@@ -424,6 +477,61 @@ function setCloseToTray(enabled) {
     updateTray();
     return idleState();
 }
+
+// P9B: the start at sign-in. The window gets the choice, the protected saved rooms (ID and name) and the state of
+// the start entry in Windows. No path and no argument.
+function startupView() {
+    if (!installedBuild) return { available: false };
+    const status = getSavedRooms().status();
+    if (isStaleChoice(readChoice(startChoiceFile), status)) forgetStartRoom(readChoice(startChoiceFile).roomId);
+    return { available: true, ...readChoice(startChoiceFile), archive: status.state, rooms: startRooms(status.rooms),
+        entry: startEntry.state() };
+}
+function setStartup(raw) {
+    if (!installedBuild) throw new Error('Only the installed ASSCRACK can start at sign-in.');
+    const choice = normalizeChoice(raw);
+    if (choice.mode === 'room' && !startRooms(getSavedRooms().status().rooms).some(room => room.roomId === choice.roomId)) {
+        throw new Error('Saved room not found');
+    }
+    writeChoice(startChoiceFile, choice);
+    startEntry.apply(choice);
+    writeLog('INFO', `Start at sign-in set: ${choice.mode}`);
+    return startupView();
+}
+// Forget in each build clears the choice (the portable build uses the same profile). Only the installed build
+// changes the start entry.
+function forgetStartRoom(roomId) {
+    const choice = readChoice(startChoiceFile);
+    if (choiceAfterForget(choice, roomId).mode === choice.mode) return;
+    try {
+        writeChoice(startChoiceFile, { mode: 'off' });
+        if (installedBuild) startEntry.apply({ mode: 'off' });
+        writeLog('INFO', 'Start at sign-in set: off (room forgotten)');
+    } catch (err) { writeLog('WARN', `Start at sign-in not removed: ${err?.message ?? err}`); }
+}
+// With START_IDLE_FLAG: the window stays hidden, the tray opens, and the runner opens the choice.
+function beginStartAtSignIn() {
+    if (!openTray()) { mainWindow.show(); return; }
+    updateTray();
+    writeLog('INFO', 'Start at sign-in: in the tray');
+    startRunner = createStartRunner({
+        choice: readChoice(startChoiceFile),
+        status: () => getSavedRooms().status(),
+        unlock: async () => { await getSavedRooms().unlock(); startFriendLinks(); },
+        busy: () => loginStarted || !!node || quitting,
+        openRoom: roomId => sendToWindow('asscrack:start-room', roomId),
+        done: result => {
+            if (result === 'room' && !mainWindow.isDestroyed() && !mainWindow.isVisible()) enterIdlePeer();
+            else if (result === 'missing') { forgetStartRoom(readChoice(startChoiceFile).roomId); restoreRoomWindow(); }
+            else if (result === 'none') restoreRoomWindow();
+        },
+        log: writeLog
+    });
+    if (mainWindow.webContents.isLoading()) mainWindow.webContents.once('did-finish-load', () => startRunner.start());
+    else startRunner.start();
+}
+handleRoomIpc('asscrack:startup', () => startupView());
+handleRoomIpc('asscrack:set-startup', (_event, choice) => setStartup(choice));
 
 handleRoomIpc('asscrack:idle-peer', idleState);
 handleRoomIpc('asscrack:enter-idle-peer', enterIdlePeer);
@@ -473,6 +581,7 @@ function createMainWindow() {
     mainWindow = new BrowserWindow({
         ...frame.options,
         title: 'ASSCRACK',
+        show: !startIdle,
         icon: path.join(__dirname, 'img', 'app.ico'),
         x: bounds.x,
         y: bounds.y,
@@ -503,14 +612,16 @@ function createMainWindow() {
         writeLog('WINDOW', `${details.level} ${details.message} (${details.sourceId}:${details.lineNumber})`);
     });
 
-    if (bounds.maximized) mainWindow.maximize();
+    // P9B: maximize() shows the window. A start at sign-in maximizes at the first show.
+    if (bounds.maximized && startIdle) mainWindow.once('show', () => mainWindow.maximize());
+    else if (bounds.maximized) mainWindow.maximize();
     for (const type of ['resize', 'move', 'maximize', 'unmaximize']) mainWindow.on(type, saveBoundsSoon);
     // Gap E1: the focus ends the taskbar flash and removes the dot.
     taskbarFlash.attach(mainWindow);
 
     mainWindow.on('close', event => {
         saveBoundsNow();
-        if (!quitting && closeToTray && enterIdlePeer()) event.preventDefault();
+        if (!quitting && closeToTray && (enterIdlePeer() || hideForFriends())) event.preventDefault();
     });
     // G7a: the friend chat windows close with the main window (then the app quits as before).
     mainWindow.on('closed', () => friendWindows.closeAll());
@@ -683,8 +794,8 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
     });
     // Saved rooms (milestone 6): the archive listener comes before the window listener.
     getSavedRooms().attachNode(node);
-    // G7a: the friend requests of a protected room.
-    friendLinks.attachRoom(node);
+    // G7a: the friend requests of a protected room. G7b: the common-room path, and the room name for the panel.
+    friendLinks.attachRoom(node, { name: roomName ?? '' });
     readRoomActivity = observeRoomActivity(node);
     // Typing goes straight to the window; transient controls never enter diagnostics or the archive.
     onLive('whisper-capability', data => sendToWindow('asscrack:whisper-capability', data));
@@ -859,11 +970,22 @@ const friendLinks = createFriendLinks({
     createNode: createAsscrackNode, hintFiles: (room, roomKey) => roomHintFiles(room, roomKey), log: writeLog,
     nodeOptions: Object.fromEntries(Object.entries(nodeFlags).filter(([name]) => name === 'allowPrivateFullNode' || name === 'fullNode'))
 });
-friendLinks.events.on('changed', view => sendToWindow('asscrack:friends', view));
+friendLinks.events.on('changed', view => { sendToWindow('asscrack:friends', view); if (tray && !roomName) updateTray(); });
+// G7b: the attention of a friend line (live lines one by one, away lines as one batch). The window decides by the
+// attention rules (attention.js wanted()); it gets no name and no text.
+friendLinks.events.on('line', ({ friendId, line }) => {
+    if (line.own || line.away) return;
+    sendToWindow('asscrack:friend-attention', { friendId, id: line.id, away: 0, focused: friendWindows.isFocused(friendId) });
+});
+friendLinks.events.on('away', ({ friendId, batch, count }) => {
+    writeLog('INFO', `Friend lines sent while away: ${count}`);
+    sendToWindow('asscrack:friend-attention', { friendId, id: batch, away: count, focused: friendWindows.isFocused(friendId) });
+});
 friendLinks.events.on('request', event => sendToWindow('asscrack:friend-request', event));
 const friendWindows = attachFriendWindows({
     BrowserWindow, ipc: ipcMain, assets: __dirname, links: friendLinks, icon: path.join(__dirname, 'img', 'app.ico'),
-    warn: message => writeLog('WARN', message), openLink: value => openCheckedLink(value)
+    warn: message => writeLog('WARN', message), openLink: value => openCheckedLink(value),
+    focused: friendId => attention.read({ kind: 'friend', friendId, id: 'focus' })
 });
 registerFriendIpc(handleRoomIpc, {
     links: friendLinks, roomNode: () => node, openChat: friendId => friendWindows.open(friendId),
@@ -908,7 +1030,9 @@ handleRoomIpc('asscrack:reopen-room', async (_event, roomId, allowLegacy) => {
         name: row.userName ?? '', room: row.name, roomKey: row.roomKey,
         downloadDir: downloadDir ?? app.getPath('downloads'), ...nodeFlags
     };
-    return withLoginErrors('Reopen', options, () => reopenRoom(row, options, allowLegacy));
+    const started = withLoginErrors('Reopen', options, () => reopenRoom(row, options, allowLegacy));
+    started.then(() => startRunner?.reopened(roomId, true), err => startRunner?.reopened(roomId, false, err?.message));
+    return started;
 });
 
 async function reopenRoom(row, options, allowLegacy) {
@@ -953,6 +1077,7 @@ handleRoomIpc('asscrack:forget-room', (_event, roomId) => {
     const active = getSavedRooms().activeInfo()?.roomId === roomId;
     const result = getSavedRooms().forget(roomId);
     if (active) clearRoomMedia();
+    forgetStartRoom(roomId);
     writeLog('INFO', 'Saved room forgotten');
     return result;
 });
@@ -1216,6 +1341,8 @@ handleRoomIpc('asscrack:set-presence', (_event, { state, note } = {}) => {
     if (!node) throw new Error('Not logged in');
     const updated = node.setPresence({ state, note });
     if (node.presence().state === 'dnd') attention.clear();
+    // G7b: the friends see the same availability (design F11).
+    friendLinks.setAvailability({ state: updated.state, note: updated.note });
     return updated;
 });
 
@@ -1409,8 +1536,10 @@ function leaveRoom() {
         roomName = null;
         idlePeer = false;
         try { savedRooms?.leave(); } catch (err) { writeLog('WARN', `Saved rooms leave: ${err?.message ?? err}`); }
-        // G7a: the friend links stay. Only the friend requests of the room end.
+        // G7a: the friend links stay. Only the friend requests of the room end. G7b: on the login screen the
+        // availability for the friends is 'available'.
         friendLinks.attachRoom(null);
+        friendLinks.setAvailability({ state: 'available', note: '', idle: false });
         loginStarted = false;
         updateTray();
         return true;
@@ -1473,7 +1602,8 @@ app.on('before-quit', event => {
 app.on('window-all-closed', () => app.quit());
 
 if (singleInstance && isFirstInstance) {
-    app.on('second-instance', restoreRoomWindow);
+    // P9B: a second start from the start entry does not open the window.
+    app.on('second-instance', (_event, argv) => { if (!argv.includes(START_IDLE_FLAG)) restoreRoomWindow(); });
 }
 
 app.whenReady().then(async () => {
@@ -1482,6 +1612,7 @@ app.whenReady().then(async () => {
     powerMonitor.on('resume', () => {
         interfaceCache.clear();
         node?.refreshRoutes();
+        startRunner?.wake();
     });
     protocol.handle('room-media', request => roomMedia.serve(request));
     installRoomPermissions(session.defaultSession, () => mainWindow, ROOM_PAGE, () => idlePeer);
@@ -1493,4 +1624,5 @@ app.whenReady().then(async () => {
     await getSavedRooms().open();
     startFriendLinks();
     createMainWindow();
+    if (startIdle) beginStartAtSignIn();
 });

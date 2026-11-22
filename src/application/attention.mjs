@@ -74,14 +74,29 @@ function targetOf(raw) {
         return { kind: 'whisper', peerId: raw.peerId, id: raw.id };
     if (raw.kind === 'mention' && typeof raw.channelId === 'string' && raw.channelId && raw.channelId.length <= 128)
         return { kind: 'mention', channelId: raw.channelId, id: raw.id };
+    // G7b: a friend line (as a whisper). away: the number of lines of a batch that was sent while this device was away.
+    if (raw.kind === 'friend' && typeof raw.friendId === 'string' && raw.friendId && raw.friendId.length <= 128) {
+        const away = Number.isInteger(raw.away) && raw.away > 0 && raw.away <= 10000 ? raw.away : 0;
+        return { kind: 'friend', friendId: raw.friendId, id: raw.id, away };
+    }
     return null;
 }
 
-export function createAttention({ settings, room, quiet, allowed, notify, navigate,
+// G7b: the text of a friend notification. name: the nickname of the friend (from the main process, not the window).
+export function friendNotice(name, count, away) {
+    const who = name || 'A friend';
+    if (away > 0) return away === 1 ? `${who} sent you a message while you were away.` : `${who} sent you ${away} messages while you were away.`;
+    return count > 1 ? `${count} new private messages from ${who}` : `New private message from ${who}`;
+}
+
+// friendName(friendId): G7b, the nickname of a friend for the text. A friend notification does not belong to the room
+// session: the friend links run on the login screen too.
+export function createAttention({ settings, room, quiet, allowed, notify, navigate, friendName = () => '',
     schedule = (fn, ms) => setTimeout(fn, ms), cancel = clearTimeout }) {
     const groups = new Map();
     const seen = new Set();
-    const keyOf = obj => obj.kind + '/' + (obj.peerId ?? obj.channelId);
+    const keyOf = obj => obj.kind + '/' + (obj.friendId ?? obj.peerId ?? obj.channelId);
+    const roomOf = target => target.kind === 'friend' ? 'friends' : room();
 
     function dismiss(key) {
         const group = groups.get(key);
@@ -92,7 +107,7 @@ export function createAttention({ settings, room, quiet, allowed, notify, naviga
     }
 
     function eligible(group) {
-        return !!group.room && group.room === room() && settings().alerts && !quiet() && allowed(group.target);
+        return !!group.room && group.room === roomOf(group.target) && settings().alerts && !quiet() && allowed(group.target);
     }
 
     function present(key, group) {
@@ -103,6 +118,7 @@ export function createAttention({ settings, room, quiet, allowed, notify, naviga
         let body = privateMessage ? 'New private message' : 'You were mentioned';
         if (group.count > 1) body = privateMessage ? group.count + ' new private messages' : group.count + ' new mentions';
         else if (!privateMessage && prefs.previews && group.preview) body = group.preview;
+        if (group.target.kind === 'friend') body = friendNotice(friendName(group.target.friendId), group.count, group.target.away);
         group.preview = '';
         group.count = 0;
         const shown = { ...group, target: group.target };
@@ -140,8 +156,8 @@ export function createAttention({ settings, room, quiet, allowed, notify, naviga
             seen.add(identity);
             if (seen.size > 2048) seen.delete(seen.values().next().value);
             let group = groups.get(key);
-            if (group && group.room !== room()) { dismiss(key); group = null; }
-            group ??= { room: room(), count: 0, notice: null, timer: null };
+            if (group && group.room !== roomOf(target)) { dismiss(key); group = null; }
+            group ??= { room: roomOf(target), count: 0, notice: null, timer: null };
             group.target = target;
             if (!eligible(group)) return dismiss(key);
             if (!groups.has(key) && groups.size >= 64) dismiss(groups.keys().next().value);

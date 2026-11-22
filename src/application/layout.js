@@ -627,6 +627,7 @@
         else if (item.id === 'view-quit') window.appShell ? window.appShell.quit() : window.asscrack.quit();
         else if (item.id === 'view-shortcuts') window.appShell?.openShortcuts();
         else if (item.id === 'view-about') window.appShell?.openAbout();
+        else if (item.id === 'view-startup') window.startupUi?.open();
         else if (item.id === 'view-clear-previews') void window.chatMedia?.clearPreviews();
         else if (item.id === 'view-previews') window.chatMedia?.toggleAuto();
         else if (item.id === 'view-attention') window.roomAttention?.openSettings();

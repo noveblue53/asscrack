@@ -236,9 +236,12 @@ test('the G7a friend calls send text and a strict boolean; the chat window bridg
     const got = [];
     f.onChanged(view => got.push(view));
     f.onRequest(event => got.push(event));
+    // G7b adds the event onAttention (a friend line for the attention rules of attention.js).
+    f.onAttention(target => got.push(target));
     b.emit('asscrack:friends', { state: 'open' });
     b.emit('asscrack:friend-request', { kind: 'incoming' });
-    assert.deepEqual(got, [{ state: 'open' }, { kind: 'incoming' }]);
+    b.emit('asscrack:friend-attention', { friendId: 'f1', id: 'l1', away: 0, focused: false });
+    assert.deepEqual(got, [{ state: 'open' }, { kind: 'incoming' }, { friendId: 'f1', id: 'l1', away: 0, focused: false }]);
     assert.deepEqual(b.touched, []);
 
     const chatSource = await readFile(new URL('../src/application/friend-chat-preload.cjs', import.meta.url), 'utf8');
@@ -252,11 +255,13 @@ test('the G7a friend calls send text and a strict boolean; the chat window bridg
     worlds.friendChat.lines(null);
     worlds.friendChat.lines({ time: '5', id: 9, path: 'C:/x' });
     worlds.friendChat.send(12);
+    // G7b adds deleteWaiting: Delete of a waiting line sends only the line ID as text.
+    worlds.friendChat.deleteWaiting(34);
     worlds.asscrack.openLink({ toString: () => 'https://example.com' });
     assert.equal(JSON.stringify(invoked), JSON.stringify([
         ['asscrack:friend-chat-state'], ['asscrack:friend-chat-lines', null],
         ['asscrack:friend-chat-lines', { time: 5, id: '9' }], ['asscrack:friend-chat-send', '12'],
-        ['asscrack:friend-chat-open-link', 'https://example.com']
+        ['asscrack:friend-chat-delete', '34'], ['asscrack:friend-chat-open-link', 'https://example.com']
     ]));
 });
 

@@ -3,7 +3,8 @@
 //   { type: 'pm', v: 1, op: 'ack', id }                     the receiver got the message (always, also for a repeat)
 //   { type: 'pm', v: 1, op: 'unfriend' }                    the sender removed the friend
 // The receiver accepts a line only from the device of the friend and shows each id one time.
-// send() resolves 'delivered', 'unconfirmed' (no ack in 15 s) or 'unavailable' (no session); 'invalid' for bad text.
+// send() resolves 'delivered', 'unconfirmed' (no ack in 15 s, or closed()) or 'unavailable' (no session); 'invalid' for
+// bad text; 'busy' while the same id waits for its ack.
 import { randomUUID } from 'node:crypto'
 
 export const PM_ACK_MS = 15000
@@ -22,6 +23,7 @@ export function createPrivateMessages({ selfDevice, friendDevice, sessionPeer, s
     const pending = new Map() // id -> { resolve, timer }
     const late = new Set() // ids that resolved 'unconfirmed': a later ack still gives a receipt
     const recent = new Set()
+    let lastTime = 0 // G7b: the last time of a received message
     let stopped = false
 
     const line = (peerId, fields) => sendTo(peerId, { type: 'pm', v: 1, ...fields })
@@ -51,13 +53,18 @@ export function createPrivateMessages({ selfDevice, friendDevice, sessionPeer, s
             return new Promise(resolve => {
                 const timer = setTimer(() => finish(id, 'unconfirmed'), timeoutMs)
                 timer?.unref?.()
-                pending.set(id, { resolve, timer })
+                pending.set(id, { resolve, timer, peerId })
                 if (!line(peerId, { op: 'msg', id, text, time, away: away === true })) {
                     pending.delete(id)
                     clearTimer(timer)
                     resolve('unavailable')
                 }
             })
+        },
+        // G7b: the session to peerId closed. Each message on it with no ack ends now as 'unconfirmed', thus the next
+        // session can send it again (the receiver shows each id one time).
+        closed(peerId) {
+            for (const [id, entry] of [...pending]) if (entry.peerId === peerId) finish(id, 'unconfirmed')
         },
         // Tell the friend that this device removed it. Returns true when a session took the line.
         unfriend() {
@@ -76,8 +83,12 @@ export function createPrivateMessages({ selfDevice, friendDevice, sessionPeer, s
             }
             if (msg.op !== 'msg' || !idPattern.test(msg.id) || !validPmText(msg.text)) return
             if (!recent.has(msg.id) && !seen(msg.id)) {
-                // The time of the sender, but never in the future of this computer.
-                const time = Number.isFinite(msg.time) && msg.time > 0 ? Math.min(msg.time, now()) : now()
+                // The time of the sender, but never in the future of this computer. G7b: a time that is cut to now()
+                // (a sender clock in the future, or no time) is after the last received time, thus a burst of queued
+                // lines keeps its order in the archive (the order is time, then id).
+                const sent = Number.isFinite(msg.time) && msg.time > 0 ? msg.time : null
+                const time = sent !== null && sent <= now() ? sent : Math.max(now(), lastTime + 1)
+                lastTime = Math.max(lastTime, time)
                 if (receive({ id: msg.id, text: msg.text, time, away: msg.away === true }) === false) return
             }
             recent.add(msg.id)

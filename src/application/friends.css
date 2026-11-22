@@ -41,7 +41,7 @@
 #friend-list > li:focus-visible { box-shadow: 0 0 0 2px var(--focus, #006576); }
 #friend-list .friend-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #friend-list .friend-state { grid-column: 1; font-size: 11px; opacity: 0.85; }
-#friend-list > li[data-state="online"] .friend-state { color: #11713f; font-weight: 600; }
+#friend-list > li[data-state="online"] .friend-state, #friend-list > li[data-state="room"] .friend-state { color: #11713f; font-weight: 600; }
 #friend-list .count { grid-column: 2; grid-row: 1 / span 2; }
 #friend-waiting > li { padding: 3px 7px; font-size: 12px; font-style: italic; }
 #friend-blocked-list > li { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 12px; }
@@ -59,7 +59,8 @@
   background: var(--surface-raised);
   border-color: var(--line);
 }
-#friends-panel.friends-drawer #friend-list > li[data-state="online"] .friend-state { color: var(--accent); }
+#friends-panel.friends-drawer #friend-list > li[data-state="online"] .friend-state,
+#friends-panel.friends-drawer #friend-list > li[data-state="room"] .friend-state { color: var(--accent); }
 
 /* The friend request bar above the composer. */
 #friend-request-bar {

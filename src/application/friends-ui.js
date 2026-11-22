@@ -16,8 +16,14 @@
         if (d.toDateString() === today.toDateString()) return hm;
         return `${d.getDate()} ${d.toLocaleString('en', { month: 'short' })} ${hm}`;
     }
+    // G7b: the availability of a friend on the friend link, and a friend in the same room with no friend link.
+    const AVAILABILITY = { away: 'Away', dnd: 'Do not disturb', idle: 'Idle Peer' };
     function stateText(friend, now = Date.now()) {
-        if (friend.state === 'online') return 'Online';
+        if (friend.state === 'online') {
+            const label = AVAILABILITY[friend.availability];
+            return label ? `Online · ${label}${friend.note ? ` · ${friend.note}` : ''}` : 'Online';
+        }
+        if (friend.state === 'room') return `Online · in ${friend.roomName}`;
         if (friend.state === 'removed-you') return 'Removed you as a friend';
         return Number.isFinite(friend.lastSeen) ? `Not connected · last connected ${timeText(friend.lastSeen, now)}` : 'Not connected yet';
     }

@@ -4,6 +4,7 @@
 //   accept | decline                                 B -> A
 //   grant (room, key, descriptor, port, nodes)       A -> B
 //   done (port, nodes) | failed                      B -> A (failed also A -> B)
+//   addrs (port, nodes), no id                       G7b: friend -> friend in a common room (design F5 item 4)
 // This module has no network and no archive. The caller gives send(), the proved device ID of each line, and the
 // two steps that make and keep the friend room (makeGrant on A, acceptGrant on B). The timers can be injected.
 import { randomUUID } from 'node:crypto'
@@ -32,16 +33,20 @@ export function validNodes(nodes) {
     return out
 }
 
+// G7b: the line with the current addresses of the friend node of the sender for the receiver (design F5 item 4).
+export const addrsLine = (port, nodes) => ({ type: 'friend', v: 1, op: 'addrs', port, nodes })
+
 // send(peerId, line) -> boolean. isBlocked(deviceId) -> boolean.
 // makeGrant({ peerId, deviceId, name }) -> Promise<{ room, key, descriptor, port, nodes }> (A: the room is saved and
 //   its node runs). acceptGrant({ peerId, deviceId, name, grant }) -> Promise<{ port, nodes }> (B: all checks, save,
 //   start). Each throws for a refusal.
 // done({ peerId, deviceId, port, nodes }) (A: the done line, for the candidates of B). undo({ deviceId }) (A: B sent
-//   failed after the grant: forget the friend room).
+//   failed after the grant: forget the friend room). addrs({ peerId, deviceId, port, nodes }) (G7b: a valid addrs
+//   line; the caller accepts it only from the device of a friend).
 // changed(event): { kind: 'incoming', id, peerId, name } | { kind: 'outgoing', id, peerId, name } |
 //   { kind: 'ended', id, peerId, name, side: 'out'|'in', result: 'friend'|'declined'|'no-answer'|'failed'|'closed' }
 export function createFriendRequests({ send, isBlocked = () => false, makeGrant, acceptGrant, done = () => {},
-    undo = () => {}, changed = () => {}, now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout,
+    undo = () => {}, addrs = () => {}, changed = () => {}, now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout,
     requestMs = FRIEND_REQUEST_MS, rateMs = FRIEND_RATE_MS } = {}) {
     // peerId -> { id, deviceId, name, state: 'sent'|'granted', timer } (requests of this device)
     const outgoing = new Map()
@@ -137,6 +142,12 @@ export function createFriendRequests({ send, isBlocked = () => false, makeGrant,
         },
         // A line of type 'friend' from the room node: { peerId, deviceId, message }.
         handle({ peerId, deviceId, message: msg } = {}) {
+            // G7b: the addrs line has no id. The node list obeys the invite rules.
+            if (!stopped && msg?.v === 1 && msg.op === 'addrs' && typeof deviceId === 'string') {
+                const nodes = validNodes(msg.nodes)
+                if (validPort(msg.port) && nodes !== null) addrs({ peerId, deviceId, port: msg.port, nodes })
+                return
+            }
             if (stopped || !msg || msg.v !== 1 || typeof msg.id !== 'string' || !uuid.test(msg.id) || typeof deviceId !== 'string') return
             const id = msg.id
             const out = outgoing.get(peerId)

@@ -286,8 +286,12 @@ body.compact-transcript #messages > li:not(.file-card) { position: relative; }
 .compact-transcript #messages li.selected-highlight { outline: 2px solid var(--focus, #664a16); outline-offset: -2px; }
 
 /* G5: the dialogs of the app shell (app-shell.js): About ASSCRACK, Keyboard shortcuts, Leave room, Quit. */
-:is(#about-dialog, #leave-dialog, #quit-dialog) { width: min(28rem, calc(100vw - 24px)); }
-:is(#about-dialog, #leave-dialog, #quit-dialog) p { margin: 6px 0; }
+:is(#about-dialog, #leave-dialog, #quit-dialog, #startup-dialog) { width: min(28rem, calc(100vw - 24px)); }
+:is(#about-dialog, #leave-dialog, #quit-dialog, #startup-dialog) p { margin: 6px 0; }
+/* P9B: the start at sign-in dialog. */
+#startup-dialog select { display: block; margin: 4px 0 8px; max-width: 100%; }
+#startup-dialog p:not(#startup-entry) { font-size: 12.5px; color: var(--ink-soft); }
+#startup-status:empty, #startup-entry:empty { display: none; }
 #about-dialog p:not(#about-version, #about-runtime) { font-size: 12.5px; color: var(--ink-soft); }
 #about-version { font-weight: 700; }
 #about-status:empty, #leave-status:empty { display: none; }

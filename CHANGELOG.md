@@ -7,10 +7,10 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
-## Unreleased — screenshare, network part (package P8a, 2026-11-21)
+## Unreleased — screenshare, network part (package P8a, 2026-11-22)
 
 The network layer can now share a screen in a room. The window part (the picker, the share bar and the stage) is
-package P8b. It comes later. Design: `work-orders/astra/P8/DESIGN.md`, revisions 2, 3, 3b, 3c and 3d (local).
+package P8b. It comes later. Design: `work-orders/astra/P8/DESIGN.md`, revisions 2 and 3 to 3f (local).
 
 - **Protocol.** A `screen` control line tells each member that a member shares. A viewer opens the stream
   `/asscrack/screen/1.0.0` to the sharer on its session connection (direct TCP or a circuit). The records have a
@@ -20,18 +20,86 @@ package P8b. It comes later. Design: `work-orders/astra/P8/DESIGN.md`, revisions
 - **Rate control and voice first.** The sharer paces its writes, measures the ack delay of each viewer, drops frames
   for a late viewer and changes the bitrate. Voice keeps its own streams and does not change.
 - **Auto quality.** Five presets from 720p at 15 fps to 1440p at 60 fps. Each viewer has its own rate. There are at
-  most two encoder tiers, thus a slow viewer does not lower the picture of the others. Each up step is a probe that
-  goes back at once when the ack delay rises (revision 3). A slow viewer that comes back is also a probe.
-- **Result: 127.0.0.1, this PC.** No LAN test and no window test (P8b).
-  - `node --test test/screen-share.test.mjs test/screen-rate.test.mjs`: 39 of 39 pass. `npm test` on the merge
-    result: 758 of 775 pass, 0 fail, 17 skipped. The skipped tests are the timed checks. Each timed file runs
-    with `node --test` on its file.
-  - The timed checks use real nodes, a proxy for each limited link and a synthetic encoder (revision 3d). Checks 7
-    to 18 pass, and checks 20 to 24 pass. Check 20: 3 of 3 runs pass (voice p95 47 ms, at 22 % to 32 %
-    load). Check 24 has a limit of 45 s (not 30 s) for Max: the reason is in `DECISIONS.md` P8a-20.
-  - **Check 19: 2 of 3 runs pass.** Run 1 missed by 1 frame in 1 s at 26.8 % load (27 frames, limit 28). Runs 2
-    and 3 passed at 18.0 % and 35.6 % load. Package P8b runs check 19 three times with the real encoder. A second
-    miss there stops the merge of P8b.
+  most two encoder tiers, thus a slow viewer does not lower the picture of the others. Each step up is a probe that
+  goes back at once when the ack delay rises. A long queue steps a tier down at once.
+- **Result: 127.0.0.1, this PC (revision 3f).** No LAN test and no window test (P8b).
+  - `node --test test/screen-share.test.mjs test/screen-rate.test.mjs`: 42 of 42 pass. `npm test` on the merge
+    result: 788 of 805 pass, 0 fail, 17 skipped. The timed checks skip in `npm test`. Each timed file runs with
+    `node --test` on its file.
+  - Voice: no voice limit failed in run 11 and in the study of 25 runs (load 5 % to 40 %). Voice delay p95 in the
+    judged windows: 17 to 48 ms.
+  - **Failures (screen quality speed, not voice).** Check 18: 2 of 3 runs pass in run 11, 0 of 5 in the study.
+    After a drop of the link, the tier is at Balanced again only at 66.7 to 73.2 s. The limit is 65 s. Check 16: 4 of 5
+    (viewer 1 did not reach Max in one run). Check 20: 4 of 5 (the sum of the tier ceilings was above 5 Mbit/s in
+    one run). Check 19: 2 of 3 runs pass with revision 3d (1 frame missed in 1 s). The study did not measure it.
+  - Checks 17, 19, 21 and 24 (the speed of the quality) are not measured in the merge gate of P8a. P8b measures
+    them with the real encoder. The speed of the return after a drop of the link is a 1.0.x item (field data).
+
+## Unreleased — Per-user installer and start at sign-in (goal P9B, 2026-11-22)
+
+A per-user installer comes next to the portable build. The installed build can start in the tray when you sign in.
+- `npm run dist:installer` makes `dist/ASSCRACK-<version>-setup.exe`. The installer needs no administrator rights.
+  It installs to `%LOCALAPPDATA%\Programs\asscrack`, and it adds a Start Menu shortcut, a desktop shortcut and an
+  uninstaller. The installer, the uninstaller and the shortcuts use the app icon. `npm run dist` does not change. It
+  makes only `dist/ASSCRACK-<version>-portable.exe`.
+- In the installed build only: View, "Start at sign-in…". The setting "Start as Idle Peer when I sign in" opens one
+  protected saved room or "Friends only (no room)". The portable build does not show the setting.
+- At sign-in, ASSCRACK starts in the tray. It opens the room with the normal reopen of a saved room, then it goes to
+  Idle Peer. If the protected storage stays locked, or the start fails, it tries again each 30 s and after a wake.
+- The start entry is the Run value "ASSCRACK" of the user. Its arguments are `--start-idle` and, for a test profile,
+  `--profile <folder>`. They have no room key, no invite and no name. You can turn off ASSCRACK in Task Manager
+  (Startup apps). The app does not turn it on again. The dialog then tells you that the start is off in Windows.
+- Forget of the selected room removes the start entry. A Forget in the portable build clears the choice, and the
+  installed build then removes the start entry. The uninstaller removes the start entry and its Startup apps
+  value. An upgrade keeps them.
+
+Results (this PC, no real sign-in):
+- `npm test` passes, 744 tests (127.0.0.1). 13 new tests for the start choice, the arguments, the installed build
+  check, the Forget rule, the retry, the uninstall include and the bridge.
+- `npm run dist` makes `ASSCRACK-0.8.0-portable.exe` with the custom launcher, as before.
+- Install, start with the arguments of the start entry, Startup apps off, upgrade to a test version 0.8.1, Forget,
+  uninstall: each step passes. The checks used a test profile, not the profile of the operator. The start with the start
+  entry arguments opened the saved room with no visible window, in Idle Peer.
+- The portable build gave a native notification request after the uninstall (two copies on 127.0.0.1).
+- The installer has no code signature. A copy with Mark-of-the-Web gives "The publisher could not be verified" and
+  "Unknown Publisher" when PowerShell starts it.
+- Known Electron behavior, not from P9B: each packaged copy that starts writes the Start Menu shortcut ASSCRACK.lnk
+  with its own path. Thus the shortcut points to the copy that started last. The uninstaller removes it, and the
+  next start of the portable build writes it again.
+
+## Unreleased — Friends offline (goal G7b, 2026-11-21)
+
+A message to a friend that is not connected waits on this computer. It goes out when both apps run and connect.
+- The chat window shows a waiting line with "Waiting: ASSCRACK sends it when you are both online" and "Delete".
+  When the friend gets the line, the mark changes to "Delivered".
+- At most 200 lines wait for each friend. The next line gets "200 messages wait for Sam. Wait until Sam is online."
+  A waiting line has no expiry.
+- The receiver sees the lines with their original times. One note comes before each batch: "Sam sent 3 messages
+  while you were away." Each line of the batch has the mark "sent while you were away". One notification comes for
+  each batch, by the attention rules. There is no notification in Do not disturb, in Idle Peer, or when that chat
+  window has the focus. A live friend line uses the same rules for the notification and the message sound.
+- Two friends in one protected room can send private messages through the room, also when the friend link has no
+  connection. The panel then shows "Online · in <room name>". The room also gives the current addresses of the friend
+  link, and the friend link connects at once when it can.
+- Friends see "Online · Away", "Online · Do not disturb" or "Online · Idle Peer".
+- When the clock of the sender is ahead of the clock of the receiver, the waiting lines keep their order.
+- With 1 or more friends and "Close to Idle Peer" on, Close on the login screen puts ASSCRACK in the tray. The tray
+  tooltip is "ASSCRACK – online for friends". The first time, a note tells the user how to open and quit it.
+- When a friend ends the friendship, each waiting line shows "Not delivered" and the reason.
+
+Results:
+- `npm test` passes, 731 tests after the merge with P7c (127.0.0.1).
+- 14 new tests. 7 use real friend nodes and a real archive in a temp folder (127.0.0.1 on this PC). 6 test the
+  window part with a stub bridge or the room window fixture. 1 tests the order of the lines when the clock of the
+  sender is ahead.
+- One `npm start` gives no error line in the terminal or the developer console (this PC).
+- Two copies (this PC, 127.0.0.1), 5 runs: B quits, A writes 3 lines ("Waiting"). B starts: A shows "Delivered" for
+  the 3 lines, B shows the note and the 3 lines once, and B logs one notification. A closes the window on the login
+  screen: A stays in the tray as "online for friends", and B still shows A as "Online". All G7b steps pass in the
+  5 runs.
+- Known older fault, not from G7b: at the Quit of the room part, A logged the `asscrack:invite` "Unknown room window"
+  line in 3 of 5 runs. The G7a check on `main` gave the same line in 2 of 3 runs. One run on each tree also gave a
+  Chromium GPU error line in the terminal.
 
 ## Unreleased — Resume of a kept download after a restart of the app (package P7c, 2026-11-21)
 

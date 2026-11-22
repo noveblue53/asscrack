@@ -39,7 +39,9 @@ contextBridge.exposeInMainWorld('friends', {
     openChat: friendId => ipcRenderer.invoke('asscrack:friend-open-chat', text(friendId)),
     retry: () => ipcRenderer.invoke('asscrack:unlock-archive'),
     onChanged: listen('asscrack:friends'),
-    onRequest: listen('asscrack:friend-request')
+    onRequest: listen('asscrack:friend-request'),
+    // G7b: a friend line for the attention rules (attention.js): { friendId, id, away, focused }. No text, no name.
+    onAttention: listen('asscrack:friend-attention')
 });
 
 contextBridge.exposeInMainWorld('asscrack', {
@@ -47,6 +49,12 @@ contextBridge.exposeInMainWorld('asscrack', {
     onIdlePeer: listen('asscrack:idle-peer'),
     enterIdlePeer: () => ipcRenderer.invoke('asscrack:enter-idle-peer'),
     setCloseToTray: enabled => ipcRenderer.invoke('asscrack:close-to-tray', enabled),
+    // P9B: start at sign-in (installed build only). choice: { mode: 'off' | 'friends' | 'room', roomId }.
+    getStartup: () => ipcRenderer.invoke('asscrack:startup'),
+    setStartup: choice => ipcRenderer.invoke('asscrack:set-startup', {
+        mode: String(choice?.mode ?? 'off'), roomId: choice?.roomId == null ? null : String(choice.roomId) }),
+    // The start at sign-in asks the window to reopen this saved room (the normal reopen path).
+    onStartRoom: listen('asscrack:start-room'),
     quit: () => ipcRenderer.send('asscrack:quit'),
     // G5: the Windows app shell. The window gets no path and no room ID.
     leaveRoom: () => ipcRenderer.invoke('asscrack:leave-room'),
