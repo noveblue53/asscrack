@@ -1,5 +1,6 @@
 import * as readline from 'readline'
 import { createAsscrackNode } from './node.mjs'
+import { terminalText as t } from './terminal-text.mjs'
 
 const args = process.argv.slice(2)
 let room = 'default'
@@ -26,18 +27,18 @@ console.log('Listening on:')
 node.getMultiaddrs().forEach(addr => console.log(addr))
 
 node.events.on('peer-discovered', ({ peerId, addresses }) => {
-    console.log('Discovered peer:', peerId)
-    addresses.forEach(addr => console.log('Peer address:', addr))
+    console.log('Discovered peer:', t(peerId))
+    addresses.forEach(addr => console.log('Peer address:', t(addr)))
 })
-node.events.on('peer-joined', ({ peerId }) => console.log('Chat ready with peer:', peerId))
-node.events.on('peer-left', ({ peerId }) => console.log('Chat closed with peer:', peerId))
-node.events.on('peer-name', ({ peerId, name }) => console.log(`Peer name: ${name} (${peerId})`))
-node.events.on('host-changed', ({ peerId, term }) => console.log(`Host: ${peerId} (term ${term})`))
-node.events.on('message', ({ from, text }) => console.log(`\n> ${from}: ${text}`))
+node.events.on('peer-joined', ({ peerId }) => console.log('Chat ready with peer:', t(peerId)))
+node.events.on('peer-left', ({ peerId }) => console.log('Chat closed with peer:', t(peerId)))
+node.events.on('peer-name', ({ peerId, name }) => console.log(`Peer name: ${t(name)} (${t(peerId)})`))
+node.events.on('host-changed', ({ peerId, term }) => console.log(`Host: ${t(peerId)} (term ${t(term)})`))
+node.events.on('message', ({ from, text }) => console.log(`\n> ${t(from)}: ${t(text)}`))
 node.events.on('file-offer', ({ from, name, size }) =>
-    console.log(`File offer from ${from}: ${name} (${size} bytes). The terminal demo does not receive files.`))
+    console.log(`File offer from ${t(from)}: ${t(name)} (${t(size)} bytes). The terminal demo does not receive files.`))
 node.events.on('history', ({ messages }) => {
-    for (const { from, text } of messages) console.log(`[history] > ${from}: ${text}`)
+    for (const { from, text } of messages) console.log(`[history] > ${t(from)}: ${t(text)}`)
 })
 
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: false })
