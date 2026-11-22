@@ -2,6 +2,7 @@ import { app, BrowserWindow, Menu, Notification, nativeImage, protocol, Tray, sc
 import { createRoomMedia } from './room-media.mjs';
 import { createRoomIpc } from './room-ipc.mjs';
 import { createImageDecoder } from './image-decoder.mjs';
+import { checkChosenFile } from './file-choice.mjs';
 import { APP_PRIVILEGES, APP_SCHEME, appPage, createAppHandler } from './app-scheme.mjs';
 import { createClipboardStaging } from './clipboard-image.mjs';
 import { createDownloadScratch } from './download-scratch.mjs';
@@ -9,6 +10,7 @@ import { clearLegacyDebugLogs } from './local-debug.mjs';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import path from 'path';
+import os from 'os';
 import { mkdirSync, appendFileSync, existsSync, readFileSync, writeFileSync, renameSync, rmSync } from 'fs';
 import { format } from 'util';
 import { createAsscrackNode, keyedServiceTag } from '../network/node.mjs';
@@ -1452,9 +1454,15 @@ handleRoomIpc('asscrack:topology', () => {
 });
 
 handleRoomIpc('asscrack:refresh-shelf', () => node?.refreshShelf());
+// L8: the folders that the room never gets a file from: the profile (archive, key files, logs, partials), the
+// default profile, and the folder of the release key. The window cannot prove the choice of the user (a drop).
+function chosenFile(filePath) {
+    return checkChosenFile(filePath, { blocked: [app.getPath('userData'), path.join(app.getPath('appData'), 'ASSCRACK'),
+        path.join(os.homedir(), '.asscrack-release')] });
+}
 handleRoomIpc('asscrack:share-file', (_event, filePath) => {
     if (!node || typeof filePath !== 'string' || !path.isAbsolute(filePath)) throw new Error('Choose a local file to share');
-    return node.publishShelfFile(filePath);
+    return node.publishShelfFile(chosenFile(filePath));
 });
 handleRoomIpc('asscrack:remove-shared-file', (_event, id) => node?.removeShelfFile(id) === true);
 handleRoomIpc('asscrack:download-shared-file', (_event, peerId, id) => node?.downloadShelfFile(peerId, id) === true);
@@ -1462,7 +1470,7 @@ handleRoomIpc('asscrack:download-shared-file', (_event, peerId, id) => node?.dow
 handleRoomIpc('asscrack:offer-file', (_event, filePath, recipientId) => {
     if (!node) throw new Error('Not logged in');
     if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) throw new Error('The file path is not an absolute path');
-    const result = node.offerFile(filePath, recipientId);
+    const result = node.offerFile(chosenFile(filePath), recipientId);
     Promise.resolve(result).then(offer => logAction('offer-file', offer?.offerId ?? ''), () => {});
     return result;
 });
@@ -1471,7 +1479,8 @@ handleRoomIpc('asscrack:offer-file', (_event, filePath, recipientId) => {
 handleRoomIpc('asscrack:post-media', async (_event, input, caption, channelId, recipientId) => {
     if (!node) throw new Error('Not logged in');
     const staged = input instanceof Uint8Array;
-    const filePath = staged ? clipboardImages.stage(input) : input;
+    // L8: a staged clipboard image is in the profile, and the main process made it. Each other path gets the check.
+    const filePath = staged ? clipboardImages.stage(input) : chosenFile(input);
     try {
         if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) throw new Error('A local file is required');
         if (recipientId !== undefined) {
