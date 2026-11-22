@@ -11,6 +11,7 @@ const sendButton = document.getElementById('send');
 const joinVoiceButton = document.getElementById('join-voice');
 const leaveVoiceButton = document.getElementById('leave-voice');
 const muteButton = document.getElementById('mute');
+const deafenButton = document.getElementById('deafen');
 const voiceError = document.getElementById('voice-error');
 const waitingPeer = document.getElementById('waiting-peer');
 
@@ -88,11 +89,13 @@ function formatTime(ms) {
 
 // The text of a chat line. A message with a quotation (quote.js) gets a quotation block. The text nodes keep all the
 // characters, thus textContent is the message text (copy and find use it). The marks "> " are in span.qmark.
+// Gap D2: at the end, each http:// or https:// URL becomes a link (chat-links.js). textContent does not change.
 function fillMessageText(span, text) {
     const value = String(text ?? '');
     const parts = window.quoteCore?.split(value) ?? null;
     if (!parts) {
         span.textContent = value;
+        window.chatLinks?.apply(span);
         return;
     }
     const block = document.createElement('span');
@@ -108,6 +111,7 @@ function fillMessageText(span, text) {
     });
     span.append(block);
     if (parts.rest) span.append(parts.rest);
+    window.chatLinks?.apply(span);
 }
 
 // A message line: <li><span.from/><span.bubble-text><span.text/><span.time/><button.btn-quote/></span></li>.
@@ -402,13 +406,15 @@ function applyRoster(actions) {
 // in the 10 s of G2 thus gives no cue. The entry stays while the roster holds the peer: the leave cue comes when the
 // roster removes the line. The states update also when I am not in voice, thus the states that come at my own Join
 // are not a change.
+// G6: "in voice" means "in my voice channel" (my channel at the time of each event). A move between two different
+// channels plays no cue.
 const VOICE_BASE_MS = 3 * 1000;
 const otherVoice = new Map();
 
 function otherInVoice(entry, now) {
     if (!entry) return false;
     if (entry.inVoice === null) return now - entry.openedAt > VOICE_BASE_MS ? false : null;
-    return entry.inVoice;
+    return entry.inVoice && (entry.channel ?? 'general') === ownVoiceChannel();
 }
 
 function otherVoiceOpened(peerId) {
@@ -421,16 +427,18 @@ function otherVoiceLoss() {
     for (const entry of otherVoice.values()) entry.lost = true;
 }
 
-function otherVoiceState(peerId, inVoice) {
+function otherVoiceState(peerId, inVoice, channel = 'general') {
     if (typeof peerId !== 'string' || !peerId || peerId === selfId) return;
     const now = Date.now();
     const entry = otherVoice.get(peerId);
     const before = otherInVoice(entry, now);
     const inBase = entry?.base === true && now - entry.openedAt <= VOICE_BASE_MS;
-    otherVoice.set(peerId, { inVoice, openedAt: entry?.openedAt ?? now, base: false, lost: entry?.lost === true });
+    const next = { inVoice, channel, openedAt: entry?.openedAt ?? now, base: false, lost: entry?.lost === true };
+    otherVoice.set(peerId, next);
+    const after = otherInVoice(next, now);
     // No entry: a state before the session event. Not a known change.
-    if (!entry || inBase || before === null || before === inVoice) return;
-    otherVoiceCue(inVoice ? 'other-join' : 'other-leave');
+    if (!entry || inBase || before === null || before === after) return;
+    otherVoiceCue(after ? 'other-join' : 'other-leave');
 }
 
 // The roster removes the line of a peer: at once after a bye, or at the end of the grey time.
@@ -446,13 +454,24 @@ function otherVoiceCue(kind) {
     if (ownInVoice && !joining) window.roomAttention?.cue(kind, 'voice-other');
 }
 
-window.asscrack.onVoiceState(data => otherVoiceState(data?.peerId, data?.inVoice === true));
+window.asscrack.onVoiceState(data => otherVoiceState(data?.peerId, data?.inVoice === true,
+    typeof data?.channel === 'string' && data.channel ? data.channel : 'general'));
 
 function peerJoined(peerId) {
     otherVoiceOpened(peerId);
     const notes = rosterNow();
     if (notes) applyRoster(notes.joined(peerId, Date.now(), peerNames.get(peerId)));
     else addPeer(peerId);
+    restoreListening(peerId);
+}
+
+// G4: the saved listening choice of this person in this room (the main process keys it by the device ID).
+function restoreListening(peerId) {
+    Promise.resolve(window.asscrack.getListening?.(peerId)).then(choice => {
+        if (!choice || !peerItems.has(peerId)) return;
+        window.voice.setListening?.(peerId, choice.muted, choice.volume);
+        updateVoiceView();
+    }).catch(err => console.warn('Listening choice not read:', err?.message ?? err));
 }
 
 function peerLeft(peerId, withBye) {
@@ -686,6 +705,7 @@ function roomStarted(result) {
     window.roomMembership?.start(result?.membership);
     if (result?.membership?.protected === false && internetRoom) statusBar.querySelector('.net-note').textContent = 'Legacy shared-code room';
     void window.roomChannels?.start();
+    void window.voiceChannels?.start();
     window.whispers?.refresh();
     refreshRoomTopic();
     startPresence();
@@ -784,6 +804,13 @@ async function sendMessage() {
         if (messageInput.value === reply) messageInput.value = '';
         return;
     }
+    // Milestone 9: /ready <text> opens a ready check (ready-check-ui.js). A text that is not valid stays in the box.
+    const ready = !quote && window.readyCheckUi?.command(reply);
+    if (ready) {
+        sendBusy = true;
+        try { if (await ready && messageInput.value === reply) messageInput.value = ''; } finally { sendBusy = false; }
+        return;
+    }
     const command = !quote && /^\/(topic|away)(?:\s+([\s\S]*))?$/i.exec(reply.trim());
     if (command) {
         sendBusy = true;
@@ -827,6 +854,37 @@ async function sendMessage() {
     if (typeof record?.saveError === 'string' && record.saveError && window.savedRoomsUi) {
         window.savedRoomsUi.saveFailed({ id: record.id, reason: record.saveError });
     }
+    return true;
+}
+
+// Gap D1: Enter and the Send button. The message box always belongs to the room.
+// - No file draft: sendMessage.
+// - A file for the entire room, a media file: sendFile. The text is the caption.
+// - A file for the entire room, not a media file: sendFile, then sendMessage when the offer had 1 or more peers and
+//   the box has the same text.
+// - A file for one person and an empty box: sendFile (a private offer).
+// - A file for one person and text in the box: sendMessage only. The draft stays: a text for one person must not go
+//   to the room by accident, and the file must not go with a text that the room gets.
+// Gap D3: each text of the box goes into the recall list of composer-keys.js.
+async function submitComposer() {
+    const reply = messageInput.value;
+    if (reply.trim()) window.composerKeys?.remember(reply);
+    if (!pendingFile) return sendMessage();
+    if (fileRecipient.value === 'room') {
+        if (isMediaFile(pendingFile)) return sendFile();
+        const channelId = window.roomChannels?.active() ?? 'general';
+        const result = await sendFile();
+        const sameView = !window.roomChannels || window.roomChannels.isViewing(channelId);
+        if (result && result.peers > 0 && reply.trim() && messageInput.value === reply && sameView) return sendMessage();
+        return Boolean(result);
+    }
+    if (!reply.trim()) return sendFile();
+    const recipientId = fileRecipient.value;
+    const sent = await sendMessage();
+    if (sent === true && pendingFile && fileRecipient.value === recipientId) {
+        status.textContent = `The file for ${transferPeerName(recipientId)} is still attached. Select “Send file” to send it.`;
+    }
+    return sent;
 }
 
 // True when no peer accepted the send (record of asscrack:send). An old bridge gives no count: the peer count decides.
@@ -898,12 +956,12 @@ inviteInput.addEventListener('keydown', e => {
         login();
     }
 });
-sendButton.addEventListener('click', sendMessage);
+sendButton.addEventListener('click', submitComposer);
 // Enter sends. Shift+Enter makes a new line. An IME composition keeps its Enter.
 messageInput.addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
         e.preventDefault();
-        sendMessage();
+        submitComposer();
     }
 });
 
@@ -915,28 +973,67 @@ const STATS_INTERVAL_MS = 250;
 let selfId = null;
 let hostId = null;
 let ownInVoice = false;
+// C8: the mute state stays through Leave and Join while the window runs. Idle Peer sets it to off.
 let ownMuted = false;
+// C2: Deafen mutes the microphone too. mutedBeforeDeafen comes back at Deafen off and at Leave.
+let ownDeafened = false;
+let mutedBeforeDeafen = false;
+// The text of a failed Join or Leave. The texts of the voice state (C1) come from voice.state().
+let voiceFailText = '';
 let joining = false;
+// G6: the own voice channel (voice.js keeps it), and the last channel of this run for "Join voice".
+let lastVoiceChannel = 'general';
+function ownVoiceChannel() {
+    return window.voice.state().channel ?? 'general';
+}
+// The text after the voice state: " · Raid" when the room has 2 or more voice channels.
+function channelSuffix(channelId) {
+    const name = window.voiceChannels?.label(channelId ?? 'general') ?? '';
+    return name ? ` · ${name}` : '';
+}
 let speaking = new Set(); // peerIds above SPEAKING_LEVEL in the last stats() read
 let statsTimer = null;
 let monitorActive = false;
 let lastMonitorView = '';
 
 function publishMonitorView(state, speakers) {
-    const view = { inVoice: ownInVoice, muted: ownMuted, transmitting: state.transmitting === true,
-        speakers, theme: document.documentElement.dataset.theme || 'aero-classic' };
+    const view = { inVoice: ownInVoice, muted: ownMuted, deafened: ownDeafened, transmitting: state.transmitting === true,
+        speakers, theme: document.documentElement.dataset.theme || 'aero-classic',
+        // G6: the microphone line of the detached panel starts with the channel name.
+        channel: ownInVoice && window.voiceChannels ? window.voiceChannels.name(state.channel ?? 'general') : '' };
     const key = JSON.stringify(view);
     if (key === lastMonitorView) return;
     lastMonitorView = key;
     window.roomVoiceMonitor.publish(view);
 }
 
-function setVoiceState(item, text) {
+// extra: the text after the state (G6 channel, G4 volume). data-state has the state only: the CSS of the voice marks
+// reads it.
+function setVoiceState(item, text, extra = '') {
     const span = item.querySelector('.voice-state');
     // No DOM write when the text is the same: the stats timer calls this 4 times each second.
-    if (span.dataset.state === text) return;
-    span.textContent = text;
+    if (span.dataset.state === text && span.dataset.extra === extra) return;
+    span.textContent = text + extra;
     span.dataset.state = text;
+    span.dataset.extra = extra;
+}
+
+// C5: the choice of this listener for a person (Listening dialog).
+function listeningTo(peerId) {
+    return window.voice.listeningFor?.(peerId) ?? { muted: false, volume: 100 };
+}
+
+// C1: the texts of the voice state, while in voice. Each text goes away when its cause goes away.
+function voiceStateText(state) {
+    if (!ownInVoice) return '';
+    const texts = [];
+    if (state.capturing === false && state.captureError) {
+        texts.push(window.voice.microphoneErrorText?.(state.captureError, true) ?? 'The microphone did not start.');
+    } else if (state.capturing === true && state.inputFallback === true) {
+        texts.push('The microphone was disconnected. ASSCRACK uses the default microphone.');
+    }
+    if (state.outputFallback === true) texts.push('The selected speakers are not connected. ASSCRACK uses the default speakers.');
+    return texts.join(' ');
 }
 
 function updateVoiceView() {
@@ -945,29 +1042,59 @@ function updateVoiceView() {
     const speakers = monitorActive ? [] : null;
     if (state.self) selfId = state.self;
     if (state.host !== undefined && state.host !== null) hostId = state.host;
+    // voice.js keeps the mute and Deafen state. This copy follows it.
+    if (typeof state.muted === 'boolean') ownMuted = state.muted;
+    if (typeof state.deafened === 'boolean') ownDeafened = state.deafened;
     for (const [peerId, item] of peerItems) {
         item.querySelector('.host-mark').hidden = peerId !== hostId;
         let text = 'not in voice';
-        if (members[peerId]?.inVoice) {
-            if (members[peerId].muted) text = 'in voice (muted)';
-            else text = speaking.has(peerId) ? 'speaking' : 'in voice';
+        let extra = '';
+        let talking = false;
+        const member = members[peerId];
+        if (member?.inVoice) {
+            const listen = listeningTo(peerId);
+            talking = !listen.muted && !member.muted && speaking.has(peerId);
+            if (listen.muted) text = 'muted for you';
+            else if (member.deafened) text = 'in voice (deafened)';
+            else if (member.muted) text = 'in voice (muted)';
+            else text = talking ? 'speaking' : 'in voice';
+            // G6, G4: state, channel, volume ("in voice (muted) · Raid · 40%").
+            extra = channelSuffix(member.channel);
+            if (listen.volume !== 100) extra += ` · ${listen.volume}%`;
         }
-        if (speakers && text === 'speaking') speakers.push(peerNames.get(peerId) || peerId.slice(-8));
-        setVoiceState(item, text);
+        // G4: the tooltip of the line gives the listening choice when it is not the default.
+        const choice = listeningTo(peerId);
+        const tip = choice.muted || choice.volume !== 100
+            ? `${peerId}\nListening volume ${choice.volume}%${choice.muted ? ', muted for you' : ''}` : peerId;
+        if (item.title !== tip) item.title = tip;
+        if (speakers && talking) speakers.push(peerNames.get(peerId) || peerId.slice(-8));
+        setVoiceState(item, text, extra);
     }
     if (selfLine) {
         selfLine.querySelector('.host-mark').hidden = selfId === null || selfId !== hostId;
-        let text = 'not in voice';
+        let text = ownMuted ? 'not in voice (mic muted)' : 'not in voice';
         // transmitting: the send gate of voice.js is open (voice activity or push to talk).
-        if (ownInVoice) text = ownMuted ? 'in voice (muted)' : (state.transmitting ? 'speaking' : 'in voice');
+        if (ownInVoice) {
+            if (ownDeafened) text = 'in voice (deafened)';
+            else if (state.capturing === false) text = 'in voice (no microphone)';
+            else if (ownMuted) text = 'in voice (muted)';
+            else text = state.transmitting ? 'speaking' : 'in voice';
+        }
         if (speakers && text === 'speaking') speakers.unshift('You');
-        setVoiceState(selfLine, text);
+        setVoiceState(selfLine, text, ownInVoice ? channelSuffix(state.channel) : '');
     }
+    renderVoiceChannels(state, members);
+    const errorText = voiceFailText || voiceStateText(state);
+    // #voice-error is an alert: write it only when the text changes (the stats timer calls this 4 times each second).
+    if (voiceError.textContent !== errorText) voiceError.textContent = errorText;
     joinVoiceButton.hidden = ownInVoice;
     joinVoiceButton.disabled = joining;
     leaveVoiceButton.hidden = !ownInVoice;
-    muteButton.hidden = !ownInVoice;
+    // C8: Mute also before Join.
+    muteButton.hidden = false;
     muteButton.textContent = ownMuted ? 'Unmute' : 'Mute';
+    deafenButton.hidden = !ownInVoice;
+    deafenButton.setAttribute('aria-pressed', String(ownDeafened));
     const ptt = document.getElementById('ptt-state');
     if (ptt) {
         ptt.hidden = !ownInVoice || state.inputMode !== 'ptt';
@@ -978,6 +1105,24 @@ function updateVoiceView() {
     if (speakers) publishMonitorView(state, speakers);
     document.body.classList.toggle('in-voice', ownInVoice);
     updateNodeMap();
+}
+
+// G6: the people of each voice channel, for voice-channels-ui.js.
+function renderVoiceChannels(state, members) {
+    if (!window.voiceChannels) return;
+    const people = [];
+    if (ownInVoice && selfLine) {
+        people.push({ peerId: selfId ?? 'self', name: ownName, self: true, inVoice: true, channel: state.channel ?? 'general',
+            muted: ownMuted, deafened: ownDeafened, speaking: state.transmitting === true && !ownMuted });
+    }
+    for (const [peerId, item] of peerItems) {
+        const member = members[peerId];
+        if (!member?.inVoice) continue;
+        people.push({ peerId, name: item.querySelector('.name').textContent, inVoice: true, channel: member.channel ?? 'general',
+            muted: member.muted === true, deafened: member.deafened === true,
+            speaking: speaking.has(peerId) && !listeningTo(peerId).muted });
+    }
+    window.voiceChannels.render({ inVoice: ownInVoice, channel: state.channel ?? 'general', people });
 }
 
 async function refreshHostInfo() {
@@ -1015,51 +1160,116 @@ function stopStatsTimer() {
     speaking = new Set();
 }
 
-async function joinVoice() {
+// G6: "Join voice" joins the last channel of this run (when it still exists), else General.
+async function joinVoice(channelId = lastVoiceChannel) {
     if (joining || ownInVoice) return;
+    const channel = window.voiceChannels?.has(channelId) ? channelId : 'general';
     joining = true;
-    voiceError.textContent = '';
+    voiceFailText = '';
     updateVoiceView();
     try {
-        await window.voice.join();
+        // C1 and N1: a microphone error does not stop Join. voice.state() then gives the text.
+        await window.voice.join(channel);
         if (window.idlePeer?.isIdle()) return;
         window.roomAttention?.cue('join');
+        lastVoiceChannel = channel;
         ownInVoice = true;
-        ownMuted = false;
+        ownDeafened = false;
         startStatsTimer();
     } catch (err) {
-        if (err?.message !== 'Voice capture ended') voiceError.textContent = `Voice error: ${errorText(err)}`;
+        if (err?.message !== 'Voice capture ended') voiceFailText = `Voice error: ${errorText(err)}`;
     } finally {
         joining = false;
         updateVoiceView();
     }
 }
 
+// G6: move to a different voice channel. The microphone stays open. My own move plays the join cue.
+async function moveVoice(channelId) {
+    if (!ownInVoice || joining || window.idlePeer?.isIdle() || !window.voiceChannels?.has(channelId)) return;
+    if (channelId === ownVoiceChannel()) return;
+    voiceFailText = '';
+    try {
+        await window.voice.move?.(channelId);
+        lastVoiceChannel = channelId;
+        window.roomAttention?.cue('join');
+    } catch (err) {
+        voiceFailText = `Voice error: ${errorText(err)}`;
+    }
+    updateVoiceView();
+}
+
+// G6: the owner deleted my voice channel. The node moved me to General (voice.js follows it).
+function voiceChannelMoved(movedFrom) {
+    if (lastVoiceChannel === movedFrom?.id) lastVoiceChannel = 'general';
+    if (!ownInVoice) return;
+    showNotice(window.voiceChannels?.movedText(String(movedFrom?.name ?? '')) ?? '');
+    window.roomAttention?.cue('join');
+    updateVoiceView();
+}
+
 async function leaveVoice() {
     stopStatsTimer();
     ownInVoice = false;
-    ownMuted = false;
+    // C2: Leave turns Deafen off. C8: the mute state stays.
+    if (ownDeafened) ownMuted = mutedBeforeDeafen;
+    ownDeafened = false;
     updateVoiceView();
     try {
         await window.voice.leave();
         window.roomAttention?.cue('leave');
     } catch (err) {
-        voiceError.textContent = `Voice error: ${errorText(err)}`;
+        voiceFailText = `Voice error: ${errorText(err)}`;
     }
     updateVoiceView();
 }
 
+// C8: Mute works also before Join. C2: Unmute while deafened also turns Deafen off.
 function toggleMute() {
-    if (!ownInVoice) return;
-    ownMuted = !ownMuted;
+    if (window.idlePeer?.isIdle()) return;
+    if (ownDeafened) {
+        ownDeafened = false;
+        ownMuted = false;
+    } else {
+        ownMuted = !ownMuted;
+    }
     window.voice.setMuted(ownMuted);
     window.roomAttention?.cue(ownMuted ? 'mute' : 'unmute');
     updateVoiceView();
 }
 
-joinVoiceButton.addEventListener('click', joinVoice);
+// C2: Deafen, only in voice. Its cues are the mute and unmute cues.
+function toggleDeafen() {
+    if (!ownInVoice || window.idlePeer?.isIdle()) return;
+    if (ownDeafened) {
+        ownDeafened = false;
+        ownMuted = mutedBeforeDeafen;
+    } else {
+        mutedBeforeDeafen = ownMuted;
+        ownDeafened = true;
+        ownMuted = true;
+    }
+    window.voice.setDeafened(ownDeafened);
+    window.roomAttention?.cue(ownDeafened ? 'mute' : 'unmute');
+    updateVoiceView();
+}
+
+joinVoiceButton.addEventListener('click', () => joinVoice());
 leaveVoiceButton.addEventListener('click', leaveVoice);
 muteButton.addEventListener('click', toggleMute);
+deafenButton.addEventListener('click', toggleDeafen);
+// C6 and C2: Ctrl+Shift+M changes Mute and Ctrl+Shift+D changes Deafen, while the room is open. Not a global key:
+// the key hook runs only in push-to-talk mode (ptt-hook.mjs).
+document.addEventListener('keydown', e => {
+    if (!e.ctrlKey || !e.shiftKey || e.altKey || e.metaKey || e.repeat || e.defaultPrevented || chatScreen.hidden) return;
+    if (e.code === 'KeyM') {
+        e.preventDefault();
+        toggleMute();
+    } else if (e.code === 'KeyD' && ownInVoice) {
+        e.preventDefault();
+        toggleDeafen();
+    }
+});
 window.roomVoiceMonitor?.onActive(active => {
     monitorActive = active;
     lastMonitorView = '';
@@ -1080,6 +1290,9 @@ const fileInput = document.getElementById('file-input');
 const attachFileButton = document.getElementById('attach-file');
 const fileDraft = document.getElementById('file-draft');
 const fileDraftName = document.getElementById('file-draft-name');
+// Gap D1: the size of the file, and a small picture for an image.
+const fileDraftSize = document.getElementById('file-draft-size');
+const fileDraftThumb = document.getElementById('file-draft-thumb');
 const removeFileButton = document.getElementById('file-remove');
 const fileRecipient = document.getElementById('file-recipient');
 const sendFileButton = document.getElementById('send-file');
@@ -1382,10 +1595,35 @@ function changeListening() {
     listenerPercent.textContent = `${volume}%`;
     listenerVolume.setAttribute('aria-valuetext', listenerPercent.textContent);
     window.voice.setListening(id, listenerMuted.checked, volume);
+    // C5: setListening gives no change event. The line shows "muted for you" and the volume.
+    updateVoiceView();
 }
 
-listenerMuted?.addEventListener('change', changeListening);
+// G4: save the choice when it stops changing (a slider gives many input events). The default removes the entry.
+function saveListening() {
+    const id = listeningDialog.dataset.peerId;
+    if (!listeningDialog.open || !peerItems.has(id)) return;
+    const choice = window.voice.listeningFor(id);
+    Promise.resolve(window.asscrack.setListening?.(id, choice.muted, choice.volume))
+        .catch(err => console.warn('Listening choice not saved:', err?.message ?? err));
+}
+
+// G4: Reset and a double-click on the label of the slider.
+function setListeningVolume(volume, muted = listenerMuted.checked) {
+    listenerMuted.checked = muted;
+    listenerVolume.value = String(volume);
+    changeListening();
+    saveListening();
+}
+
+listenerMuted?.addEventListener('change', () => {
+    changeListening();
+    saveListening();
+});
 listenerVolume?.addEventListener('input', changeListening);
+listenerVolume?.addEventListener('change', saveListening);
+document.getElementById('listener-volume-label')?.addEventListener('dblclick', () => setListeningVolume(100));
+document.getElementById('listener-reset')?.addEventListener('click', () => setListeningVolume(100, false));
 
 // Copy the display name of a buddy. The own line copies the name without "(you)".
 function copyBuddyName(row) {
@@ -1421,8 +1659,10 @@ function rowInfo(row) {
         return buddyId(row) === null ? null : { kind: 'buddy', inspect: Boolean(window.peerInspector), whisper: Boolean(window.whispers), self: false, onMap: true };
     }
     if (row.parentElement === messageList && !row.classList.contains('file-card')) {
-        return { kind: 'message', details: Boolean(row.querySelector('.text')), inspect: Boolean(window.peerInspector && peerItems.has(row.dataset.peerId)), quotable: selfLine !== null && row.querySelector('.text') !== null, localOnly: row.classList.contains('local-only') };
+        return { kind: 'message', details: Boolean(row.querySelector('.text')), inspect: Boolean(window.peerInspector && peerItems.has(row.dataset.peerId)), quotable: selfLine !== null && row.querySelector('.text') !== null, localOnly: row.classList.contains('local-only'), link: Boolean(window.chatLinks?.firstLink(row)), image: window.chatMedia?.hasImage?.(row) === true };
     }
+    // G6: a voice channel row (voice-channels-ui.js).
+    if (row.parentElement?.id === 'voice-channel-list') return window.voiceChannels?.rowInfo(row) ?? null;
     if (row.parentElement === transferList || row.parentElement === messageList) {
         if (row.classList.contains('offer-head')) {
             const head = offerHeads.get(row.dataset.offerId);
@@ -1456,6 +1696,8 @@ function runRowAction(action, row) {
         case 'listening': return showListening(row);
         case 'show-on-map': return showBuddyOnMap(buddyId(row));
         case 'copy-message': return copyMessageText(row);
+        case 'open-link': return window.chatLinks?.openFirst(row) ?? false;
+        case 'view-image': return window.chatMedia?.viewImage?.(row) ?? false;
         case 'quote': return quoteMessage(row);
         case 'resend': return resendMessage(row);
         case 'accept': return acceptTransfer(transferKey(row));
@@ -1465,6 +1707,8 @@ function runRowAction(action, row) {
         case 'cancel-receiver': return cancelToReceiver(transferKey(row));
         case 'cancel-offer': return cancelWholeOffer(row.dataset.offerId);
         case 'reveal': return revealTransfer(transferKey(row));
+        case 'rename-voice-channel': return window.voiceChannels?.rename(row) ?? false;
+        case 'delete-voice-channel': return window.voiceChannels?.remove(row) ?? false;
         default: return false;
     }
 }
@@ -1704,10 +1948,50 @@ function addOfferHead(offer, recipientId) {
     transferList.scrollTop = transferList.scrollHeight;
 }
 
+// A media file goes with postMedia (a chat line with a preview).
+function isMediaFile(file) {
+    return /\.(png|jpe?g|webp|gif|mp4|webm|m4v|mov|ogv)$/i.test(file?.name ?? '') || file?.type === 'image/png';
+}
+
+// Gap D1: a 48 px picture of an image file of 16 MiB or less, made with createImageBitmap (no blob: URL: the
+// content security policy has no blob: source). On an error there is no picture.
+const DRAFT_THUMB_PX = 48;
+const DRAFT_THUMB_MAX_BYTES = 16 * 1024 * 1024;
+let thumbFile = null;
+async function drawDraftThumb(file) {
+    if (!fileDraftThumb) return;
+    fileDraftThumb.hidden = true;
+    if (!file || !String(file.type).startsWith('image/') || file.size > DRAFT_THUMB_MAX_BYTES
+        || typeof createImageBitmap !== 'function') return;
+    let bitmap = null;
+    try {
+        bitmap = await createImageBitmap(file);
+        if (thumbFile !== file || !bitmap.width || !bitmap.height) return;
+        const scale = Math.min(DRAFT_THUMB_PX / bitmap.width, DRAFT_THUMB_PX / bitmap.height, 1);
+        const width = Math.max(1, Math.round(bitmap.width * scale));
+        const height = Math.max(1, Math.round(bitmap.height * scale));
+        fileDraftThumb.width = DRAFT_THUMB_PX;
+        fileDraftThumb.height = DRAFT_THUMB_PX;
+        const context = fileDraftThumb.getContext('2d');
+        context.clearRect(0, 0, DRAFT_THUMB_PX, DRAFT_THUMB_PX);
+        context.drawImage(bitmap, (DRAFT_THUMB_PX - width) / 2, (DRAFT_THUMB_PX - height) / 2, width, height);
+        fileDraftThumb.hidden = false;
+    } catch {
+        fileDraftThumb.hidden = true;
+    } finally {
+        bitmap?.close?.();
+    }
+}
+
 function updateFileDraft() {
     fileDraft.hidden = pendingFile === null;
     fileDraftName.textContent = pendingFile?.name ?? '';
     fileDraftName.title = fileDraftName.textContent;
+    if (fileDraftSize) fileDraftSize.textContent = pendingFile ? formatSize(pendingFile.size) : '';
+    if (pendingFile !== thumbFile) {
+        thumbFile = pendingFile;
+        void drawDraftThumb(pendingFile);
+    }
     attachFileButton.disabled = offeringFile;
     removeFileButton.disabled = offeringFile;
     fileRecipient.disabled = offeringFile;
@@ -1744,7 +2028,7 @@ async function sendFile() {
     const caption = window.quoteCore.compose(quote, reply);
     const channelId = window.roomChannels?.active() ?? 'general';
     try {
-        const media = /\.(png|jpe?g|webp|gif|mp4|webm|m4v|mov|ogv)$/i.test(file.name) || file.type === 'image/png';
+        const media = isMediaFile(file);
         let posted;
         if (media && typeof window.asscrack.postMedia === 'function') {
             posted = await window.asscrack.postMedia(file, caption, channelId, recipientId);
@@ -1752,7 +2036,7 @@ async function sendFile() {
         const result = posted?.offer ?? await window.asscrack.offerFile(file, recipientId);
         if (result.peers === 0) {
             status.textContent = 'No peer received the offer. The file is still attached.';
-            return;
+            return null;
         }
         if (posted?.message) {
             const m = posted.message;
@@ -1765,6 +2049,12 @@ async function sendFile() {
             } else window.roomChannels.sent(channelId, reply, quote);
         }
         addOfferHead(result, recipientId);
+        // Gap N5: an offer with no chat line gets a note row in the channel, thus the sender sees it in the chat.
+        if (!posted?.message) {
+            const size = formatSize(Number.isFinite(result.size) ? result.size : file.size);
+            const audience = recipientId === undefined ? 'the room' : transferPeerName(recipientId);
+            window.transcriptNotes?.append('offer', `You offered ${result.name ?? file.name} (${size}) to ${audience}.`, Date.now(), channelId);
+        }
         if (!window.roomChannels || window.roomChannels.isViewing(channelId)) {
             if (pendingFile === file) pendingFile = null;
         } else window.roomChannels.fileSent(channelId, file);
@@ -1772,15 +2062,27 @@ async function sendFile() {
             messageInput.focus({ preventScroll: true });
         }
         status.textContent = '';
+        return result;
     } catch (err) {
         status.textContent = `Error: ${errorText(err)}`;
+        return null;
     } finally {
         offeringFile = false;
         updateFileDraft();
     }
 }
 
+// Gap N7: a paste of exactly one file that has a local path (for example a file copied in Explorer) attaches it.
+// The preload says only true or false (canSendFile), never the path. Else a PNG of the clipboard (a screenshot)
+// attaches as before.
 messageInput.addEventListener('paste', event => {
+    const files = Array.from(event.clipboardData?.files ?? []);
+    if (files.length === 1 && window.asscrack.canSendFile?.(files[0]) === true) {
+        event.preventDefault();
+        attachFile(files[0]);
+        messageInput.focus({ preventScroll: true });
+        return;
+    }
     const item = Array.from(event.clipboardData?.items ?? []).find(item => item.kind === 'file' && item.type === 'image/png');
     const file = item?.getAsFile();
     if (!file) return;
@@ -1865,7 +2167,7 @@ function updateNodeMap() {
     const nodes = [];
     if (self) {
         selfLine.dataset.peerId = self;
-        nodes.push({ id: self, name: ownName, color: nameColorClass(ownName), idle: selfIdle, inVoice: voice.inVoice === true, muted: ownMuted, speaking: voice.transmitting === true && !ownMuted, fullNode: fullNodeSelf });
+        nodes.push({ id: self, name: ownName, color: nameColorClass(ownName), idle: selfIdle, inVoice: voice.inVoice === true, muted: ownMuted, speaking: voice.transmitting === true && !ownMuted, fullNode: fullNodeSelf, channel: window.voiceChannels?.label(voice.channel ?? 'general') ?? '' });
     }
     for (const [peerId, item] of peerItems) {
         const name = item.querySelector('.name').textContent;
@@ -1875,7 +2177,10 @@ function updateNodeMap() {
             color: nameColorClass(name),
             inVoice: members[peerId]?.inVoice === true,
             muted: members[peerId]?.muted === true,
-            speaking: speaking.has(peerId),
+            // G6: the channel name when the room has 2 or more voice channels.
+            channel: window.voiceChannels?.label(members[peerId]?.channel ?? 'general') ?? '',
+            // C5: no speaking mark for a person that is muted for me.
+            speaking: speaking.has(peerId) && !listeningTo(peerId).muted,
             idle: idlePeerIds.has(peerId),
             fullNode: fullNodePeers.has(peerId)
         });
@@ -2380,6 +2685,7 @@ document.addEventListener('keydown', e => {
             stopStatsTimer();
             ownInVoice = false;
             ownMuted = false;
+            ownDeafened = false;
             void window.voice.enterIdle();
             updateVoiceView();
         }

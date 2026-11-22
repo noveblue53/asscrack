@@ -123,6 +123,73 @@ test('the saved-room calls of part 2 send the room ID as text and a strict true 
     ]);
 });
 
+test('the listening calls of G4 send the peer ID as text, a strict true or false, and a number', () => {
+    const b = loadBridge();
+    b.api.getListening(7);
+    b.api.setListening('peer-1', 'yes', '150');
+    b.api.setListening('peer-2', true, 40);
+    assert.deepEqual(b.invoked, [
+        ['asscrack:get-listening', '7'],
+        ['asscrack:set-listening', 'peer-1', false, 150],
+        ['asscrack:set-listening', 'peer-2', true, 40]
+    ]);
+});
+
+// Goal G3 (gaps D2 and N7) adds two bridge functions. openLink sends only a text to asscrack:open-link; the main
+// process checks it (link-policy.mjs). canSendFile gives only true or false, never the path of the file.
+test('openLink sends the href as text, and canSendFile gives a boolean and never the path', () => {
+    const b = loadBridge();
+    b.api.openLink('https://example.com/a(b)');
+    b.api.openLink({ toString: () => 'https://example.com/x' });
+    assert.deepEqual(b.invoked, [['asscrack:open-link', 'https://example.com/a(b)'], ['asscrack:open-link', 'https://example.com/x']]);
+    assert.equal(b.api.canSendFile({ path: 'C:/Users/x/report.docx' }), true);
+    assert.equal(b.api.canSendFile({ name: 'screenshot.png' }), false);
+    assert.equal(b.api.canSendFile(null), false);
+    assert.deepEqual(b.touched, []);
+});
+
+// Goal G6 adds five bridge functions for the voice channels. Each call sends only text to its own IPC channel; the
+// main process asks the node, and the node checks the owner and the name.
+test('the voice channel calls of G6 send the channel ID and the name as text', async () => {
+    const b = loadBridge();
+    assert.deepEqual(await b.api.getVoiceChannels(), { channel: 'asscrack:voice-channels' });
+    b.api.createVoiceChannel('Raid');
+    b.api.renameVoiceChannel({ toString: () => 'id-1' }, 42);
+    b.api.deleteVoiceChannel('id-2');
+    assert.deepEqual(b.invoked, [
+        ['asscrack:voice-channels'],
+        ['asscrack:voice-channel-create', 'Raid'],
+        ['asscrack:voice-channel-rename', 'id-1', '42'],
+        ['asscrack:voice-channel-delete', 'id-2']
+    ]);
+    const got = [];
+    b.api.onVoiceChannels(view => got.push(view));
+    b.emit('asscrack:voice-channels', { seq: 1 });
+    assert.deepEqual(got, [{ seq: 1 }]);
+    assert.deepEqual(b.touched, []);
+});
+
+// Milestone 9 (ready check) adds five bridge functions. Each call sends only texts; the node checks the values.
+test('the ready check calls send the text, the check ID and the vote as text, and onReady gives the view', () => {
+    const b = loadBridge();
+    b.api.getReady();
+    b.api.openReady('Race in five?');
+    b.api.openReady();
+    b.api.voteReady(7, 'ready');
+    b.api.closeReady({ toString: () => 'id-1' });
+    assert.deepEqual(b.invoked, [
+        ['asscrack:ready-state'],
+        ['asscrack:ready-open', 'Race in five?'],
+        ['asscrack:ready-open', ''],
+        ['asscrack:ready-vote', '7', 'ready'],
+        ['asscrack:ready-close', 'id-1']
+    ]);
+    const got = [];
+    b.api.onReady(view => got.push(view));
+    b.emit('asscrack:ready', { checks: [] });
+    assert.deepEqual(JSON.parse(JSON.stringify(got)), [{ checks: [] }]);
+});
+
 // G5: the calls of the Windows app shell. The window gives no path and no room ID: the main process has them.
 test('the G5 calls send their IPC channel with no path, and the alias call sends at most 64 IDs as text', () => {
     const b = loadBridge();

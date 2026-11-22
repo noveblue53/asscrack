@@ -122,6 +122,8 @@
                 inVoice,
                 muted,
                 speaking: inVoice && !muted && item.speaking === true,
+                // G6: the voice channel name ('' when the room has only General).
+                channel: inVoice ? text(item.channel) : '',
                 idle: item.idle === true,
                 fullNode: item.fullNode === true
             });
@@ -240,7 +242,7 @@
         if (data.host) facts.push('host: the voice relay of the room');
         if (data.fullNode) facts.push('Full node · available to relay');
         if (data.linkToYou) facts.push('Chat link to you · ' + data.linkToYou);
-        if (data.inVoice) facts.push(data.speaking ? 'speaks now' : data.muted ? 'in voice (muted)' : 'in voice');
+        if (data.inVoice) facts.push((data.speaking ? 'speaks now' : data.muted ? 'in voice (muted)' : 'in voice') + (data.channel ? ' · ' + data.channel : ''));
         else facts.push('not in voice');
         node.group.setAttribute('aria-label', data.self ? 'Edit your availability and status note' : 'Inspect ' + data.name);
         node.title.textContent = facts.join('\n');

@@ -1,18 +1,19 @@
 // Load the real classic scripts of the room window (reading.js, transcript-notes.js, room-link.js, find.js, quote.js,
-// highlights.js, renderer.js, menu.js) in node:vm
+// chat-links.js, highlights.js, renderer.js, composer-keys.js, menu.js) in node:vm
 // with the fake DOM of fake-dom.mjs and a bridge (window.asscrack) that the test controls. voice.js, nodemap.js and
 // layout.js do not load: small stubs take their place. No network, no Electron.
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { createDom } from './fake-dom.mjs';
 
-const SCRIPTS = ['reading.js', 'transcript-notes.js', 'room-link.js', 'find.js', 'quote.js', 'highlights.js', 'renderer.js', 'menu.js'];
+const SCRIPTS = ['reading.js', 'transcript-notes.js', 'room-link.js', 'find.js', 'quote.js', 'chat-links.js', 'highlights.js',
+    'renderer.js', 'composer-keys.js', 'menu.js'];
 const sources = await Promise.all(SCRIPTS.map(name =>
     readFile(new URL(`../../src/application/${name}`, import.meta.url), 'utf8')));
 
 const IDS = ['chat-room', 'chat-screen', 'copy-invite', 'full-node-state', 'invite-code',
     'invite-field', 'invite-input', 'invite-note', 'invite-panel', 'invite-toggle', 'join-voice', 'leave-voice',
-    'login', 'login-screen', 'map-close', 'map-panel', 'map-toggle', 'mute', 'peer-count', 'peers',
+    'login', 'login-screen', 'map-close', 'map-panel', 'map-toggle', 'mute', 'deafen', 'peer-count', 'peers',
     'public-address', 'public-address-field', 'room', 'room-field', 'status', 'transfer-count',
     'transfers', 'username', 'voice-error'];
 
@@ -104,7 +105,8 @@ function makeBridge(options) {
 // options.send: async (text) => peer count, or throw. options.api: bridge calls that must exist before the scripts
 // load. options.clock: a clock of fake-clock.mjs for the timers and Date of the scripts (default: the real timers,
 // and setInterval does nothing). options.globals: more globals of the scripts (for example AudioContext and navigator
-// for attention.js). Returns the fixture.
+// for attention.js). options.before: classic scripts that load before the room scripts, each as its own script (for
+// example voice-gate.js and the real voice.js in place of the voice stub). Returns the fixture.
 export async function loadRoomWindow(options = {}) {
     const { document, window, Event } = createDom([...layout(), ...(options.elements ?? [])]);
     const { bridge, handlers, calls } = makeBridge(options);
@@ -119,7 +121,8 @@ export async function loadRoomWindow(options = {}) {
             stats: async () => null,
             join: async () => {},
             leave: async () => {},
-            setMuted() {}
+            setMuted() {},
+            setDeafened() {}
         },
         nodeMap: null,
         layout: { closeTopLayer: () => false }
@@ -136,6 +139,8 @@ export async function loadRoomWindow(options = {}) {
         queueMicrotask,
         Promise,
         Event,
+        // chat-links.js reads each link with new URL().
+        URL,
         MutationObserver: class {
             observe() {}
             disconnect() {}
@@ -148,6 +153,10 @@ export async function loadRoomWindow(options = {}) {
     // Classic scripts: a top-level const of one script is visible to the next one (one global scope).
     const extra = await Promise.all((options.scripts ?? []).map(name =>
         readFile(new URL(`../../src/application/${name}`, import.meta.url), 'utf8')));
+    for (const name of options.before ?? []) {
+        const source = await readFile(new URL(`../../src/application/${name}`, import.meta.url), 'utf8');
+        vm.runInContext(source, context, { filename: name });
+    }
     vm.runInContext([...sources, ...extra].join('\n;\n'), context, { filename: 'room-window.js' });
 
     const fixture = {

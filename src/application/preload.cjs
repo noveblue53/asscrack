@@ -66,6 +66,16 @@ contextBridge.exposeInMainWorld('asscrack', {
     onFullNodeAddrs: listen('asscrack:full-node-addrs'),
     onUpnp: listen('asscrack:upnp'),
     copyText: text => ipcRenderer.invoke('asscrack:copy-text', text),
+    // Gap D2: open a chat link in the system browser. The main process checks the URL (link-policy.mjs).
+    openLink: href => ipcRenderer.invoke('asscrack:open-link', String(href)),
+    // Gap N7: true when the file has a local path that offerFile can send. The window never gets the path.
+    canSendFile: file => {
+        try {
+            return Boolean(webUtils.getPathForFile(file));
+        } catch {
+            return false;
+        }
+    },
     getRoomActivity: (peerId, transfersOnly) => ipcRenderer.invoke('asscrack:room-activity', peerId, transfersOnly === true),
     getWhisperPeers: () => ipcRenderer.invoke('asscrack:whisper-peers'),
     sendWhisper: (peerId, text, id) => ipcRenderer.invoke('asscrack:whisper-send', peerId, text, id),
@@ -82,6 +92,17 @@ contextBridge.exposeInMainWorld('asscrack', {
     onHistory: listen('asscrack:history'),
     signal: (peerId, data) => ipcRenderer.invoke('asscrack:signal', { peerId, data }),
     setVoice: state => ipcRenderer.invoke('asscrack:set-voice', state),
+    // G6: the voice channels of the room: { owner, editable, seq, channels: [{ id, name }] }.
+    getVoiceChannels: () => ipcRenderer.invoke('asscrack:voice-channels'),
+    onVoiceChannels: listen('asscrack:voice-channels'),
+    createVoiceChannel: name => ipcRenderer.invoke('asscrack:voice-channel-create', String(name)),
+    renameVoiceChannel: (id, name) => ipcRenderer.invoke('asscrack:voice-channel-rename', String(id), String(name)),
+    deleteVoiceChannel: id => ipcRenderer.invoke('asscrack:voice-channel-delete', String(id)),
+    // G4: the saved listening choice (volume, "Mute for me") of a person in this room. The main process finds the
+    // device ID of the peer: the window never gives a name or a device ID.
+    getListening: peerId => ipcRenderer.invoke('asscrack:get-listening', String(peerId)),
+    setListening: (peerId, muted, volume) => ipcRenderer.invoke('asscrack:set-listening', String(peerId), muted === true,
+        Number(volume)),
     // Uint8Array of one Opus frame. A plain send: 50 frames each second.
     sendVoiceFrame: bytes => ipcRenderer.send('asscrack:voice-frame', bytes),
     onVoiceFrame: listen('asscrack:voice-frame'),
@@ -113,6 +134,12 @@ contextBridge.exposeInMainWorld('asscrack', {
     onSignal: listen('asscrack:signal'),
     onVoiceState: listen('asscrack:voice-state'),
     onHostChanged: listen('asscrack:host-changed'),
+    // Ready check (milestone 9).
+    getReady: () => ipcRenderer.invoke('asscrack:ready-state'),
+    openReady: text => ipcRenderer.invoke('asscrack:ready-open', String(text ?? '')),
+    voteReady: (id, vote) => ipcRenderer.invoke('asscrack:ready-vote', String(id), String(vote)),
+    closeReady: id => ipcRenderer.invoke('asscrack:ready-close', String(id)),
+    onReady: listen('asscrack:ready'),
     getTopic: () => ipcRenderer.invoke('asscrack:topic'),
     setTopic: text => ipcRenderer.invoke('asscrack:set-topic', text),
     onTopic: listen('asscrack:topic'),

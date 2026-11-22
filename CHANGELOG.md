@@ -7,6 +7,173 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased — Windows app shell (goal G5, 2026-11-21)
+
+ASSCRACK now acts like a Windows app.
+- The window keeps its size, its position and its maximized state. A window on a display that is gone comes back
+  into view. The minimum size is 560 x 480.
+- A mention or a whisper outside your view flashes the taskbar button and puts a dot on it, until you open the
+  window. A new box in Sound & notifications turns the flash off.
+- The window title shows the room and the count of unread highlights and whispers, for example "(2) Room – ASSCRACK".
+- View has "About ASSCRACK…" (version, Copy version info, Open data folder) and "Keyboard shortcuts…" (also F1).
+  On the login screen View shows only the lines that work there.
+- "Leave room…" in the Room menu leaves the room with no restart. The dialog says what you lose and how many
+  file transfers stop. View, Quit asks first when file transfers are active.
+- The tray menu has "Close to Idle Peer". A balloon tells you at the first close to the tray, and when the close
+  ended voice.
+- Recent events in the peer inspector show the local time and the buddy names.
+
+Results:
+- `npm test` passes (127.0.0.1).
+- The window bounds are the same after a quit and a start (this PC).
+- Two copies (127.0.0.1): B leaves the room and joins again with the same invite. A line goes in each direction.
+  Then B leaves again and makes a room of its own. The change gives no ERROR line.
+- About shows 0.8.0 (this PC).
+- A minimized copy writes the log lines of the taskbar flash "on" and "off" (127.0.0.1).
+- Windows sent the event of a shown tray balloon (this PC). The look of the flash and the balloon is for the
+  operator.
+
+## Unreleased — voice channels (goal G6, 2026-11-21)
+
+A protected room gets named voice channels, like Discord. Each person is in one channel at a time. The room window
+shows each channel with its people, and one click joins a channel or moves to it.
+
+- **Channels.** The Buddies panel has the section "Voice channels". General is always there. Each row shows the name,
+  the number of people and the people in it, with "muted" or "deafened". The own channel shows "(you)". A click or
+  Enter on a row joins (not in voice) or moves (in voice). "Join voice" joins the last channel of this run.
+- **Only the room owner edits.** The owner sees Create. The row menu of the owner has Rename and Delete. At most 16
+  channels, each name 1 to 40 characters and unique with no case. The owner device signs the list. Each member keeps
+  the newest valid list, sends it to the other members and saves it with the room. A legacy shared-code room has
+  only General.
+- **Delete.** Delete asks first and gives the number of people in the channel. These people move to General, and
+  each one sees a text about the move to General.
+- **Routing.** The host sends the voice of a person only to the people in the same channel. Two people get a direct
+  voice stream only in the same channel. After a move, a person sends no voice for 250 milliseconds. A move does
+  not open the microphone again, and the mute and Deafen state stay.
+- **Other parts.** With 2 or more channels, the buddy line shows the channel ("in voice (muted) · Raid · 40%"). The
+  detached voice panel starts with the channel name. The network map shows "in voice · Raid". The cue for a
+  different person plays when that person comes into my channel or goes out of it.
+- **Limits.** A channel is a routing filter, not a lock: each member can join each channel, and the host gets the
+  voice of each channel. The speaking ring shows only in my own channel. On a slow relay route, the first voice
+  after a move can still go to the old channel.
+- **Result: 127.0.0.1, this PC.** `npm test`: 605 of 605 pass (15 new G6 tests: 2 with real protected-room nodes on
+  127.0.0.1, 13 with no network). Measured move hold on 127.0.0.1: 16 frames held, the first frame out 254 ms after the
+  move. `node --test test/voice-gate.test.mjs test/voice-settings.test.mjs`: 16 of 16 pass. The two-copy voice
+  check gives the same result as for G4. An app check with two copies on this PC: 18 of 18 checks pass. B in
+  General gets no audio of A in Raid. After the move, B gets it with no new microphone. The delete moves both to
+  General. No LAN result: the operator tests voice channels on a real relay route.
+
+## Unreleased — ready check (package P9A, milestone 9, 2026-11-21)
+
+One command asks the room if each person is ready. A check is for the session only: no history, no archive.
+
+- **Open a check.** Type `/ready Race in five?` in the message box, or select "Ready check" in the Room menu. A
+  check has a text of 0 to 120 characters on one line. With no text, the check asks "Ready?".
+- **The bar.** Each person sees one bar above the message box: "Ann asks: Race in five?", with "Ready" and "Give me
+  a minute". The bar shows three lists of names: Ready, Give me a minute, Not answered yet. A changed vote replaces
+  the previous vote.
+- **One person, one vote.** ASSCRACK counts each vote by the peer session, not by the name. Two people with the same
+  name count two times. The bar then adds the end of the peer ID to each of the two names.
+- **Close and expiry.** The initiator has "Close". A closed check shows its result for 10 seconds, then the bar goes
+  away. The check ends at once when the initiator quits. After a lost connection, the check ends when the
+  initiator does not come back in 10 seconds. A closed check never shows again: not after a reconnect, and not
+  after a history replay.
+- **One check for each person.** A new check of the same person replaces the previous check. When two people
+  each open a check, the bar shows one block for each check. The open checks come first.
+- **Late joiners.** A person who joins later gets the open check from the initiator and the votes from each voter.
+- **Availability.** In Do not disturb the bar shows with no sound. In Idle Peer there is no bar, and the vote stays
+  "Not answered yet". A new check of a different person plays the message cue only when the conversation is not in
+  view.
+- **Old clients.** A client that does not know the new `ready` line ignores it.
+- **Result: 127.0.0.1, this PC.** `npm test`: 621 of 621 pass. New tests: 16 of the state (fake clock), 2 on
+  three and two nodes on 127.0.0.1, 12 of the window, 1 of the bridge. One start of the app: no error line. An app
+  check with three profiles on this PC (127.0.0.1): 19 of 19 checks pass, also two checks at the same time. Three people respond, one changes the
+  vote, and two have the name "Sam". Each person counts one time. After the close, one copy quits, starts again and
+  joins again. The history replay comes, and the closed check does not show again.
+
+## Unreleased — voice (goal G4, 2026-11-21)
+
+Voice tells the user when the microphone or the speakers fail. A user with no microphone can listen. Deafen is new,
+and the volume of each person stays. Gap IDs C1, N1, C2, C5, C6, C7, C8, C3, C4 of `work-orders/gaps-1.0-20261121`.
+
+- **No microphone.** A microphone error does not stop Join voice. The user stays in voice and hears the others. The
+  others see "in voice (muted)", and the own line shows "in voice (no microphone)". When a microphone comes,
+  ASSCRACK uses it.
+- **A device goes away.** When the track of the microphone ends, ASSCRACK opens the capture again. A device change
+  opens a missing capture, and the selected microphone when it comes back. The selected speakers have the same
+  rule. A text under the voice buttons tells each fault, and it goes away when its cause goes away.
+- **Microphone errors.** Each error name has its own text: the Windows privacy setting, a microphone that a
+  different app uses, no microphone. The Voice settings panel uses the same texts.
+- **Deafen.** A new button next to Mute, and Ctrl+Shift+D, while in voice. The voice of the others does not play,
+  and Deafen mutes the microphone. Deafen off gives back the mute state from before. The others see "in voice
+  (deafened)". The detached voice panel shows "Deafened".
+- **Mute.** Mute shows also before Join voice, and Ctrl+Shift+M changes it. The mute state stays through Leave voice
+  and Join voice while the app runs. A new start of the app and Idle Peer set it to off.
+- **Volume of each person.** The line of a person shows "muted for you" and the volume when it is not 100%, also in
+  its tooltip. The volume goes from 0% to 200%, with a mark at 100%. Above 100%, a limiter stops the clipping. A
+  double-click on the label of the slider sets 100%, and "Reset" removes the choice. ASSCRACK keeps the choice of
+  each person in the profile, for each room. The key is the device ID of the room membership (never the name). A
+  room with no membership keeps the choice only while that person stays in the room: its libp2p peer ID is new at
+  each start. Forget of a saved room removes its choices.
+- **Cues.** A cue of my own action (join, leave, mute, unmute, deafen) plays also in Do not disturb. It is silent in
+  Idle Peer. The cues play on the output device of the voice settings.
+- **Result: 127.0.0.1, this PC.** `npm test`: 545 of 545 pass (18 new G4 tests, in node:vm with fake
+  devices and on 127.0.0.1). `node --test test/voice-gate.test.mjs test/voice-settings.test.mjs`: 16 of 16 pass. The
+  two-copy voice check (its room setup repaired for the protected rooms) gives the same result as on `main`. An app
+  check with two copies: 21 of 21 checks pass (no microphone, a device change, an ended track, the speakers text,
+  Deafen, the keys). A second app check: 8 of 8 pass (the volume of a person stays after a restart, Reset removes
+  it). One start of the app: no error line. The removal of a real device is not tested: Windows needs an
+  administrator to turn off a device. No LAN test. A test with real speakers and a real microphone is for the
+  operator.
+
+## Unreleased — resume of large transfers, network part (package P7a, 2026-11-21)
+
+The receiver can pause a large download and continue it later from the same byte, on the same route or on a
+different route. This is the network part. The window part (Pause, Resume and Discard buttons) is package P7b.
+
+- **Pause.** A paused download keeps its partial file. The key of a partial is the SHA-256 and the size of the
+  offer. Thus a later offer of the same content also continues it, also after a restart of the app. Cancel deletes
+  the partial as before. A failed download that the user did not pause deletes its partial as before.
+- **Offset negotiation.** A new protocol version `/asscrack/file/1.1.0` next to 1.0.0. The receiver sends the
+  offset and the SHA-256 of its partial bytes. The sender checks its source file and the partial hash, and sends
+  only the remainder. A corrupted partial starts again from byte 0. A changed source fails with "the source file
+  changed". A peer with only 1.0.0 gives a fresh full transfer and a "restarted" indication. One SHA-256 check of
+  the full output comes before the file is final.
+- **Limits.** All kept partials together have a budget of 8 GiB. Each partial expires 72 hours after its last byte.
+  The expiry and Discard delete the file and free the disk space.
+- **127.0.0.1 result (this PC).** A 64 MiB file paused at 39.9 % on direct TCP and continued over a relay circuit.
+  The sender sent 40,304,640 file bytes, the exact remainder, plus a 20-byte reply line. The wire overhead on the
+  sender upload was 0.2 %. These cases also pass on 127.0.0.1: a corrupted partial, a changed source, no offset
+  negotiation, the budget, the expiry, Discard, Cancel, a receiver restart. No LAN or internet result
+  yet: the 1 GiB measurement on two networks is a field check after 1.0.
+
+## Unreleased — chat links, files with text, and keys of the message box (goal G3, 2026-11-21)
+
+Links in the chat open in the system browser. A file and the text of the message box go to the correct people. Gap
+IDs D1, D2, D3, D4, D5, D7, N5, N7 of `work-orders/gaps-1.0-20261121`.
+
+- **Links (D2).** Each `http://` or `https://` URL in a chat line or a whisper line is a link. The punctuation at the
+  end of the URL is not part of the link. A highlight in a URL does not cut the link. A click sends the URL to the
+  main process. The main process opens it in the system browser only if it is `http:` or `https:` with a host and
+  no user name or password. The URL has 2048 characters or less. It opens at most one link each 500 ms. The window
+  itself never goes to the link. A chat link is not a tab stop: the row menu has "Open link".
+- **A file and the text (D1).** The message box always belongs to the room. A media file for the room takes the text
+  as its caption. An ordinary file for the room goes first, then the text goes as a line. A file for one person and
+  a text: only the text goes to the room, and the file stays attached with a status text. The draft shows the size
+  of the file and a small picture of an image.
+- **Offer note (N5).** An offer with no chat line gives a note row: "You offered notes.txt (27 B) to the room."
+- **Paste of a file (N7).** Copy a file in Explorer, then press Ctrl+V in the message box: the file attaches.
+- **Keys (D3, D4).** Up and Down in the message box recall the last 50 sent texts of this run. Tab completes a buddy
+  name at the end of a word. All other Tabs move the focus.
+- **Channels (D5).** A count next to the channel menu shows the unread lines of the other channels.
+- **Image viewer (D7).** A click on a chat image, or "View image" in the row menu, shows the image at full size.
+  Escape closes it.
+- **Result: 127.0.0.1, this PC.** `npm test`: 555 of 555 pass (28 new tests). One start of the app: no error line.
+  App check with two copies on this PC: 9 of 9 checks pass. They check these items: the paste of a copied file,
+  the offer note, the link and its click, and a link with a highlight. They also check the draft picture and the
+  image viewer with Escape. The check
+  used `Set-Clipboard -Path` in place of a copy in Explorer (the same clipboard format). No LAN test.
+
 ## Unreleased — sound cues for other people and for messages (goal P11, 2026-11-21)
 
 ASSCRACK plays a short local cue when a different person joins or leaves voice, and for a mention or a whisper to

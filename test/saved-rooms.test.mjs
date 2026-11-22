@@ -451,3 +451,36 @@ test('createSavedRooms with the async protector: open(), then the saved room and
     assert.deepEqual(second.lines(st.rooms[0].roomId).map(l => l.text), ['hello']);
     assert.equal((await second.unlock()).state, 'open');
 });
+
+// G6: the voice channel catalog comes back after a full restart (a new store on the same folder), and the node takes
+// it as seedVoiceChannels. Only a higher seq replaces the saved catalog. Clear keeps it; Forget removes it.
+test('the voice channel catalog of a saved room comes back after a full restart', async t => {
+    const { createDeviceIdentity, createRoomMembership, restoreRoomMembership } = await import('../src/network/room-membership.mjs');
+    const { createVoiceChannels } = await import('../src/network/voice-channels.mjs');
+    const { rooms, dir, keep } = setup(t);
+    const roomId = start(rooms, fakeNode(1));
+    const owner = createRoomMembership({ identity: createDeviceIdentity(), room: 'room', roomKey: KEY_A, lan: true });
+    const identity = createDeviceIdentity();
+    const member = restoreRoomMembership({ identity, room: 'room', roomKey: KEY_A, descriptor: owner.issue(identity.id) });
+    const edits = createVoiceChannels({ membership: owner });
+    assert.equal(rooms.loadVoiceChannels('room', KEY_A), null);
+    edits.create('Raid');
+    const first = edits.catalog();
+    edits.create('Lobby');
+    const second = edits.catalog();
+    rooms.persistVoiceChannels(second);
+    rooms.persistVoiceChannels(first);
+    assert.equal(rooms.loadVoiceChannels('room', KEY_A).seq, 2, 'a lower seq does not replace the catalog');
+    assert.equal(rooms.loadVoiceChannels('room', KEY_B), null);
+    rooms.clear(roomId);
+    rooms.close();
+    const reopened = keep(createSavedRooms({ dir: path.join(dir, 'saved-rooms'), protector: fakeProtector }));
+    const saved = reopened.loadVoiceChannels('room', KEY_A);
+    assert.deepEqual(saved, second);
+    const restored = createVoiceChannels({ membership: member, seed: saved });
+    assert.deepEqual(restored.view().channels.map(c => c.name), ['General', ...second.channels.map(c => c.name)]);
+    assert.deepEqual(restored.view().channels.map(c => c.name).sort(), ['General', 'Lobby', 'Raid']);
+    assert.equal(restored.seq(), 2);
+    reopened.forget(roomId);
+    assert.equal(reopened.loadVoiceChannels('room', KEY_A), null);
+});

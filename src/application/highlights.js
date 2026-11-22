@@ -77,6 +77,8 @@
         }
         children.push(reply.slice(end));
         span.replaceChildren(...children);
+        // Gap D2: the links again (the children are new). A highlight in a URL is part of the link of the full URL.
+        window.chatLinks?.apply(span);
         if (unread || document.hasFocus?.() === false) {
             pending.add(row);
             updateCount();

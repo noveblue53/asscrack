@@ -11,14 +11,16 @@
     const pending = new Map();
     let prefs = null;
     let audio = null;
+    // C3: the output device of the voice settings that the cue context uses now (null: not set yet, or it failed).
+    let cueSink = null;
 
     // The rule of each cue class (REVIEW.md, "Cue and attention rules"). setting: the key in attention.mjs that
     // switches the class on and off. idle and dnd: the class plays in Idle Peer or in Do not disturb. inView: the
     // class plays when viewing(target) is true. gap: the minimum time in ms between two cues of the class; a cue in
     // that time is dropped, not queued. The volume controls all the classes.
-    // 'own' keeps the behavior of 0.8 (silent in DND): G4 (C4) changes only its dnd value.
+    // 'own' (C4): a cue of my own action (join, leave, mute, unmute, deafen) is a confirmation, thus it plays in DND.
     const CUE_RULES = Object.freeze({
-        own: Object.freeze({ setting: 'voiceCues', idle: false, dnd: false, inView: true, gap: 0 }),
+        own: Object.freeze({ setting: 'voiceCues', idle: false, dnd: true, inView: true, gap: 0 }),
         // The caller (renderer.js) sends these cues only while I am in voice.
         'voice-other': Object.freeze({ setting: 'otherVoiceCues', idle: false, dnd: false, inView: true, gap: 500 }),
         message: Object.freeze({ setting: 'messageCues', idle: false, dnd: false, inView: false, gap: 2000 })
@@ -120,6 +122,28 @@
         window.reading.revealLine(row);
     }
 
+    // C3: the cues play on the output device of the voice settings. Not the voice context: Leave closes it before the
+    // leave cue plays. A device that does not open gives the default device, and the next cue tries again.
+    function outputDevice() {
+        const wanted = window.voice?.settings?.()?.outputDeviceId ?? '';
+        return typeof audio.setSinkId === 'function' && wanted !== cueSink ? wanted : null;
+    }
+
+    async function useOutputDevice(wanted) {
+        try {
+            await audio.setSinkId(wanted);
+            cueSink = wanted;
+        } catch {
+            cueSink = null;
+            if (audio.sinkId !== '') await audio.setSinkId('').catch(() => {});
+        }
+    }
+
+    // C4: the current availability stops this class (the text of the preview status).
+    function quietFor(rule) {
+        return (idle() && !rule.idle) || (dnd() && !rule.dnd);
+    }
+
     // The rule of the class, at this time. target: the conversation of a message cue (for inView).
     function cueAllowed(rule, target) {
         if (!prefs?.[rule.setting] || !prefs.volume) return false;
@@ -142,6 +166,9 @@
         }
         try {
             audio ??= new AudioContext();
+            // No await when the device is the same: the cue plays at once.
+            const wanted = outputDevice();
+            if (wanted !== null) await useOutputDevice(wanted);
             if (audio.state === 'suspended') await audio.resume();
             if (!cueAllowed(rule, target)) return false;
             return window.voiceCues.play(audio, kind, prefs.volume);
@@ -157,6 +184,8 @@
         if (!prefs) return;
         for (const [key, suffix] of Object.entries(fields)) {
             const input = byId('attention-' + suffix);
+            // A page with no box for a setting (for example a test page with an older dialog) skips it.
+            if (!input) continue;
             if (key === 'volume') input.value = prefs.volume;
             else input.checked = prefs[key];
         }
@@ -170,6 +199,7 @@
         .catch(() => { status.textContent = 'Sound and notification settings could not be loaded.'; });
     for (const [key, suffix] of Object.entries(fields)) {
         const input = byId('attention-' + suffix);
+        if (!input) continue;
         input.addEventListener('change', async () => {
             const value = key === 'volume' ? Number(input.value) : input.checked;
             try {
@@ -187,7 +217,8 @@
     byId('attention-tone').addEventListener('change', render);
     byId('attention-preview').addEventListener('click', async () => {
         const played = await cue(byId('attention-tone').value, previewClass(), null, { preview: true });
-        status.textContent = played ? 'Preview played.' : quiet() ? 'Sounds are quiet in your current availability.' : 'Audio output unavailable.';
+        const quietNow = quietFor(CUE_RULES[previewClass()]);
+        status.textContent = played ? 'Preview played.' : quietNow ? 'Sounds are quiet in your current availability.' : 'Audio output unavailable.';
     });
     byId('attention-windows').hidden = !navigator.userAgent.includes('Windows');
     api.onAttentionOpen(openTarget);

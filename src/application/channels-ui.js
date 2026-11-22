@@ -6,6 +6,8 @@
     const dialog = document.getElementById('channel-dialog');
     const nameInput = document.getElementById('channel-name');
     const note = document.getElementById('channel-note');
+    // Gap D5: the sum of the unread counts of the other channels. Hidden at 0.
+    const unread = document.getElementById('channel-unread');
     const states = new Map();
     let selected = 'general';
     let catalog = [{ id: selected, name: 'General' }];
@@ -27,6 +29,13 @@
             return option;
         }));
         picker.value = selected;
+        if (unread) {
+            const others = catalog.reduce((sum, { id }) => sum + (id === selected ? 0 : state(id).missed), 0);
+            unread.textContent = others ? String(others) : '';
+            unread.hidden = others === 0;
+            if (others) unread.setAttribute('aria-label', `${others} unread in other channels`);
+            else unread.removeAttribute('aria-label');
+        }
         add.disabled = !available;
         sendButton.disabled = selected !== 'general' && !available;
         note.hidden = !sendButton.disabled;

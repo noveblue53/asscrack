@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="activity.css">
   <link rel="stylesheet" href="attention.css">
   <link rel="stylesheet" href="chat-media.css">
+  <link rel="stylesheet" href="chat-tools.css">
   <link rel="stylesheet" href="whispers.css">
   <link rel="stylesheet" href="themes.css">
   <link rel="stylesheet" href="window-frame.css">
@@ -20,6 +21,8 @@
   <link rel="stylesheet" href="desktop-controls.css">
   <link rel="stylesheet" href="shared-shelf.css">
   <link rel="stylesheet" href="transcript-notes.css">
+  <link rel="stylesheet" href="voice-channels.css">
+  <link rel="stylesheet" href="ready-check.css">
 </head>
 <body>
   <!-- Decoration only: the sky bubbles behind the two screens. -->
@@ -218,9 +221,23 @@
       <section id="buddy-panel" class="panel" tabindex="-1" aria-label="Buddies">
         <h2 class="panel-head">Buddies <span id="peer-count" class="count">1</span> <button id="whisper-open" type="button" aria-controls="whisper-pane" hidden>Whispers</button></h2>
         <ul id="peers"></ul>
+        <!-- G6: voice-channels-ui.js fills the list. One click on a channel joins it or moves to it. -->
+        <section id="voice-channels" aria-labelledby="voice-channels-title">
+          <div class="vc-head"><h3 id="voice-channels-title">Voice channels</h3><button id="voice-channel-create" type="button" hidden>Create</button></div>
+          <ul id="voice-channel-list" aria-labelledby="voice-channels-title"></ul>
+          <dialog id="voice-channel-dialog" aria-labelledby="voice-channel-title"><form id="voice-channel-form">
+            <h2 id="voice-channel-title">Create voice channel</h2><label>Voice channel name <input type="text" id="voice-channel-name" required maxlength="80" autocomplete="off"></label>
+            <p id="voice-channel-error" role="status"></p><button id="voice-channel-cancel" type="button">Cancel</button><button id="voice-channel-submit">Create</button>
+          </form></dialog>
+          <dialog id="voice-channel-delete-dialog" aria-labelledby="voice-channel-delete-title">
+            <h2 id="voice-channel-delete-title">Delete voice channel</h2><p id="voice-channel-delete-text"></p>
+            <p id="voice-channel-delete-error" role="status"></p><button id="voice-channel-delete-cancel" type="button">Cancel</button><button id="voice-channel-delete-confirm" type="button">Delete</button>
+          </dialog>
+        </section>
         <div id="voice-controls" aria-label="Voice controls" role="group">
           <button id="join-voice" type="button">Join voice</button>
-          <button id="mute" type="button" aria-pressed="false" hidden>Mute</button>
+          <button id="mute" type="button" aria-pressed="false" title="Mute (Ctrl+Shift+M)" aria-keyshortcuts="Control+Shift+M">Mute</button>
+          <button id="deafen" type="button" aria-pressed="false" title="Deafen: you hear no voice and your microphone is muted (Ctrl+Shift+D)" aria-keyshortcuts="Control+Shift+D" hidden>Deafen</button>
           <span id="ptt-state" hidden>PTT released</span>
           <button id="voice-settings-toggle" type="button" aria-expanded="false" aria-controls="voice-settings">Voice settings</button>
           <button id="leave-voice" type="button" hidden>Leave voice</button>
@@ -236,6 +253,7 @@
           </div>
           <div class="room-actions">
             <select id="channel-select" aria-label="Public channel"><option value="general">#general</option></select>
+            <span id="channel-unread" class="count" hidden></span>
             <button id="invite-toggle" type="button" aria-expanded="false" aria-controls="invite-panel" hidden>Invite</button>
             <button id="room-options-toggle" type="button" popovertarget="room-options" aria-label="Room options">Room ▾</button>
           </div>
@@ -250,6 +268,7 @@
             <button type="button" id="openSharedShelf" aria-haspopup="dialog" aria-controls="shared-shelf">Shared</button>
             <button id="activity-open" type="button" aria-haspopup="dialog" aria-controls="room-activity">Room activity</button>
             <button id="leave-room" type="button" aria-haspopup="dialog" aria-controls="leave-dialog">Leave room…</button>
+            <button id="ready-open" type="button" title="Ask the room: Ready? (or type /ready and a text)">Ready check</button>
           </div>
           <span id="topic-unavailable" hidden>Topic editing requires a compatible host.</span>
           <div id="topic-editor" hidden>
@@ -306,6 +325,9 @@
           <button id="jump-latest" type="button" hidden>Jump to latest <span id="unread-count" class="count"></span></button>
         </div>
         <div id="typing-status" role="status" aria-live="polite"></div>
+        <!-- ready-check-ui.js: the live ready checks of the room (milestone 9), one block for each check. They are not
+             in the transcript. -->
+        <section id="ready-bar" aria-label="Ready check" hidden></section>
         <div id="composer">
           <!-- renderer.js: the quote of the next message. The remove button or Escape removes it. -->
           <div id="quote-chip" role="group" aria-labelledby="quote-head" hidden>
@@ -314,7 +336,9 @@
             <button id="quote-remove" type="button" aria-label="Remove the quote" title="Remove the quote (Escape)">Remove</button>
           </div>
           <div id="file-draft" role="group" aria-label="File to send" hidden>
+            <canvas id="file-draft-thumb" width="48" height="48" aria-hidden="true" hidden></canvas>
             <span id="file-draft-name"></span>
+            <span id="file-draft-size"></span>
             <button id="file-remove" type="button" aria-label="Remove attached file">Remove</button>
             <select id="file-recipient" aria-label="File recipient">
               <option value="room">Entire room</option>
@@ -456,7 +480,7 @@
     <h2 id="attention-title">Sound &amp; notifications</h2>
     <fieldset>
       <legend>Sound cues</legend>
-      <label><input id="attention-cues" type="checkbox"> Play local cues when I join, leave, mute or unmute</label>
+      <label><input id="attention-cues" type="checkbox"> Play local cues when I join, leave, mute, unmute or deafen</label>
       <label><input id="attention-other-cues" type="checkbox"> Other people join or leave voice</label>
       <label><input id="attention-message-cues" type="checkbox"> Mentions and whispers</label>
       <label for="attention-volume">Cue volume <output id="attention-percent" for="attention-volume"></output></label>
@@ -483,9 +507,17 @@
   <dialog id="listening-dialog" aria-labelledby="listening-title">
     <h2 id="listening-title">Listening volume</h2>
     <label><input id="listener-muted" type="checkbox"> Mute for me</label>
-    <label for="listener-volume">Playback volume <output id="listener-percent" for="listener-volume">100%</output></label>
-    <input id="listener-volume" type="range" min="0" max="100" step="1" value="100">
-    <form method="dialog"><button>Done</button></form>
+    <label id="listener-volume-label" for="listener-volume" title="Double-click: 100%">Playback volume <output id="listener-percent" for="listener-volume">100%</output></label>
+    <input id="listener-volume" type="range" min="0" max="200" step="1" value="100" list="listener-volume-marks">
+    <datalist id="listener-volume-marks"><option value="100" label="100%"></option></datalist>
+    <p id="listener-note">Above 100% ASSCRACK makes a quiet microphone louder. A limiter stops the clipping.</p>
+    <form method="dialog"><button type="button" id="listener-reset">Reset</button> <button>Done</button></form>
+  </dialog>
+
+  <!-- Gap D7: a chat image at full size. chat-media.js opens it. Escape closes it (the dialog does that). -->
+  <dialog id="image-viewer" aria-label="Image">
+    <img id="image-viewer-image" alt="">
+    <form method="dialog"><button>Close</button></form>
   </dialog>
 
   <dialog id="shared-shelf" aria-labelledby="shared-title">
@@ -558,15 +590,19 @@
   <script src="room-link.js"></script>
   <script src="find.js"></script>
   <script src="quote.js"></script>
+  <script src="chat-links.js"></script>
   <script src="highlights.js"></script>
   <script src="voice-cues.js"></script>
   <script src="attention.js"></script>
   <script src="chat-media.js"></script>
   <script src="chat-attachments.js"></script>
   <script src="renderer.js"></script>
+  <script src="composer-keys.js"></script>
   <script src="room-membership-ui.js"></script>
   <script src="channels-ui.js"></script>
+  <script src="voice-channels-ui.js"></script>
   <script src="typing.js"></script>
+  <script src="ready-check-ui.js"></script>
   <script src="whispers.js"></script>
   <script src="saved-rooms-ui.js"></script>
   <script src="voice-panel.js"></script>

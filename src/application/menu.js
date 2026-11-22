@@ -29,6 +29,8 @@
         'listening': 'Listening volume…',
         'show-on-map': 'Show on map',
         'copy-message': 'Copy message',
+        'open-link': 'Open link',
+        'view-image': 'View image',
         quote: 'Quote',
         availability: 'Edit availability…',
         'message-details': 'Message details…',
@@ -39,7 +41,9 @@
         'cancel-receiver': 'Cancel for this user',
         'cancel-offer': 'Cancel for all users',
         reveal: 'Show in Explorer',
-        resend: 'Send again'
+        resend: 'Send again',
+        'rename-voice-channel': 'Rename…',
+        'delete-voice-channel': 'Delete…'
     });
 
     // The action names for the data of a row (roomActions.rowInfo). An empty list: no menu.
@@ -57,9 +61,12 @@
             case 'message':
                 // quotable: the window can take a quote now (renderer.js rowInfo).
                 // localOnly: the line has "Only on this computer" (gap B3).
-                return [...(info.quotable ? ['quote', 'copy-message'] : ['copy-message']), ...(info.inspect ? ['inspect-peer'] : []), ...(info.details ? ['message-details'] : []), ...(info.localOnly ? ['resend'] : [])];
+                return [...(info.quotable ? ['quote', 'copy-message'] : ['copy-message']), ...(info.link ? ['open-link'] : []), ...(info.image ? ['view-image'] : []), ...(info.inspect ? ['inspect-peer'] : []), ...(info.details ? ['message-details'] : []), ...(info.localOnly ? ['resend'] : [])];
             case 'offer':
                 return info.active ? ['cancel-offer'] : [];
+            // G6: only the room owner renames and deletes a voice channel (not General).
+            case 'voice-channel':
+                return info.owner ? ['rename-voice-channel', 'delete-voice-channel'] : [];
             case 'transfer':
                 if (info.direction === 'receive') {
                     if (info.state === 'offered') return ['accept', 'refuse'];
@@ -119,8 +126,8 @@
 
     if (typeof document === 'undefined' || typeof document.getElementById !== 'function') return;
 
-    const lists = ['peers', 'messages', 'transfers'].map(id => document.getElementById(id)).filter(Boolean);
-    const ROW_SELECTOR = '#peers > li, #messages > li, #transfers > li';
+    const lists = ['peers', 'messages', 'transfers', 'voice-channel-list'].map(id => document.getElementById(id)).filter(Boolean);
+    const ROW_SELECTOR = '#peers > li, #messages > li, #transfers > li, #voice-channel-list > li';
     const messageList = document.getElementById('messages');
     const docEl = document.documentElement;
 

@@ -168,7 +168,7 @@ body.in-voice #voice-controls::before { display: none; }
     background: linear-gradient(#d45447, #ac342a 49%, #8b2a22 51%, #af382d);
 }
 :root[data-theme="aero-classic"] #leave-voice::before { filter: brightness(0) invert(1); }
-#voice-controls #mute[aria-pressed="true"] {
+#voice-controls :is(#mute, #deafen)[aria-pressed="true"] {
     color: var(--control-ink, #372b12);
     border-color: var(--danger, #aa3800);
     background: var(--control-bottom, #f5d899);

@@ -39,6 +39,16 @@ class VoiceCapture extends AudioWorkletProcessor {
 const START_SAMPLES = 2880;
 // Limit of the queue (240 ms). Older samples are dropped to keep the audio live.
 const MAX_SAMPLES = 11520;
+// G4: the gain of an origin is 0 to 2 (200 %). A soft limiter above LIMIT_START keeps the mix below 1, thus a boost
+// does not clip. A sample at or below LIMIT_START does not change.
+const MAX_GAIN = 2;
+const LIMIT_START = 0.9;
+function limit(x) {
+    const a = Math.abs(x);
+    if (a <= LIMIT_START) return x;
+    const room = 1 - LIMIT_START;
+    return Math.sign(x) * (LIMIT_START + room * Math.tanh((a - LIMIT_START) / room));
+}
 
 class VoicePlayback extends AudioWorkletProcessor {
     constructor() {
@@ -48,7 +58,7 @@ class VoicePlayback extends AudioWorkletProcessor {
         this.port.onmessage = ({ data }) => {
             if (!data) return;
             if (data.type === 'samples') this.add(data.origin, data.samples);
-            else if (data.type === 'gain' && Number.isFinite(data.gain) && data.gain >= 0 && data.gain <= 1) {
+            else if (data.type === 'gain' && Number.isFinite(data.gain) && data.gain >= 0 && data.gain <= MAX_GAIN) {
                 this.origin(data.origin).gain = data.gain;
             } else if (data.type === 'remove') this.origins.delete(data.origin);
             else if (data.type === 'clear') this.origins.clear();
@@ -97,6 +107,7 @@ class VoicePlayback extends AudioWorkletProcessor {
             }
             if (o.size <= 0) o.playing = false;
         }
+        for (let i = 0; i < out.length; i++) out[i] = limit(out[i]);
         for (let c = 1; c < outputs[0].length; c++) outputs[0][c].set(out);
         return true;
     }

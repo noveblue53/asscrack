@@ -14,6 +14,10 @@
         ['F3 and Shift+F3', 'Go to the next or the previous result of Find'],
         ['Escape', 'Close the menu, the panel or the dialog on top'],
         ['Alt+J', 'Go to the next unread highlight'],
+        ['Up and Down', 'In the message box: show a text that you sent before'],
+        ['Tab', 'In the message box: complete the name of a buddy'],
+        ['Ctrl+Shift+M', 'Mute or unmute your microphone'],
+        ['Ctrl+Shift+D', 'Deafen or undeafen (in voice)'],
         ['Shift+F10 and the Menu key', 'Open the menu of the selected line'],
         ['Arrow keys', 'Move between the lines of a list or a menu'],
         ['F1', 'Show the keyboard shortcuts']
@@ -130,8 +134,11 @@
         byId('leave-confirm').disabled = true;
         byId('leave-status').textContent = 'Leaving the room…';
         try {
-            // The main process stops the node and then reloads the window.
-            if (await api.leaveRoom()) return;
+            // The main process stops the node and then reloads the window. The ready check view (P9A) ends now.
+            if (await api.leaveRoom()) {
+                window.readyCheckUi?.reset();
+                return;
+            }
             byId('leave-status').textContent = 'Could not leave the room.';
         } catch (err) {
             byId('leave-status').textContent = 'Could not leave the room. ' + errorText(err);

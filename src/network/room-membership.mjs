@@ -50,7 +50,11 @@ function authority(room, roomKey, owner, lan) {
     const admissionFields = grant => ['asscrack-room-admission/2', id, grant.signature]
     const revokeFields = state => ['asscrack-room-revocations/2', id, state.sequence, state.devices]
     const proofFields = (nonce, sender, receiver) => ['asscrack-room-peer-proof/2', id, nonce, sender, receiver]
-    return { owner, lan, grantFields, admissionFields, revokeFields, proofFields }
+    // G6: the voice channel catalog. A new copy of each channel, sorted by ID: the signed bytes do not depend on the
+    // order of the properties or of the rows on the wire.
+    const voiceChannelFields = state => ['asscrack-voice-channels/1', id, state.seq,
+        [...state.channels].map(row => ({ id: row.id, name: row.name })).sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)]
+    return { owner, lan, grantFields, admissionFields, revokeFields, proofFields, voiceChannelFields }
 }
 
 function inspectGrant(room, value) {
@@ -210,6 +214,19 @@ export function restoreRoomMembership({ identity, room, roomKey, descriptor }) {
         return true
     }
 
+    // G6: only the owner device signs the voice channel catalog. The caller checks the structure (voice-channels.mjs).
+    function signVoiceChannels({ seq, channels } = {}) {
+        if (!owner) throw new Error('Only the room owner can change voice channels.')
+        if (!Number.isSafeInteger(seq) || !Array.isArray(channels)) throw new Error('Invalid voice channel catalog')
+        return identity.sign(access.voiceChannelFields({ seq, channels }))
+    }
+
+    function verifyVoiceChannels(catalog) {
+        if (!catalog || !Number.isSafeInteger(catalog.seq) || !Array.isArray(catalog.channels) ||
+            !catalog.channels.every(row => row && typeof row === 'object')) return false
+        return verified(access.owner, access.voiceChannelFields(catalog), catalog.signature)
+    }
+
     return Object.freeze({ id: identity.id, owner, ownerId: access.owner, lan: access.lan,
         hostGrant: owner || current.grant.canHost,
         admitted: () => !revoked(identity.id) && (owner || current.admission !== null),
@@ -218,6 +235,7 @@ export function restoreRoomMembership({ identity, room, roomKey, descriptor }) {
         revocations: () => structuredClone(current.revocations),
         issued: () => current.issued.map(({ deviceId, canHost }) => ({ deviceId, canHost, revoked: revoked(deviceId) })),
         revoked, memberProof, verifyMember, observe, admit, acceptAdmission, issue, revoke,
+        signVoiceChannels, verifyVoiceChannels,
         setPersistence(callback) { persist = callback },
         onChanged(callback) { changed = callback }
     })
