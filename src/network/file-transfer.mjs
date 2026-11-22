@@ -1048,6 +1048,13 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
             if (sendT) {
                 noteCancel(`${offerId}|${peerId}`, 'pause')
                 interruptTransfer(sendT, 'Transfer paused by receiver')
+                return
+            }
+            // A pause before the stream opened. As for a lost peer, the leg fails and stays open to a retry.
+            const own = ownOffers.get(offerId)
+            if (own && !own.started.has(peerId) && own.targets.delete(peerId)) {
+                markFailedOffer(own, peerId)
+                events.emit('file-paused', { offerId, peerId, direction: 'send', bytes: 0, size: own.size })
             }
         } else if (control.type === 'file-written') {
             active.get(`send|${offerId}|${peerId}`)?.window?.written(control.bytes)

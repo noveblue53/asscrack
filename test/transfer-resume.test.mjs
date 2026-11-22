@@ -7,6 +7,7 @@ import * as net from 'node:net'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
+import { multiaddr } from '@multiformats/multiaddr'
 import { createAsscrackNode } from '../src/network/node.mjs'
 import { newRoomKey } from '../src/network/invite.mjs'
 import { FILE_PROTOCOLS, FILE_RESUME_PROTOCOL } from '../src/network/file-transfer.mjs'
@@ -175,6 +176,74 @@ test('Pause keeps the partial and Resume sends only the remainder on the same ro
         assert.deepEqual(await resumeFiles(b.dir), [], 'the partial became the final file')
         assert.deepEqual(await b.partials(), [])
         assert.deepEqual(b.log.restarted, [])
+    } finally {
+        await cleanup(ctx)
+    }
+})
+
+test('a Pause before the stream opens leaves the offer open to Resume (127.0.0.1)', { timeout: 60000 }, async () => {
+    const ctx = { nodes: [], dirs: [] }
+    try {
+        const { a, b } = await pair(ctx)
+        const size = 8 * MiB
+        const file = path.join(a.dir, 'early.bin')
+        await writeRandom(file, size)
+        const offer = await a.offerFile(file, b.peerId)
+        await waitUntil(() => b.log.offer.length === 1, 5000, 'offer')
+        assert.equal(b.acceptFile(offer.offerId), true)
+        assert.equal(b.pauseFile(offer.offerId), true)
+        await waitUntil(() => b.log.paused.length === 1 && a.log.paused.length === 1, 10000, 'paused on both ends')
+        assert.equal(b.log.paused[0].bytes, 0)
+        assert.equal(a.log.paused[0].bytes, 0)
+        assert.deepEqual(await resumeFiles(b.dir), [])
+        assert.equal(b.resumeFile(offer.offerId), true)
+        await waitUntil(() => b.log.done.length === 1 && a.log.done.length === 1, 20000, 'transfer after the early pause')
+        assert.equal(b.log.restarted[0].reason, 'no partial bytes')
+        assert.equal(b.log.restarted[0].resumeOf, offer.offerId)
+        assert.equal(await sha(b.log.done[0].path), offer.sha256)
+        assert.deepEqual(b.log.failed, [])
+    } finally {
+        await cleanup(ctx)
+    }
+})
+
+// Opens a 1.1.0 stream with a raw header and counts the bytes that come back.
+async function rawResumeRequest(receiver, sender, header) {
+    const stream = await receiver.libp2p.dialProtocol(multiaddr(localAddr(sender)), FILE_RESUME_PROTOCOL,
+        { runOnTransientConnection: true })
+    const sent = stream.sink([Buffer.from(JSON.stringify(header) + '\n')]).catch(() => {})
+    let bytes = 0
+    try {
+        for await (const chunk of stream.source) bytes += chunk.byteLength
+    } catch {}
+    await sent
+    return bytes
+}
+
+test('the sender refuses each offset request out of bounds and the offer stays usable (127.0.0.1)', { timeout: 60000 }, async () => {
+    const ctx = { nodes: [], dirs: [] }
+    try {
+        const { a, b } = await pair(ctx)
+        const size = 1 * MiB
+        const file = path.join(a.dir, 'bounds.bin')
+        await writeRandom(file, size)
+        const offer = await a.offerFile(file, b.peerId)
+        await waitUntil(() => b.log.offer.length === 1, 5000, 'offer')
+        const prefix = 'f'.repeat(64)
+        const bad = [
+            { offset: size + 1, prefix }, { offset: -1, prefix }, { offset: 1.5, prefix }, { offset: '10', prefix },
+            { offset: 10 }, { offset: 10, prefix: 'g'.repeat(64) }, { offset: 10, prefix: prefix.slice(1) },
+            { offset: Number.MAX_SAFE_INTEGER + 2, prefix }, { offset: 10, prefix: 7 }
+        ]
+        for (const fields of bad) {
+            assert.equal(await rawResumeRequest(b, a, { offerId: offer.offerId, ack: 1, flow: 1, ...fields }), 0,
+                `refused: ${JSON.stringify(fields)}`)
+        }
+        assert.deepEqual(a.log.done, [])
+        assert.deepEqual(a.log.failed, [])
+        assert.equal(b.acceptFile(offer.offerId), true)
+        await waitUntil(() => b.log.done.length === 1 && a.log.done.length === 1, 20000, 'transfer after the refusals')
+        assert.equal(await sha(b.log.done[0].path), offer.sha256)
     } finally {
         await cleanup(ctx)
     }
