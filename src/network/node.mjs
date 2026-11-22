@@ -18,6 +18,7 @@ import { networkInterfaces } from 'node:os'
 import { createChatSession } from './chat-session.mjs'
 import { createElection } from './election.mjs'
 import { createChannels } from './channels.mjs'
+import { createVoiceChannels, GENERAL_VOICE_CHANNEL } from './voice-channels.mjs'
 import { createRoomTopic } from './room-topic.mjs'
 import { createHistory, HISTORY_LIMIT, MAX_MESSAGE_BYTES, validHistoryItem } from './history.mjs'
 import { createFileTransfer, FILE_PROTOCOLS } from './file-transfer.mjs'
@@ -129,7 +130,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     heartbeatInterval = 1000, hostTimeout = 5000, electionDelay = 3000, downloadDir, scratchDir, fileAckTimeout, partials,
     previewProvider = null, receiveWhisper = null, fullNode = 'auto', allowPrivateFullNode = false, relayOnly = false, roomKey = null, announce = [], storePath = null,
     redialInterval = 5000, inviteNodes = [], upnp = false, upnpTimeout = 70000, upnpLeaseSeconds = 1800,
-    upnpClient = null, seedHistory = [], seedChannels = [], membership = null } = {}) {
+    upnpClient = null, seedHistory = [], seedChannels = [], seedVoiceChannels = null, membership = null } = {}) {
     if (typeof room !== 'string') throw new TypeError('room must be a string')
     const key = parseRoomKey(roomKey)
     if (membership && !key) throw new TypeError('Protected rooms require a room key')
@@ -360,9 +361,14 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         for (const kept of pendingHistory.values()) kept.messages = kept.messages.filter(m => !removed.has(m.id))
     }
     // deafened (G4, C2): this user hears no voice. A peer that does not know the field ignores it.
-    let voiceState = { inVoice: false, streamId: null, muted: false, deafened: false }
+    // channel (G6): the ID of the voice channel. A peer that does not know the field ignores it (and is in General).
+    let voiceState = { inVoice: false, streamId: null, muted: false, deafened: false, channel: GENERAL_VOICE_CHANNEL }
     // peerId -> true for the peers in voice (from their voice lines).
     const peerVoice = new Map()
+    // peerId -> the voice channel ID of the peers in voice. The raw ID, also when it is not in the catalog yet.
+    const peerChannel = new Map()
+    const channelOfPeer = peerId => peerChannel.get(peerId) ?? GENERAL_VOICE_CHANNEL
+    const MAX_CHANNEL_ID = 64
     let voiceRelay = null
     // peerId -> the last valid 'direct' list of that peer: the peers that get its frames on a direct stream.
     const peerDirect = new Map()
@@ -370,7 +376,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     // A 0.5.2 peer ignores the field 'direct'.
     const voiceLine = () => JSON.stringify({
         type: 'voice', inVoice: voiceState.inVoice, streamId: voiceState.streamId, muted: voiceState.muted,
-        deafened: voiceState.deafened, direct: voiceRelay ? voiceRelay.directList() : []
+        deafened: voiceState.deafened, channel: voiceState.channel, direct: voiceRelay ? voiceRelay.directList() : []
     })
     // Manual status (presence) of this node. It lives for the life of the node.
     const PRESENCE_STATES = new Set(['available', 'away', 'dnd'])
@@ -447,6 +453,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             return peerId && (!hostAllowed || hostAllowed(peerId)) ? peerId : null
         },
         protectedRoom: Boolean(membership),
+        channelOf: channelOfPeer,
+        selfChannel: () => voiceState.channel,
         voicePeers: () => {
             const list = [...peerVoice.keys()].filter(p => sessions.has(p))
             if (voiceState.inVoice) list.push(node.peerId.toString())
@@ -454,16 +462,33 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         },
         connectionFor: peerId => sessionConns.get(peerId) ?? node.getConnections().find(c => c.remotePeer.toString() === peerId),
         onFrame: frame => events.emit('voice-frame', frame),
-        // Voice peers whose session connection is not relayed.
+        // Voice peers in the own voice channel whose session connection is not relayed.
         directCandidates: () => [...peerVoice.keys()].filter(p => {
             const conn = sessionConns.get(p)
-            return sessions.has(p) && conn && !conn.remoteAddr.toString().includes('/p2p-circuit')
+            return sessions.has(p) && conn && !conn.remoteAddr.toString().includes('/p2p-circuit') &&
+                channelOfPeer(p) === voiceState.channel
         }),
         directListOf: peerId => peerDirect.get(peerId) ?? null,
         // Send the voice line again, so that the host knows which peers to forward to.
         onDirectChanged: () => {
             const line = voiceLine()
             for (const session of sessions.values()) session.send(line)
+        }
+    })
+
+    // G6: the voice channel catalog (owner-signed). The view goes to the window, the catalog to the archive.
+    const voiceChannels = createVoiceChannels({
+        membership,
+        seed: seedVoiceChannels,
+        send: (msg, except) => {
+            const line = JSON.stringify(msg)
+            for (const [peerId, session] of sessions) if (peerId !== except && memberAllowed(peerId)) session.send(line)
+        },
+        changed: ({ view, catalog, removed }) => {
+            // A deleted channel of this node: the node moves itself to General and sends its voice line.
+            const lost = voiceState.inVoice ? removed.find(row => row.id === voiceState.channel) : undefined
+            if (lost) setVoice({ ...voiceState, channel: GENERAL_VOICE_CHANNEL })
+            events.emit('voice-channels', { ...view, catalog, ...(lost ? { movedFrom: { ...lost } } : {}) })
         }
     })
 
@@ -715,10 +740,18 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                                 shelf.startOffer(peerId, control.offerId)
                             }
                         }
+                    } else if (control.type === 'voice-channels') {
+                        if (sessions.get(peerId) === session) voiceChannels.receive(control, peerId)
                     } else if (control.type === 'voice') {
-                        if (control.inVoice === true) peerVoice.set(peerId, true)
-                        else {
+                        // G6: a missing or non-string channel is General. Update the channel before hostChanged().
+                        const channel = typeof control.channel === 'string' && control.channel.length > 0 &&
+                            control.channel.length <= MAX_CHANNEL_ID ? control.channel : GENERAL_VOICE_CHANNEL
+                        if (control.inVoice === true) {
+                            peerVoice.set(peerId, true)
+                            peerChannel.set(peerId, channel)
+                        } else {
                             peerVoice.delete(peerId)
+                            peerChannel.delete(peerId)
                             if (membership) voiceRelay.closeInboundVoice(peerId)
                         }
                         const direct = control.inVoice === true ? validDirect(control.direct) : null
@@ -730,7 +763,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                             inVoice: control.inVoice === true,
                             streamId: typeof control.streamId === 'string' ? control.streamId : null,
                             muted: control.muted === true,
-                            deafened: control.deafened === true
+                            deafened: control.deafened === true,
+                            channel: control.inVoice === true ? channel : GENERAL_VOICE_CHANNEL
                         })
                     } else if (control.type === 'typing') {
                         if (sessions.get(peerId) === session && control.v === 1 && typeof control.active === 'boolean') {
@@ -793,6 +827,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         }
         if (sendHello) session.send(JSON.stringify({ type: 'hello', name: senderName }))
         channels.opened(peerId)
+        const voiceCatalog = voiceChannels.opened()
+        if (voiceCatalog && memberAllowed(peerId)) session.send(JSON.stringify(voiceCatalog))
         attachments.opened(peerId)
         shelf.opened(peerId)
         whispers.opened(peerId, session)
@@ -850,6 +886,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 events.emit('peer-left', { peerId, left: byeSessions.has(session) })
                 if (membership) events.emit('membership', memberState())
                 peerVoice.delete(peerId)
+                peerChannel.delete(peerId)
                 peerPresence.delete(peerId)
                 idlePeers.delete(peerId)
                 peerDirect.delete(peerId)
@@ -883,12 +920,14 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         if (!session || !memberAllowed(peerId)) return false
         if (!membership) return true
         const receiving = () => direct ? voiceState.inVoice && !election.isHost() : election.isHost()
-        // The voice state arrives on chat and can follow the data stream briefly.
-        for (let attempt = 0; attempt < 10 && receiving() && !peerVoice.has(peerId); attempt++) {
+        // G6: a direct stream only from a peer in the own voice channel. The host forwards each channel.
+        const sender = () => peerVoice.has(peerId) && (!direct || channelOfPeer(peerId) === voiceState.channel)
+        // The voice state arrives on chat and can follow the data stream briefly (also just after a move).
+        for (let attempt = 0; attempt < 10 && receiving() && !sender(); attempt++) {
             await new Promise(resolve => setTimeout(resolve, 50))
             if (session !== sessions.get(peerId) || !memberAllowed(peerId)) return false
         }
-        return receiving() && peerVoice.has(peerId)
+        return receiving() && sender()
     }
 
     // Protected voice streams require the active host or a consenting direct listener.
@@ -946,14 +985,19 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         if (conn === undefined || conn === connection || conn.id === connection.id) sessions.get(peerId)?.close()
     })
 
-    function setVoice({ inVoice, streamId = null, muted = false, deafened = false } = {}) {
+    // channel (G6): a channel ID of the catalog. A missing or unknown ID (or a legacy room) is General.
+    function setVoice({ inVoice, streamId = null, muted = false, deafened = false, channel = GENERAL_VOICE_CHANNEL } = {}) {
         if (inVoice === true && membership && !membership.admitted()) throw new Error('This device is not admitted to the room')
         const active = !selfIdle && inVoice === true
+        const before = voiceState
         voiceState = { inVoice: active, streamId: typeof streamId === 'string' ? streamId : null, muted: muted === true,
-            deafened: active && deafened === true }
+            deafened: active && deafened === true,
+            channel: active && voiceChannels.has(channel) ? channel : GENERAL_VOICE_CHANNEL }
         const line = voiceLine()
         for (const session of sessions.values()) session.send(line)
-        voiceRelay.hostChanged()
+        // A move inside voice starts the move hold.
+        if (before.inVoice && active && before.channel !== voiceState.channel) voiceRelay.channelChanged()
+        else voiceRelay.hostChanged()
     }
 
     // Legacy peers consume fullNode and addrs and ignore the optional participation flag.
@@ -1661,6 +1705,13 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         whisperPeers: whispers.peers,
         sendWhisper: whispers.send,
         channels: channels.view, createChannel: channels.create,
+        // G6: the voice channels. Each edit throws a plain text error for the window.
+        voiceChannels: voiceChannels.view,
+        voiceChannelCatalog: voiceChannels.catalog,
+        voiceChannel: () => voiceState.channel,
+        createVoiceChannel: name => voiceChannels.create(name),
+        renameVoiceChannel: (id, name) => voiceChannels.rename(id, name),
+        deleteVoiceChannel: id => voiceChannels.remove(id),
         shelf: shelf.view, refreshShelf: shelf.refresh, publishShelfFile: shelf.publish,
         removeShelfFile: shelf.remove, downloadShelfFile: shelf.download, shelfTransfer: shelf.transferId,
         postAttachment: attachments.post, requestOriginal: attachments.requestOriginal, requestPreviewById: attachments.requestPreviewById,
