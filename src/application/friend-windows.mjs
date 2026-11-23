@@ -10,11 +10,12 @@ import { isDesktopFrame, lockDesktopNavigation } from './desktop-boundary.mjs';
 const text128 = value => typeof value === 'string' && value.length > 0 && value.length <= 128;
 
 // The view of one friend for its chat window.
-function chatState(links, friendId) {
+export function chatState(links, friendId) {
     const friend = links.friend(friendId);
     if (!friend) return { name: '', state: 'gone', lastSeen: null, reach: 'local' };
     // G7b: also the availability of the friend, and the room name of a common room (state 'room').
-    return { name: friend.name, state: friend.state, lastSeen: friend.lastSeen, reach: links.list().reach,
+    // 1.0.6: status, the link status of the Friends list (friend-presence.mjs; friend-chat.js stateText).
+    return { name: friend.name, state: friend.state, status: friend.status ?? null, lastSeen: friend.lastSeen, reach: links.list().reach,
         availability: friend.availability ?? null, note: friend.note ?? '', roomName: friend.roomName ?? '' };
 }
 

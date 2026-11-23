@@ -2,6 +2,7 @@
 // by one: a new field of an event does not go into the journal by accident. Addresses become a class (addrClass),
 // error text goes through scrubText, and no name, text, file name or key of the event is read.
 // This module does not import electron (node tests use it with real nodes).
+import { createHmac } from 'node:crypto';
 import { addrClass, ipClass } from './journal.mjs';
 
 // The node events that go into the journal.
@@ -126,6 +127,47 @@ export function journalNodeEvents(on, write, selfId = null) {
             const projected = projectNodeEvent(type, data, selfId);
             if (projected) write(projected[0], projected[1]);
         });
+    }
+}
+
+// 1.0.6: the device tag of a friend: the first 8 hex characters of an HMAC of the device ID with the tag key of the data
+// folder (journal.mjs tagKey). The tag is the same in each run of this data folder, and it does not give the device ID.
+export function friendTag(deviceId, key) {
+    if (typeof deviceId !== 'string' || !deviceId || typeof key !== 'string' || !key) return undefined;
+    return createHmac('sha256', key).update(`friend\n${deviceId}`).digest('hex').slice(0, 8);
+}
+
+// The name or the code of an error object (node.mjs dialErrorCode), or undefined.
+const errorCode = value => (typeof value === 'string' && /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(value) ? value : undefined);
+
+// 1.0.6: one 'journal' event of friend-links.mjs gives ['friend', fields], or null. Each event names its fields one by
+// one. The device ID becomes a tag (friendTag), each address a class, a refuse cause a code. No name, no nickname, no
+// friend room and no line text is read. key: the tag key (main.js diag.tagKey()).
+export function projectFriendEvent(data, key = null) {
+    const d = data ?? {};
+    const base = { event: d.event, peer: d.peer, node: d.node, tag: friendTag(d.deviceId, key) };
+    switch (d.event) {
+        case 'start':
+            return ['friend', { ...base, port: d.port, count: d.count }];
+        case 'try':
+            return ['friend', { ...base, via: reasonCode(d.via), result: d.result === 'ok' ? 'ok' : 'failed',
+                reason: reasonCode(d.reason), error: errorCode(d.error), ...addrClass(d.addr), ms: d.ms }];
+        case 'session':
+            return ['friend', { ...base, state: d.state, route: d.route, dir: d.dir, ...(d.addr ? addrClass(d.addr) : {}),
+                secs: d.secs, cause: d.state === 'refused' ? refuseCause(d.cause) : reasonCode(d.cause) }];
+        case 'state':
+            return ['friend', { ...base, from: d.from, to: d.to, cause: reasonCode(d.cause), ms: d.ms }];
+        case 'addrs':
+            return ['friend', { ...base, source: d.source, via: reasonCode(d.via), result: reasonCode(d.result), count: d.count }];
+        case 'ask':
+            return ['friend', { ...base, role: d.role, reason: reasonCode(d.reason), result: reasonCode(d.result),
+                friends: d.friends, members: d.members, count: d.count }];
+        case 'answer':
+            return ['friend', { ...base, role: d.role, via: reasonCode(d.via), result: reasonCode(d.result), count: d.count }];
+        case 'network':
+            return ['friend', { event: 'network', cause: reasonCode(d.cause), count: d.count }];
+        default:
+            return null;
     }
 }
 

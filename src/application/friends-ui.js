@@ -29,7 +29,16 @@
         }
         if (friend.state === 'room') return `Online · in ${friend.roomName}`;
         if (friend.state === 'removed-you') return 'Removed you as a friend';
+        // 1.0.6: the status of the friend link (friend-presence.mjs). An older view has no status: 'Offline'.
+        if (friend.status === 'connecting') return 'Connecting…';
+        if (friend.status === 'unreachable') return 'Can\'t reach';
         return Number.isFinite(friend.lastSeen) ? `Offline · last seen ${timeText(friend.lastSeen, now)}` : 'Offline';
+    }
+    // 1.0.6: the tooltip of "Can't reach": what to try. upnp: Open port is on for the friend links of this PC.
+    function stateTip(friend, upnp) {
+        if (friend.state !== 'offline' || friend.status !== 'unreachable') return '';
+        return upnp ? 'Join a room you share, or ask them to turn on Open port (UPnP)'
+            : 'Turn on Open port (UPnP), or join a room you share';
     }
     // U13 of the UI copy pass: the reach line is a dot and a short label. The tooltip has the reason.
     function reachText(reach) {
@@ -74,7 +83,7 @@
             default: return 'Couldn\'t join the room. Try again.';
         }
     }
-    window.friendsCore = Object.freeze({ stateText, reachText, reachTip, reachKind, waitingText, timeText, inviteText, knockStateText, askText, joinText });
+    window.friendsCore = Object.freeze({ stateText, stateTip, reachText, reachTip, reachKind, waitingText, timeText, inviteText, knockStateText, askText, joinText });
 
     if (typeof document === 'undefined' || typeof document.getElementById !== 'function') return;
     const api = window.friends;
@@ -115,6 +124,7 @@
             const row = document.createElement('li');
             row.dataset.friendId = friend.friendId;
             row.dataset.state = friend.state;
+            if (friend.status) row.dataset.status = friend.status;
             row.tabIndex = -1;
             const name = document.createElement('span');
             name.className = 'friend-name';
@@ -122,6 +132,8 @@
             const state = document.createElement('span');
             state.className = 'friend-state';
             state.textContent = stateText(friend);
+            const tip = stateTip(friend, view.upnp === true);
+            if (tip) state.title = tip;
             row.append(name, state);
             // 1.0.6: the profile picture of the friend (avatars.mjs). An image that does not load goes away.
             if (typeof friend.avatar === 'string' && /^[0-9a-f]{64}$/.test(friend.avatar)) {

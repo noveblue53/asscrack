@@ -44,6 +44,9 @@
 #friend-list .friend-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #friend-list .friend-state { grid-column: 1; font-size: 11px; opacity: 0.85; }
 #friend-list > li[data-state="online"] .friend-state, #friend-list > li[data-state="room"] .friend-state { color: #11713f; font-weight: 600; }
+/* 1.0.6: the status of the friend link (friend-presence.mjs). "Can't reach" has a tooltip with what to try. */
+#friend-list > li[data-status="connecting"] .friend-state { font-style: italic; }
+#friend-list > li[data-status="unreachable"] .friend-state { color: #8a5a00; cursor: help; }
 #friend-list .count { grid-column: 2; grid-row: 1 / span 2; }
 /* easy-join part 3: Join of a friend in another room, or the text "Ask <name> for an invite". */
 #friend-list .friend-join { grid-column: 3; grid-row: 1 / span 2; font-size: 12px; padding: 2px 10px; cursor: pointer; }
@@ -66,6 +69,7 @@
 }
 #friends-panel.friends-drawer #friend-list > li[data-state="online"] .friend-state,
 #friends-panel.friends-drawer #friend-list > li[data-state="room"] .friend-state { color: var(--accent); }
+#friends-panel.friends-drawer #friend-list > li[data-status="unreachable"] .friend-state { color: var(--warning); }
 
 /* The friend request bar above the composer. easy-join part 2: the knock bar has the same look. */
 #friend-request-bar, #knock-bar {

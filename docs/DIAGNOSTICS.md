@@ -22,6 +22,9 @@ the bundles of two computers can go on one timeline (kit skill `field-analysis`)
     key is random for each data folder (`diagnostics/tag-key.json`, never in a bundle). The tag tells two devices
     apart in one bundle.
   - Peer IDs stay raw. Each room member sees them already, and they line up the bundles of two computers.
+  - 1.0.6: a friend is a peer ID and a device tag in the `friend` lines. The tag is the first 8 hex characters of an
+    HMAC of the device ID with the same random key as the device labels. The tag is the same in each run of one data
+    folder. It does not give the device ID, and the tags of two computers are different.
 - Crash dumps (Crashpad minidumps) can hold parts of the memory: chats and keys. A bundle has only their metadata
   (name, size, time). The raw `.dmp` files go into a bundle only with the second checkbox "Include crash memory
   (may contain chat text)". Electron uploads nothing (`uploadToServer: false`).
@@ -119,6 +122,47 @@ the budget. One `suppressed` line (`of`, `count`) follows. A write error writes 
 | `diag` | `event peer id reason size crashDumps` | the requests and the bundles |
 | `knock` | `event side peer id route friend result cause`. Owner (`side owner`): `received` (the prompt shows), `allowed`, `denied`, `auto-allowed`, `timeout`, `gone` (the knocker closed), `refused` (`cause`: `rate busy pending room old-code expired owner removed role error cool-down`), `dropped` (`cause`: `bad-hello bad-knock wrong-proof no-line`). Relay (`side relay`): `circuit`, `circuit-refused` (`rate full`), `circuit-end` (`time-limit data-limit`). Knocker (`side knocker`): `result` with `result` and `cause`. `route`: `relay direct friend-link forward room-code friend`. No name, invite, room code, device ID or address | easy-join knock desk (knock.mjs `report`), node.mjs, main.js |
 | `join` | `event kind result`: `friend-invite-sent`, `friend-invite-received`, `friend-invite-used` (the Join of an invite card), `clipboard-prompt` (`kind`: `room-code device-invite`), `clipboard-join`, `clipboard-dismiss`. No code, no name, no room name | main.js |
+| `friend` | `event peer node tag` and the fields of the event. See "The friend lines" below. No name, nickname, device ID, friend room or address. | friend-links.mjs, main.js |
+
+The friend lines (1.0.6). Each line has these fields:
+- `event`: the event (see the list below).
+- `peer`: the last known peer ID of the friend node of the friend.
+- `node`: the peer ID of the own friend node for that friend.
+- `tag`: the device tag of the friend.
+
+The events:
+- `start`: `port count`. The own port and the number of saved addresses of the friend.
+- `try`: `via result reason error addr transport port ms`. One dial of a friend node.
+  - `via`: `full-node address connect discovery` (the dials of the node), `candidate` (an address of a done line or
+    of an addrs line) or `ask` (an address of a refresh answer).
+  - `reason`: `refused timeout unreachable wrong-peer other`.
+  - `error`: the error code or the error name, for example `ECONNREFUSED` or `AbortError`. Never the error text.
+- `session`: `state`. `open` has `route dir addr transport port`. `closed` has `cause` (`bye` or `lost`) and `secs`.
+  `refused` has `cause` as in `session-refused`.
+- `state`: `from to cause ms`. A change of the status in the Friends list.
+  - `from` and `to`: `connecting online unreachable offline`.
+  - `cause`: `start session lost bye network grace timeout answer`.
+  - `ms`: the time in the old status.
+- `addrs`: `source via result count`. New addresses of the friend.
+  - `source`: `room` (the addrs line of a common room), `done` (the end of a friend request), `full-node` (proved by
+    the node) or `ask` (a refresh answer).
+  - `result`: `received` or `saved`.
+- `ask`: `role reason result friends members count`. One line for each friend in a refresh round of this device.
+  - `role`: `asker`.
+  - `reason`: `failed unreachable network helper repeat`.
+  - `result`: `sent limited no-helper`.
+  - `friends` and `members`: the number of helpers that got the ask on a friend link and in the room.
+  - `count`: the number of helpers that the gap stopped.
+- `answer`: `role via result count`. `via`: `friend` or `room`.
+  - `role helper` (this device forwards): `forwarded relayed limited rate no-address`.
+  - `role friend` (this device is the friend in the ask): `answered no-address unknown rate`.
+- `network`: `cause count`. `cause`: `online changed resume`. `count`: the number of friends with new tries.
+
+The `friend` lines have a limit. The node coalesces each failed dial. The same route, peer, address and reason again
+in 60 s gives no new `try` line (the same rule as the `dial` lines). The friend node dials again each 30 s. Thus the
+journal shows about one `try` line of each kind each minute. The node does not coalesce the `try` lines with
+`via candidate` and `via ask` (the dials of friend-links.mjs). The budget of the type is a burst of 200 lines and 2
+lines each second.
 
 The voice summary has a limit. The gate of the sender stops the frames at each pause, and a frame has no mark for
 the start of a talk spurt. Thus the summary has no underrun count, and `jitterMs` uses only the intervals of 100 ms

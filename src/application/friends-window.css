@@ -18,6 +18,7 @@ html, body { height: 100%; margin: 0; }
 }
 #friends-panel[data-mode="window"] #friend-list > li[data-state="online"] .friend-state,
 #friends-panel[data-mode="window"] #friend-list > li[data-state="room"] .friend-state { color: var(--accent); }
+#friends-panel[data-mode="window"] #friend-list > li[data-status="unreachable"] .friend-state { color: var(--warning); }
 #friends-panel[data-mode="window"] #friend-list > li:hover { background: var(--surface-raised); }
 button {
   height: 28px;

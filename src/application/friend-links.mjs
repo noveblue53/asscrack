@@ -9,6 +9,11 @@
 // 'away' { friendId, batch, count } (G7b: the end of a batch of lines that were sent while this device was away),
 // 'invite' { friendId, id, name, room } (easy-join: a valid room invite of a friend arrived; friend-invite.mjs).
 // 'invite-sent' { result } (diagnostics, 1.0.1: the result of "Invite to room", no code).
+// 'journal' { event, deviceId, peer, node, ... } (diagnostics, 1.0.6: the friend link tries, sessions, statuses, address
+// sources and refresh asks; main.js projects each event with diag-events.mjs projectFriendEvent, docs/DIAGNOSTICS.md).
+// 1.0.6: each friend view has a status for the Friends list (friend-presence.mjs): 'online', 'room', 'connecting',
+// 'unreachable', 'offline' or 'removed-you'. The state field stays as before. The address refresh (friend-refresh.mjs)
+// asks the other friends and the members of the current room for the addresses of a friend with no session.
 // easy-join part 3: each friend link carries the room announce line and the friend knock (friend-knock.mjs).
 // A line of an event or of lines() never has the code of an invite: an invite line has text '' and invite { state, room }.
 import { EventEmitter } from 'node:events';
@@ -28,6 +33,10 @@ import { isAddressInUse } from './login-errors.mjs';
 import { checkInvite, inviteCodeOf, inviteText, isInviteText, plainText, validInviteCode, windowLine } from './friend-invite.mjs';
 import { createKnockRelay, isFriendKnockLine, readRoomLine, roomLine, startFriendKnock } from '../network/friend-knock.mjs';
 import { checkFriendAllowedInvite } from '../network/knock.mjs';
+import { dialErrorCode, dialReason } from '../network/node.mjs';
+import { createPresence } from './friend-presence.mjs';
+import { createRateLimit, hereLine, isRefreshLine, newRefreshId, readHere, readWhere, readWhereFor, REFRESH_LIMITS,
+    whereForLine, whereLine, whereTag } from './friend-refresh.mjs';
 
 // The cap and the ports (design F2). 32 needs the interface cache of main.js (interface-cache.mjs, DECISIONS.md G7a).
 export const FRIEND_CAP = 32;
@@ -96,11 +105,12 @@ function ownCandidates(friendNode, roomNode, port) {
 
 // createNode: createAsscrackNode (a test can give its own). hintFiles(room, roomKey) -> { peers, host }.
 // nodeOptions: extra node options (main.js: allowPrivateFullNode and fullNode of the test flags).
-// The test options: basePort, cap, startStep, ackMs, now, setTimer, clearTimer, candidates (false: no candidate).
+// The test options: basePort (0: port 0 for each friend node), cap, startStep, ackMs, now, setTimer, clearTimer,
+// candidates (false: no candidate), refresh (false: no address refresh), refreshLimits, graceMs, unreachableMs.
 export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = {}, log = () => {},
     basePort = FRIEND_BASE_PORT, cap = FRIEND_CAP, startStep = FRIEND_START_STEP_MS, ackMs, requestMs, rateMs,
     now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout, candidates = true, discovery = true,
-    avatarOf = () => null } = {}) {
+    refresh = true, refreshLimits = {}, graceMs, unreachableMs, avatarOf = () => null } = {}) {
     const events = new EventEmitter();
     let identity = null;
     let archive = null;
@@ -113,8 +123,25 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
     let room = null; // { node, name, requests, off() }
     // G7b: the availability of this person for the friend nodes (design F11).
     let availability = { state: 'available', note: '', idle: false };
+    // 1.0.6: the address refresh (friend-refresh.mjs).
+    const L = { ...REFRESH_LIMITS, ...refreshLimits };
+    const askedAt = new Map(); // helper device ID -> the time of the last 'where' line to it
+    const asks = new Map(); // ask ID -> { device, route, via, tags: Map(tag -> entry), timer }
+    const forwards = new Map(); // forward ID -> { askId, tag, askerRoute, targetDevice, targetRoute, via, timer }
+    const forwardedAt = new Map(); // 'asker device, target device' -> time
+    const whereLimit = createRateLimit({ limit: L.whereRate, now });
+    const forLimit = createRateLimit({ limit: L.forRate, now });
+    const askReasons = new Set();
+    let askTimer = null;
+    let repeatTimer = null;
 
     const emitChanged = () => events.emit('changed', list());
+    // 1.0.6: one diagnostics event. entry: the friend (its device ID becomes a tag in main.js), or null.
+    function report(event, entry, fields = {}) {
+        if (events.listenerCount('journal') === 0) return;
+        const base = entry ? { deviceId: entry.row.deviceId, peer: entry.peerId ?? entry.lastPeer ?? undefined, node: entry.node?.peerId } : {};
+        events.emit('journal', { ...base, ...fields, event });
+    }
     // L1 (P10a): the addresses of a friend from a grant, a done line or an addrs line. Only TCP addresses with an IP: no
     // /dns* and no /unix. A LAN address is good (a friend on the same network). A loopback address only with the test
     // flag allowPrivateFullNode.
@@ -175,6 +202,8 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
         const view = {
             friendId: entry.row.roomId, name: entry.row.nickname, unread: entry.unread,
             state: removed ? 'removed-you' : peerId ? 'online' : inRoom ? 'room' : 'offline',
+            // 1.0.6: the status of the Friends list (friend-presence.mjs). A node that did not start yet is 'connecting'.
+            status: removed ? 'removed-you' : peerId ? 'online' : inRoom ? 'room' : entry.presence.status(),
             lastSeen: entry.row.lastSeen ?? null,
             // 1.0.6: the hash of the profile picture of the friend device (avatars.mjs), or null (the letter).
             avatar: avatarOf(entry.row.deviceId) ?? null
@@ -224,7 +253,7 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
         }
         const options = {
             room: saved.name, roomKey: saved.roomKey, membership, name: ownName(saved.userName),
-            port: basePort + entry.row.slot, upnp: settings.upnp === true, inviteNodes: entry.row.addrs, storePath,
+            port: basePort === 0 ? 0 : basePort + entry.row.slot, upnp: settings.upnp === true, inviteNodes: entry.row.addrs, storePath,
             discovery, discoveryInterval: 60000, redialInterval: 30000, fullNode: 'auto', seedHistory: [], ...nodeOptions
         };
         let node;
@@ -243,6 +272,20 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
         }
         entry.node = node;
         entry.port = node.getMultiaddrs().map(tcpParts).find(p => p && p.port > 0)?.port ?? options.port;
+        // 1.0.6: the diagnostics of the tries and sessions of this friend node, and the status of the Friends list.
+        report('start', entry, { port: entry.port, count: (entry.row.addrs ?? []).reduce((n, x) => n + x.addrs.length, 0) });
+        node.events.on('dial-failed', d => {
+            report('try', entry, { peer: d.peer, via: d.via, result: 'failed', reason: d.reason, error: d.code, addr: d.addr, ms: d.ms });
+            if (!sessionPeer(entry)) needAsk('failed');
+        });
+        node.events.on('dial-result', d => report('try', entry, { peer: d.peer, via: d.via, result: d.result, reason: d.reason,
+            addr: d.addr, ms: d.ms }));
+        node.events.on('connection', d => {
+            if (d.state === 'session') report('session', entry, { peer: d.peer, state: 'open', route: d.type, dir: d.dir, addr: d.addr });
+        });
+        node.events.on('session-refused', d => report('session', entry, { peer: d.peerId, state: 'refused', cause: d.cause }));
+        entry.presence.started();
+        armRepeat();
         entry.pm = createPrivateMessages({
             selfDevice: identity.id, friendDevice: entry.row.deviceId, sessionPeer: () => routePeer(entry),
             sendTo: (peer, line) => routeSend(entry, peer, line),
@@ -274,8 +317,21 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
         const opened = ({ peerId }) => {
             if (node.deviceOf(peerId) !== entry.row.deviceId || entry.peerId === peerId) return;
             entry.peerId = peerId;
+            entry.lastPeer = peerId;
+            entry.sessionAt = now();
             entry.row.lastSeen = now();
             save(entry.row.roomId, { lastSeen: entry.row.lastSeen });
+            // 1.0.6: an address of a refresh answer is saved only now: a session with the device of this friend opened.
+            const asked = entry.askAddrs.get(peerId);
+            entry.askAddrs.clear();
+            if (asked?.length) {
+                entry.row.addrs = mergeNodes(entry.row.addrs, [{ id: peerId, addrs: asked }]);
+                save(entry.row.roomId, { addrs: entry.row.addrs });
+                report('addrs', entry, { source: 'ask', result: 'saved', count: asked.length });
+            }
+            entry.presence.sessionOpened();
+            // 1.0.6: a new friend link session is a new helper for the other friends.
+            needAsk('helper');
             // easy-join part 3: a new session gets the current room of this device.
             entry.sentRoom = null;
             announce(entry);
@@ -285,13 +341,20 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
         };
         node.events.on('peer-joined', opened);
         node.events.on('membership', () => { for (const peerId of node.peers()) opened({ peerId }); });
-        node.events.on('peer-left', ({ peerId }) => {
+        node.events.on('peer-left', ({ peerId, left }) => {
             if (entry.peerId !== peerId) return;
             entry.peerId = null;
             entry.row.lastSeen = now();
             save(entry.row.roomId, { lastSeen: entry.row.lastSeen });
             routeClosed(entry, peerId);
             knockClosed(entry);
+            // 1.0.6: a bye line (a clean quit) gives 'offline' at once; a lost session gives 'connecting'.
+            report('session', entry, { peer: peerId, state: 'closed', cause: left === true ? 'bye' : 'lost',
+                secs: Math.round((now() - (entry.sessionAt ?? now())) / 100) / 10 });
+            entry.presence.sessionClosed(left === true);
+            // 1.0.6: the refresh rounds run again while this friend has no session (the first one after repeatMs, or
+            // at the first failed redial).
+            armRepeat();
             emitChanged();
         });
         // G7b: the availability of the friend (presence lines and the idle flag of the node line).
@@ -301,15 +364,19 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
             if (idle !== entry.idle) { entry.idle = idle; emitChanged(); }
         });
         node.events.on('pm', data => {
+            // 1.0.6: the lines of the address refresh (friend-refresh.mjs).
+            if (isRefreshLine(data?.message)) refreshFromFriend(entry, data);
             // easy-join part 3: the room announce line and the friend knock lines (friend-knock.mjs).
-            if (isFriendKnockLine(data?.message)) knockLine(entry, data);
+            else if (isFriendKnockLine(data?.message)) knockLine(entry, data);
             else entry.pm?.handle(data);
         });
         // A proved address of the friend: keep it for each start (design F5 item 2).
         node.events.on('full-node-addrs', ({ peerId, addrs }) => {
             if (node.deviceOf(peerId) !== entry.row.deviceId || !Array.isArray(addrs)) return;
-            entry.row.addrs = mergeNodes(entry.row.addrs, [{ id: peerId, addrs: addrs.filter(a => !a.includes('/p2p-circuit')) }]);
+            const direct = addrs.filter(a => !a.includes('/p2p-circuit'));
+            entry.row.addrs = mergeNodes(entry.row.addrs, [{ id: peerId, addrs: direct }]);
             save(entry.row.roomId, { addrs: entry.row.addrs });
+            report('addrs', entry, { peer: peerId, source: 'full-node', result: 'saved', count: direct.length });
         });
         // G7b: changed addresses of the friend node go to the friend in a common room.
         const addrsChanged = () => { emitChanged(); if (entry.roomPeer) sendAddrs(entry, entry.roomPeer); };
@@ -559,6 +626,8 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
         entry.roomPeer = null;
         clearTimer(entry.batch?.timer);
         entry.batch = null;
+        entry.presence.stop();
+        entry.askAddrs.clear();
         if (node) await node.stop().catch(err => log('WARN', `Friend node stop failed: ${errText(err)}`));
     }
 
@@ -574,7 +643,11 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
     function scheduleStart(entry, delay) {
         const timer = setTimer(() => {
             startTimers.delete(timer);
-            startNode(entry).catch(err => log('WARN', `Friend node not started: ${errText(err)}`));
+            startNode(entry).catch(err => {
+                log('WARN', `Friend node not started: ${errText(err)}`);
+                // 1.0.6: the status leaves 'connecting' after the grace time.
+                if (!entry.node) entry.presence.started();
+            });
         }, delay);
         startTimers.add(timer);
     }
@@ -593,7 +666,17 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
     function addEntry(row) {
         const entry = { row, node: null, pm: null, peerId: null, port: null, unread: 0,
             roomPeer: null, tried: new Set(), inflight: new Set(), batch: null, idle: false, invites: new Map(),
-            friendRoom: null, sentRoom: null, relay: null, knock: null };
+            friendRoom: null, sentRoom: null, relay: null, knock: null,
+            // 1.0.6: the status (friend-presence.mjs), the last session peer and its start, the addresses of refresh
+            // answers that wait for a session (peer ID -> addresses), and the time of the last redial for an ask.
+            presence: null, lastPeer: null, sessionAt: null, askAddrs: new Map(), redialAt: null };
+        entry.presence = createPresence({ now, setTimer, clearTimer,
+            ...(graceMs ? { graceMs } : {}), ...(unreachableMs ? { unreachableMs } : {}),
+            onChange: change => {
+                report('state', entry, change);
+                if (change.to === 'unreachable') needAsk('unreachable');
+                emitChanged();
+            } });
         friends.set(row.roomId, entry);
         return entry;
     }
@@ -669,31 +752,44 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
     // A: the done line of B. Dial the candidates of B one time. G7b: the same for the addrs line of a friend in a
     // common room. L1 (P10a): save a candidate only after a connection to that peer ID (tryFriendAddr). The friend node
     // opens the friend link on that connection when the link has no session.
-    function ownerDone(roomNode, peerId, deviceId, port, nodes) {
+    function ownerDone(roomNode, peerId, deviceId, port, nodes, source = 'room') {
         const entry = byDevice(deviceId);
         if (!entry || !candidates || entry.row.state === 'removed-you') return;
         const id = nodes[0]?.id;
         const more = mergeNodes(friendNodes(nodes), friendNodes(id ? [{ id, addrs: connectionCandidates(roomNode, peerId, port) }] : []));
+        report('addrs', entry, { source, result: 'received', count: more.reduce((n, x) => n + x.addrs.length, 0) });
         for (const node of more) for (const addr of node.addrs) tryFriendAddr(entry, node.id, addr);
     }
 
     // L1 (P10a): one dial of an address of the friend node. A new connection (force), also when a connection exists.
-    async function tryFriendAddr(entry, id, addr) {
+    // 1.0.6: via 'ask' (an address of a refresh answer): the address is saved only after a session opened (opened()).
+    async function tryFriendAddr(entry, id, addr, via = 'candidate') {
         const node = entry.node;
         if (stopped || !node?.libp2p) return;
         const target = `${addr}/p2p/${id}`;
+        const started = now();
         let conn;
         try {
             conn = await node.libp2p.dial(multiaddr(target), { force: true });
-        } catch {
+        } catch (err) {
+            report('try', entry, { peer: id, via, result: 'failed', reason: dialReason(err), error: dialErrorCode(err), addr,
+                ms: now() - started });
             return;
         }
         if (stopped || entry.node !== node || !friends.has(entry.row.roomId) || conn.remotePeer.toString() !== id) {
             conn.close().catch(() => {});
             return;
         }
-        entry.row.addrs = mergeNodes(entry.row.addrs, [{ id, addrs: [addr] }]);
-        save(entry.row.roomId, { addrs: entry.row.addrs });
+        report('try', entry, { peer: id, via, result: 'ok', addr, ms: now() - started });
+        if (via === 'ask') {
+            const list = entry.askAddrs.get(id) ?? [];
+            if (!list.includes(addr) && list.length < MAX_ADDRS) list.push(addr);
+            entry.askAddrs.set(id, list);
+            if (entry.askAddrs.size > MAX_NODES) entry.askAddrs.delete(entry.askAddrs.keys().next().value);
+        } else {
+            entry.row.addrs = mergeNodes(entry.row.addrs, [{ id, addrs: [addr] }]);
+            save(entry.row.roomId, { addrs: entry.row.addrs });
+        }
         if (!sessionPeer(entry)) node.connect(target).catch(() => {});
         else if (!conn.streams.some(stream => stream.protocol?.startsWith('/asscrack/chat'))) conn.close().catch(() => {});
     }
@@ -705,6 +801,217 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
         events.emit('request', { kind: event.kind, id: event.id, name: event.name ?? '', side: event.side ?? null,
             result: event.result ?? null, mark: deviceMark(event.deviceId) });
         emitChanged();
+    }
+
+    // ---- 1.0.6: the address refresh (friend-refresh.mjs) ----
+
+    // A route of a refresh line: { kind: 'friend', entry } (the friend link session of that friend) or
+    // { kind: 'room', node, peerId } (the session of a proved member of the current room).
+    function routeLine(route, line) {
+        if (stopped) return false;
+        if (route.kind === 'friend') {
+            const peerId = route.entry.node ? sessionPeer(route.entry) : null;
+            return Boolean(peerId && route.entry.node.sendTo(peerId, line));
+        }
+        return Boolean(room && room.node === route.node && room.node.sendTo(route.peerId, line));
+    }
+    const sameRoute = (a, b) => a.kind === b.kind && (a.kind === 'friend' ? a.entry === b.entry : a.node === b.node && a.peerId === b.peerId);
+    // The IP of the session of a route with a port (design F5a), as candidate addresses.
+    function seenCandidates(route, port) {
+        if (route.kind === 'friend') {
+            const peerId = sessionPeer(route.entry);
+            return peerId ? connectionCandidates(route.entry.node, peerId, port) : [];
+        }
+        return room?.node === route.node ? connectionCandidates(room.node, route.peerId, port) : [];
+    }
+    // The devices with a route for refresh lines: the friends with a friend link session, then the proved member devices
+    // of the current protected room. Never a blocked device and never this device.
+    function routes() {
+        const out = new Map();
+        for (const entry of friends.values()) {
+            if (entry.row.state === 'removed-you' || !entry.node || !sessionPeer(entry) || isBlocked(entry.row.deviceId)) continue;
+            out.set(entry.row.deviceId, { route: { kind: 'friend', entry }, via: 'friend' });
+        }
+        let member = null;
+        try { member = room?.node.memberState?.() ?? null; } catch { member = null; }
+        if (room && member?.protected) {
+            for (const peerId of room.node.peers()) {
+                const device = room.node.deviceOf(peerId);
+                if (!device || device === identity?.id || out.has(device) || isBlocked(device)) continue;
+                out.set(device, { route: { kind: 'room', node: room.node, peerId }, via: 'room' });
+            }
+        }
+        return out;
+    }
+    // The own candidate addresses of the friend node of a friend: { port, nodes } or {}.
+    function ownAddrs(entry) {
+        const addrs = candidates && entry.node ? ownCandidates(entry.node, room?.node, entry.port) : [];
+        return addrs.length ? { port: entry.port, nodes: [{ id: entry.node.peerId, addrs }] } : {};
+    }
+    // The friends that need addresses: a running node, no session and no common room.
+    const askTargets = () => [...friends.values()].filter(e => e.node && e.row.state !== 'removed-you' && !sessionPeer(e) && !e.roomPeer);
+
+    function needAsk(reason) {
+        if (!refresh || stopped || state !== 'open') return;
+        askReasons.add(reason);
+        if (askTimer) return;
+        askTimer = setTimer(() => {
+            askTimer = null;
+            const order = ['network', 'unreachable', 'failed', 'helper', 'repeat'];
+            const first = order.find(r => askReasons.has(r)) ?? [...askReasons][0];
+            askReasons.clear();
+            askRound(first);
+        }, L.debounceMs);
+        askTimer?.unref?.();
+    }
+    function armRepeat() {
+        if (!refresh || stopped || repeatTimer) return;
+        repeatTimer = setTimer(() => { repeatTimer = null; needAsk('repeat'); }, L.repeatMs);
+        repeatTimer?.unref?.();
+    }
+    // One round: one 'where' line to each helper device that did not get one in askGapMs. A new round each repeatMs
+    // while a friend needs addresses.
+    function askRound(reason) {
+        if (stopped || state !== 'open') return;
+        const targets = askTargets();
+        if (!targets.length) return;
+        armRepeat();
+        let viaFriends = 0, viaRoom = 0, limited = 0;
+        for (const [device, helper] of routes()) {
+            const list = targets.filter(t => t.row.deviceId !== device).slice(0, L.maxTags);
+            if (!list.length) continue;
+            const last = askedAt.get(device);
+            if (last !== undefined && now() - last < L.askGapMs) { limited += 1; continue; }
+            const id = newRefreshId();
+            const line = whereLine(id, newRefreshId(), list.map(t => ({ deviceId: t.row.deviceId, ...ownAddrs(t) })));
+            if (!routeLine(helper.route, line)) continue;
+            askedAt.set(device, now());
+            if (askedAt.size > 256) askedAt.delete(askedAt.keys().next().value);
+            const ask = { device, route: helper.route, via: helper.via, tags: new Map(list.map((t, i) => [line.ask[i].tag, t])) };
+            ask.timer = setTimer(() => asks.delete(id), L.answerMs);
+            ask.timer?.unref?.();
+            asks.set(id, ask);
+            if (helper.via === 'friend') viaFriends += 1;
+            else viaRoom += 1;
+        }
+        // The journal gets a round that sent a line, and a round with no helper for a new status or a network change.
+        const sent = viaFriends + viaRoom > 0;
+        if (!sent && reason !== 'unreachable' && reason !== 'network') return;
+        for (const t of targets) {
+            report('ask', t, { role: 'asker', reason, result: sent ? 'sent' : limited ? 'limited' : 'no-helper',
+                friends: viaFriends, members: viaRoom, count: limited });
+        }
+    }
+
+    // A refresh line on the friend link session of a friend.
+    function refreshFromFriend(entry, { peerId, deviceId, message } = {}) {
+        if (stopped || deviceId !== entry.row.deviceId || !peerId || peerId !== sessionPeer(entry) ||
+            entry.row.state === 'removed-you' || isBlocked(deviceId)) return;
+        refreshLine({ kind: 'friend', entry }, deviceId, message, 'friend');
+    }
+    // A refresh line on the session of a proved member of the current protected room.
+    function refreshFromRoom(node, { peerId, deviceId, message } = {}) {
+        if (stopped || !room || room.node !== node || typeof peerId !== 'string' || typeof deviceId !== 'string' ||
+            node.deviceOf(peerId) !== deviceId || deviceId === identity?.id || isBlocked(deviceId)) return;
+        refreshLine({ kind: 'room', node, peerId }, deviceId, message, 'room');
+    }
+    function refreshLine(route, device, message, via) {
+        if (message.op === 'where') onWhere(route, device, message, via);
+        else if (message.op === 'where-for') onWhereFor(route, device, message, via);
+        else onHere(route, device, message, via);
+    }
+
+    // Helper: forward each known tag to that device. Silent for an unknown tag.
+    function onWhere(route, askerDevice, message, via) {
+        const ask = readWhere(message);
+        if (!ask) return;
+        if (!whereLimit.allow(askerDevice)) { report('answer', null, { role: 'helper', via, result: 'rate' }); return; }
+        const known = routes();
+        for (const item of ask.ask) {
+            let target = null;
+            for (const [device, helper] of known) {
+                if (device !== askerDevice && whereTag(ask.nonce, device) === item.tag) { target = { device, route: helper.route }; break; }
+            }
+            if (!target) continue;
+            const friend = byDevice(target.device);
+            const key = `${askerDevice} ${target.device}`;
+            const last = forwardedAt.get(key);
+            if ((last !== undefined && now() - last < L.forwardGapMs) || forwards.size >= L.maxForwards) {
+                report('answer', friend, { deviceId: target.device, role: 'helper', via, result: 'limited' });
+                continue;
+            }
+            const id = newRefreshId();
+            if (!routeLine(target.route, whereForLine(id, askerDevice, item.port, item.nodes))) continue;
+            forwardedAt.delete(key);
+            forwardedAt.set(key, now());
+            if (forwardedAt.size > 256) forwardedAt.delete(forwardedAt.keys().next().value);
+            const forward = { askId: ask.id, tag: item.tag, askerRoute: route, targetDevice: target.device, targetRoute: target.route, via };
+            forward.timer = setTimer(() => forwards.delete(id), L.answerMs);
+            forward.timer?.unref?.();
+            forwards.set(id, forward);
+            report('answer', friend, { deviceId: target.device, role: 'helper', via, result: 'forwarded' });
+        }
+    }
+
+    // Friend: a helper forwards an ask of a friend of this device. Dial the addresses of the asker, and answer with the
+    // own candidates of the friend node for the asker.
+    function onWhereFor(route, helperDevice, message, via) {
+        const ask = readWhereFor(message);
+        if (!ask) return;
+        if (!forLimit.allow(helperDevice)) { report('answer', null, { role: 'friend', via, result: 'rate' }); return; }
+        const asker = byDevice(ask.device);
+        if (!asker || ask.device === helperDevice || asker.row.state === 'removed-you' || isBlocked(ask.device) || !asker.node) {
+            report('answer', null, { role: 'friend', via, result: 'unknown' });
+            return;
+        }
+        // The asker runs now.
+        asker.presence.answered();
+        if (!sessionPeer(asker)) {
+            let tries = 0;
+            for (const node of friendNodes(ask.nodes)) {
+                for (const addr of node.addrs) if (tries++ < L.maxTries) tryFriendAddr(asker, node.id, addr, 'ask');
+            }
+            if (asker.redialAt === null || now() - asker.redialAt >= L.redialGapMs) {
+                asker.redialAt = now();
+                try { asker.node.refreshRoutes?.(); } catch { /* a node that stops */ }
+            }
+        }
+        const own = ownAddrs(asker);
+        const sent = Boolean(own.nodes) && routeLine(route, hereLine(ask.id, null, own.port, own.nodes));
+        report('answer', asker, { role: 'friend', via, result: sent ? 'answered' : 'no-address',
+            count: own.nodes ? own.nodes[0].addrs.length : 0 });
+    }
+
+    // Helper: the answer of the friend for a forward goes back to the asker, with the IP of the session to the friend.
+    // Asker: the answer of a helper; dial the addresses of the friend.
+    function onHere(route, device, message, via) {
+        const here = readHere(message);
+        if (!here) return;
+        const forward = forwards.get(here.id);
+        if (forward) {
+            if (device !== forward.targetDevice || !sameRoute(route, forward.targetRoute)) return;
+            forwards.delete(here.id);
+            clearTimer(forward.timer);
+            const id = here.nodes[0].id;
+            const nodes = mergeNodes(friendNodes(here.nodes), friendNodes([{ id, addrs: seenCandidates(route, here.port) }]))
+                .filter(n => n.addrs.length);
+            const sent = nodes.length > 0 && routeLine(forward.askerRoute, hereLine(forward.askId, forward.tag, here.port, nodes));
+            report('answer', byDevice(device), { deviceId: device, role: 'helper', via, result: sent ? 'relayed' : 'no-address',
+                count: nodes.reduce((n, x) => n + x.addrs.length, 0) });
+            return;
+        }
+        const ask = asks.get(here.id);
+        if (!ask || device !== ask.device || !sameRoute(route, ask.route) || !here.tag) return;
+        const target = ask.tags.get(here.tag);
+        if (!target) return;
+        ask.tags.delete(here.tag);
+        if (stopped || !friends.has(target.row.roomId) || !target.node || target.row.state === 'removed-you') return;
+        target.presence.answered();
+        const nodes = friendNodes(here.nodes).filter(n => n.addrs.length);
+        report('addrs', target, { source: 'ask', via: ask.via, result: 'received', count: nodes.reduce((n, x) => n + x.addrs.length, 0) });
+        if (sessionPeer(target)) return;
+        let tries = 0;
+        for (const node of nodes) for (const addr of node.addrs) if (tries++ < L.maxTries) tryFriendAddr(target, node.id, addr, 'ask');
     }
 
     // ---- The API ----
@@ -761,8 +1068,8 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
                     .catch(err => { log('WARN', `Friend grant not made: ${errText(err)}`); throw err; }),
                 acceptGrant: ({ peerId, deviceId, name, grant }) => receiveGrant(node, peerId, deviceId, name, grant)
                     .catch(err => { log('WARN', `Friend grant refused: ${errText(err)}`); throw err; }),
-                done: ({ peerId, deviceId, port, nodes }) => ownerDone(node, peerId, deviceId, port, nodes),
-                addrs: ({ peerId, deviceId, port, nodes }) => ownerDone(node, peerId, deviceId, port, nodes),
+                done: ({ peerId, deviceId, port, nodes }) => ownerDone(node, peerId, deviceId, port, nodes, 'done'),
+                addrs: ({ peerId, deviceId, port, nodes }) => ownerDone(node, peerId, deviceId, port, nodes, 'room'),
                 undo: ({ deviceId }) => {
                     const entry = byDevice(deviceId);
                     if (entry) stopNode(entry).then(() => { forget(entry); emitChanged(); });
@@ -773,14 +1080,38 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
             const onFriend = data => requests.handle(data);
             const onLeft = ({ peerId }) => { requests.closed(peerId); roomScan(); };
             // G7b: a 'pm' line on the room session goes to the conversation of the friend with that proved device ID.
-            const onPm = data => byDevice(data?.deviceId)?.pm?.handle({ ...data, peerId: ROOM_ROUTE + data.peerId });
-            const onScan = () => roomScan();
+            // 1.0.6: the lines of the address refresh from a proved member of this room (friend-refresh.mjs).
+            const onPm = data => {
+                if (isRefreshLine(data?.message)) refreshFromRoom(node, data);
+                else byDevice(data?.deviceId)?.pm?.handle({ ...data, peerId: ROOM_ROUTE + data.peerId });
+            };
+            const onScan = () => { roomScan(); needAsk('helper'); };
             const listeners = [['friend', onFriend], ['peer-left', onLeft], ['pm', onPm], ['peer-joined', onScan], ['membership', onScan]];
             for (const [name, fn] of listeners) node.events.on(name, fn);
             room = { node, name: typeof info?.name === 'string' ? info.name : '', requests,
                 off() { for (const [name, fn] of listeners) node.events.off(name, fn); } };
             roomScan();
+            needAsk('helper');
             emitChanged();
+        },
+        // 1.0.6: a network change of this PC (cause: 'online', 'changed' or 'resume'). Each friend with no session goes
+        // back to 'connecting', its node dials the known addresses now, and a refresh round starts (the gap of each
+        // helper does not apply to this round). Returns the number of friends with new tries.
+        networkChanged(cause = 'changed') {
+            if (state !== 'open' || stopped) return 0;
+            let count = 0;
+            for (const entry of friends.values()) {
+                if (!entry.node || entry.row.state === 'removed-you' || sessionPeer(entry)) continue;
+                count += 1;
+                entry.presence.network();
+                try { entry.node.refreshRoutes?.(); } catch (err) { log('WARN', `Friend redial failed: ${errText(err)}`); }
+            }
+            report('network', null, { cause, count });
+            if (count) {
+                askedAt.clear();
+                needAsk('network');
+            }
+            return count;
         },
         // G7b: the availability of this person for the friends (design F11): the room presence (state, note) and the
         // idle flag of Idle Peer. A field that is not given keeps its value.
@@ -1018,10 +1349,32 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
             stopped = true;
             for (const timer of startTimers) clearTimer(timer);
             startTimers.clear();
+            clearTimer(askTimer);
+            clearTimer(repeatTimer);
+            askTimer = repeatTimer = null;
+            for (const item of [...asks.values(), ...forwards.values()]) clearTimer(item.timer);
+            asks.clear();
+            forwards.clear();
             if (room) { room.off(); room.requests.stop(); room = null; }
             await Promise.all([...friends.values()].map(stopNode));
             state = 'stopped';
             archive = null;
         }
     };
+}
+
+// 1.0.6: the test flag --friend-test of the check scripts (main.js, only in a dev start). value: a list with commas of
+// 'port=<n>' (the first friend port; 0: port 0 for each friend node), 'no-inbound' (the friend nodes listen on no
+// address: a PC behind NAT), 'no-mdns' (no mDNS on the friend nodes: friends on other networks) and 'no-ask' (no
+// address refresh). Returns the options for createFriendLinks; an unknown item is ignored.
+export function friendTestOptions(value) {
+    const out = {};
+    for (const item of String(value ?? '').split(',').map(x => x.trim()).filter(Boolean)) {
+        const port = /^port=(\d{1,5})$/.exec(item);
+        if (port && Number(port[1]) <= 65535 - FRIEND_CAP) out.basePort = Number(port[1]);
+        else if (item === 'no-inbound') out.listen = [];
+        else if (item === 'no-mdns') out.discovery = false;
+        else if (item === 'no-ask') out.refresh = false;
+    }
+    return out;
 }
