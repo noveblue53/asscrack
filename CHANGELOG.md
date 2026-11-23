@@ -7,6 +7,27 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased: sessions between members after the first admission (2026-11-22)
+
+- Fault: in a protected room with an owner and two members, the second member often had no session with the first
+  member. The two members did not see each other. Their chat lines did not get to each other, because the host does
+  not send the chat lines of a member to the other members. A new member refuses the proof of each member that is not
+  the owner until the owner admits it ("first admission requires the owner"). Each member also refuses the device
+  proof of a device with no admission ("device authorization unavailable"). In a LAN room, mDNS gives the addresses of
+  the members and of the owner at the same time. In an internet room, the full nodes of the invite do the same. Thus
+  these sessions often start before the admission. No node dialed again after the admission. Version 1.0.0 has the
+  same fault.
+- Fix (`src/network/node.mjs`): the new member records each chat stream that failed, or will fail, because it had no
+  admission. After its first admission, it dials each of these peers again, also a peer with a higher peer ID. The
+  terminal shows `conn admission-retry peer=<peer ID>`.
+- **127.0.0.1**: `test/admission-mesh.test.mjs` has 5 tests. They use a LAN room and an internet room. The new member
+  meets a member before the owner, or at the same time. In a LAN room with mDNS, one member uses a device invite
+  and one member uses the room code (knock), in the two orders. Each node gets a session with each other node, and each
+  chat line gets to each other node. The 5 tests fail before the fix and pass after the fix.
+- **this PC**: three app copies (a LAN room, two members join with the room code). Before the fix, the refusal
+  occurred in 1 of 2 runs, and the two members then had no session. After the fix, the refusal occurred in each of
+  3 runs. Each time, the new member dialed again, and each copy showed 3 people and got each chat line.
+
 ## Unreleased: README cover page (2026-11-22)
 
 - The README is a cover page for users: the app icon, release badges, download buttons, screenshots in a light and
