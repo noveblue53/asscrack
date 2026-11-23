@@ -164,7 +164,7 @@ const ATTENTION = [
 
 async function attentionWindow() {
     const on = {};
-    const settings = { voiceCues: true, otherVoiceCues: true, messageCues: true, volume: 35, alerts: true,
+    const settings = { voiceCues: true, voiceSound: true, mentionSound: true, whisperSound: true, friendSound: true, volume: 35, mentionAlert: true, whisperAlert: true, friendAlert: true,
         previews: false, sound: false, flash: true };
     const f = await loadRoomWindow({
         elements: ATTENTION,
@@ -244,7 +244,7 @@ test('attention.mjs: a friend notification needs no room, has the name, and one 
     };
     let quiet = false;
     const attention = createAttention({
-        settings: () => ({ alerts: true, previews: false, sound: false }), room: () => null, quiet: () => quiet,
+        settings: () => ({ mentionAlert: true, whisperAlert: true, friendAlert: true, previews: false, sound: false }), room: () => null, quiet: () => quiet,
         allowed: target => target.kind === 'friend' && target.friendId === 'f1', notify: notice, navigate: () => {},
         friendName: id => (id === 'f1' ? 'Ben' : ''),
         schedule: fn => { timers.push(fn); return timers.length; }, cancel: () => {}

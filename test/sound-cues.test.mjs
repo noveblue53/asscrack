@@ -30,7 +30,7 @@ const ATTENTION = [
 // own cue kinds), state ({ idle, focus }) and the helpers below.
 async function room(prefs = {}, peers = [[SAM, 'Sam'], [ALEX, 'Alex']], audio = null) {
     const clock = createClock();
-    const settings = { voiceCues: true, otherVoiceCues: true, messageCues: true, volume: 35, alerts: false,
+    const settings = { voiceCues: true, voiceSound: true, mentionSound: true, whisperSound: true, friendSound: true, volume: 35, mentionAlert: false, whisperAlert: false, friendAlert: false,
         previews: false, sound: false, ...prefs };
     const f = await loadRoomWindow({
         clock,
@@ -193,7 +193,7 @@ test('the voice cues of other people are silent in Idle Peer, in Do not disturb 
     dnd.el('mute').click();
     assert.deepEqual(dnd.own, ['join', 'mute']);
 
-    const off = await room({ otherVoiceCues: false });
+    const off = await room({ voiceSound: false });
     await off.joinVoice();
     off.clock.advance(5000);
     off.voiceState(SAM, true);
@@ -257,7 +257,7 @@ test('the message cues are silent in Idle Peer, in Do not disturb and when the s
     dnd.window.roomAttention.incoming({ kind: 'whisper', peerId: SAM, id: 'd2' });
     assert.deepEqual(dnd.played, []);
 
-    const off = await room({ messageCues: false });
+    const off = await room({ mentionSound: false, whisperSound: false, friendSound: false });
     off.state.focus = false;
     off.receive({ from: 'Sam', text: 'hi Parker', peerId: SAM, id: 'f1' });
     off.window.roomAttention.incoming({ kind: 'whisper', peerId: SAM, id: 'f2' });
@@ -265,7 +265,7 @@ test('the message cues are silent in Idle Peer, in Do not disturb and when the s
 });
 
 test('at most one message cue each 2 s; with alerts on each line still goes to the notification', async () => {
-    const f = await room({ alerts: true });
+    const f = await room({ mentionAlert: true, whisperAlert: true, friendAlert: true });
     f.state.focus = false;
     f.receive({ from: 'Sam', text: 'Parker 1', peerId: SAM, id: 'r1' });
     f.clock.advance(500);

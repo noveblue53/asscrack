@@ -15,16 +15,32 @@
     let cueSink = null;
 
     // The rule of each cue class (REVIEW.md, "Cue and attention rules"). setting: the key in attention.mjs that
-    // switches the class on and off. idle and dnd: the class plays in Idle Peer or in Do not disturb. inView: the
+    // switches the class on and off (a function of the cue kind and the target for the message class: the Sound column
+    // of the settings grid). idle and dnd: the class plays in Idle Peer or in Do not disturb. inView: the
     // class plays when viewing(target) is true. gap: the minimum time in ms between two cues of the class; a cue in
     // that time is dropped, not queued. The volume controls all the classes.
     // 'own' (C4): a cue of my own action (join, leave, mute, unmute, deafen) is a confirmation, thus it plays in DND.
     const CUE_RULES = Object.freeze({
         own: Object.freeze({ setting: 'voiceCues', idle: false, dnd: true, inView: true, gap: 0 }),
         // The caller (renderer.js) sends these cues only while I am in voice.
-        'voice-other': Object.freeze({ setting: 'otherVoiceCues', idle: false, dnd: false, inView: true, gap: 500 }),
-        message: Object.freeze({ setting: 'messageCues', idle: false, dnd: false, inView: false, gap: 2000 })
+        'voice-other': Object.freeze({ setting: 'voiceSound', idle: false, dnd: false, inView: true, gap: 500 }),
+        message: Object.freeze({ setting: soundKey, idle: false, dnd: false, inView: false, gap: 2000 })
     });
+    // The rows of the settings grid (attention.mjs SOUND_KEYS and ALERT_KEYS).
+    const SOUND = { chat: 'chatSound', mention: 'mentionSound', whisper: 'whisperSound', friend: 'friendSound', voice: 'voiceSound' };
+    const ALERT = { chat: 'chatAlert', mention: 'mentionAlert', whisper: 'whisperAlert', friend: 'friendAlert', voice: 'voiceAlert' };
+    // The row of a message cue: a friend line uses the whisper tone, a plain room line the chat row.
+    function rowOf(kind, target) {
+        if (target?.kind === 'friend') return 'friend';
+        if (target?.kind === 'whisper' || kind === 'whisper') return 'whisper';
+        return kind === 'chat' ? 'chat' : 'mention';
+    }
+    function soundKey(kind, target) {
+        return SOUND[rowOf(kind, target)];
+    }
+    function settingOf(rule, kind, target) {
+        return typeof rule.setting === 'function' ? rule.setting(kind, target) : rule.setting;
+    }
     const lastCue = new Map(); // class -> Date.now() of the last accepted cue
 
     function idle() {
@@ -49,18 +65,31 @@
     }
 
     // One rule for the attention of a live line (REVIEW.md): a line of a different person, not Idle Peer, not DND, and
-    // the conversation is not in view. The message cue, the native notification and the taskbar flash (E1) use it. target: { kind: 'mention', channelId, id, from } or { kind: 'whisper', peerId, id }.
+    // the conversation is not in view. The setting background off ("Only when in the background") also allows a line
+    // in view. The message cue, the native notification and the taskbar flash (E1) use it. target: { kind: 'mention', channelId, id, from } or { kind: 'whisper', peerId, id }.
     // G7b: { kind: 'friend', friendId, id, away, focused } (a friend line, always of a different person).
     function wanted(target) {
         if (!target?.id || quiet()) return false;
         const author = target.kind === 'whisper' ? target.peerId : target.kind === 'friend' ? target.friendId : target.from;
         if (!author || author === (selfId ?? topologySelf)) return false;
-        return !viewing(target);
+        return hidden(target);
     }
 
-    // The native notification. It keeps its own alerts setting.
+    // The view part of the rule for a cue or a notification: background off allows a conversation in view.
+    function hidden(target) {
+        return prefs?.background === false || !viewing(target);
+    }
+
+    // The Notification column of the settings grid for a target (attention.mjs alertOn).
+    function alertOn(target) {
+        if (!prefs) return false;
+        if (target.kind === 'mention') return prefs.mentionAlert === true;
+        return prefs[ALERT[target.kind]] === true;
+    }
+
+    // The native notification. It keeps its own column of the settings grid.
     function notify(target) {
-        if (!prefs?.alerts || !wanted(target)) return;
+        if (!alertOn(target) || !wanted(target)) return;
         const key = target.kind + '/' + (target.friendId ?? target.peerId ?? target.channelId);
         // Keep only a routing reference here, even when public previews are enabled.
         const { preview, from, focused, ...route } = target;
@@ -98,8 +127,8 @@
         }
     }
 
-    // renderer.js: a new, remote live line. First the match, then the cue, then the alerts setting of the
-    // notification: the mention cue plays also when alerts is off (the default).
+    // renderer.js: a new, remote live line. First the match, then the cue, then the Notification column: the mention
+    // cue plays also when its notification is off.
     function mention(data) {
         if (!data?.peerId || data.peerId === (selfId ?? topologySelf) || !window.chatHighlights?.matches(data.text)) return;
         const target = { kind: 'mention', channelId: data.channelId || 'general', id: data.id, from: data.peerId };
@@ -107,7 +136,7 @@
             cue('mention', 'message', target);
             flash();
         }
-        if (!prefs?.alerts) return;
+        if (!alertOn(target)) return;
         const quote = prefs.previews && window.quoteCore.split(data.text);
         notify({ ...target, preview: prefs.previews ? (quote ? quote.rest : data.text).slice(0, 160) : '' });
     }
@@ -151,11 +180,11 @@
     }
 
     // The rule of the class, at this time. target: the conversation of a message cue (for inView).
-    function cueAllowed(rule, target) {
-        if (!prefs?.[rule.setting] || !prefs.volume) return false;
+    function cueAllowed(rule, kind, target) {
+        if (!prefs?.[settingOf(rule, kind, target)] || !prefs.volume) return false;
         if (idle() && !rule.idle) return false;
         if (dnd() && !rule.dnd) return false;
-        if (!rule.inView && target && viewing(target)) return false;
+        if (!rule.inView && target && !hidden(target)) return false;
         return true;
     }
 
@@ -163,7 +192,7 @@
     // button (no rate limit). Returns true when the cue played.
     async function cue(kind, cls = 'own', target = null, options = {}) {
         const rule = CUE_RULES[cls];
-        if (!rule || !cueAllowed(rule, target)) return false;
+        if (!rule || !cueAllowed(rule, kind, target)) return false;
         if (rule.gap && !options.preview) {
             // The time stamp is set before the first await: a burst of calls gives one cue.
             const now = Date.now();
@@ -176,13 +205,15 @@
             const wanted = outputDevice();
             if (wanted !== null) await useOutputDevice(wanted);
             if (audio.state === 'suspended') await audio.resume();
-            if (!cueAllowed(rule, target)) return false;
+            if (!cueAllowed(rule, kind, target)) return false;
             return window.voiceCues.play(audio, kind, prefs.volume);
         } catch { return false; }
     }
 
-    const fields = { voiceCues: 'cues', otherVoiceCues: 'other-cues', messageCues: 'message-cues', alerts: 'alerts',
-        sound: 'sound', previews: 'content', volume: 'volume', flash: 'flash' };
+    const fields = { voiceCues: 'cues', sound: 'sound', previews: 'content', volume: 'volume', flash: 'flash',
+        background: 'background' };
+    for (const [row, key] of Object.entries(SOUND)) fields[key] = row + '-sound';
+    for (const [row, key] of Object.entries(ALERT)) fields[key] = row + '-alert';
     // The class of each cue in the preview list.
     const toneClass = { 'other-join': 'voice-other', 'other-leave': 'voice-other', mention: 'message', whisper: 'message' };
     const previewClass = () => toneClass[byId('attention-tone').value] ?? 'own';
@@ -196,9 +227,11 @@
             else input.checked = prefs[key];
         }
         byId('attention-percent').textContent = prefs.volume + '%';
-        byId('attention-content').disabled = !prefs.alerts;
-        byId('attention-sound').disabled = !prefs.alerts;
-        byId('attention-preview').disabled = !prefs[CUE_RULES[previewClass()].setting] || prefs.volume === 0;
+        const anyAlert = Object.values(ALERT).some(key => prefs[key]);
+        byId('attention-content').disabled = !anyAlert;
+        byId('attention-sound').disabled = !anyAlert;
+        const tone = byId('attention-tone').value;
+        byId('attention-preview').disabled = !prefs[settingOf(CUE_RULES[previewClass()], tone, null)] || prefs.volume === 0;
     }
 
     const ready = api.getAttentionSettings().then(value => { prefs = value; render(); })
@@ -230,7 +263,7 @@
     });
     // The Start menu shortcut of the notifications (Windows only): a tooltip, not a paragraph.
     const alertsLabel = byId('attention-alerts-label');
-    if (alertsLabel && navigator.userAgent.includes('Windows')) alertsLabel.title = 'Not for the chat you have open. Adds a Start menu shortcut.';
+    if (alertsLabel && navigator.userAgent.includes('Windows')) alertsLabel.title = 'Adds a Start menu shortcut';
     api.onAttentionOpen(openTarget);
     // G7b: the friend lines come from the main process (friend-links.mjs), not from the room.
     window.friends?.onAttention?.(target => incoming(target && typeof target === 'object' ? { ...target, kind: 'friend' } : null));

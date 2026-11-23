@@ -30,7 +30,7 @@ import { createSavedRooms, makeProtector } from './saved-rooms.mjs';
 import { roomFingerprint } from './room-archive.mjs';
 import * as voiceSettings from './voice-settings.mjs';
 import { listeningRoomTag, listeningStore } from './listening-store.mjs';
-import { attentionSettings, createAttention, overlayDotBitmap, overlayShareBitmap, registerNotificationShortcut, WINDOWS_APP_ID, WINDOWS_TOAST_ID } from './attention.mjs';
+import { ALERT_KEYS, attentionSettings, createAttention, overlayDotBitmap, overlayShareBitmap, registerNotificationShortcut, WINDOWS_APP_ID, WINDOWS_TOAST_ID } from './attention.mjs';
 import { createPttHook } from './ptt-hook.mjs';
 import { createWindowFrame } from './window-frame.mjs';
 import { attachVoiceMonitor } from './voice-monitor.mjs';
@@ -429,10 +429,13 @@ function registerAlerts() {
 }
 
 handleRoomIpc('asscrack:attention-settings', () => attentionPrefs.get());
+// The Notification column of the settings grid: a box that goes on registers the Start menu shortcut first.
+const anyAlert = prefs => Object.values(ALERT_KEYS).some(key => prefs?.[key] === true);
 handleRoomIpc('asscrack:attention-set', (_event, patch) => {
-    if (patch?.alerts === true) registerAlerts();
+    if (anyAlert(patch)) registerAlerts();
     const next = attentionPrefs.set(patch);
-    if (patch?.alerts === false || patch?.previews !== undefined || patch?.sound !== undefined) attention.clear();
+    if (Object.values(ALERT_KEYS).some(key => patch?.[key] === false) || patch?.previews !== undefined ||
+        patch?.sound !== undefined) attention.clear();
     return next;
 });
 onRoomIpc('asscrack:attention-add', (_event, target) => attention.add(target));
@@ -2189,7 +2192,7 @@ app.whenReady().then(async () => {
     // P8b: getDisplayMedia of the room window gets only the source of the pending selection (design section 2.1).
     session.defaultSession.setDisplayMediaRequestHandler((request, callback) => screenSources.handleDisplayMedia(request, callback));
     pttHook.configure(currentVoiceSettings());
-    if (attentionPrefs.get().alerts && process.platform === 'win32' && app.isPackaged) {
+    if (anyAlert(attentionPrefs.get()) && process.platform === 'win32' && app.isPackaged) {
         try { registerAlerts(); } catch { writeLog('WARN', 'Windows notification registration unavailable'); }
     }
     // open() never rejects. A failure gives the state locked with the reason open-failed.

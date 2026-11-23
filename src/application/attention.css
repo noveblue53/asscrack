@@ -9,3 +9,11 @@
 #attention-tone { margin-right: 6px; }
 #attention-settings #attention-status { color: var(--ink); }
 #attention-settings #attention-status:empty { display: none; }
+/* The settings grid: one row for each kind of event, the columns Sound and Notification. */
+#attention-grid { border-collapse: collapse; width: 100%; margin: 4px 0 6px; font-size: 13px; }
+#attention-grid th, #attention-grid td { padding: 3px 4px; }
+#attention-grid th[scope="row"] { text-align: left; font-weight: normal; }
+#attention-grid thead th { font-weight: 600; color: var(--ink-soft); font-size: 12px; }
+#attention-grid td { text-align: center; width: 6.5rem; }
+#attention-grid input[type="checkbox"] { margin: 0; }
+#attention-settings fieldset { margin: 6px 0; }

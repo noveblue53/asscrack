@@ -32,7 +32,7 @@ const READY = [
 
 async function room({ peers = [[SAM, 'Sam'], [ALEX, 'Alex']] } = {}) {
     const clock = createClock();
-    const settings = { voiceCues: true, otherVoiceCues: true, messageCues: true, volume: 35, alerts: false,
+    const settings = { voiceCues: true, voiceSound: true, mentionSound: true, whisperSound: true, friendSound: true, volume: 35, mentionAlert: false, whisperAlert: false, friendAlert: false,
         previews: false, sound: false };
     let f = null;
     const ids = [ID2, ID3];

@@ -3,26 +3,57 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-const defaults = Object.freeze({ voiceCues: true, otherVoiceCues: true, messageCues: true, volume: 35, alerts: false,
-    previews: false, sound: false, flash: true });
+// Settings version 2 (message alerts, 2026-11-22): a grid of rows (chat: every room line, mention, whisper, friend,
+// voice: other people join or leave voice) and columns (Sound, Notification). version 1 (1.0.x) had one alerts box that
+// was off by default, not by a choice of the user. The first load of a version 1 file turns on the new defaults once.
+export const SETTINGS_VERSION = 2;
+export const SOUND_KEYS = Object.freeze({ chat: 'chatSound', mention: 'mentionSound', whisper: 'whisperSound',
+    friend: 'friendSound', voice: 'voiceSound' });
+export const ALERT_KEYS = Object.freeze({ chat: 'chatAlert', mention: 'mentionAlert', whisper: 'whisperAlert',
+    friend: 'friendAlert', voice: 'voiceAlert' });
+const BOOLEAN_KEYS = ['voiceCues', ...Object.values(SOUND_KEYS), ...Object.values(ALERT_KEYS), 'previews', 'sound',
+    'flash', 'background'];
+export const ATTENTION_DEFAULTS = Object.freeze({ voiceCues: true, volume: 35,
+    chatSound: true, mentionSound: true, whisperSound: true, friendSound: true, voiceSound: true,
+    chatAlert: true, mentionAlert: true, whisperAlert: true, friendAlert: true, voiceAlert: false,
+    previews: true, sound: false, flash: true, background: true });
+
+function merge(current, patch) {
+    const next = { ...current };
+    for (const key of BOOLEAN_KEYS) if (typeof patch?.[key] === 'boolean') next[key] = patch[key];
+    if (Number.isInteger(patch?.volume)) next.volume = Math.max(0, Math.min(100, patch.volume));
+    return next;
+}
+
+// A version 1 file: keep the choices that it can contain (own cues, volume, flash, Windows sound, the cues of other
+// people and of mentions and whispers). The new defaults go on: every notification row, previews and the cue of
+// every message. The old alerts and previews values are not choices (they were the defaults of 1.0.x).
+export function migrateAttention(saved) {
+    if (!saved || typeof saved !== 'object') return { ...ATTENTION_DEFAULTS };
+    if (saved.version === SETTINGS_VERSION) return merge(ATTENTION_DEFAULTS, saved);
+    const kept = { voiceCues: saved.voiceCues, volume: saved.volume, flash: saved.flash, sound: saved.sound,
+        voiceSound: saved.otherVoiceCues, mentionSound: saved.messageCues, whisperSound: saved.messageCues,
+        friendSound: saved.messageCues };
+    return merge(ATTENTION_DEFAULTS, kept);
+}
 
 export function attentionSettings(file) {
-    function merge(current, patch) {
-        const next = { ...current };
-        for (const key of ['voiceCues', 'otherVoiceCues', 'messageCues', 'alerts', 'previews', 'sound', 'flash']) {
-            if (typeof patch?.[key] === 'boolean') next[key] = patch[key];
-        }
-        if (Number.isInteger(patch?.volume)) next.volume = Math.max(0, Math.min(100, patch.volume));
-        return next;
+    let current = { ...ATTENTION_DEFAULTS };
+    let saved = null;
+    try { saved = JSON.parse(readFileSync(file, 'utf8')); } catch {}
+    current = migrateAttention(saved);
+    function write(value) {
+        writeFileSync(file + '.tmp', JSON.stringify({ version: SETTINGS_VERSION, ...value }));
+        renameSync(file + '.tmp', file);
     }
-    let current = { ...defaults };
-    try { current = merge(defaults, JSON.parse(readFileSync(file, 'utf8'))); } catch {}
+    // Write the migration one time, so a later start keeps the choices of the user. A failed write does not stop
+    // the start: the next start migrates again.
+    if (saved && typeof saved === 'object' && saved.version !== SETTINGS_VERSION) try { write(current); } catch {}
     return {
         get: () => ({ ...current }),
         set(patch) {
             const next = merge(current, patch);
-            writeFileSync(file + '.tmp', JSON.stringify(next));
-            renameSync(file + '.tmp', file);
+            write(next);
             current = next;
             return { ...current };
         }
@@ -106,6 +137,13 @@ export function friendNotice(name, count, away) {
     return count > 1 ? `${count} new private messages from ${who}` : `New private message from ${who}`;
 }
 
+// The Notification column of the settings grid for a target. A mention that its row does not allow follows the row of
+// every message (the window applies the room size rule of that row).
+export function alertOn(prefs, target) {
+    if (target.kind === 'mention') return prefs.mentionAlert === true || prefs.chatAlert === true;
+    return prefs[ALERT_KEYS[target.kind]] === true;
+}
+
 // friendName(friendId): G7b, the nickname of a friend for the text. A friend notification does not belong to the room
 // session: the friend links run on the login screen too.
 export function createAttention({ settings, room, quiet, allowed, notify, navigate, friendName = () => '',
@@ -124,7 +162,8 @@ export function createAttention({ settings, room, quiet, allowed, notify, naviga
     }
 
     function eligible(group) {
-        return !!group.room && group.room === roomOf(group.target) && settings().alerts && !quiet() && allowed(group.target);
+        return !!group.room && group.room === roomOf(group.target) && alertOn(settings(), group.target) && !quiet() &&
+            allowed(group.target);
     }
 
     function present(key, group) {

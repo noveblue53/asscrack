@@ -567,26 +567,31 @@
 
   <dialog id="attention-settings" aria-labelledby="attention-title">
     <h2 id="attention-title">Sound &amp; notifications</h2>
+    <table id="attention-grid">
+      <thead><tr><td></td><th scope="col">Sound</th><th scope="col" id="attention-alerts-label">Notification</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">All messages</th><td><input id="attention-chat-sound" type="checkbox" aria-label="All messages: sound"></td><td><input id="attention-chat-alert" type="checkbox" aria-label="All messages: notification" title="Rooms up to 10 people"></td></tr>
+        <tr><th scope="row">Mentions</th><td><input id="attention-mention-sound" type="checkbox" aria-label="Mentions: sound"></td><td><input id="attention-mention-alert" type="checkbox" aria-label="Mentions: notification"></td></tr>
+        <tr><th scope="row">Whispers</th><td><input id="attention-whisper-sound" type="checkbox" aria-label="Whispers: sound"></td><td><input id="attention-whisper-alert" type="checkbox" aria-label="Whispers: notification"></td></tr>
+        <tr><th scope="row">Friend messages</th><td><input id="attention-friend-sound" type="checkbox" aria-label="Friend messages: sound"></td><td><input id="attention-friend-alert" type="checkbox" aria-label="Friend messages: notification"></td></tr>
+        <tr><th scope="row">People joining or leaving voice</th><td><input id="attention-voice-sound" type="checkbox" aria-label="People joining or leaving voice: sound"></td><td><input id="attention-voice-alert" type="checkbox" aria-label="People joining or leaving voice: notification"></td></tr>
+      </tbody>
+    </table>
+    <label><input id="attention-content" type="checkbox"> Show message text</label>
+    <label title="Off: also while the chat is in view"><input id="attention-background" type="checkbox"> Only when in the background</label>
     <fieldset>
-      <legend>Sound cues</legend>
+      <legend>Sounds</legend>
       <label title="Join, leave, mute, unmute and deafen"><input id="attention-cues" type="checkbox"> My voice actions</label>
-      <label><input id="attention-other-cues" type="checkbox"> Others join or leave voice</label>
-      <label><input id="attention-message-cues" type="checkbox"> Mentions and whispers</label>
-      <label for="attention-volume">Cue volume <output id="attention-percent" for="attention-volume"></output></label>
+      <label for="attention-volume">Volume <output id="attention-percent" for="attention-volume"></output></label>
       <input id="attention-volume" type="range" min="0" max="100" step="1">
-      <label for="attention-tone">Preview cue</label>
+      <label for="attention-tone">Preview</label>
       <select id="attention-tone"><option value="join">Join voice</option><option value="leave">Leave voice</option><option value="mute">Mute</option><option value="unmute">Unmute</option><option value="other-join">Other person joins voice</option><option value="other-leave">Other person leaves voice</option><option value="mention">Mention</option><option value="whisper">Whisper</option></select>
       <button id="attention-preview" type="button">Play preview</button>
     </fieldset>
     <fieldset>
-      <legend>Desktop notifications</legend>
-      <label id="attention-alerts-label" title="Not for the chat you have open"><input id="attention-alerts" type="checkbox"> Mentions, whispers and messages</label>
-      <label><input id="attention-content" type="checkbox"> Show message text</label>
-      <label><input id="attention-sound" type="checkbox"> Play Windows sound</label>
-    </fieldset>
-    <fieldset>
-      <legend>Taskbar</legend>
-      <label><input id="attention-flash" type="checkbox"> Flash on mentions, whispers and messages</label>
+      <legend>Windows</legend>
+      <label><input id="attention-sound" type="checkbox"> Windows sound on notifications</label>
+      <label><input id="attention-flash" type="checkbox"> Flash the taskbar on mentions and whispers</label>
     </fieldset>
     <p id="attention-status" role="status"></p>
     <form method="dialog"><button>Done</button></form>

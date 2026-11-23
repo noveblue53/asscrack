@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { EventEmitter } from 'node:events';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { attentionSettings, createAttention, registerNotificationShortcut, WINDOWS_APP_ID, WINDOWS_TOAST_ID } from '../src/application/attention.mjs';
+import { ATTENTION_DEFAULTS, attentionSettings, createAttention, migrateAttention, registerNotificationShortcut, WINDOWS_APP_ID, WINDOWS_TOAST_ID } from '../src/application/attention.mjs';
 
 function setup() {
-    const state = { prefs: { alerts: true, sound: false, previews: false }, quiet: false, allowed: true, room: {} };
+    const state = { prefs: { mentionAlert: true, whisperAlert: true, friendAlert: true, sound: false, previews: false }, quiet: false, allowed: true, room: {} };
     const notices = [], opens = [], timers = new Set();
     const attention = createAttention({
         settings: () => state.prefs, room: () => state.room, quiet: () => state.quiet, allowed: () => state.allowed,
@@ -51,8 +51,8 @@ test('native preview and sound are opt-in; private targets and content never app
 test('read, disabled, idle/DND and room/access changes suppress pending and stale native attention', () => {
     const { state, attention, advance, notices, opens } = setup();
     attention.add(mention('a')); attention.read(mention('a')); advance();
-    state.prefs.alerts = false; attention.add(mention('b')); advance();
-    state.prefs.alerts = true; attention.add(mention('c')); state.quiet = true; advance();
+    state.prefs.mentionAlert = false; attention.add(mention('b')); advance();
+    state.prefs.mentionAlert = true; attention.add(mention('c')); state.quiet = true; advance();
     attention.add(mention('d')); state.quiet = false; advance();
     attention.add(mention('e')); state.room = {}; advance();
     assert.equal(notices.length, 0);
@@ -67,23 +67,46 @@ test('sound and privacy settings are per profile, validated, and retain mute and
     t.after(() => rmSync(dir, { recursive: true, force: true }));
     const file = path.join(dir, 'prefs.json');
     const prefs = attentionSettings(file);
-    // G5 (E1) adds the key flash (default true).
-    assert.deepEqual(prefs.get(), { alerts: false, previews: false, sound: false, voiceCues: true, otherVoiceCues: true,
-        messageCues: true, volume: 35, flash: true });
-    prefs.set({ alerts: true, previews: 'yes', voiceCues: false, otherVoiceCues: 'no', messageCues: 0, volume: 120 });
+    // Settings version 2 (message alerts): the grid of Sound and Notification boxes. All on, except the notification
+    // of voice join and leave; previews on; only in the background. The Windows sound stays off.
+    assert.deepEqual(prefs.get(), { voiceCues: true, volume: 35, chatSound: true, mentionSound: true, whisperSound: true,
+        friendSound: true, voiceSound: true, chatAlert: true, mentionAlert: true, whisperAlert: true, friendAlert: true,
+        voiceAlert: false, previews: true, sound: false, flash: true, background: true });
+    prefs.set({ chatAlert: false, previews: 'no', voiceCues: false, voiceSound: 'no', mentionSound: 0, volume: 120, background: false });
     const reopened = attentionSettings(file).get();
-    assert.equal(reopened.alerts, true); assert.equal(reopened.previews, false);
+    assert.equal(reopened.chatAlert, false); assert.equal(reopened.previews, true);
     assert.equal(reopened.voiceCues, false); assert.equal(reopened.volume, 100);
-    // P11 keys: the same validation as the old keys (only a boolean changes them).
-    assert.equal(reopened.otherVoiceCues, true); assert.equal(reopened.messageCues, true);
-    // E1: flash has the same validation (only a boolean changes it).
+    assert.equal(reopened.voiceSound, true); assert.equal(reopened.mentionSound, true);
+    assert.equal(reopened.background, false);
     prefs.set({ flash: 'off' });
     assert.equal(attentionSettings(file).get().flash, true);
-    prefs.set({ flash: false });
+    prefs.set({ flash: false, voiceAlert: true });
     assert.equal(attentionSettings(file).get().flash, false);
-    prefs.set({ otherVoiceCues: false, messageCues: false });
-    assert.equal(attentionSettings(file).get().otherVoiceCues, false);
-    assert.equal(attentionSettings(file).get().messageCues, false);
+    assert.equal(attentionSettings(file).get().voiceAlert, true);
+});
+
+test('a 1.0.x file gets the new defaults one time, keeps its real choices, and later choices stay', t => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'ac-migrate-'));
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    const file = path.join(dir, 'attention.json');
+    // A 1.0.x file: alerts and previews false were the defaults, not choices. The other keys were choices.
+    writeFileSync(file, JSON.stringify({ voiceCues: false, otherVoiceCues: false, messageCues: false, volume: 20,
+        alerts: false, previews: false, sound: true, flash: false }));
+    const first = attentionSettings(file).get();
+    assert.deepEqual(first, { ...ATTENTION_DEFAULTS, voiceCues: false, voiceSound: false, mentionSound: false,
+        whisperSound: false, friendSound: false, volume: 20, sound: true, flash: false });
+    assert.equal(first.chatAlert && first.mentionAlert && first.whisperAlert && first.friendAlert && first.previews &&
+        first.chatSound, true);
+    // The migration is in the file at once (version 2), so the next start does not migrate again.
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).version, 2);
+    attentionSettings(file).set({ mentionAlert: false, previews: false, chatSound: false });
+    const later = attentionSettings(file).get();
+    assert.equal(later.mentionAlert, false); assert.equal(later.previews, false); assert.equal(later.chatSound, false);
+    // A file with no keys of 1.0.x choices, a damaged file and no file give the defaults.
+    assert.deepEqual(migrateAttention({}), ATTENTION_DEFAULTS);
+    assert.deepEqual(migrateAttention(null), ATTENTION_DEFAULTS);
+    writeFileSync(file, '{bad');
+    assert.deepEqual(attentionSettings(file).get(), ATTENTION_DEFAULTS);
 });
 
 test('portable notification identity uses the stable executable and preserves unrelated Start Menu shortcuts', t => {
