@@ -7,7 +7,59 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
-## Unreleased
+## 1.0.6 (2026-11-23): profile pictures, several screen shares, friend status, the Settings menu and What's new
+
+Release 1.0.6 is the sixth update of 1.0.0. A 1.0.0, 1.0.1, 1.0.2, 1.0.3, 1.0.4 or 1.0.5 app gets it with the signed
+update (View, About ASSCRACK, Check now). The entries below this heading, down to the 1.0.5 entry, were "Unreleased"
+entries. Each entry gives its changes and its checks. Since 1.0.5, the app has these new items:
+
+- Profile pictures. Each person can set a picture. People in the rooms and the friends see it in place of the letter
+  circle. 1.0.1 to 1.0.5 clients show the letter circle.
+- Up to 3 members of a room can share a screen at the same time. A viewer watches one share and can switch between
+  the shares.
+- The Friends list shows the state of each friend link: Connecting…, Online, Can't reach or Offline. Other friends
+  help to find a friend with a new address.
+- The View menu is now the Settings menu, with groups. Ctrl+, opens it.
+- What's new: the notes of each version are in the app (Settings > What's new, or About). After an update, a card
+  shows the changes.
+- A kill in the first seconds after the first start of a new data folder no longer locks the saved rooms and the
+  friends.
+- The Queue button of the music bar has no dark box when the queue is empty.
+
+Build:
+- `npm run dist` makes `ASSCRACK-1.0.6-portable.exe` (product name "ASSCRACK Portable"). `npm run dist:installer`
+  makes `ASSCRACK-1.0.6-setup.exe` (product name "ASSCRACK").
+- The release has six files: the two files above, their download copies `ASSCRACK-1.0.6-update.exe` and
+  `ASSCRACK-1.0.6-portable-update.exe` (the same bytes), `update.json` and `update.json.sig`. See
+  `docs/RELEASE_UPDATES.md`.
+- The notes and the date of `update.json` come from the 1.0.6 entry of `src/application/release-notes.json`.
+- The source of the files is the commit of this entry. The signed `update.json` of the release gives the byte size
+  and the SHA-256 of each file. The files have no code signature.
+- No new dependency.
+
+Results:
+- **127.0.0.1 and this PC only.** Each entry below gives its results with their labels.
+- `npm test` of the integrated source before this commit, in a fresh worktree after `npm run install:clean`: 1274
+  tests, 1254 pass, 2 fail, 18 skipped (127.0.0.1). The causes of the two fails:
+  - The release check of `test/release-notes.test.mjs` failed on purpose: the newest notes were 1.0.6 and the version
+    was 1.0.5. The version 1.0.6 of this commit removes this fail.
+  - The journal test of `test/multi-share.test.mjs` searched the journal for the short names "Bo" and "Cy". The
+    journal has random peer IDs, and about 1 in 20 runs had a peer ID with "Bo" or "Cy". The test now searches for
+    the full test names. After this fix, the test file passed 40 of 40 runs (127.0.0.1).
+- **this PC** (copies of `electron .` with `--profile` and a fake APPDATA, rooms on 127.0.0.1 and the LAN address of
+  this PC):
+  - One start: no error line.
+  - The voice regression: 16 of 16 tests, and `voice-check.mjs` with the expected byte counts.
+  - Three copies: a friend request and Accept, and Online and Offline of the friend. A knock over the friend link
+    and Allow. 6 of 6 chat lines. The picture of one copy showed on the buddy lines and the chat lines of the other
+    two copies. Each dialog line of the Settings menu opened its control. The What's new list had 7 versions.
+  - Several shares: two copies share, the third copy switches between the two shares. About 15 decoded frames each
+    second.
+  - A 1.0.5 copy in a room with two 1.0.6 copies: chat in all directions, the letter circles, one share in its
+    banner.
+  - Before and after each run, the Start menu shortcut and the toast registration of the installed copy on this PC
+    had the same values.
+- No LAN test and no internet test occurred.
 
 ### A kill in the first seconds of a new data folder no longer locks the saved rooms
 
