@@ -395,10 +395,15 @@ handleRoomIpc('asscrack:media-preview', async (_event, ref, messageId) => {
     if (!descriptor) return { reason: 'unavailable' };
     // An own post: no other copy has it.
     if (archived?.own || descriptor.source === node.peerId) return { ...roomMedia.info(ref), reason: 'unavailable' };
-    const device = archived ? deviceOfLine(messageId) : null;
+    const lineDevice = deviceOfLine(messageId), device = archived ? lineDevice : null;
     const via = node.attachmentSourceOnline(descriptor) ? descriptor.source :
         device ? node.peers().find(peer => node.deviceOf(peer) === device) ?? null : null;
-    if (!via) return { ...roomMedia.info(ref), reason: 'offline' };
+    if (!via) {
+        // A line that is not in the archive (a host replay, or a room with no saved history) is not a checked pair: no
+        // request on the device route. Its device can be online with a new peer ID: then the card is unavailable.
+        const online = Boolean(lineDevice) && node.peers().some(peer => node.deviceOf(peer) === lineDevice);
+        return { ...roomMedia.info(ref), reason: online ? 'unavailable' : 'offline' };
+    }
     const version = mediaGeneration, current = node;
     const result = await node.requestPreviewById(descriptor, { via, descriptor });
     if (version !== mediaGeneration || node !== current) return {};

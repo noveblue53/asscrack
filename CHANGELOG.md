@@ -44,7 +44,9 @@ Each result has one of these labels:
   in the memory of the sender. It ends after 30 minutes or at a quit of the sender. No change.
 - Known limits: images of a history from 1.0.3 or older have no stored thumbnail. They show "Thumbnail unavailable.
   Try again", or the thumbnail of a saved original. A room with no membership has no device ID in the line ID. In
-  such a room, a request goes only to the peer ID of the post.
+  such a room, a request goes only to the peer ID of the post. Some lines are not in the archive: lines of a host
+  replay, and lines of a room that does not keep history. Such a line does not use the device route. After a restart
+  of its sender, its card says "Thumbnail unavailable. Try again".
 
 Results:
 - `npm test` (127.0.0.1): 1095 tests, 1077 pass, 0 fail, 18 skipped. `test/history-thumbnails.test.mjs` (new,
@@ -59,6 +61,8 @@ Results:
   - The history of a 1.0.3 run, reopened with the fix: each card says "Thumbnail unavailable. Try again".
   - The same offline case 32 minutes after the posts (after the 30 minutes of the offers): the same result. B gives
     its stored thumbnail after the 30 minutes.
+  - An archive with stored thumbnails opens in 1.0.3 (`room-archive.mjs` of `181f431`). Clear history and Forget in
+    1.0.3 also delete the stored thumbnails.
   - One start with a fresh profile: no error line. The reopen runs: no ERROR line in the main logs. Before and after
     each run, the Start menu shortcut and the toast registration of the installed copy on this PC had the same values.
 - No LAN test and no internet test occurred.
