@@ -56,7 +56,7 @@
             const date = document.createElement('span');
             date.className = 'whats-new-date';
             date.textContent = entry.date ?? '';
-            heading.appendChild(date);
+            heading.append(' ', date);
             section.append(heading, ...notesNodes(entry));
             items.push(section);
         }

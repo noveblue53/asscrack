@@ -40,11 +40,12 @@ Do this one time, before the 1.0.0 build. With a lost key, the 1.0 clients canno
    version of `package.json` has no entry.
 3. Build both files: `npm run dist` (portable) and `npm run dist:installer` (installer). The `dist` folder then has
    `ASSCRACK-<v>-portable.exe` and `ASSCRACK-<v>-setup.exe`.
-4. Sign: `node tools/sign-update.mjs dist`. The script takes the note text of the version from
-   `src/application/release-notes.json` and refuses a version with no entry. `--notes-file <notes.txt>` or
-   `--notes "<text>"` replace that text (at most 2000 characters, plain text). Do not use them for a release: then the
-   update notes and the notes in the app are different. The script refuses the test key, a pre-release version and a missing file. It checks its signature
-   with the public key of the source: a different key stops it. It writes `dist/update.json`,
+4. Sign: `node tools/sign-update.mjs dist`. The script takes the note text and the date of the version from
+   `src/application/release-notes.json` and refuses a version with no entry. `--date` replaces the date.
+   `--notes-file <notes.txt>` or `--notes "<text>"` replace the text (at most 2000 characters, plain text). Do not use
+   them for a release: then the update notes and the notes in the app are different. The script refuses the test key,
+   a pre-release version and a missing file. It checks its signature with the public key of the source: a different
+   key stops it. It writes `dist/update.json`,
    `dist/update.json.sig` and the two download copies `dist/ASSCRACK-<v>-update.exe` (the same bytes as the
    `-setup.exe` file) and `dist/ASSCRACK-<v>-portable-update.exe` (the same bytes as the `-portable.exe` file).
 5. On GitHub, make a release with the tag `v<v>` (for example `v1.0.1`). The tag must be `v` and the version of

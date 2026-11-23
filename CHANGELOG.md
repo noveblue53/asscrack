@@ -23,14 +23,18 @@ Operator request (2026-11-23): the users can read the release notes in the app.
   process writes it at the start, thus the card shows one time for each version. A new install shows no card. A data
   folder of 1.0.0 to 1.0.5 has no `whats-new.json`: a file of an older version (`Local State`, `window-bounds.json` or
   `update-state.json`) then counts as an update.
-- `tools/sign-update.mjs` with no `--notes` and no `--notes-file` takes the note text of the version from the notes
-  file, and refuses a version with no entry. The two options still replace the text. See `docs/RELEASE_UPDATES.md`.
+- `tools/sign-update.mjs` with no `--notes` and no `--notes-file` takes the note text and the date of the version
+  from the notes file, and refuses a version with no entry. The two options still replace the text. See
+  `docs/RELEASE_UPDATES.md`.
 - `test/release-notes.test.mjs` fails when the version of `package.json` has no entry in the notes file.
 - `test/login-menu.test.mjs`: the login screen now shows seven View menu lines ("What's new…" is new). The test had the
   old list of six lines.
 
 **Results: 127.0.0.1 and this PC.** No LAN test and no internet test.
 - `npm test`: 1205 tests, 1187 pass, 0 fail, 18 skipped (127.0.0.1).
+- One other full run had 1 fail in `test/friend-links.test.mjs` (the stored addresses, after 31 s). This test file
+  passed 3 of 3 times alone on this branch and 1 of 1 time on the base. The next full run passed. This branch does not
+  change the network code.
 - The new tests fail on the base `05fa933`: the module `release-notes.mjs` and the two bridge calls are not there.
   With the new files and the version 1.0.6 in `package.json`, the release check fails ("no entry for 1.0.6").
 - this PC, `electron .` with `--profile` and a fake `APPDATA`, read with CDP: an empty profile shows no card. View,

@@ -110,13 +110,13 @@ test('the card: no card for a downgrade, a test version or a version with no not
 
 test('the sign script takes the note text of the version from the notes file; --notes and --notes-file replace it', t => {
     const own = releaseNotesFor({ version: PACKAGE_VERSION });
-    assert.deepEqual(own, { notes: notesText(entryFor(list, PACKAGE_VERSION)) });
-    assert.deepEqual(releaseNotesFor({ version: '1.0.2' }), { notes: notesText(entryFor(list, '1.0.2')) });
+    assert.deepEqual(own, { notes: notesText(entryFor(list, PACKAGE_VERSION)), date: entryFor(list, PACKAGE_VERSION).date });
+    assert.deepEqual(releaseNotesFor({ version: '1.0.2' }), { notes: notesText(entryFor(list, '1.0.2')), date: '2026-11-22' });
     assert.match(releaseNotesFor({ version: '9.9.9' }).problem, /no entry for 9\.9\.9/);
-    assert.deepEqual(releaseNotesFor({ version: '9.9.9', notes: ' Test ' }), { notes: 'Test' });
+    assert.deepEqual(releaseNotesFor({ version: '9.9.9', notes: ' Test ' }), { notes: 'Test', date: null });
     const file = path.join(tempDir(t), 'notes.txt');
     writeFileSync(file, 'Line 1\r\nLine 2\r\n');
-    assert.deepEqual(releaseNotesFor({ version: '9.9.9', notes: 'other', notesFile: file }), { notes: 'Line 1\nLine 2' });
+    assert.deepEqual(releaseNotesFor({ version: '9.9.9', notes: 'other', notesFile: file }), { notes: 'Line 1\nLine 2', date: null });
     assert.match(releaseNotesFor({ version: '9.9.9', notes: 'x'.repeat(MAX_NOTES + 1) }).problem, /more than/);
     // The script refuses a version with no entry when no note option is given (before it reads a key).
     const run = spawnSync(process.execPath, [path.join(ROOT, 'tools', 'sign-update.mjs'), tempDir(t), '--test', '--version', '9.9.9-test'],
@@ -184,6 +184,7 @@ test('the window: What\'s new lists each version newest first, with its date, pa
     assert.equal(f.dialog.open, true);
     const sections = f.el('whats-new-list').querySelectorAll('section');
     assert.deepEqual(sections.map(s => s.querySelectorAll('h3')[0].childNodes[0].textContent), list.map(e => e.version));
+    assert.equal(sections[0].querySelectorAll('h3')[0].textContent, `${list[0].version} ${list[0].date}`);
     assert.equal(sections[0].querySelectorAll('.whats-new-date')[0].textContent, list[0].date);
     const v102 = sections.find(s => s.querySelectorAll('h3')[0].childNodes[0].textContent === '1.0.2');
     assert.equal(v102.querySelectorAll('p').length, 2);

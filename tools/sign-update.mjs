@@ -18,7 +18,8 @@
 // --test is for the local test release of the P9C checks: a test key, a test version and one file are permitted.
 //
 // The note text: with no --notes and no --notes-file, the entry of the version in src/application/release-notes.json
-// (the text that the app shows in What's new). No entry stops the run. --notes and --notes-file replace that text.
+// (the text that the app shows in What's new), and the date of that entry when --date is not given. No entry stops
+// the run. --notes and --notes-file replace that text.
 //
 // Exit code 0: done. 1: refused or failed.
 import { createHash, createPrivateKey, sign } from 'node:crypto';
@@ -93,10 +94,12 @@ export async function writeRelease(dist, { version, date, notes, kinds, privateK
 }
 
 // The note text of the release: --notes-file, then --notes, then the entry of the version in the notes file.
-// list: the notes list (default: release-notes.json). Returns { notes } or { problem }.
+// list: the notes list (default: release-notes.json). Returns { notes, date } or { problem }. date: the date of the
+// entry when the text comes from the notes file, else null.
 export function releaseNotesFor({ version, notes = null, notesFile = null, readFile = file => readFileSync(file, 'utf8'),
     list = undefined }) {
     let text;
+    let date = null;
     if (notesFile) text = readFile(notesFile);
     else if (notes !== null) text = notes;
     else {
@@ -107,11 +110,12 @@ export function releaseNotesFor({ version, notes = null, notesFile = null, readF
         const entry = entryFor(entries, version);
         if (!entry) return { problem: `src/application/release-notes.json has no entry for ${version}. Add the notes, or give --notes or --notes-file.` };
         text = notesText(entry);
+        date = entry.date;
     }
     text = String(text).replace(/\r\n/g, '\n').trim();
     if (!text) return { problem: 'Give the note text with --notes or --notes-file.' };
     if (text.length > MAX_NOTES) return { problem: `The note text has more than ${MAX_NOTES} characters.` };
-    return { notes: text };
+    return { notes: text, date };
 }
 
 function option(argv, name) {
@@ -138,7 +142,7 @@ async function main(argv) {
     const noteResult = releaseNotesFor({ version, notes: option(argv, '--notes'), notesFile: option(argv, '--notes-file') });
     if (noteResult.problem) { console.error(noteResult.problem); return 1; }
     const notes = noteResult.notes;
-    const date = option(argv, '--date') ?? new Date().toISOString().slice(0, 10);
+    const date = option(argv, '--date') ?? noteResult.date ?? new Date().toISOString().slice(0, 10);
     const keyFile = path.resolve(option(argv, '--key') ?? path.join(defaultKeyFolder(), KEY_FILE));
     if (insideGitTree(path.dirname(keyFile))) {
         console.error(`Refused: the key ${keyFile} is in a Git work tree. Move it out of each repository.`);

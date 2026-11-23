@@ -68,7 +68,7 @@
       "- Ready check: ask the room if everyone is ready.",
       "- An installer, and the app can start in the tray when you sign in to Windows.",
       "- Updates: the app finds a new version, downloads it and installs it with one click.",
-      "- Sounds when people join, leave and talk, and for new messages.",
+      "- Sounds when someone joins or leaves voice, and when someone mentions you or whispers to you.",
       "- Voice channels, Deafen, listen without a microphone, and a volume for each person.",
       "- Friends: a private chat with each friend, and messages that wait for a friend who is offline.",
       "- Clickable links in chat, notes in the transcript, a new app icon and many security fixes."
