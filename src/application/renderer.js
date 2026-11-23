@@ -1856,9 +1856,38 @@ function showBuddyOnMap(peerId) {
 }
 
 // Copy the body of a chat line (not the name and not the time).
+// The image menu (menu.js, chat-media.js).
+async function copyChatImage(row) {
+    const ok = await Promise.resolve(window.chatMedia?.copyImage?.(row)).catch(() => false);
+    showNotice(ok ? 'Image copied.' : 'Couldn\'t copy the image.');
+    return ok === true;
+}
+async function saveChatImage(row) {
+    const result = await Promise.resolve(window.chatMedia?.saveImage?.(row)).catch(() => null);
+    if (result?.reason === 'canceled') return false;
+    if (result?.pending) showNotice('Downloading the original. It is saved when the download is complete.');
+    else if (result?.ok) showNotice(`Saved ${result.name}.`);
+    else showNotice(result?.text || (result?.reason === 'unavailable' ? 'The original is not available now.' : 'Couldn\'t save the image.'));
+    return result?.ok === true;
+}
+async function openChatOriginal(row) {
+    const ok = await Promise.resolve(window.chatMedia?.openOriginal?.(row)).catch(() => false);
+    if (!ok) showNotice('The original is not on this computer.');
+    return ok === true;
+}
+if (hasApi('onMediaSaved')) {
+    window.asscrack.onMediaSaved(result => showNotice(result?.ok ? `Saved ${result.name}.` : 'Couldn\'t save the image.'));
+}
+
 function copyMessageText(row) {
     if (!row || row.parentElement !== messageList) return false;
     return copyToClipboard(row.querySelector('.text')?.textContent ?? '', 'Message copied.');
+}
+
+// The image fields of a message row (menu.js): image, copyImage (a preview is shown), original (on this computer).
+function imageInfo(row) {
+    if (window.chatMedia?.hasImage?.(row) !== true) return { image: false };
+    return { image: true, copyImage: window.chatMedia.canCopy?.(row) === true, original: window.chatAttachments?.hasOriginal?.(row) === true };
 }
 
 // The data of a row for menu.js (menuCore.actionsFor), from the state now. null: the row has no menu now.
@@ -1876,7 +1905,7 @@ function rowInfo(row) {
             diag: window.diagnosticsUi?.canAsk(buddyId(row)) === true };
     }
     if (row.parentElement === messageList && !row.classList.contains('file-card')) {
-        return { kind: 'message', details: Boolean(row.querySelector('.text')), inspect: Boolean(window.peerInspector && peerItems.has(row.dataset.peerId)), quotable: selfLine !== null && row.querySelector('.text') !== null, localOnly: row.classList.contains('local-only'), link: Boolean(window.chatLinks?.firstLink(row)), image: window.chatMedia?.hasImage?.(row) === true };
+        return { kind: 'message', details: Boolean(row.querySelector('.text')), inspect: Boolean(window.peerInspector && peerItems.has(row.dataset.peerId)), quotable: selfLine !== null && row.querySelector('.text') !== null, localOnly: row.classList.contains('local-only'), link: Boolean(window.chatLinks?.firstLink(row)), ...imageInfo(row) };
     }
     // G6: a voice channel row (voice-channels-ui.js).
     if (row.parentElement?.id === 'voice-channel-list') return window.voiceChannels?.rowInfo(row) ?? null;
@@ -1918,6 +1947,9 @@ function runRowAction(action, row) {
         case 'copy-message': return copyMessageText(row);
         case 'open-link': return window.chatLinks?.openFirst(row) ?? false;
         case 'view-image': return window.chatMedia?.viewImage?.(row) ?? false;
+        case 'copy-image': return copyChatImage(row);
+        case 'save-image': return saveChatImage(row);
+        case 'open-original': return openChatOriginal(row);
         case 'quote': return quoteMessage(row);
         case 'resend': return resendMessage(row);
         case 'accept': return acceptTransfer(transferKey(row));

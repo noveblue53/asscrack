@@ -199,6 +199,12 @@ contextBridge.exposeInMainWorld('asscrack', {
     getMediaInfo: ref => ipcRenderer.invoke('asscrack:media-info', ref),
     requestMediaPreview: ref => ipcRenderer.invoke('asscrack:media-preview', ref),
     onMediaChanged: listen('asscrack:media-changed'),
+    // The image menu (menu.js, chat-media.js). The main process checks each descriptor and each path.
+    copyMediaImage: ref => ipcRenderer.invoke('asscrack:media-copy-image', ref),
+    saveMediaImage: (messageId, ref) => ipcRenderer.invoke('asscrack:media-save-image', String(messageId ?? ''), ref),
+    cancelMediaSave: id => ipcRenderer.invoke('asscrack:media-save-cancel', String(id ?? '')),
+    openMediaOriginal: (messageId, ref) => ipcRenderer.invoke('asscrack:media-open-original', String(messageId ?? ''), ref),
+    onMediaSaved: listen('asscrack:media-saved'),
     getAttentionSettings: () => ipcRenderer.invoke('asscrack:attention-settings'),
     setAttentionSettings: patch => ipcRenderer.invoke('asscrack:attention-set', patch),
     addAttention: data => ipcRenderer.send('asscrack:attention-add', data),

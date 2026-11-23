@@ -12,7 +12,9 @@
 // - Before an action runs, this file reads rowInfo again and checks menuCore.allowed. The action also checks the
 //   state itself. Thus a menu that stayed open after a transfer completed cannot cancel or restart the transfer.
 //
-// Open: right-click on a row, the Menu key (ContextMenu) or Shift+F10 on a focused row.
+// Open: right-click on a row, the Menu key (ContextMenu) or Shift+F10 on a focused row. A right-click on a chat image
+// puts the image actions first. A right-click on the image viewer (chat-media.js) shows only the image actions, in
+// the viewer dialog (a modal dialog makes the rest of the page inert).
 // Keys in the menu: ArrowUp, ArrowDown, Home, End, Enter, Space, Tab. Escape: the dispatcher of renderer.js.
 // No custom menu (native behavior stays): in an input, a textarea, a select, an editable element, and in #messages
 // when the user selected text.
@@ -32,6 +34,9 @@
         'copy-message': 'Copy message',
         'open-link': 'Open link',
         'view-image': 'View image',
+        'copy-image': 'Copy image',
+        'save-image': 'Save image as…',
+        'open-original': 'Open original',
         quote: 'Quote',
         availability: 'Edit availability…',
         'message-details': 'Message details…',
@@ -60,8 +65,15 @@
         'friend-join': 'Join room'
     });
 
+    // The image actions of a message row: copyImage (a preview is shown), original (the original is on this computer).
+    function imageActions(info) {
+        if (!info.image) return [];
+        return [...(info.copyImage ? ['copy-image'] : []), 'save-image', ...(info.original ? ['open-original'] : [])];
+    }
+
     // The action names for the data of a row (roomActions.rowInfo). An empty list: no menu.
-    function actionsFor(info) {
+    // target: 'image' (a right-click on the chat image), 'viewer' (the image viewer), or nothing (the row).
+    function actionsFor(info, target) {
         if (!info || typeof info !== 'object') return [];
         switch (info.kind) {
             case 'buddy': {
@@ -80,7 +92,11 @@
             case 'message':
                 // quotable: the window can take a quote now (renderer.js rowInfo).
                 // localOnly: the line has "Only on this computer" (gap B3).
-                return [...(info.quotable ? ['quote', 'copy-message'] : ['copy-message']), ...(info.link ? ['open-link'] : []), ...(info.image ? ['view-image'] : []), ...(info.inspect ? ['inspect-peer'] : []), ...(info.details ? ['message-details'] : []), ...(info.localOnly ? ['resend'] : [])];
+                if (target === 'viewer') return imageActions(info);
+                if (target === 'image' && info.image) {
+                    return [...imageActions(info), 'view-image', ...(info.quotable ? ['quote', 'copy-message'] : ['copy-message']), ...(info.link ? ['open-link'] : []), ...(info.inspect ? ['inspect-peer'] : []), ...(info.details ? ['message-details'] : []), ...(info.localOnly ? ['resend'] : [])];
+                }
+                return [...(info.quotable ? ['quote', 'copy-message'] : ['copy-message']), ...(info.link ? ['open-link'] : []), ...(info.image ? ['view-image', ...imageActions(info)] : []), ...(info.inspect ? ['inspect-peer'] : []), ...(info.details ? ['message-details'] : []), ...(info.localOnly ? ['resend'] : [])];
             case 'friend':
                 return ['friend-open', ...(info.join ? ['friend-join'] : []), ...(info.invite ? ['friend-invite'] : []), 'friend-rename', 'friend-remove', 'friend-block'];
             case 'offer':
@@ -150,6 +166,7 @@
     const lists = ['peers', 'messages', 'transfers', 'voice-channel-list', 'friend-list'].map(id => document.getElementById(id)).filter(Boolean);
     const ROW_SELECTOR = '#peers > li, #messages > li, #transfers > li, #voice-channel-list > li, #friend-list > li';
     const messageList = document.getElementById('messages');
+    const viewer = document.getElementById('image-viewer');
     const docEl = document.documentElement;
 
     const menu = document.createElement('ul');
@@ -186,18 +203,21 @@
         observer.disconnect();
         menu.hidden = true;
         menu.replaceChildren();
+        if (menu.parentNode !== document.body) document.body.append(menu);
         if (!returnFocus) return;
         const target = opener && opener.isConnected ? opener : row && row.isConnected ? row : null;
         if (target && typeof target.focus === 'function') target.focus({ preventScroll: true });
     }
 
     // at: { x, y } of the pointer, or null for a keyboard open (the menu goes below the row).
-    function open(row, opener, at = null) {
+    // target: see actionsFor. host: the open modal dialog that gets the menu (the image viewer), or null.
+    function open(row, opener, at = null, target = undefined, host = null) {
         const api = actions();
         if (!api || !row) return false;
-        const list = actionsFor(api.rowInfo(row));
+        const list = actionsFor(api.rowInfo(row), target);
         if (list.length === 0) return false;
         close(false);
+        if (host && menu.parentNode !== host) host.append(menu);
         for (const action of list) {
             const item = document.createElement('li');
             item.setAttribute('role', 'menuitem');
@@ -354,6 +374,12 @@
             return;
         }
         if (nativeStays(target)) return;
+        // The image viewer: the image actions of its chat line.
+        if (viewer?.open && viewer.contains(target)) {
+            const viewed = target.nodeType === 1 && target.tagName === 'IMG' ? window.chatMedia?.viewerRow?.() : null;
+            if (viewed && open(viewed, target, { x: event.clientX, y: event.clientY }, 'viewer', viewer)) event.preventDefault();
+            return;
+        }
         const row = rowOf(target);
         if (!row) return;
         // A keyboard contextmenu event on a focused row: keydown handles it.
@@ -362,7 +388,8 @@
             return;
         }
         const opener = row.contains(document.activeElement) ? document.activeElement : row;
-        if (open(row, opener, event.button === 2 ? { x: event.clientX, y: event.clientY } : null)) {
+        const onImage = target.nodeType === 1 && Boolean(target.closest('.chat-media'));
+        if (open(row, opener, event.button === 2 ? { x: event.clientX, y: event.clientY } : null, onImage ? 'image' : undefined)) {
             event.preventDefault();
         }
     });
@@ -437,6 +464,14 @@
             rows[next].focus();
         });
     }
+
+    // Escape in the image viewer: the menu closes first, the viewer stays open.
+    viewer?.addEventListener('cancel', event => {
+        if (!current || !viewer.contains(menu)) return;
+        event.preventDefault();
+        close(true);
+    });
+    viewer?.addEventListener('close', () => close(false));
 
     window.contextMenu = Object.freeze({ isOpen, close, open: (row, opener) => open(row, opener, null) });
 })();

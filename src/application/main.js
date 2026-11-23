@@ -2,7 +2,9 @@ import { app, BrowserWindow, Menu, Notification, nativeImage, protocol, Tray, sc
 import { createRoomMedia } from './room-media.mjs';
 import { createRoomIpc } from './room-ipc.mjs';
 import { createImageDecoder } from './image-decoder.mjs';
-import { checkChosenFile } from './file-choice.mjs';
+import { checkChosenFile, checkSaveTarget } from './file-choice.mjs';
+import { saveVerifiedCopy } from './media-save.mjs';
+import { sameAttachment } from '../network/attachment.mjs';
 import { APP_PRIVILEGES, APP_SCHEME, appPage, createAppHandler } from './app-scheme.mjs';
 import { createClipboardStaging } from './clipboard-image.mjs';
 import { createDownloadScratch } from './download-scratch.mjs';
@@ -261,6 +263,13 @@ const openLinksIndex = process.argv.indexOf('--open-links-to');
 if (openLinksIndex !== -1 && process.argv[openLinksIndex + 1] && !process.argv[openLinksIndex + 1].startsWith('--')) {
     openLinksTo = path.resolve(process.argv[openLinksIndex + 1]);
 }
+// Test option: --save-to <dir>. Save image as writes to this folder with no Save dialog (the app check of the image
+// menu needs it). The path checks of the save stay the same.
+let saveTo = null;
+const saveToIndex = process.argv.indexOf('--save-to');
+if (saveToIndex !== -1 && process.argv[saveToIndex + 1] && !process.argv[saveToIndex + 1].startsWith('--')) {
+    saveTo = path.resolve(process.argv[saveToIndex + 1]);
+}
 
 // Test options for the check scripts: --port <n>, --full-node <auto|on|off>, --allow-private-full-node, --relay-only.
 // With no flag, the node defaults do not change.
@@ -317,7 +326,13 @@ const imageDecoder = createImageDecoder({ BrowserWindow, ipc: ipcMain, page: DEC
 const roomMedia = createRoomMedia({ decodeImage: (info, limit) => imageDecoder.decode(info, limit),
     changed: id => sendToWindow('asscrack:media-changed', id) });
 let mediaGeneration = 0;
-function clearRoomMedia() { mediaGeneration++; roomMedia.clear(); }
+function clearRoomMedia() { mediaGeneration++; roomMedia.clear(); localOriginals.clear(); pendingSaves.clear(); }
+// The image menu (chat-media.js): descriptor ID -> the path of a local original (an own post or a received file).
+// The main process hashes the file again before each use (roomMedia.canReveal).
+const localOriginals = new Map();
+// Save image as before the original is on this computer: descriptor ID -> { descriptor, target }. The file-done
+// listener copies the received original to the target.
+const pendingSaves = new Map();
 function savedDownload(messageId, descriptorId) {
     if (typeof messageId !== 'string' || !messageId || messageId.length > 128 ||
         typeof descriptorId !== 'string' || descriptorId.length !== 36) return null;
@@ -1039,6 +1054,13 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
         const descriptor = node.attachmentDescriptor(data.attachmentId);
         if (descriptor && descriptor.source === data.peerId && descriptor.sha256 === data.sha256 && descriptor.size === data.size) {
             getSavedRooms().rememberDownload(descriptor, data.path);
+            rememberOriginal(descriptor, data.path);
+            const pending = pendingSaves.get(descriptor.id);
+            if (pending && sameAttachment(pending.descriptor, descriptor)) {
+                pendingSaves.delete(descriptor.id);
+                void finishSave(descriptor, data.path, pending.target)
+                    .then(result => sendToWindow('asscrack:media-saved', { id: descriptor.id, ...result }));
+            }
             Promise.resolve(roomMedia.verified(descriptor, data.path)).catch(err => writeLog('WARN', `Verified file preview unavailable: ${err.message}`));
         }
     });
@@ -1862,10 +1884,83 @@ handleRoomIpc('asscrack:topology', () => {
 handleRoomIpc('asscrack:refresh-shelf', () => node?.refreshShelf());
 // L8: the folders that the room never gets a file from: the profile (archive, key files, logs, partials), the
 // default profile, and the folder of the release key. The window cannot prove the choice of the user (a drop).
-function chosenFile(filePath) {
-    return checkChosenFile(filePath, { blocked: [app.getPath('userData'), path.join(app.getPath('appData'), 'ASSCRACK'),
-        path.join(os.homedir(), '.asscrack-release')] });
+function privateFolders() {
+    return [app.getPath('userData'), path.join(app.getPath('appData'), 'ASSCRACK'), path.join(os.homedir(), '.asscrack-release')];
 }
+function chosenFile(filePath) {
+    return checkChosenFile(filePath, { blocked: privateFolders() });
+}
+
+// ---- The image menu of the chat (menu.js, chat-media.js) ----
+function rememberOriginal(descriptor, file) {
+    if (descriptor?.kind !== 'image' || typeof file !== 'string') return;
+    localOriginals.delete(descriptor.id);
+    localOriginals.set(descriptor.id, file);
+    if (localOriginals.size > 512) localOriginals.delete(localOriginals.keys().next().value);
+}
+// The descriptor of an image line: the live room, or the archive row of a saved room. The window sends the
+// descriptor, and the main process uses only a descriptor that it knows.
+function imageDescriptor(messageId, ref) {
+    if (!ref || typeof ref.id !== 'string') return null;
+    const d = node?.attachmentDescriptor(ref.id) ?? savedDownload(messageId, ref.id)?.descriptor ?? null;
+    return d && d.kind === 'image' && sameAttachment(d, ref) ? d : null;
+}
+// The local original, after a new hash check, or null.
+async function localImageOriginal(messageId, d) {
+    for (const file of [localOriginals.get(d.id), savedDownload(messageId, d.id)?.path]) {
+        if (typeof file === 'string' && await roomMedia.canReveal(d, file)) return file;
+    }
+    return null;
+}
+async function finishSave(d, source, target) {
+    let checked;
+    try { checked = checkSaveTarget(target, { blocked: privateFolders() }); }
+    catch (err) { return { ok: false, reason: 'target', text: err.message }; }
+    const result = await saveVerifiedCopy({ source, target: checked, descriptor: d, fromPeer: d.source !== node?.peerId });
+    writeLog(result.ok ? 'EVENT' : 'WARN', `action save-image result ${result.ok ? 'ok' : result.reason}`);
+    return result.ok ? { ok: true, name: path.basename(checked) } : { ok: false, reason: result.reason };
+}
+// Copy image: the checked preview PNG goes to the hidden decoder window. That window copies the image (L7: no decode
+// in the main process).
+handleRoomIpc('asscrack:media-copy-image', async (_event, ref) => {
+    const bytes = roomMedia.previewBytes(ref);
+    return bytes ? imageDecoder.copy(bytes) : false;
+});
+// Save image as: a Save dialog with the original name. With a local original, a copy at once. Else the window starts
+// the download of the original (the Download original path), and the file-done listener makes the copy.
+handleRoomIpc('asscrack:media-save-image', async (_event, messageId, ref) => {
+    const d = imageDescriptor(messageId, ref);
+    if (!d) return { ok: false, reason: 'unknown' };
+    const name = path.basename(String(d.name)) || 'image';
+    let target;
+    if (saveTo) target = path.join(saveTo, name);
+    else {
+        const ext = path.extname(name).slice(1);
+        const options = { title: 'Save image as', defaultPath: path.join(downloadDir ?? app.getPath('downloads'), name),
+            filters: ext ? [{ name: 'Image', extensions: [ext] }] : [] };
+        const { canceled, filePath } = mainWindow && !mainWindow.isDestroyed()
+            ? await dialog.showSaveDialog(mainWindow, options) : await dialog.showSaveDialog(options);
+        if (canceled || !filePath) return { ok: false, reason: 'canceled' };
+        target = filePath;
+    }
+    try { checkSaveTarget(target, { blocked: privateFolders() }); }
+    catch (err) { return { ok: false, reason: 'target', text: err.message }; }
+    const source = await localImageOriginal(messageId, d);
+    if (source) return finishSave(d, source, target);
+    pendingSaves.set(d.id, { descriptor: d, target });
+    return { ok: true, pending: true, name: path.basename(target) };
+});
+// The window ends a pending save when it cannot start the download.
+handleRoomIpc('asscrack:media-save-cancel', (_event, id) => { if (typeof id === 'string') pendingSaves.delete(id); });
+// Open original: the local original in the app of Windows for the file type (the descriptor kind is image). With
+// --open-links-to, the path goes to that file and no app starts.
+handleRoomIpc('asscrack:media-open-original', async (_event, messageId, ref) => {
+    const d = imageDescriptor(messageId, ref);
+    const file = d ? await localImageOriginal(messageId, d) : null;
+    if (!file) return { ok: false };
+    if (openLinksTo) { appendFileSync(openLinksTo, `open-original ${file}\n`); return { ok: true }; }
+    return { ok: (await shell.openPath(file)) === '' };
+});
 handleRoomIpc('asscrack:share-file', (_event, filePath) => {
     if (!node || typeof filePath !== 'string' || !path.isAbsolute(filePath)) throw new Error('Choose a local file to share');
     return node.publishShelfFile(chosenFile(filePath));
@@ -1896,8 +1991,11 @@ handleRoomIpc('asscrack:post-media', async (_event, input, caption, channelId, r
         const { message, offer } = await node.postAttachment(filePath, caption, channelId);
         if (offer.peers) {
             if (staged) clipboardImages.retain(filePath, message.attachment.expires);
+            rememberOriginal(message.attachment, filePath);
             Promise.resolve(roomMedia.verified(message.attachment, filePath)).catch(err => writeLog('WARN', `Original preview unavailable: ${err.message}`));
         } else if (staged) clipboardImages.discard(filePath);
+        // The image menu: a file of the user stays the own original (a staged image with no receiver is gone).
+        else rememberOriginal(message.attachment, filePath);
         return { message: archiveSend(message), offer };
     } catch (err) {
         if (staged) clipboardImages.discard(filePath);

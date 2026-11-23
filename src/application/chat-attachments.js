@@ -41,6 +41,46 @@
         }
     }
 
+    function savedOf(card) {
+        const d = card.descriptor;
+        const entry = offers.get(key(d.source, d.id));
+        const match = entry?.data.sha256 === d.sha256 && entry.data.size === d.size && entry.data.name === d.name;
+        return Boolean(card.local || card.revealKey || (match && entry.transfer.state === 'done' && entry.transfer.revealable));
+    }
+
+    // The Download original path with no Show in Explorer: accept the offer, or ask the sender for the original.
+    // Gives true when a download started or runs.
+    async function fetchOriginal(card) {
+        const { descriptor, row } = card;
+        const k = key(descriptor.source, descriptor.id);
+        const entry = offers.get(k);
+        if (entry && entry.data.sha256 === descriptor.sha256 && entry.data.size === descriptor.size && entry.data.name === descriptor.name) {
+            const t = entry.transfer;
+            const offerKey = key(entry.data.offerId, descriptor.source);
+            if (t.state === 'receiving') return true;
+            if (t.state === 'offered') { await acceptTransfer(offerKey); render(card); return true; }
+        }
+        const request = {};
+        card.waiting = request;
+        render(card);
+        try {
+            if (await api.requestOriginal(descriptor)) {
+                setTimeout(() => {
+                    if (card.waiting !== request) return;
+                    card.waiting = null;
+                    render(card);
+                }, 10000);
+                return true;
+            }
+        } catch {}
+        if (card.waiting === request) {
+            card.waiting = null;
+            card.available = false;
+            render(card);
+        }
+        return false;
+    }
+
     function render(card) {
         const { descriptor: d, button } = card;
         const entry = offers.get(key(d.source, d.id));
@@ -99,27 +139,9 @@
             const entry = offers.get(k);
             if (entry && entry.data.sha256 === descriptor.sha256 && entry.data.size === descriptor.size && entry.data.name === descriptor.name) {
                 const t = entry.transfer;
-                const offerKey = key(entry.data.offerId, descriptor.source);
-                if (t.state === 'done' && t.revealable) { await api.revealFile(offerKey); return; }
-                if (t.state === 'offered') { await acceptTransfer(offerKey); render(card); return; }
+                if (t.state === 'done' && t.revealable) { await api.revealFile(key(entry.data.offerId, descriptor.source)); return; }
             }
-            const request = {};
-            card.waiting = request;
-            render(card);
-            try {
-                if (await api.requestOriginal(descriptor)) {
-                    setTimeout(() => {
-                        if (card.waiting !== request) return;
-                        card.waiting = null;
-                        render(card);
-                    }, 10000);
-                    return;
-                }
-            } catch {}
-            if (card.waiting !== request) return;
-            card.waiting = null;
-            card.available = false;
-            render(card);
+            await fetchOriginal(card);
         });
         window.chatMedia?.decorate(row, descriptor);
     }
@@ -130,8 +152,20 @@
             render(card);
         }
     });
+    function cardOf(row) {
+        for (const card of cards.values()) if (card.row === row) return card;
+        return null;
+    }
     window.chatAttachments = {
         decorate, offer, restoreSaved,
+        // The image menu (chat-media.js, menu.js): an own original, or a saved original of this computer.
+        hasOriginal: row => { const card = cardOf(row); return Boolean(card && (card.own || savedOf(card))); },
+        // Save image as: start the download of the original. False when the original is not available now.
+        download: async row => {
+            const card = cardOf(row);
+            if (!card || card.own || card.descriptor.expires <= Date.now()) return false;
+            return fetchOriginal(card);
+        },
         forgetOffer(data, transfer) {
             const k = key(data.peerId, data.attachmentId);
             if (offers.get(k)?.transfer !== transfer) return;

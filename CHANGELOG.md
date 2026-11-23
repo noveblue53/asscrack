@@ -7,6 +7,39 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased: the image menu and the preview of the own share (2026-11-22)
+
+- Image menu (operator request: "right click here and save/copy image"). A right-click on a chat image shows "Copy
+  image", "Save image as…" and, when the original is on this computer, "Open original". These items are first in the
+  menu. The image viewer has the same items. The menu is the menu of the app (`menu.js`), not the native menu. The
+  items also work on an own image (for example a pasted screenshot), which has no "Download original" button.
+- Copy image: the main process sends the checked preview PNG to the hidden sandboxed decoder window. That window
+  shows the image, and the main process calls `copyImageAt`. Chromium then writes the formats PNG, CF_DIBV5, CF_DIB
+  and CF_BITMAP. The main process does not decode the image (audit L7). The Electron 45 clipboard API (`image/png` in
+  `clipboard.write`) decodes the PNG in the main process, thus the app does not use it.
+- Save image as: a Save dialog with the original name. The main process checks the target path (`checkSaveTarget`,
+  audit L8). It copies the local original to a temporary file and compares the SHA-256. Then it writes the
+  Mark-of-the-Web on the file of a peer (audit M3) and renames the file. With no local original, the "Download
+  original" path starts, and the copy occurs when the download is complete.
+- **127.0.0.1**: `test/image-menu.test.mjs` has 8 tests. They fail before the change and pass after it.
+- **this PC**: two app copies (a LAN room on this PC). B pasted an image. On A: "Copy image" put PNG (49348),
+  CF_DIBV5 (17), CF_BITMAP (2), CF_DIB (8) and HTML Format on the clipboard. `Get-Clipboard -Format Image` and
+  `Clipboard.GetImage()` read a 320x200 image. A paste in the message box of the app made an image draft. A paste in
+  an editable field of another Chromium window showed the image: the HTML Format has a data: URL. Before this fix, it
+  had a blob: URL of the decoder window, and the field showed a broken image.
+  "Save image as…" downloaded the original and saved it: SHA-256 equal to the posted image, Zone.Identifier with
+  ZoneId=3. "Open original" then opened the downloaded file. On B: "Save image as…" on the own image saved a file with
+  the SHA-256 of the posted image. The viewer menu opened in the viewer, and "Copy image" worked there.
+- Preview of the own share (operator: "i cant see my own preview"). The share bar shows the captured stream in a small
+  muted video (128 x 72 px). The stream stays on this computer: no network and no encode. The video gets a clone of
+  the captured track at 5 frames per second. "Hide preview" turns it off, and the app keeps this choice. When the
+  window is hidden or the preview is off, the clone stops.
+- **127.0.0.1**: a new test in `test/screen-ui.test.mjs`. It fails before the change and passes after it.
+- **this PC**: copy A shared the window of copy B (Standard). B showed a canvas animation, thus each frame changed.
+  The preview played at 5.75 frames per second (802 x 600 source in a 128 x 72 box). The CPU time of all the processes
+  of A in 8 s: 406 ms with the preview, 250 ms without it. With the full frame rate of the track (17 frames per second
+  in the preview), the values were 484 ms and 203 ms.
+
 ## Unreleased: sessions between members after the first admission (2026-11-22)
 
 - Fault: in a protected room with an owner and two members, the second member often had no session with the first

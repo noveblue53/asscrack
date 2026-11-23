@@ -77,17 +77,25 @@ function parseCompound(text) {
 
 function matchesSelector(el, selector) {
     if (!(el instanceof FakeElement)) return false;
-    return String(selector).split(',').some(part => {
-        const c = parseCompound(part);
-        if (!c) return false;
-        if (c.tag && el.tagName !== c.tag) return false;
-        if (c.id && el.id !== c.id) return false;
-        if (c.classes.some(cl => !el.classList.contains(cl))) return false;
-        return c.attrs.every(({ name, value, prefix }) => {
-            const v = el.getAttribute(name);
-            if (value === undefined) return v !== null;
-            return prefix ? v !== null && v.startsWith(value) : v === value;
-        });
+    return String(selector).split(',').some(part => matchesChain(el, part.split('>').map(p => p.trim())));
+}
+
+// The child combinator: 'A > B' (menu.js selects '#messages > li').
+function matchesChain(el, chain) {
+    if (!(el instanceof FakeElement) || !matchesCompound(el, chain.at(-1))) return false;
+    return chain.length === 1 || matchesChain(el.parentNode, chain.slice(0, -1));
+}
+
+function matchesCompound(el, part) {
+    const c = parseCompound(part);
+    if (!c) return false;
+    if (c.tag && el.tagName !== c.tag) return false;
+    if (c.id && el.id !== c.id) return false;
+    if (c.classes.some(cl => !el.classList.contains(cl))) return false;
+    return c.attrs.every(({ name, value, prefix }) => {
+        const v = el.getAttribute(name);
+        if (value === undefined) return v !== null;
+        return prefix ? v !== null && v.startsWith(value) : v === value;
     });
 }
 
