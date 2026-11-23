@@ -37,7 +37,8 @@ test('the title bar button is Settings, with a gear icon and the key Ctrl+,', ()
     assert.ok(button, '#view-toggle is a button with text only');
     assert.equal(button[2].trim(), 'Settings');
     assert.match(button[1], /aria-haspopup="menu"/);
-    assert.match(button[1], /aria-keyshortcuts="Control\+Comma"/);
+    // ARIA: a printable key is its character (the UI Events key value).
+    assert.match(button[1], /aria-keyshortcuts="Control\+,"/);
     assert.match(menuMarkup().open, /role="menu"/);
     assert.match(menuMarkup().open, /aria-labelledby="view-toggle"/);
     // The gear: the default look (a picture) and the themes (a mask in the ink of the label).
@@ -128,4 +129,17 @@ test('Check for updates shows only when the update part of About is there', () =
     const r = loadMenu();
     r.toggle.click();
     assert.ok(!r.visible().includes('Check for updates…'));
+});
+
+test('a key that moves the focus scrolls the focused line into the menu box (the menu has a maximum height)', () => {
+    const r = room();
+    const scrolled = [];
+    for (const li of r.items()) li.scrollIntoView = options => scrolled.push([li.id, options?.block]);
+    r.toggle.click();
+    r.key('End');
+    assert.deepEqual(scrolled.at(-1), ['view-quit', 'nearest']);
+    r.key('ArrowUp');
+    assert.deepEqual(scrolled.at(-1), ['view-idle', 'nearest']);
+    r.key('Home');
+    assert.deepEqual(scrolled.at(-1), ['view-theme', 'nearest']);
 });

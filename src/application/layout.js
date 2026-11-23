@@ -565,7 +565,15 @@
         const list = menuItems();
         if (list.length === 0) return;
         const i = ((index % list.length) + list.length) % list.length;
-        list[i].focus({ preventScroll: true });
+        const line = list[i];
+        line.focus({ preventScroll: true });
+        // A long menu scrolls (max-height): only the menu box moves to show the focused line. At the first line of a
+        // group, the heading of the group shows too.
+        line.scrollIntoView?.({ block: 'nearest' });
+        const group = line.closest('.view-group');
+        if (group && list.find(other => other.closest('.view-group') === group) === line) {
+            group.querySelector('.view-head')?.scrollIntoView?.({ block: 'nearest' });
+        }
     }
 
     function openMenu(index) {
