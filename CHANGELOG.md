@@ -15,8 +15,8 @@ Each result has one of these labels:
   the owner until the owner admits it ("first admission requires the owner"). Each member also refuses the device
   proof of a device with no admission ("device authorization unavailable"). In a LAN room, mDNS gives the addresses of
   the members and of the owner at the same time. In an internet room, the full nodes of the invite do the same. Thus
-  these sessions often start before the admission. No node dialed again after the admission. Version 1.0.0 has the
-  same fault.
+  these sessions often start before the admission. Only a full node of the invite was dialed again after the
+  admission (internet room). Version 1.0.0 has the same fault.
 - Fix (`src/network/node.mjs`): the new member records each chat stream that failed, or will fail, because it had no
   admission. After its first admission, it dials each of these peers again, also a peer with a higher peer ID. The
   terminal shows `conn admission-retry peer=<peer ID>`.
@@ -25,8 +25,9 @@ Each result has one of these labels:
   and one member uses the room code (knock), in the two orders. Each node gets a session with each other node, and each
   chat line gets to each other node. The 5 tests fail before the fix and pass after the fix.
 - **this PC**: three app copies (a LAN room, two members join with the room code). Before the fix, the refusal
-  occurred in 1 of 2 runs, and the two members then had no session. After the fix, the refusal occurred in each of
-  3 runs. Each time, the new member dialed again, and each copy showed 3 people and got each chat line.
+  occurred in 1 of 2 runs, and the two members then had no session. After the fix, 4 runs: the refusal
+  occurred in 3 runs, and each time the new member dialed again. In all 4 runs, each copy showed 3 people and got
+  each chat line.
 
 ## Unreleased: README cover page (2026-11-22)
 
