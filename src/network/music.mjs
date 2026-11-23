@@ -152,7 +152,10 @@ const userError = text => Object.assign(new Error(text), { user: true })
 // - resolve({ video } | { list }): a promise of [{ video, title, dur }] (the DJ asks YouTube). It throws an error with
 //   kind 'refused' (YouTube refused this video or list) or 'unavailable' (the YouTube source does not work).
 // - allowLine(peerId), allowAdd(peerId): the rate limits. newId(): 16 hex characters. now(), setTimer, clearTimer.
+// - trackDone({ source, reason }): the current track of this DJ went away. source: 'youtube' or 'file'. reason:
+//   'end', 'skip', 'error' or 'stop' (the journal of the app; no title).
 export function createRoomMusic({ selfId, send = () => false, broadcast = () => 0, changed = () => {}, notice = () => {},
+    trackDone = () => {},
     voiceOf = () => ({ inVoice: false, channel: null }), voicePeers = () => [],
     resolve = async () => { throw Object.assign(new Error('No YouTube source'), { kind: 'unavailable' }) },
     allowLine = () => true, allowAdd = () => true,
@@ -235,6 +238,10 @@ export function createRoomMusic({ selfId, send = () => false, broadcast = () => 
         share()
     }
 
+    function done(reason) {
+        if (own?.now) trackDone({ source: own.now.src === 'yt' ? 'youtube' : 'file', reason })
+    }
+
     // next: true when the members must choose the next DJ (MU-4), false for a Stop.
     function endDj(next) {
         if (!own) return
@@ -257,8 +264,10 @@ export function createRoomMusic({ selfId, send = () => false, broadcast = () => 
         else send(peerId, line('notice', { kind }))
     }
 
-    // The next item of the queue starts. With no item and no add in progress, the music ends.
-    function next() {
+    // The next item of the queue starts. With no item and no add in progress, the music ends. reason: why the current
+    // item goes away (trackDone).
+    function next(reason) {
+        if (reason) done(reason)
         own.now = own.queue.shift() ?? null
         own.pos = 0
         own.posAt = now()
@@ -404,7 +413,7 @@ export function createRoomMusic({ selfId, send = () => false, broadcast = () => 
             }
             void resolveAdd(m, peerId)
         } else if (m.op === 'skip') {
-            if (own.now?.id === m.item) next()
+            if (own.now?.id === m.item) next('skip')
         } else if (m.op === 'pause') {
             setPaused(m.paused)
         } else if (m.op === 'remove') {
@@ -490,7 +499,7 @@ export function createRoomMusic({ selfId, send = () => false, broadcast = () => 
         checkInVoice()
         const dj = activeDj()
         if (dj === selfId) {
-            if (own.now) next()
+            if (own.now) next('skip')
         } else if (dj) {
             const current = djs.get(dj).state.now
             if (current) send(dj, line('skip', { item: current.id }))
@@ -541,6 +550,7 @@ export function createRoomMusic({ selfId, send = () => false, broadcast = () => 
     // Stop: the DJ ends the music for all.
     function stopMusic() {
         if (activeDj() !== selfId) throw userError('Only the DJ can stop the music.')
+        done('stop')
         endDj(false)
         emit()
         return view()
@@ -552,7 +562,7 @@ export function createRoomMusic({ selfId, send = () => false, broadcast = () => 
     const playing = () => own?.now ? { ...own.now } : null
 
     function ended(itemId) {
-        if (own?.now?.id === itemId) next()
+        if (own?.now?.id === itemId) next('end')
     }
 
     // kind: 'refused' (YouTube refused the video), 'unavailable' (the YouTube source does not work) or 'error'.
@@ -561,7 +571,7 @@ export function createRoomMusic({ selfId, send = () => false, broadcast = () => 
         const k = ['refused', 'unavailable'].includes(kind) ? kind : 'error'
         if (k === 'unavailable') own.yt = false
         noticeAll(k)
-        next()
+        next('error')
     }
 
     function progress(itemId, pos) {

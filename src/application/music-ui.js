@@ -233,10 +233,12 @@
         const parsed = core.parseCommand(text);
         if (!parsed) return false;
         return (async () => {
-            if (parsed.name === 'play') {
-                if (!parsed.link) return Boolean(await run(() => api.musicPause(false)));
-                return addLink(parsed.link);
+            if (parsed.name === 'play' && parsed.link) return addLink(parsed.link);
+            if (parsed.name !== 'queue' && !view?.now) {
+                setStatus(view?.inVoice ? 'No music.' : 'Join voice first.');
+                return true;
             }
+            if (parsed.name === 'play') return Boolean(await run(() => api.musicPause(false)));
             if (parsed.name === 'skip') return Boolean(await run(() => api.musicSkip()));
             if (parsed.name === 'pause') return Boolean(await run(() => api.musicPause(!view?.paused)));
             const lines = core.queueLines(view, nameOf);

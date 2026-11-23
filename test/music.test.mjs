@@ -21,6 +21,7 @@ function harness(ids, { resolve, allowAdd } = {}) {
     const views = new Map()
     let clock = 1_000_000
     const resolved = []
+    const tracks = []
     const fakeResolve = resolve ?? (async request => {
         resolved.push(request)
         if (request.video) return [{ video: request.video, title: `Title ${request.video}`, dur: 200 }]
@@ -35,6 +36,7 @@ function harness(ids, { resolve, allowAdd } = {}) {
             broadcast: line => { for (const p of ids) if (p !== id) queue.push([id, p, structuredClone(line)]); return ids.length - 1 },
             changed: view => views.set(id, view),
             notice: value => notices.push({ at: id, ...value }),
+            trackDone: value => tracks.push({ at: id, ...value }),
             voiceOf: p => (p === id ? selfVoice.get(p) : voice.get(p)) ?? { inVoice: false, channel: null },
             voicePeers: () => ids.filter(p => voice.get(p)?.inVoice),
             resolve: fakeResolve,
@@ -64,7 +66,7 @@ function harness(ids, { resolve, allowAdd } = {}) {
         for (const [p, m] of modules) if (p !== id) m.voiceChanged()
         await flush()
     }
-    return { m: id => modules.get(id), flush, setVoice, notices, views, resolved, queue,
+    return { m: id => modules.get(id), flush, setVoice, notices, views, resolved, queue, tracks,
         tick: ms => { clock += ms }, leave: id => { voice.delete(id); selfVoice.delete(id); for (const [p, m] of modules) if (p !== id) m.peerLeft(id) } }
 }
 
@@ -306,4 +308,23 @@ test('a refused video gives a notice and the next item plays; with no YouTube so
     await h.flush()
     assert.equal(h.m('pA').state().dj, null)
     assert.equal(h.m('pB').state().dj, null)
+})
+
+test('journal hook: the DJ reports the end, a skip (also of a member), an error and a Stop, with no title', async () => {
+    const h = harness(['pA', 'pB'])
+    await h.setVoice('pA', true)
+    await h.setVoice('pB', true)
+    h.m('pA').addLocal([{ title: 'one', local: 'k1' }, { title: 'two', local: 'k2' }, { title: 'three', local: 'k3' }])
+    await h.m('pA').add({ video: V1 })
+    await h.flush()
+    h.m('pA').ended(h.m('pA').state().now.id)
+    await h.flush()
+    h.m('pB').skip()
+    await h.flush()
+    h.m('pA').failed(h.m('pA').state().now.id, 'error')
+    h.m('pA').stop()
+    await h.flush()
+    assert.deepEqual(h.tracks.map(({ at, source, reason }) => [at, source, reason]),
+        [['pA', 'file', 'end'], ['pA', 'file', 'skip'], ['pA', 'file', 'error'], ['pA', 'youtube', 'stop']])
+    assert.ok(h.tracks.every(t => Object.keys(t).sort().join() === 'at,reason,source'), 'no title in the hook')
 })

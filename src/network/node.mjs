@@ -794,6 +794,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         },
         changed: view => events.emit('music', view),
         notice: value => events.emit('music-notice', value),
+        trackDone: value => events.emit('music-track', value),
         voiceOf: peerId => peerId === selfId ? { inVoice: voiceState.inVoice, channel: voiceState.channel }
             : sessions.has(peerId) && peerVoice.has(peerId) ? { inVoice: true, channel: channelOfPeer(peerId) }
                 : { inVoice: false, channel: null },

@@ -14,13 +14,13 @@ import { attachMusic } from '../src/application/music-ipc.mjs';
 const V1 = 'dQw4w9WgXcQ';
 
 // A fake youtubei.js module. statusOf(video, client) gives the playability status. Each call and its arguments go
-// into calls.
+// into calls. The app clients (VISIONOS, ANDROID_VR) give a plain URL; the others a URL after the player script.
 function fakeLibrary({ statusOf = () => 'OK', decipherCalls = [], playlist = null, createFails = false } = {}) {
     const calls = [];
     const lib = {
         Log: { Level: { NONE: 0 }, setLevel: level => calls.push(['setLevel', level]) },
         Platform: { shim: { eval: () => { throw new Error('no evaluator'); } } },
-        Constants: { CLIENTS: { ANDROID_VR: { USER_AGENT: 'VR-UA' } } },
+        Constants: { CLIENTS: { ANDROID_VR: { USER_AGENT: 'VR-UA' }, VISIONOS: { USER_AGENT: 'VISION-UA' } } },
         Innertube: {
             async create(options) {
                 calls.push(['create', Object.keys(options).sort()]);
@@ -29,19 +29,25 @@ function fakeLibrary({ statusOf = () => 'OK', decipherCalls = [], playlist = nul
                     session: { player: { id: 'player' } },
                     async getBasicInfo(video, options) {
                         calls.push(['getBasicInfo', video, options.client]);
+                        const app = ['VISIONOS', 'ANDROID_VR'].includes(options.client);
+                        const base = `https://rr1---sn-x.googlevideo.com/videoplayback?id=${video}&c=${options.client}`;
+                        const format = (mime, bitrate, channels, size) => ({ has_audio: true, has_video: false, audio_channels: channels,
+                            mime_type: mime, bitrate, content_length: size, ...(app ? { url: base } : { signature_cipher: 's=x&url=y' }),
+                            async decipher(player) {
+                                decipherCalls.push(player);
+                                // The library calls the evaluator of the platform for the n parameter.
+                                const result = await lib.Platform.shim.eval({ output: 'return process("abc")' }, { n: 'abc' });
+                                return `${base}&n=${result.n}`;
+                            } });
                         return {
                             playability_status: { status: statusOf(video, options.client) },
                             basic_info: { title: `Title of ${video}`, duration: 212 },
-                            chooseFormat(opts) {
-                                calls.push(['chooseFormat', opts.type, opts.format]);
-                                return { mime_type: 'audio/webm; codecs="opus"', content_length: 3400000,
-                                    async decipher(player) {
-                                        decipherCalls.push(player);
-                                        // The library calls the evaluator of the platform for the n parameter.
-                                        const result = await lib.Platform.shim.eval({ output: 'return process("abc")' }, { n: 'abc' });
-                                        return `https://rr1---sn-x.googlevideo.com/videoplayback?id=${video}&n=${result.n}&c=${options.client}`;
-                                    } };
-                            }
+                            streaming_data: { adaptive_formats: [
+                                { has_audio: false, has_video: true, mime_type: 'video/mp4', bitrate: 9e6 },
+                                format('audio/mp4; codecs="mp4a.40.2"', 384000, 6, 9000000),
+                                format('audio/mp4; codecs="mp4a.40.2"', 192000, 2, 5000000),
+                                format('audio/webm; codecs="opus"', 160000, 2, 3400000)
+                            ] }
                         };
                     },
                     async getPlaylist(id) {
@@ -56,26 +62,44 @@ function fakeLibrary({ statusOf = () => 'OK', decipherCalls = [], playlist = nul
     return { lib, calls };
 }
 
-test('YouTube source: only the ID goes to the library; the evaluator is the sandbox; a refused client tries the next one', async () => {
-    const { lib, calls } = fakeLibrary({ statusOf: (video, client) => (client === 'ANDROID_VR' ? 'LOGIN_REQUIRED' : 'OK') });
+test('YouTube source: only the ID goes to the library; a client that stops after the start tries the next one', async () => {
+    // VISIONOS refuses this video; ANDROID_VR gives the start only (HTTP 403 at the end, MU-6); TV_SIMPLY works.
+    const { lib, calls } = fakeLibrary({ statusOf: (video, client) => (client === 'VISIONOS' ? 'LOGIN_REQUIRED' : 'OK') });
     const evaluated = [];
     const probes = [];
+    const logs = [];
     const source = createYouTubeSource({
         load: async () => lib,
         evaluate: async code => { evaluated.push(code); return { n: 'xyz' }; },
-        fetch: async (url, init) => { probes.push([url, init.headers['user-agent']]); return new Response(new Uint8Array(1024), { status: 206 }); }
+        log: (level, text) => logs.push(text),
+        fetch: async (url, init) => {
+            const u = new URL(url);
+            probes.push({ client: u.searchParams.get('c'), range: u.searchParams.get('range'), n: u.searchParams.get('n'), headers: init.headers });
+            const late = !u.searchParams.get('range').startsWith('0-');
+            return new Response(new Uint8Array(1024), { status: u.searchParams.get('c') === 'ANDROID_VR' && late ? 403 : 200 });
+        }
     });
     assert.deepEqual(await source.describe({ video: V1 }), [{ video: V1, title: `Title of ${V1}`, dur: 212 }]);
     const stream = await source.stream(V1);
-    assert.equal(stream.client, 'WEB_EMBEDDED');
-    assert.match(stream.url, /^https:\/\/rr1---sn-x\.googlevideo\.com\/videoplayback\?id=dQw4w9WgXcQ&n=xyz/);
+    assert.equal(stream.client, 'TV_SIMPLY');
+    assert.match(stream.url, /^https:\/\/rr1---sn-x\.googlevideo\.com\/videoplayback\?id=dQw4w9WgXcQ&c=TV_SIMPLY&n=xyz$/);
+    // The stereo Opus format, not the 5.1 format and not the stereo AAC format with the higher bitrate.
     assert.equal(stream.size, 3400000);
-    assert.deepEqual(evaluated, ['return process("abc")'], 'the player code went to the sandbox evaluator');
-    assert.equal(probes.length, 1);
-    assert.match(probes[0][0], /&range=0-1023$/);
+    assert.equal(stream.mime, 'audio/webm; codecs="opus"');
+    // ANDROID_VR: the plain URL (no n, its own agent, no web origin), then the URL after the player script.
+    const vr = probes.filter(p => p.client === 'ANDROID_VR');
+    assert.deepEqual(vr.map(p => [p.range, p.n]), [['0-1023', null], ['3398976-3399999', null], ['0-1023', 'xyz'], ['3398976-3399999', 'xyz']]);
+    assert.ok(vr.every(p => p.headers['user-agent'] === 'VR-UA' && !p.headers.origin));
+    const tv = probes.filter(p => p.client === 'TV_SIMPLY');
+    assert.equal(tv.length, 2);
+    assert.ok(tv.every(p => p.headers.origin === 'https://www.youtube.com' && /Windows NT/.test(p.headers['user-agent'])));
+    assert.ok(evaluated.length === 2 && evaluated.every(code => code === 'return process("abc")'), 'the player code went to the sandbox evaluator');
+    assert.ok(logs.some(t => t === 'Music: YouTube client ANDROID_VR: probes 200 403 (plain), audio/webm'));
+    assert.ok(logs.every(t => !t.includes('googlevideo') && !t.includes(V1)), 'no URL and no video ID in the log');
     // No room data: each argument of the library is an ID, a client name or an option of the source.
     const args = calls.flatMap(c => c.slice(1)).flat().filter(v => typeof v === 'string');
-    for (const value of args) assert.ok([V1, ...YOUTUBE_CLIENTS, 'audio', 'webm', 'fetch', 'retrieve_player'].includes(value), `argument ${value}`);
+    for (const value of args) assert.ok([V1, ...YOUTUBE_CLIENTS, 'fetch', 'retrieve_player'].includes(value), `argument ${value}`);
+    assert.equal(YOUTUBE_CLIENTS[0], 'VISIONOS');
     assert.ok(calls.some(c => c[0] === 'setLevel' && c[1] === 0), 'the log of the library is off');
     await assert.rejects(source.stream('not-an-id'), err => err.kind === 'refused');
 });

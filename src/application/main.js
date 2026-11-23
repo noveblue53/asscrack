@@ -1148,6 +1148,7 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
     // Room music: the view and the notices (titles: not in the event log), and the frames of the DJ (no decode here).
     onLive('music', data => sendToWindow('asscrack:music', data));
     onLive('music-notice', data => sendToWindow('asscrack:music-notice', data));
+    onLive('music-track', data => music.trackDone(data));
     onLive('music-frame', data => { if (!idlePeer) sendToWindow('asscrack:music-frame', data); });
     // P8b: the screen share events (design section 4, IPC).
     forwardScreenEvents(onLive);

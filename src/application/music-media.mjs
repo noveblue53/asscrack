@@ -144,7 +144,7 @@ export function createMusicMedia({ fetch = globalThis.fetch, onError = () => {} 
             const end = Math.min(last, position + CHUNK - 1);
             reader = (await fetchPart(route, position, end, abort.signal)).getReader();
         } catch (err) {
-            onError(err?.status === 403 || err?.status === 410 ? 'refused' : 'unavailable');
+            onError(err?.status === 403 || err?.status === 410 ? 'refused' : 'unavailable', `HTTP ${err?.status ?? '?'} at ${position} of ${size ?? '?'}`);
             return failed(502);
         }
         let partEnd = Math.min(last, position + CHUNK - 1);
@@ -171,7 +171,7 @@ export function createMusicMedia({ fetch = globalThis.fetch, onError = () => {} 
                     }
                 } catch (err) {
                     streams.delete(handle);
-                    if (!abort.signal.aborted) onError('unavailable');
+                    if (!abort.signal.aborted) onError('unavailable', `HTTP ${err?.status ?? '?'} at ${position} of ${size ?? '?'}`);
                     controller.error(err);
                 }
             },

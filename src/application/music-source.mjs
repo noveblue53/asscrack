@@ -9,13 +9,20 @@
 import { LIST_ID, MUSIC_LIMITS, VIDEO_ID } from '../network/music.mjs';
 import { youtubeStreamUrl } from './music-media.mjs';
 
-// The clients of YouTube that the source tries, in this order. They need no proof-of-origin token (yt-dlp PO token
-// guide, July 2026): ANDROID_VR (no "made for kids" videos), WEB_EMBEDDED (only embeddable videos), TV.
-export const YOUTUBE_CLIENTS = Object.freeze(['ANDROID_VR', 'WEB_EMBEDDED', 'TV']);
+// The clients of YouTube that the source tries, in this order (MU-6). Measured on this PC on 2026-11-23 with a public
+// video: VISIONOS gave each byte range of the audio stream; ANDROID_VR, IOS and TV_SIMPLY gave only about the first
+// minute (HTTP 403 after it); WEB_EMBEDDED, TV and WEB gave no stream. The two probes of stream() find a client that
+// stops at the first minute, thus the order can change with YouTube and the list stays.
+export const YOUTUBE_CLIENTS = Object.freeze(['VISIONOS', 'ANDROID_VR', 'TV_SIMPLY', 'WEB_EMBEDDED', 'TV']);
+// The app clients: their stream URL works as YouTube gives it (no player script), with their own agent.
+const NO_PLAYER = new Set(['VISIONOS', 'ANDROID_VR']);
 const SESSION_MS = 30 * 60 * 1000;
 const DESKTOP_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
 
 export const sourceError = (kind, text) => Object.assign(new Error(text ?? kind), { kind });
+
+// An error text with no URL, for the log.
+const safe = err => String(err?.message ?? err).replace(/https?:\/\/\S+/g, '<url>').slice(0, 120);
 
 const text = value => {
     if (typeof value === 'string') return value;
@@ -24,8 +31,10 @@ const text = value => {
 };
 
 // load(): the youtubei.js module. evaluate(code): the sandbox (music-eval.mjs), gives { sig, n } or null.
-// fetch: the fetch of the library and of the probe. now(): the clock.
-export function createYouTubeSource({ load = () => import('youtubei.js'), evaluate, fetch = globalThis.fetch, now = Date.now } = {}) {
+// fetch: the fetch of the library and of the probe. now(): the clock. log(level, text): the log of the app; it gets
+// the client name and a status, never a URL or a video ID.
+export function createYouTubeSource({ load = () => import('youtubei.js'), evaluate, fetch = globalThis.fetch, now = Date.now,
+    log = () => {} } = {}) {
     let session = null;
     let pending = null;
     let lib = null;
@@ -95,8 +104,24 @@ export function createYouTubeSource({ load = () => import('youtubei.js'), evalua
         throw sourceError('refused');
     }
 
-    // The audio-only stream of a video: { url, mime, size, headers }. A short probe of the first bytes checks the URL;
-    // a refused URL gives the next client a try.
+    // The audio-only format: Opus in WebM first, then the format with the highest bitrate. At most 2 channels (no 5.1).
+    function audioFormat(info) {
+        const formats = (info?.streaming_data?.adaptive_formats ?? [])
+            .filter(f => f?.has_audio && !f.has_video && (f.audio_channels ?? 2) <= 2 && /^audio\//.test(String(f.mime_type)));
+        const opus = f => /webm/.test(f.mime_type) && /opus/.test(f.mime_type) ? 1 : 0;
+        formats.sort((a, b) => opus(b) - opus(a) || (b.bitrate ?? 0) - (a.bitrate ?? 0));
+        return formats[0] ?? null;
+    }
+
+    // One probe of 1 KB at a byte offset. Gives the HTTP status.
+    async function probe(url, headers, at) {
+        const response = await fetch(`${url}&range=${at}-${at + 1023}`, { headers, redirect: 'follow' });
+        await response.body?.cancel?.().catch?.(() => {});
+        return response.status;
+    }
+
+    // The audio-only stream of a video: { url, mime, size, headers }. Two probes of 1 KB (the start and the end of the
+    // file, where Chromium reads the index of a WebM file) check the URL; a refused URL gives the next client a try.
     async function stream(video) {
         if (!VIDEO_ID.test(video)) throw sourceError('refused');
         const yt = await innertube();
@@ -104,22 +129,32 @@ export function createYouTubeSource({ load = () => import('youtubei.js'), evalua
         for (const client of YOUTUBE_CLIENTS) {
             try {
                 const info = await yt.getBasicInfo(video, { client });
-                if (!playable(info)) { refused = true; continue; }
-                let format;
-                try { format = info.chooseFormat({ type: 'audio', quality: 'best', format: 'webm', codec: 'opus' }); }
-                catch { format = info.chooseFormat({ type: 'audio', quality: 'best', format: 'any' }); }
-                const url = youtubeStreamUrl(await format.decipher(yt.session.player));
-                if (!url) continue;
+                if (!playable(info)) {
+                    refused = true;
+                    log('INFO', `Music: YouTube client ${client}: status ${String(info?.playability_status?.status).slice(0, 32)}`);
+                    continue;
+                }
+                const format = audioFormat(info);
+                if (!format) { log('INFO', `Music: YouTube client ${client}: no audio format`); continue; }
                 const agent = lib?.Constants?.CLIENTS?.[client]?.USER_AGENT;
-                const headers = { accept: '*/*', origin: 'https://www.youtube.com', referer: 'https://www.youtube.com/',
-                    'user-agent': typeof agent === 'string' ? agent : DESKTOP_AGENT };
-                const probe = await fetch(`${url}&range=0-1023`, { headers, redirect: 'follow' });
-                await probe.body?.cancel?.().catch?.(() => {});
-                if (!probe.ok) continue;
-                return { url: url.toString(), mime: String(format.mime_type ?? ''), size: Number(format.content_length) || null,
-                    headers, client };
-            } catch {
-                // The next client.
+                // An app client sends its own agent and no web origin; a web client the headers of youtube.com.
+                const headers = NO_PLAYER.has(client) && typeof agent === 'string' ? { accept: '*/*', 'user-agent': agent }
+                    : { accept: '*/*', origin: 'https://www.youtube.com', referer: 'https://www.youtube.com/', 'user-agent': DESKTOP_AGENT };
+                const size = Number(format.content_length) || null;
+                // MU-6: the URL of an app client (no player script) as it is, then the URL after the player script.
+                const plain = typeof format.url === 'string' && !format.signature_cipher && !format.cipher;
+                const variants = NO_PLAYER.has(client) && plain ? ['plain', 'deciphered'] : ['deciphered'];
+                for (const variant of variants) {
+                    const url = youtubeStreamUrl(variant === 'plain' ? format.url : await format.decipher(yt.session.player));
+                    if (!url) { log('INFO', `Music: YouTube client ${client}: no googlevideo URL (${variant})`); continue; }
+                    const first = await probe(url, headers, 0);
+                    const last = first >= 200 && first < 300 && size > 4096 ? await probe(url, headers, size - 1024) : first;
+                    log('INFO', `Music: YouTube client ${client}: probes ${first} ${last} (${variant}), ${String(format.mime_type ?? '').split(';')[0]}`);
+                    if (first < 200 || first >= 300 || last < 200 || last >= 300) continue;
+                    return { url: url.toString(), mime: String(format.mime_type ?? ''), size, headers, client };
+                }
+            } catch (err) {
+                log('INFO', `Music: YouTube client ${client}: ${safe(err)}`);
             }
         }
         throw sourceError(refused ? 'refused' : 'unavailable');

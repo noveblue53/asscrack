@@ -21,8 +21,11 @@ const KINDS = ['refused', 'unavailable', 'error'];
 export function attachMusic({ handle, on, getNode, getWindow = () => null, dialog, chosenFile, settingsFile, journal = () => {},
     log = () => {}, pick = null, evaluate, idle = () => false, fetch = globalThis.fetch, loadYouTube } = {}) {
     let streamError = null;
-    const media = createMusicMedia({ fetch, onError: kind => { streamError = kind; } });
-    const youtube = createYouTubeSource({ evaluate, fetch, ...(loadYouTube ? { load: loadYouTube } : {}) });
+    const media = createMusicMedia({ fetch, onError: (kind, detail) => {
+        streamError = kind;
+        log('WARN', `Music: YouTube part failed: ${detail ?? kind}`);
+    } });
+    const youtube = createYouTubeSource({ evaluate, fetch, log, ...(loadYouTube ? { load: loadYouTube } : {}) });
     // key -> the path of a local file that this user chose (the DJ).
     const locals = new Map();
     // id -> the path of a file of the music folder (the last list that the window got).
@@ -118,19 +121,12 @@ export function attachMusic({ handle, on, getNode, getWindow = () => null, dialo
         return addLocal([file]);
     });
 
-    handle('asscrack:music-skip', () => {
-        const music = node();
-        const before = music.state();
-        const view = music.skip();
-        if (before.mine && before.now) journal('music', { event: 'skip', source: source(before.now) });
-        return view;
-    });
+    handle('asscrack:music-skip', () => node().skip());
     handle('asscrack:music-pause', (_event, paused) => node().pause(paused === true));
     handle('asscrack:music-remove', (_event, id) => node().remove(String(id)));
     handle('asscrack:music-move', (_event, id, to) => node().move(String(id), Number(to)));
     handle('asscrack:music-stop', () => {
         const view = node().stop();
-        journal('music', { event: 'stop' });
         media.clear();
         return view;
     });
@@ -148,10 +144,8 @@ export function attachMusic({ handle, on, getNode, getWindow = () => null, dialo
             const file = locals.get(item.local);
             let url = null;
             try { url = file ? media.addFile(chosenFile(file)) : null; } catch { url = null; }
-            if (!url) {
-                journal('music', { event: 'error', source: 'file', kind: 'error' });
-                return { error: 'error' };
-            }
+            // The window reports the error (music-failed), which journals it.
+            if (!url) return { error: 'error' };
             journal('music', { event: 'start', source: 'file', ms: Date.now() - openedAt });
             return { url };
         }
@@ -163,19 +157,12 @@ export function attachMusic({ handle, on, getNode, getWindow = () => null, dialo
             return { url };
         } catch (err) {
             const kind = KINDS.includes(err?.kind) ? err.kind : 'unavailable';
-            journal('music', { event: 'error', source: 'youtube', kind });
             log('WARN', `Music: YouTube ${kind}`);
             return { error: kind };
         }
     });
 
-    on('asscrack:music-ended', (_event, id) => {
-        const n = getNode();
-        if (!n?.music) return;
-        const item = n.music.playing();
-        if (item?.id === String(id)) journal('music', { event: 'end', source: source(item) });
-        n.music.ended(String(id));
-    });
+    on('asscrack:music-ended', (_event, id) => getNode()?.music?.ended(String(id)));
     on('asscrack:music-failed', (_event, id, kind) => {
         const n = getNode();
         if (!n?.music) return;
@@ -202,6 +189,12 @@ export function attachMusic({ handle, on, getNode, getWindow = () => null, dialo
         return { volume: settings.volume, ducking: settings.ducking };
     });
 
+    // The node event 'music-track' of the DJ: the end, a skip (also by a member) and the Stop of a track. An error has
+    // its kind at music-open or music-failed.
+    function trackDone({ source: kind, reason } = {}) {
+        if (['end', 'skip', 'stop'].includes(reason)) journal('music', { event: reason, source: kind });
+    }
+
     // Leave room: no URL, no local key and no folder ID stays.
     function reset() {
         media.clear();
@@ -210,5 +203,5 @@ export function attachMusic({ handle, on, getNode, getWindow = () => null, dialo
         current = null;
     }
 
-    return { reset, serve: request => media.serve(request), resolve: request => youtube.describe(request), current: () => current };
+    return { reset, trackDone, serve: request => media.serve(request), resolve: request => youtube.describe(request), current: () => current };
 }
