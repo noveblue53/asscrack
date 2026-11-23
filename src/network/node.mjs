@@ -867,6 +867,40 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     // For each pending session: a promise that settles when the session opens or fails.
     const pendingSettled = new WeakMap()
 
+    // The first admission of a new member device (protected rooms). Before the 'room-admitted' line of the owner, this
+    // device refuses the proof of each other member ('first admission requires the owner'), and each other member
+    // refuses the device proof of this device ('device authorization unavailable'). The other members do not know when
+    // the admission comes, and the discovery dial of a peer occurs only one time. Thus the new member dials each such
+    // peer again after its admission, also a peer with a higher peer ID.
+    // The chat streams that failed, or that will fail, because this device had no admission at that time.
+    const admissionRetrySessions = new WeakSet()
+    // The peers to dial again at the first admission: peer ID -> PeerId of the connection.
+    const admissionWaiting = new Map()
+    function retryAfterAdmission(peerId, remotePeer) {
+        if (stopped || !membership || peerId === selfId || membership.revoked(membership.id)) return
+        remotePeer ??= node.getConnections().find(c => c.remotePeer.toString() === peerId)?.remotePeer
+        if (!remotePeer) return
+        if (!membership.admitted()) {
+            admissionWaiting.delete(peerId)
+            admissionWaiting.set(peerId, remotePeer)
+            if (admissionWaiting.size > 256) admissionWaiting.delete(admissionWaiting.keys().next().value)
+            return
+        }
+        if (chatBusy(peerId)) return
+        console.info(connText('conn admission-retry', { peer: peerId }))
+        dialing.add(peerId)
+        const started = Date.now()
+        node.dial(remotePeer)
+            .then(conn => openChat(conn, peerId).then(() => dialResult({ peer: peerId, addr: conn.remoteAddr.toString(), via: 'discovery', started })))
+            .catch(err => dialFailed({ peer: peerId, addr: node.getConnections(remotePeer)[0]?.remoteAddr?.toString() ?? '?', via: 'discovery', err, started }))
+            .finally(() => dialing.delete(peerId))
+    }
+    function admissionArrived() {
+        const waiting = [...admissionWaiting]
+        admissionWaiting.clear()
+        for (const [peerId, remotePeer] of waiting) retryAfterAdmission(peerId, remotePeer)
+    }
+
     // Cross race rule: two chat streams to one peer can exist when both peers open one at the same time. Both ends
     // keep the stream that the lower peer ID opened. Returns true when the new stream replaces the old session.
     function newStreamWins(old, initiator, peerId) {
@@ -918,6 +952,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             if (open) return
             clearTimeout(timer)
             if (pendingChats.get(peerId) === session) pendingChats.delete(peerId)
+            if (membership && !membership.admitted()) admissionRetrySessions.add(session)
             console.warn(`Room proof from ${peerId} failed: ${cause}`)
             stream.abort(new Error(`Room proof failed: ${cause}`))
             // Diagnostics (1.0.1): the journal maps the cause text to a code (diag-events.mjs refuseCause).
@@ -933,6 +968,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             if (membership) {
                 if (!membership.admitted() || membership.revoked(authenticatedMember.deviceId)) return reject('device no longer admitted')
                 memberPeers.set(peerId, authenticatedMember)
+                // The owner accepts a device proof with no admission: this session stays.
+                if (authenticatedMember.deviceId === membership.ownerId) admissionRetrySessions.delete(session)
             }
             if (peerName) names.set(peerId, peerName)
             if (membership && peerName) deviceNames.set(authenticatedMember.deviceId, peerName)
@@ -966,9 +1003,13 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 }
                 roomProofVerified = true
                 if (!membership) finishProof()
-                else if (!session.send(JSON.stringify({ type: 'member-proof', name: senderName,
-                    member: membership.memberProof(peerNonce, selfId, peerId) }))) {
-                    reject('device proof could not be sent')
+                else {
+                    // A device proof with no admission: each member that is not the owner refuses it.
+                    if (!membership.admitted()) admissionRetrySessions.add(session)
+                    if (!session.send(JSON.stringify({ type: 'member-proof', name: senderName,
+                        member: membership.memberProof(peerNonce, selfId, peerId) }))) {
+                        reject('device proof could not be sent')
+                    }
                 }
             } else if (membership && control.type === 'member-proof') {
                 if (!roomProofVerified || authenticatedMember) return reject('unexpected device proof')
@@ -987,10 +1028,12 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 }
                 finishProof()
             } else if (membership && control.type === 'room-admitted') {
+                const first = !membership.admitted()
                 if (authenticatedMember?.deviceId !== membership.ownerId || !membership.acceptAdmission(control.signature)) {
                     return reject('invalid room admission')
                 }
                 finishProof()
+                if (first && membership.admitted()) admissionArrived()
             }
             // Ignore all other lines before the session is open.
         }
@@ -1159,6 +1202,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             clearTimeout(timer)
             if (pendingChats.get(peerId) === session) pendingChats.delete(peerId)
             settle()
+            // A session that opened gets its retry after the cleanup of the session (openSession).
+            if (!open && admissionRetrySessions.has(session)) retryAfterAdmission(peerId, connection?.remotePeer)
         })
     }
 
@@ -1268,6 +1313,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 // Reset the try count so that the cap does not stop the redial.
                 relayDialTries.delete(peerId)
                 scheduleRelayDials(RELAY_DIAL_RETRY_MS)
+                // The peer refused the device proof of this device, which had no admission at that time.
+                if (admissionRetrySessions.has(session)) retryAfterAdmission(peerId, sessionConn?.remotePeer)
             }
         })
     }
