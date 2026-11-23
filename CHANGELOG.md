@@ -7,7 +7,57 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
-## Unreleased
+## 1.0.5 (2026-11-23): times for the join and leave lines, the music visualizer and the installs badge
+
+Release 1.0.5 is the fifth update of 1.0.0. A 1.0.0, 1.0.1, 1.0.2, 1.0.3 or 1.0.4 app gets it with the signed update
+(View, About ASSCRACK, Check now). The entries below this heading, down to the 1.0.4 entry, were "Unreleased"
+entries. Each entry gives its changes and its checks. Since 1.0.4, the app has these new items:
+
+- The lines "<name> joined the room." and "<name> left the room." show their time. A saved room that keeps history
+  keeps these lines after a restart.
+- Room music has a visualizer: an LED spectrum in the music bar, or a VU meter. The bar can collapse to a strip, and
+  the player can open in its own window.
+- The README badge "installs" counts only the downloads of the `-setup.exe` and `-portable.exe` files. The updater of
+  1.0.5 downloads a copy of the file that has an other name.
+
+Build:
+- `npm run dist` makes `ASSCRACK-1.0.5-portable.exe` (product name "ASSCRACK Portable"). `npm run dist:installer`
+  makes `ASSCRACK-1.0.5-setup.exe` (product name "ASSCRACK").
+- The release has six files: the two files above, their download copies `ASSCRACK-1.0.5-update.exe` and
+  `ASSCRACK-1.0.5-portable-update.exe` (the same bytes), `update.json` and `update.json.sig`. See
+  `docs/RELEASE_UPDATES.md`.
+- The source of the files is the commit of this entry. The signed `update.json` of the release gives the byte size
+  and the SHA-256 of each file. The files have no code signature.
+- No new dependency.
+
+Results:
+- **127.0.0.1 and this PC only.** Each entry below gives its results with their labels.
+- `npm test` of the integrated source ran in a fresh worktree after `npm run install:clean`. Result: 1193 tests,
+  1175 pass, 0 fail, 18 skipped (127.0.0.1).
+- One earlier full run of the same source had 1 fail in `test/diag-knock.test.mjs`. The test took 1111 ms. It read
+  the journal file before the timed journal write (each 1 s) was complete. This test file passed 5 of 5 times alone,
+  and the next 2 full runs passed. The three branches do not change the journal or the network code.
+- **this PC** (copies of `electron .` with `--profile`, rooms on 127.0.0.1 and the LAN address of this PC):
+  - One start with a fake APPDATA: no error line.
+  - The voice regression: 16 of 16 tests, and `voice-check.mjs` with the expected byte counts.
+  - Three copies with a fake APPDATA. Priya became a friend of Mira. Then Priya knocked over the friend link, and
+    Mira selected Allow. Jonas joined with a device invite. Each copy showed 3 people and got each of the 6 chat
+    lines.
+  - The join and leave lines: the copy of Mira showed 4 lines with their times. The lines were "Jonas joined the
+    room.", "Jonas left the room.", "Jonas reconnected." and "Priya left the room.". Then Mira and Jonas did a quit
+    and a reopen. Each copy showed its saved lines in the same order with the chat lines. No copy showed "Connection
+    lost.".
+  - Known limit, also in 1.0.4: a member that comes in after a knock over the friend link gives no "joined the room."
+    line.
+  - Room music with a local test file (no YouTube): the visualizer of the listener moved in the bar. It also moved as
+    a VU meter in the collapsed strip, and in the pop-out window. Pop in closed the window.
+  - The update path: a key of the check, two files of random bytes and `tools/update-test-server.mjs`. The updaters
+    of 1.0.0 to 1.0.4 accepted the manifest with `download`. They downloaded the `-setup.exe` or `-portable.exe`
+    file. The updater of 1.0.5 downloaded the `-update.exe` or `-portable-update.exe` copy. It kept the file with its
+    normal name. Each file had the size and the SHA-256 of the manifest.
+  - Before and after each run, the Start menu shortcut and the toast registration of the installed copy on this PC
+    had the same values.
+- No LAN test and no internet test occurred.
 
 ### The installs badge counts installs, not update checks (1.0.5)
 
