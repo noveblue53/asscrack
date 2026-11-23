@@ -7,6 +7,49 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased
+
+### Times and saved history for the join and leave lines
+
+- Request (operator 2026-11-23): the lines "<name> joined the room." and "<name> left the room." must show a time and
+  stay in the chat after a restart. Before this change, these lines of G2 had no time and the app did not save them.
+  G2 gives a line for a join, a leave, a lost connection and the own reconnection.
+- Each of these lines now shows its time in the same style and place as a chat line. The time is after the text, and
+  in the time column of the compact transcript. The tooltip gives the full date and time. The own link lines are now
+  "Connection lost." and "Reconnected." because the time column gives the time. The day rows do not change.
+- A saved room that keeps history saves these lines in its encrypted archive, in the new table `room_notes`. They are
+  local events of this PC. The app does not send them, and they are not in the host replay. A host replay cannot
+  make a copy of them. On a reopen, the lines come back in time order with the chat lines, also with the paging of
+  older lines.
+- A leave or a lost connection, and a rejoin of the same person in 60 s, become one line "<name> reconnected.". In a
+  protected room the person is the device mark (an app restart gives a new peer ID). In an old shared-code room the
+  person is the name.
+- Each room keeps at most 500 of these lines. The oldest line goes first. Clear history and Forget delete them.
+- No own join line and no own leave line. Each start and quit would add two lines with no new fact. The day row and
+  the times show when the own session started. The app saves the own "Connection lost." and "Reconnected." lines:
+  they explain a gap. The app does not save "Connection lost." at a Quit or a Leave room.
+- The archive keeps `user_version` 3. 1.0.4 opens an archive of this build and does not show the new lines. Known
+  limit: Clear history in 1.0.4 does not delete these lines. Forget in 1.0.4 deletes them.
+
+Results:
+- `npm test` (127.0.0.1): 1165 tests, 1147 pass, 0 fail, 18 skipped. `test/presence-lines.test.mjs` (new, 15
+  tests): 15 fail on 1.0.4 (`d664ef8`) and 15 pass with the change.
+- Archive compatibility (this PC, `room-archive.mjs` of 1.0.4 and of this build): an archive of 1.0.4 opens with this
+  build and takes new lines. An archive of this build with lines opens in 1.0.4. 1.0.4 shows and replays only the chat
+  lines, and its Clear and Forget work.
+- **this PC**, not a LAN result. Two copies of `electron .` ran with `--profile` and their own `APPDATA`, in a
+  protected LAN room on this PC, with CDP on 127.0.0.1:
+  - 1.0.4 made the room and the archives. This build reopened them with no problem.
+  - A showed "Jonas left the room." with a time when B quit. B started again and reopened in 15 s: the line changed
+    to "Jonas reconnected.". B showed "Mira left the room." when A quit.
+  - Both quit and reopened: each copy showed its saved lines in time order with the chat lines. No "Connection
+    lost." line from the own quit.
+  - 1.0.4 reopened the archive of this build: the chat lines with no error. This build then reopened it again with
+    its lines.
+  - One start with a fresh profile: no error line. No ERROR line in the main logs of the runs. Before and after the
+    runs, the Start menu shortcut and the toast registration of the installed copy on this PC had the same values.
+- No LAN test and no internet test occurred.
+
 ## 1.0.4 (2026-11-23): room music, a full-screen share with no border, automatic Away and the history thumbnails
 
 Release 1.0.4 is the fourth update of 1.0.0. A 1.0.0, 1.0.1, 1.0.2 or 1.0.3 app gets it with the signed update (View,

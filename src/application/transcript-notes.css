@@ -20,6 +20,12 @@ body.compact-transcript #messages > li.note[data-kind="day"] {
   font-weight: 700;
 }
 
+/* The time of a note row: the .time style of a chat line (styles.css), after the text. */
+#messages > li.note .time {
+  margin-left: 8px;
+  font-style: normal;
+}
+
 /* The compact transcript gives each line a grid. A note row is one line of text. */
 body.compact-transcript #messages > li.note {
   display: block;
@@ -27,6 +33,11 @@ body.compact-transcript #messages > li.note {
   padding: 1px 4px;
   text-align: left;
 }
+
+/* A note row with a time: the time in the time column of the chat lines, the text after it. */
+body.compact-transcript #messages > li.note:not([data-kind="day"]) { display: grid; }
+body.compact-transcript #messages > li.note .note-text { grid-column: 2 / -1; grid-row: 1; }
+body.compact-transcript #messages > li.note .time { margin-left: 0; }
 
 /* Gap B3: "Send again" below "Only on this computer". */
 #messages li .btn-resend { align-self: flex-start; margin-top: 2px; font-size: 0.8em; }

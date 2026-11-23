@@ -131,6 +131,25 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
         }));
     }
 
+    // The presence lines of a saved room with from <= time < to (null: no limit), in time order.
+    function notes(roomId, { from = null, to = null } = {}) {
+        const a = ensure();
+        if (!a || a.state().state !== 'open' || typeof roomId !== 'string') return [];
+        return a.listNotes(roomId, { from, to });
+    }
+
+    // A presence line of the open room (joins, leaves, a lost link, the reconnect). Only a room that keeps history
+    // saves it. It is a local event of this PC: it does not go to the node. Returns { saved }.
+    function saveNote(note) {
+        if (!active?.keepHistory || !archive) return { saved: false };
+        try {
+            return { saved: archive.addNote(active.roomId, note) };
+        } catch (err) {
+            log('WARN', `Presence line not saved: ${errText(err)}`);
+            return { saved: false };
+        }
+    }
+
     // The saved row with the key, for the main process only. Never give it to the window.
     function getRoom(roomId) {
         const a = ensure();
@@ -469,7 +488,7 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
     }
 
     return {
-        open, rememberDownload, getDownload, rememberThumbnail, getThumbnail, clearThumbnails, messageCard, ownCard, status, unlock, lines, getRoom, loadChannels, persistChannels, loadVoiceChannels, persistVoiceChannels, prepareReplay, releaseReplay, afterLogin, recordSend, attachNode, setKeepHistory, setUserName, clear, forget, activeInfo,
+        open, notes, saveNote, rememberDownload, getDownload, rememberThumbnail, getThumbnail, clearThumbnails, messageCard, ownCard, status, unlock, lines, getRoom, loadChannels, persistChannels, loadVoiceChannels, persistVoiceChannels, prepareReplay, releaseReplay, afterLogin, recordSend, attachNode, setKeepHistory, setUserName, clear, forget, activeInfo,
         deviceIdentity, isProtectedRoom, persistMembership, leave, close, active: () => active, friendArchive, isFriendRoom
     };
 }

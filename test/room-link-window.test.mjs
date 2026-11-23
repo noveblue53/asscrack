@@ -126,13 +126,16 @@ test('the own loss: one link note, "Connection lost at …" with Details and the
     const clockText = f.window.roomLinkCore.clock(lostAt);
     assert.equal(f.waiting(), `Connection lost at ${clockText}. Reconnecting… Details`);
     assert.equal(f.link(), 'reconnecting');
-    assert.equal(noteTexts(f).at(-1), `Connection lost at ${clockText}.`);
+    // The note row shows the time in its time column (span.time); the text has no time.
+    assert.equal(noteTexts(f).at(-1), 'Connection lost.');
+    assert.equal(f.notes().at(-1).time, clockText);
     f.el('waiting-peer').querySelector('button').click();
     assert.equal(opened[0], null, 'Details opens Room activity for the room');
     f.clock.advance(30000);
     assert.equal(noteTexts(f).filter(t => /lost the connection/.test(t)).length, 0, 'no lost note during the own loss');
     f.handlers.onPeerJoined({ peerId: 'peer-bob' });
-    assert.equal(noteTexts(f).at(-1), `Reconnected at ${f.window.roomLinkCore.clock(f.clock.now())}.`);
+    assert.equal(noteTexts(f).at(-1), 'Reconnected.');
+    assert.equal(f.notes().at(-1).time, f.window.roomLinkCore.clock(f.clock.now()));
     assert.equal(f.waiting(), null);
     assert.equal(f.link(), 'reconnected');
     f.clock.advance(5000);
