@@ -5,7 +5,7 @@ test evidence of each feature.
 
 ## Get started
 
-ASSCRACK has no public release yet. The test team copies a portable `.exe` to each computer.
+Releases are on GitHub: https://github.com/noveblue53/asscrack/releases (installer and portable `.exe`, with signed in-app updates).
 
 ## Build and run from source
 
