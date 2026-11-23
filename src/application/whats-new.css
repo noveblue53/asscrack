@@ -1,0 +1,37 @@
+/* What's new (whats-new.js): the notes dialog and the card after an update. */
+#whats-new-dialog { width: min(34rem, calc(100vw - 24px)); }
+#whats-new-list {
+  max-height: min(60vh, 32rem);
+  overflow: auto;
+  padding-right: 4px;
+}
+.whats-new-entry + .whats-new-entry { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); }
+.whats-new-entry h3 { margin: 0 0 4px; font-size: 14px; }
+.whats-new-date { margin-left: 8px; font-weight: normal; font-size: 12px; color: var(--ink-soft); }
+:is(#whats-new-list, #whats-new-card-notes) p { margin: 4px 0; }
+:is(#whats-new-list, #whats-new-card-notes) ul { margin: 4px 0; padding-left: 1.2em; }
+:is(#whats-new-list, #whats-new-card-notes) li { margin: 2px 0; overflow-wrap: anywhere; }
+
+/* The card: not modal, at the bottom right, above the update bar when the bar shows. */
+#whats-new-card {
+  position: fixed;
+  right: 12px;
+  bottom: 40px;
+  z-index: 41;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: min(26rem, calc(100vw - 24px));
+  max-height: min(50vh, 24rem);
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: var(--surface-raised);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.18);
+}
+#whats-new-card[hidden] { display: none; }
+body:has(#update-bar:not([hidden])) #whats-new-card { bottom: 96px; }
+#whats-new-card h2 { margin: 0; font-size: 14px; }
+#whats-new-card-notes { flex: 1 1 auto; min-height: 0; overflow: auto; font-size: 13px; }
+.whats-new-card-buttons { display: flex; justify-content: flex-end; gap: 6px; }

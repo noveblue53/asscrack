@@ -1,0 +1,77 @@
+[
+  {
+    "version": "1.0.5",
+    "date": "2026-11-23",
+    "notes": [
+      "- Join and leave times: \"joined the room\" and \"left the room\" lines now show the time, just like chat messages. In a saved room with history on, they stay in the chat after you restart the app. If someone drops and comes back within a minute, you get one \"reconnected\" line instead of two.",
+      "- Music visualizer: the music bar has an LED spectrum that moves with the song, or a VU meter if you like that better (or turn it off). Collapse the bar to a thin strip, or pop the player out into its own window with a big visualizer."
+    ]
+  },
+  {
+    "version": "1.0.4",
+    "date": "2026-11-23",
+    "notes": [
+      "- Room music: join a voice channel, paste a YouTube link or add your own music files, and everyone in the channel hears it. Each person sets their own music volume, and the music gets quieter while someone talks. Chat commands work too: /play, /skip, /queue and /pause.",
+      "- No more yellow border when you share a fullscreen game on Windows 10. The app shares your screen instead, and your friends see \"Paused\" whenever the game isn't in front, so nothing else on your screen gets shown.",
+      "- Automatic Away: your status goes to Away when you leave the PC for a while, and back to Available when you return. Pick 5, 10 or 15 minutes (or Off) in Your availability. You can also turn on Do not disturb while you play a fullscreen game.",
+      "- Fixed: image thumbnails in the chat history show again after you reopen a saved room."
+    ]
+  },
+  {
+    "version": "1.0.3",
+    "date": "2026-11-23",
+    "notes": [
+      "- Message alerts: you now get a sound and a desktop notification for new messages when the app is in the background. Pick what you want in Sound & notifications, choose from three message sounds, and right-click a channel or the room name to mute it for a while.",
+      "- Right-click an image in chat to copy it or save it.",
+      "- When you share your screen, you can see a small preview of what you're sharing.",
+      "- On Windows 10, sharing a game window shows a thin yellow border. The picker now offers \"Share screen\" instead, which has no border.",
+      "- Fixed: in a room with three or more people, members sometimes couldn't see each other or each other's messages.",
+      "- Fixed: the portable app no longer breaks the Start menu shortcut of an installed copy."
+    ]
+  },
+  {
+    "version": "1.0.2",
+    "date": "2026-11-22",
+    "notes": [
+      "ASSCRACK 1.0.2 is a cleanup of the texts across the app.",
+      "- Shorter, clearer texts on buttons, menus, dialogs and errors. Errors now show in red.",
+      "- Small marks replace the explaining sentences: an Owner or Member badge in the Invite panel, a colored dot that shows if others can reach your room, and icons for mute, deafen and push to talk in the people list.",
+      "- Hover over a mark for the details.",
+      "- Join requests show a \"+2\" style tag when more people wait, and pending friend requests have a tag too.",
+      "- The old note about version 0.7.0 is gone.",
+      "Nothing else changes: rooms, friends, voice and files work the same as in 1.0.1."
+    ]
+  },
+  {
+    "version": "1.0.1",
+    "date": "2026-11-22",
+    "notes": [
+      "ASSCRACK 1.0.1 makes it much easier to get into a room together.",
+      "- Invite a friend to your room straight from your Friends list. They get a card with a Join button, no codes to paste.",
+      "- Share a room code. Your friend pastes it (or just copies it, and ASSCRACK offers to join), and you get a \"wants to join\" note with Allow and Deny.",
+      "- When a friend is in a room, their row in your Friends list shows Join. Click it to ask the owner to let you in.",
+      "- Room owners can tick \"Always allow my friends\" so friends get in without a request.",
+      "- Your rooms, history, friends and settings now live in one folder next to the app (\"ASSCRACK Data\"). Move the folder with the app and everything comes along. The first start offers to bring over your old data.",
+      "- The installer now lets you pick where to install, and it looks like the app.",
+      "- If something goes wrong, a friend can ask you for a problem report. Nothing is sent unless you click Send, and your messages are never in it.",
+      "- The Friends list can pop out into its own window, and Leave room is now red so you do not click it by accident.",
+      "- Fixed the screen share picker, where the previews covered the names."
+    ]
+  },
+  {
+    "version": "1.0.0",
+    "date": "2026-11-22",
+    "notes": [
+      "The first full release.",
+      "- Share your screen with the people in your room. Pick a screen or a window, and a quality, or leave it on Auto.",
+      "- Big downloads can pause and resume, also after you restart the app.",
+      "- Ready check: ask the room if everyone is ready.",
+      "- An installer, and the app can start in the tray when you sign in to Windows.",
+      "- Updates: the app finds a new version, downloads it and installs it with one click.",
+      "- Sounds when someone joins or leaves voice, and when someone mentions you or whispers to you.",
+      "- Voice channels, Deafen, listen without a microphone, and a volume for each person.",
+      "- Friends: a private chat with each friend, and messages that wait for a friend who is offline.",
+      "- Clickable links in chat, notes in the transcript, a new app icon and many security fixes."
+    ]
+  }
+]

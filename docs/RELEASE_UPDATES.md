@@ -34,21 +34,40 @@ Do this one time, before the 1.0.0 build. With a lost key, the 1.0 clients canno
 
 ## Release a version
 
-1. Set the version in `package.json` (no pre-release part, for example `1.0.1`). Run the full check.
-2. Build both files: `npm run dist` (portable) and `npm run dist:installer` (installer). The `dist` folder then has
+1. Set the version in `package.json` (no pre-release part, for example `1.0.1`).
+2. Add the notes of the version at the top of `src/application/release-notes.json` (the version, the date and the
+   note lines, see "The release notes" below). Then run the full check. `test/release-notes.test.mjs` fails when the
+   version of `package.json` has no entry.
+3. Build both files: `npm run dist` (portable) and `npm run dist:installer` (installer). The `dist` folder then has
    `ASSCRACK-<v>-portable.exe` and `ASSCRACK-<v>-setup.exe`.
-3. Sign: `node tools/sign-update.mjs dist --notes-file <notes.txt>` (or `--notes "<text>"`, at most 2000 characters,
-   plain text). The script refuses the test key, a pre-release version and a missing file. It checks its signature
-   with the public key of the source: a different key stops it. It writes `dist/update.json`,
+4. Sign: `node tools/sign-update.mjs dist`. The script takes the note text and the date of the version from
+   `src/application/release-notes.json` and refuses a version with no entry. `--date` replaces the date.
+   `--notes-file <notes.txt>` or `--notes "<text>"` replace the text (at most 2000 characters, plain text). Do not use
+   them for a release: then the update notes and the notes in the app are different. The script refuses the test key,
+   a pre-release version and a missing file. It checks its signature with the public key of the source: a different
+   key stops it. It writes `dist/update.json`,
    `dist/update.json.sig` and the two download copies `dist/ASSCRACK-<v>-update.exe` (the same bytes as the
    `-setup.exe` file) and `dist/ASSCRACK-<v>-portable-update.exe` (the same bytes as the `-portable.exe` file).
-4. On GitHub, make a release with the tag `v<v>` (for example `v1.0.1`). The tag must be `v` and the version of
+5. On GitHub, make a release with the tag `v<v>` (for example `v1.0.1`). The tag must be `v` and the version of
    `update.json`: the clients download from `releases/download/v<v>/`. Do not mark it as a pre-release or a draft
-   (the clients read `releases/latest`).
-5. Upload the six files: `ASSCRACK-<v>-setup.exe`, `ASSCRACK-<v>-portable.exe`, `ASSCRACK-<v>-update.exe`,
+   (the clients read `releases/latest`). Use the same note text in the release description.
+6. Upload the six files: `ASSCRACK-<v>-setup.exe`, `ASSCRACK-<v>-portable.exe`, `ASSCRACK-<v>-update.exe`,
    `ASSCRACK-<v>-portable-update.exe`, `update.json`, `update.json.sig`. Upload the files that you signed. A rebuilt
    file has a different SHA-256, and the clients refuse it. A missing download copy stops the update of each client
    from 1.0.5 on.
+
+## The release notes
+
+`src/application/release-notes.json` is the one source of the release notes. The app shows them offline in View,
+What's new, and in About ASSCRACK, What's new. The sign script puts the text of the version in `update.json`.
+
+- The file is a list, newest first. Each entry has `version`, `date` (`YYYY-MM-DD`, the release date) and `notes`.
+- `notes` is a list of lines. A line that starts with `- ` is a list item. An other line is a paragraph. The text in
+  `update.json` has a blank line between a paragraph and the next line, and one line for each list item.
+- Write the notes for the users of the app: short and plain. Do not put "What's new in <v>" in the notes. The app and
+  the update dialog show that title.
+- At the first start of a new version after an update, the app shows the card "What's new in <v>" one time. The file
+  `whats-new.json` in the data folder keeps the last version. A new install shows no card.
 
 ## The download copies and the installs badge
 

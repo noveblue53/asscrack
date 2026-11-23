@@ -395,3 +395,10 @@ test('the automatic status calls send the channel and only the two settings', as
     b.emit('asscrack:own-presence', { state: 'away', note: '' });
     assert.deepEqual(got, [{ state: 'away', note: '' }]);
 });
+
+test('the What\'s new calls send their IPC channel with no argument', () => {
+    const b = loadBridge();
+    b.api.getWhatsNew('C:\secret');
+    b.api.whatsNewDone('1.0.5');
+    assert.deepEqual(b.invoked, [['asscrack:whats-new'], ['asscrack:whats-new-done']]);
+});

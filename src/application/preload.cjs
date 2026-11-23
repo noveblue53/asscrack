@@ -83,6 +83,9 @@ contextBridge.exposeInMainWorld('asscrack', {
     leaveRoomInfo: () => ipcRenderer.invoke('asscrack:leave-room-info'),
     getAbout: () => ipcRenderer.invoke('asscrack:about'),
     openDataFolder: () => ipcRenderer.invoke('asscrack:open-data-folder'),
+    // What's new: the notes list and the card after an update (release-notes.mjs). No argument.
+    getWhatsNew: () => ipcRenderer.invoke('asscrack:whats-new'),
+    whatsNewDone: () => ipcRenderer.invoke('asscrack:whats-new-done'),
     // Diagnostics (1.0.1): requests, the answer of the user, the bundle, the marks. The window gets no path.
     diagAsk: peerId => ipcRenderer.invoke('asscrack:diag-ask', String(peerId ?? '')),
     diagAskAll: () => ipcRenderer.invoke('asscrack:diag-ask-all'),
