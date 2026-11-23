@@ -31,13 +31,14 @@ function merge(current, patch) {
 
 // A version 1 file: keep the choices that it can contain (own cues, volume, flash, Windows sound, the cues of other
 // people and of mentions and whispers). The new defaults go on: every notification row, previews and the cue of
-// every message. The old alerts and previews values are not choices (they were the defaults of 1.0.x).
+// every message. The old alerts and previews values are not choices (they were the defaults of 1.0.x). messageCues
+// false was a choice (its default was true): then the cue of every message stays off too.
 export function migrateAttention(saved) {
     if (!saved || typeof saved !== 'object') return { ...ATTENTION_DEFAULTS };
     if (saved.version === SETTINGS_VERSION) return merge(ATTENTION_DEFAULTS, saved);
     const kept = { voiceCues: saved.voiceCues, volume: saved.volume, flash: saved.flash, sound: saved.sound,
         voiceSound: saved.otherVoiceCues, mentionSound: saved.messageCues, whisperSound: saved.messageCues,
-        friendSound: saved.messageCues };
+        friendSound: saved.messageCues, chatSound: saved.messageCues === false ? false : undefined };
     return merge(ATTENTION_DEFAULTS, kept);
 }
 

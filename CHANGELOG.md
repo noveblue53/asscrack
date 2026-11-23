@@ -30,10 +30,11 @@ Each result has one of these labels:
   default. A muted channel or room has the mark "· muted".
 - Settings version 2: the first start with a file of 1.0.x turns on the new defaults one time. These are the
   notifications, the previews and the cue of every message. The real choices of the file stay, and later choices stay.
+  A file with the message cues off keeps the cue of every message off too.
 - **127.0.0.1**: node tests of the rules. They test the cue, the 2 s gap, history, the room size, the titles, the
   replace rule, the mutes with their end and the migration. They fail on the code before the change and pass after it.
   `npm test`: 1067 tests, 1049 pass, 18 skipped, 0 fail.
-- **this PC**: two copies on 127.0.0.1 (A: the built portable .exe, B: `electron .`). With A minimized, B sent 3 lines.
+- **this PC**: two copies on 127.0.0.1 (A: the portable .exe built from commit 92151f7, B: `electron .`). With A minimized, B sent 3 lines.
   A played one cue, and Windows fired one show event. The toast "<name> in #general" was in the notification history
   of `com.asscrack.app`. A later line replaced that toast in the history. With A in view: no cue, no notification.
 

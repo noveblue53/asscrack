@@ -99,10 +99,12 @@ test('a 1.0.x file gets the new defaults one time, keeps its real choices, and l
     writeFileSync(file, JSON.stringify({ voiceCues: false, otherVoiceCues: false, messageCues: false, volume: 20,
         alerts: false, previews: false, sound: true, flash: false }));
     const first = attentionSettings(file).get();
+    // messageCues false was a choice: the cue of every message stays off too.
     assert.deepEqual(first, { ...ATTENTION_DEFAULTS, voiceCues: false, voiceSound: false, mentionSound: false,
-        whisperSound: false, friendSound: false, volume: 20, sound: true, flash: false });
-    assert.equal(first.chatAlert && first.mentionAlert && first.whisperAlert && first.friendAlert && first.previews &&
-        first.chatSound, true);
+        whisperSound: false, friendSound: false, chatSound: false, volume: 20, sound: true, flash: false });
+    assert.equal(first.chatAlert && first.mentionAlert && first.whisperAlert && first.friendAlert && first.previews, true);
+    // A 1.0.x file with the message cues on (the default) gets the cue of every message.
+    assert.equal(migrateAttention({ messageCues: true, alerts: false }).chatSound, true);
     // The migration is in the file at once (version 2), so the next start does not migrate again.
     assert.equal(JSON.parse(readFileSync(file, 'utf8')).version, 2);
     attentionSettings(file).set({ mentionAlert: false, previews: false, chatSound: false });
