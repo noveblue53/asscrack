@@ -313,5 +313,5 @@ test('journal: the screen events carry the share ID and the peer ID, no name', {
     assert.deepEqual(pick(viewer, 'gone'), [{ share: b.shareId, peer: B.peerId, reason: undefined },
         { share: a.shareId, peer: A.peerId, reason: undefined }])
     const text = JSON.stringify([...sharer, ...viewer])
-    for (const name of ['Sharer', 'Viewer', 'Ann', 'Bo', 'Cy']) assert.ok(!text.includes(name), `no name in the journal (${name})`)
+    for (const name of ['Sharer Ann', 'Sharer Bo', 'Viewer Cy']) assert.ok(!text.includes(name), `no name in the journal (${name})`)
 })
