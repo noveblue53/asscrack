@@ -1976,11 +1976,11 @@ handleRoomIpc('asscrack:screen-watch', (_event, peerId) => {
 onRoomIpc('asscrack:screen-unwatch', () => { node?.unwatchScreen(); });
 onRoomIpc('asscrack:screen-keyreq', () => { node?.requestScreenKey(); });
 handleRoomIpc('asscrack:screen-state', () => {
-    if (!node) return { own: null, peers: {}, watching: null };
+    if (!node) return { own: null, peers: {}, watching: null, maxShares: null };
     const state = node.screenState();
     // The window gets the view, not the internal tier objects of the rate control.
     return { own: state.own ? { shareId: state.own.shareId, preset: state.own.preset, viewers: state.own.viewers } : null,
-        peers: state.peers, watching: state.watching };
+        peers: state.peers, watching: state.watching, maxShares: state.maxShares };
 });
 // The forwarding of the screen events of one node (startRoom). 'screen-frame' does not go to the window in Idle Peer.
 function forwardScreenEvents(onLiveEvent) {
@@ -1990,14 +1990,13 @@ function forwardScreenEvents(onLiveEvent) {
             if (!screenOwn) shareGuard.close('stop');
             taskbarFlash.setSharing(screenOwn);
             if (screenOwn) writeLog('EVENT', `screen share started preset ${data.preset}`);
-            if (screenOwn) journal('screen', { event: 'start', share: data.shareId, preset: data.preset });
         }
         sendToWindow('asscrack:screen-state', data);
     });
     onLiveEvent('screen-ended', data => {
         writeLog('EVENT', data?.own ? `screen share stopped reason ${data.reason}` : `screen watch ended reason ${data?.reason}`);
         if (data?.own) shareGuard.close('stop');
-        journal('screen', { event: data?.own ? 'stop' : 'watch-end', share: data?.shareId, reason: data?.reason });
+        // The journal lines of the screen events (with the share ID) come from diag-events.mjs (journalNodeEvents).
         sendToWindow('asscrack:screen-ended', data);
     });
     for (const type of ['screen-viewers', 'screen-encoder', 'screen-config']) onLiveEvent(type, data => sendToWindow(`asscrack:${type}`, data));

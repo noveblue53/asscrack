@@ -10,8 +10,8 @@ export const SCREEN_PROTOCOL = '/asscrack/screen/1.0.0'
 // Section 3.2: the END reasons on the wire.
 export const SCREEN_END = Object.freeze({ stopped: 1, source: 2, idle: 3, slow: 4, full: 5, refused: 6, replaced: 7, error: 8 })
 const END_NAME = Object.fromEntries(Object.entries(SCREEN_END).map(([name, code]) => [code, name]))
-// Section 4: the reasons of stopScreenShare. `isolated` and `conflict` are `stopped` on the wire.
-const STOP_REASONS = new Set(['stopped', 'source', 'idle', 'error', 'isolated', 'conflict'])
+// Section 4: the reasons of stopScreenShare. `isolated` and `limit` are `stopped` on the wire.
+const STOP_REASONS = new Set(['stopped', 'source', 'idle', 'error', 'isolated', 'limit'])
 export const MAX_VIEWER_RECORD = 256
 export const MAX_SHARER_RECORD = 1 + FRAME_HEAD_BYTES + MAX_SCREEN_FRAME_BYTES
 const MAX_WATCH_JSON = 255
@@ -21,8 +21,14 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export const SCREEN_DEFAULTS = Object.freeze({
     maxViewers: 6, watchRecordMs: 5000, isolatedMs: 10000, watchTimeoutMs: 10000, paceTickMs: 10, evalMs: 500,
     keyRequestMs: 2000, opensPerPeer: 12, opensPerRoom: 48, closeWaitMs: 10000,
-    // L11 (P10b): a share line of a peer stops the own share for a conflict only in this time after the own start.
-    // At most linesPerPeer screen lines of each peer each minute (linesPerRoom for all peers).
+    // Multi-share (1.0.6): at most maxShares shares in a room at the same time (the own share and one share of each
+    // other member). The relay limit of screen-rate.mjs (6 Mbit/s) is for each sharer, thus 3 shares keep the screen
+    // data through a host relay at 18 Mbit/s or less. A viewer watches one share: its download does not change.
+    maxShares: 3,
+    // L11 (P10b): a share line of a peer stops the own share only in this time after the own start, and (1.0.6) only
+    // when the room has more than maxShares shares (two members started at the same moment at the limit).
+    // At most linesPerPeer screen lines of each peer each minute (linesPerRoom for all peers). Each member sends its own
+    // lines, thus the limits do not change with the number of shares.
     conflictMs: 3000, linesPerPeer: 30, linesPerRoom: 240,
     // Diagnostics (1.0.1, REVIEW.md rank 9): each diagMs the sharer gives the new tier changes of the rate control and
     // the stats of each viewer ('screen-diag' events). At most diagEntries tier changes for each interval.
@@ -106,7 +112,11 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
     const clock = () => performance.now()
     const allowOpen = roomRateLimit(O.opensPerPeer, O.opensPerRoom)
     const allowLine = roomRateLimit(O.linesPerPeer, O.linesPerRoom)
-    const peers = new Map() // peerId -> { shareId, preset }
+    // One entry for each member: a member has at most one share. at: the time of the first line of this share ID.
+    const peers = new Map() // peerId -> { shareId, preset, at }
+    // The open time of the session of each peer (opened). A share line on a session that opened after the own start can
+    // come from an old share: its age is not known.
+    const sessionOpenedAt = new Map()
     let own = null
     let watch = null
     let stopped = false
@@ -254,7 +264,10 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
         if (idle()) throw new Error('Screen sharing is not available in Idle Peer.')
         if (!canShare()) throw new Error('This device is not admitted to the room.')
         if (own) throw new Error('A screen share is already on.')
-        if (peers.size > 0) throw new Error('Another member shares a screen.')
+        if (peers.size >= O.maxShares) {
+            events.emit('screen-diag', { kind: 'limit', count: peers.size })
+            throw new Error(`Share limit reached (${O.maxShares}).`)
+        }
         if (!SCREEN_QUALITIES.includes(preset)) throw new TypeError(`Unknown screen quality: ${preset}`)
         const source = Number.isInteger(width) && Number.isInteger(height) && width > 0 && height > 0 ? { width, height } : null
         const shareId = randomUUID()
@@ -281,7 +294,7 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
     function stopScreenShare(reason = 'stopped') {
         if (!own) return false
         const why = STOP_REASONS.has(reason) ? reason : 'stopped'
-        const wire = why === 'isolated' || why === 'conflict' ? 'stopped' : why
+        const wire = why === 'isolated' || why === 'limit' ? 'stopped' : why
         const share = own
         clearInterval(share.paceTimer)
         clearInterval(share.evalTimer)
@@ -295,10 +308,11 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
         own = null
         broadcast(screenLine())
         console.info(`EVENT screen share stopped reason=${why}`)
-        events.emit('screen-state', { peerId: selfId, own: true, sharing: false, shareId: null, preset: null })
+        // 1.0.6: the events of a stop carry the ID of the share that stopped.
+        events.emit('screen-state', { peerId: selfId, own: true, sharing: false, shareId: share.shareId, preset: null })
         events.emit('screen-viewers', viewersView())
         events.emit('screen-encoder', { tiers: [] })
-        events.emit('screen-ended', { peerId: selfId, reason: why, own: true, ...(share.conflictWith ? { by: share.conflictWith } : {}) })
+        events.emit('screen-ended', { peerId: selfId, shareId: share.shareId, reason: why, own: true, ...(share.limitBy ? { by: share.limitBy } : {}) })
         return true
     }
 
@@ -384,14 +398,17 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
         w.done = true
         clearTimeout(w.timer)
         if (watch === w) watch = null
+        // 1.0.6: each end of a watch, also a stop or a switch of the user (no screen-ended event for those two).
+        events.emit('screen-watch', { event: 'end', peerId: w.peerId, shareId: w.shareId, reason, frames: w.frames })
         // L11 (P10b): a share that sends no CONFIG in watchTimeoutMs goes out of the list. A screen line with no stream
         // then cannot block Start for ever.
         if (reason === 'timeout' && !w.configured && peers.get(w.peerId)?.shareId === w.shareId) {
             peers.delete(w.peerId)
-            events.emit('screen-state', { peerId: w.peerId, sharing: false, shareId: null, preset: null })
+            events.emit('screen-state', { peerId: w.peerId, sharing: false, shareId: w.shareId, preset: null })
         }
-        if (!w.configured) w.reject(new Error(reason === 'unwatched' ? 'Watch stopped.' : `The share is not available (${reason}).`))
-        if (reason !== 'unwatched') events.emit('screen-ended', { peerId: w.peerId, reason, own: false })
+        const user = reason === 'unwatched' || reason === 'switched'
+        if (!w.configured) w.reject(new Error(user ? 'Watch stopped.' : `The share is not available (${reason}).`))
+        if (!user) events.emit('screen-ended', { peerId: w.peerId, shareId: w.shareId, reason, own: false })
     }
 
     async function watchScreen(peerId) {
@@ -399,7 +416,8 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
         if (idle()) throw new Error('Watching is not available in Idle Peer.')
         const share = peers.get(peerId)
         if (!share) throw new Error('This member does not share a screen.')
-        unwatchScreen()
+        // 1.0.6: one watch at a time. A new watch ends the old one: its sharer sends no more frames to this viewer.
+        unwatchScreen('switched')
         const connection = connectionFor(peerId)
         if (!connection) throw new Error('No session with this member.')
         const w = { peerId, shareId: share.shareId, stream: null, configured: false, done: false, lastKeyRequest: -Infinity,
@@ -426,8 +444,11 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
                 const first = !w.configured
                 w.configured = true
                 w.config = { width: value.width, height: value.height, fps: value.fps ?? null }
-                events.emit('screen-config', { peerId, ...w.config })
-                if (first) w.resolve({ shareId: w.shareId, ...w.config })
+                events.emit('screen-config', { peerId, shareId: w.shareId, ...w.config })
+                if (first) {
+                    events.emit('screen-watch', { event: 'start', peerId, shareId: w.shareId })
+                    w.resolve({ shareId: w.shareId, ...w.config })
+                }
             } else if (type === TYPE.FRAME) {
                 if (!w.configured) throw new Error('FRAME before CONFIG')
                 if (body.length < FRAME_HEAD_BYTES + 1) throw new Error('FRAME is too short')
@@ -439,7 +460,7 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
                 w.bytes += body.length - FRAME_HEAD_BYTES
                 const key = (body[0] & 1) === 1
                 if (key) w.keys++
-                events.emit('screen-frame', { peerId, key, seq, timestampMs: body.readUInt32BE(5),
+                events.emit('screen-frame', { peerId, shareId: w.shareId, key, seq, timestampMs: body.readUInt32BE(5),
                     data: new Uint8Array(body.buffer, body.byteOffset + FRAME_HEAD_BYTES, body.length - FRAME_HEAD_BYTES) })
             } else if (type === TYPE.END) {
                 finishWatch(w, END_NAME[body[0]] ?? 'stopped')
@@ -454,10 +475,10 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
         return result
     }
 
-    function unwatchScreen() {
+    function unwatchScreen(reason = 'unwatched') {
         const w = watch
         if (!w) return false
-        finishWatch(w, 'unwatched')
+        finishWatch(w, reason === 'switched' ? 'switched' : 'unwatched')
         abortStream(w.stream, 'unwatched')
         return true
     }
@@ -474,31 +495,50 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
 
     // ---- Hooks of node.mjs ----
 
+    // 1.0.6: more than maxShares shares after the start of the own share (two members started at the same moment at
+    // the limit). Only in conflictMs after the own start: a later share line cannot stop a running share (L11). The
+    // young shares (the own share and each share with a first line in conflictMs) with the highest peer IDs stop, so
+    // that each member that sees the same lines gets the same result. An old share does not stop for a new one. A line
+    // on a session that opened after the own start counts as an old share (a Start before the sessions opened).
+    function checkLimit(peerId) {
+        const t = clock()
+        if (!own || t - own.startedAt > O.conflictMs) return
+        const excess = peers.size + 1 - O.maxShares
+        if (excess <= 0) return
+        const young = [selfId, ...[...peers].filter(([, s]) => t - s.at <= O.conflictMs).map(([id]) => id)].sort()
+        if (!young.slice(-excess).includes(selfId)) return
+        own.limitBy = peerId
+        stopScreenShare('limit')
+    }
+
     function handleLine(peerId, control) {
         if (!validScreenLine(control) || !allowLine(peerId)) return
         const old = peers.get(peerId)
         if (control.sharing) {
             const preset = SCREEN_QUALITIES.includes(control.preset) ? control.preset : null
             if (old?.shareId === control.shareId && old.preset === preset) return
-            peers.set(peerId, { shareId: control.shareId, preset })
+            // One entry for each member: a new share ID of a member replaces its old share (one event, L11).
+            const openedAt = sessionOpenedAt.get(peerId)
+            const unknownAge = own && openedAt !== undefined && openedAt >= own.startedAt
+            peers.set(peerId, { shareId: control.shareId, preset,
+                at: old?.shareId === control.shareId ? old.at : unknownAge ? -Infinity : clock() })
             events.emit('screen-state', { peerId, sharing: true, shareId: control.shareId, preset })
-            // Section 2.6, item 6: two shares at the same time. The member with the lower peer ID continues.
-            // L11 (P10b): only in conflictMs after the own start. A later share line cannot stop a running share.
-            if (own && selfId > peerId && clock() - own.startedAt <= O.conflictMs) {
-                own.conflictWith = peerId
-                stopScreenShare('conflict')
-            }
+            // Section 2.6, item 6 (1.0.6): two shares at the same time are permitted. Only a share over the limit stops.
+            checkLimit(peerId)
         } else if (old) {
             peers.delete(peerId)
-            events.emit('screen-state', { peerId, sharing: false, shareId: null, preset: null })
+            events.emit('screen-state', { peerId, sharing: false, shareId: old.shareId, preset: null })
         }
     }
     function opened(peerId) {
+        sessionOpenedAt.set(peerId, clock())
         if (own) sendLine(peerId, screenLine())
         checkIsolated()
     }
     function peerLeft(peerId) {
-        if (peers.delete(peerId)) events.emit('screen-state', { peerId, sharing: false, shareId: null, preset: null })
+        sessionOpenedAt.delete(peerId)
+        const old = peers.get(peerId)
+        if (peers.delete(peerId)) events.emit('screen-state', { peerId, sharing: false, shareId: old.shareId, preset: null })
         const v = own?.viewers.get(peerId)
         if (v) {
             own.viewers.delete(peerId)
@@ -528,8 +568,10 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
         return {
             own: own ? { shareId: own.shareId, preset: own.quality, viewers: [...own.viewers.keys()], bitrate: own.rate.tiers()[0]?.bitrate ?? null,
                 tiers: own.rate.tiers(), cap: own.rate.cap(), capture: own.rate.capture() } : null,
-            peers: Object.fromEntries([...peers].map(([peerId, value]) => [peerId, { ...value }])),
-            watching: watch?.peerId ?? null
+            peers: Object.fromEntries([...peers].map(([peerId, value]) => [peerId, { shareId: value.shareId, preset: value.preset }])),
+            watching: watch?.peerId ?? null,
+            watchingShare: watch?.shareId ?? null,
+            maxShares: O.maxShares
         }
     }
     function screenStats() {

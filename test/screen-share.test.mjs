@@ -117,7 +117,7 @@ test('check 1: the share state reaches each session, also a late session', { tim
     await waitFor(() => bState.states.some(s => s.peerId === A.peerId && s.sharing && s.shareId === shareId), 1000, 'B gets the state')
     assert.ok(Date.now() - started <= 1000)
     assert.equal(C.screenState().peers[A.peerId]?.shareId, shareId)
-    assert.throws(() => B.startScreenShare({ preset: 'standard' }), /Another member/)
+    // 1.0.6: a second member can share at the same time (test/multi-share.test.mjs has the checks of several shares).
     A.stopScreenShare()
     const stopped = Date.now()
     await waitFor(() => B.screenState().peers[A.peerId] === undefined && C.screenState().peers[A.peerId] === undefined, 1000, 'stop reaches B and C')
@@ -396,8 +396,10 @@ test('check 10: the end of the sharer gives screen-ended in 2 s and no state aft
     assert.equal(B.screenState().watching, null)
 })
 
-test('check 11: two shares at the same moment: the lower peer ID continues', { timeout: 30000 }, async t => {
-    const { nodes: [A, B] } = await directRoom(t, 2)
+// 1.0.6: two shares at the same moment are permitted below the share limit. This check uses a limit of 1, so that the
+// rule of the limit race (the higher peer ID stops) has the same result as the old rule of section 2.6, item 6.
+test('check 11: two shares at the same moment over the share limit: the lower peer ID continues', { timeout: 30000 }, async t => {
+    const { nodes: [A, B] } = await directRoom(t, 2, { 0: { screen: { maxShares: 1 } }, 1: { screen: { maxShares: 1 } } })
     const ended = []
     for (const n of [A, B]) n.events.on('screen-ended', e => { if (e.own) ended.push({ node: n.peerId, ...e }) })
     A.startScreenShare({ preset: 'standard' })
@@ -408,11 +410,11 @@ test('check 11: two shares at the same moment: the lower peer ID continues', { t
     assert.equal(high.screenState().own, null, 'the higher peer ID stopped')
     assert.equal(ended.length, 1)
     assert.equal(ended[0].node, high.peerId)
-    assert.equal(ended[0].reason, 'conflict')
+    assert.equal(ended[0].reason, 'limit')
     assert.equal(ended[0].by, low.peerId)
     assert.ok(high.screenState().peers[low.peerId])
     assert.equal(low.screenState().peers[high.peerId], undefined)
-    assert.throws(() => high.startScreenShare({ preset: 'standard' }), /Another member/)
+    assert.throws(() => high.startScreenShare({ preset: 'standard' }), /Share limit reached \(1\)/)
 })
 
 test('check 12: a sharer with no session stops after the isolated time; a session again keeps it', { timeout: 30000 }, async t => {
@@ -504,16 +506,18 @@ test('check 13a: the numbers of each stream have no gap across a tier move; a T2
 // a screen."), and a fake line of a lower peer ID stopped a running share with the reason conflict. The node had no rate
 // limit for screen lines (2000 lines gave 2001 screen-state events). The fix has three parts. These tests use a node
 // with an unchanged node.mjs that sends the lines with sendTo (a changed client).
+// 1.0.6: a fake line takes one place of the share limit (one place for each member). The first two tests use a limit
+// of 1, so that one fake line is at the limit, as before.
 const fakeShare = () => ({ type: 'screen', v: 1, sharing: true, shareId: randomUUID(), preset: 'standard' })
 
 test('L11: a share that sends no CONFIG goes out of the list after the Watch timeout; then Start works', { timeout: 30000 }, async t => {
-    const { nodes: [M, P] } = await directRoom(t, 2, { 1: { screen: { watchTimeoutMs: 500 } } })
+    const { nodes: [M, P] } = await directRoom(t, 2, { 1: { screen: { watchTimeoutMs: 500, maxShares: 1 } } })
     // M answers no screen stream: the stream opens and no record comes (a changed client).
     await M.libp2p.unhandle(SCREEN_PROTOCOL)
     await M.libp2p.handle(SCREEN_PROTOCOL, () => {}, { runOnTransientConnection: true })
     assert.equal(M.sendTo(P.peerId, fakeShare()), true)
     await waitFor(() => P.screenState().peers[M.peerId], 5000, 'P has the fake share')
-    assert.throws(() => P.startScreenShare({ preset: 'standard' }), /Another member/)
+    assert.throws(() => P.startScreenShare({ preset: 'standard' }), /Share limit reached \(1\)/)
     await assert.rejects(P.watchScreen(M.peerId), /not available \(timeout\)/)
     assert.equal(P.screenState().peers[M.peerId], undefined)
     P.startScreenShare({ preset: 'standard' })
@@ -521,7 +525,7 @@ test('L11: a share that sends no CONFIG goes out of the list after the Watch tim
 })
 
 test('L11: a share line of a lower peer ID after the conflict time does not stop a running share', { timeout: 30000 }, async t => {
-    const { nodes } = await directRoom(t, 2, { 0: { screen: { conflictMs: 300 } }, 1: { screen: { conflictMs: 300 } } })
+    const { nodes } = await directRoom(t, 2, { 0: { screen: { conflictMs: 300, maxShares: 1 } }, 1: { screen: { conflictMs: 300, maxShares: 1 } } })
     const [low, high] = nodes[0].peerId < nodes[1].peerId ? nodes : [nodes[1], nodes[0]]
     const ended = []
     high.events.on('screen-ended', e => { if (e.own) ended.push(e) })

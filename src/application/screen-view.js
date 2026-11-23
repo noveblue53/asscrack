@@ -1,6 +1,7 @@
 // Screen share, viewer side of the room window (work-orders/astra/P8/DESIGN.md, sections 2.5, 2.6, 2.7 and 2.9,
 // package W5): the banner with Watch, the stage with the canvas, the decoder and the limits of the data from the
-// sharer, the "sharing screen" text on the buddy lines, and Fill window.
+// sharer, and Fill window. Multi-share (1.0.6): a "Live" badge on the buddy line of each member that shares (a click
+// watches that share), and the switcher of the stage when two or more shares are live. One watch at a time.
 // window.screenView: { isFilled(), unfill(), canWatch(peerId), watch(peerId), stats() }. The one Escape dispatcher of
 // renderer.js calls isFilled() and unfill(). Reads the globals of renderer.js: peerNames, peerItems, selfLine.
 (function () {
@@ -41,9 +42,10 @@
     const note = byId('screen-stage-note');
     const fillButton = byId('screen-fill');
     const unwatchButton = byId('screen-unwatch');
+    const switcher = byId('screen-switcher');
 
     const now = () => performance.now();
-    const shares = new Map(); // peerId -> { shareId, preset }
+    const shares = new Map(); // peerId -> { shareId, preset }, in the order of the start
     let ownSharing = false;
     let idle = false;
     let watch = null;
@@ -51,7 +53,8 @@
     let filled = false;
     let noticeTimer = null;
     let waitTimer = null;
-    const totals = { watches: 0, frames: 0, bytes: 0, decoded: 0, resets: 0, keyRequests: 0, sizeErrors: 0, configs: 0, dropped: 0 };
+    const totals = { watches: 0, switches: 0, frames: 0, bytes: 0, decoded: 0, resets: 0, keyRequests: 0, sizeErrors: 0, configs: 0,
+        dropped: 0 };
 
     function nameOf(peerId) {
         const name = typeof peerNames !== 'undefined' ? peerNames.get(peerId) : '';
@@ -71,35 +74,84 @@
         note.hidden = !text;
     }
 
-    // ---- The buddy lines and the banner ----
+    // ---- The buddy lines, the banner and the switcher ----
 
-    function markLine(item, on) {
+    // The "Live" badge. On the line of another member it is a button that watches the share. The click does not go
+    // to the line (the line opens the inspector). On the own line it is a mark only.
+    function markLine(item, peerId, on) {
         if (!item) return;
-        let span = item.querySelector('.screen-state');
-        if (on && !span) {
-            span = document.createElement('span');
-            span.className = 'screen-state';
-            span.textContent = 'sharing screen';
-            item.append(span);
-        } else if (!on && span) {
-            span.remove();
+        let badge = item.querySelector('.live-badge');
+        if (!on) {
+            badge?.remove();
+            return;
         }
+        if (!badge) {
+            if (peerId) {
+                badge = document.createElement('button');
+                badge.type = 'button';
+                badge.addEventListener('click', event => {
+                    event.stopPropagation();
+                    const id = badge.dataset.peerId;
+                    if (id && !(watch && watch.peerId === id)) watchPeer(id);
+                });
+            } else {
+                badge = document.createElement('span');
+                badge.title = 'You are sharing';
+            }
+            badge.className = 'live-badge';
+            badge.textContent = 'Live';
+            item.append(badge);
+        }
+        if (!peerId) return;
+        badge.dataset.peerId = peerId;
+        badge.title = `Watch ${nameOf(peerId)}`;
+        badge.setAttribute('aria-pressed', String(Boolean(watch && watch.peerId === peerId)));
+        badge.disabled = idle;
     }
     function markLines() {
-        if (typeof peerItems !== 'undefined') for (const [peerId, item] of peerItems) markLine(item, shares.has(peerId));
-        if (typeof selfLine !== 'undefined') markLine(selfLine, ownSharing);
+        if (typeof peerItems !== 'undefined') for (const [peerId, item] of peerItems) markLine(item, peerId, shares.has(peerId));
+        if (typeof selfLine !== 'undefined') markLine(selfLine, null, ownSharing);
     }
+    function sharingText(ids) {
+        const names = ids.map(nameOf);
+        if (names.length === 1) return `${names[0]} is sharing a screen.`;
+        return `${names.slice(0, -1).join(', ')} and ${names.at(-1)} are sharing screens.`;
+    }
+    // The switcher of the stage: one button for each live share of another member, when there are two or more.
+    function renderSwitcher() {
+        if (!switcher) return;
+        const ids = [...shares.keys()];
+        const show = !stage.hidden && ids.length > 1;
+        switcher.hidden = !show;
+        if (!show) {
+            switcher.replaceChildren();
+            return;
+        }
+        const current = watch?.peerId ?? lost?.peerId ?? null;
+        switcher.replaceChildren(...ids.map(peerId => {
+            const choice = document.createElement('button');
+            choice.type = 'button';
+            choice.className = 'screen-switch';
+            choice.textContent = nameOf(peerId);
+            choice.setAttribute('aria-pressed', String(peerId === current));
+            choice.disabled = idle;
+            choice.addEventListener('click', () => { if (!(watch && watch.peerId === peerId)) watchPeer(peerId); });
+            return choice;
+        }));
+    }
+    // The banner shows the live shares while this member watches none. Watch watches the first one.
     function renderBanner() {
-        const [peerId] = [...shares.keys()];
-        const show = peerId !== undefined && !(watch && watch.peerId === peerId) && !(lost && lost.peerId === peerId);
+        const ids = [...shares.keys()];
+        const show = ids.length > 0 && !watch && !lost;
         banner.hidden = !show;
         if (show) {
-            banner.dataset.peerId = peerId;
-            if (bannerText) bannerText.textContent = `${nameOf(peerId)} is sharing a screen.`;
+            banner.dataset.peerId = ids[0];
+            if (bannerText) bannerText.textContent = sharingText(ids);
             if (watchButton) watchButton.disabled = idle;
         } else {
             delete banner.dataset.peerId;
         }
+        renderSwitcher();
         markLines();
     }
 
@@ -160,11 +212,18 @@
         const share = shares.get(peerId);
         if (!share || idle) return false;
         clearLost();
-        if (watch) stopWatching({ send: true });
+        // A switch: the new Watch of the node ends the old watch (one watch at a time). The stage stays open, also in
+        // Fill window, and shows the new share.
+        const old = watch;
+        if (old) {
+            endWatch(old);
+            canvas.getContext('2d')?.clearRect?.(0, 0, canvas.width, canvas.height);
+        }
         const w = { peerId, shareId: share.shareId, config: null, decoder: null, gate: check.createFrameGate({ now, keyRequestMs: KEY_REQUEST_MS }),
             resets: [], lastFrameAt: now(), frames: 0, decoded: 0 };
         watch = w;
         totals.watches++;
+        if (old) totals.switches++;
         openStage(peerId, `Connecting to ${nameOf(peerId)}…`);
         renderBanner();
         try {
@@ -172,8 +231,9 @@
             if (watch !== w) return false;
             applyConfig(w, config, config?.shareId);
         } catch {
-            // The node emits screen-ended before the rejection. A rejection with no event (no session) ends here.
-            if (watch === w) stopWatching({ send: false, text: 'This share is not available.' });
+            // The node emits screen-ended before the rejection. A rejection with no event (no session) ends here. The
+            // unwatch also ends an old watch that the node kept (a refusal before the switch).
+            if (watch === w) stopWatching({ send: true, text: 'This share is not available.' });
             return false;
         }
         clearInterval(waitTimer);
@@ -230,6 +290,8 @@
     function onFrame(data) {
         const w = watch;
         if (!w || !w.config || data?.peerId !== w.peerId || !(data.data instanceof Uint8Array)) return;
+        // 1.0.6: only the frames of the watched share.
+        if (data.shareId && data.shareId !== w.shareId) return;
         totals.frames++;
         totals.bytes += data.data.length;
         w.frames++;
@@ -321,13 +383,13 @@
     });
     api.onScreenConfig?.(config => {
         const w = watch;
-        if (w && w.config && config?.peerId === w.peerId) applyConfig(w, config);
+        if (w && w.config && config?.peerId === w.peerId && (!config.shareId || config.shareId === w.shareId)) applyConfig(w, config);
     });
     api.onScreenFrame?.(onFrame);
     api.onScreenEnded?.(data => {
         if (!data || data.own) return;
         const w = watch;
-        if (!w || data.peerId !== w.peerId) return;
+        if (!w || data.peerId !== w.peerId || (data.shareId && data.shareId !== w.shareId)) return;
         if (data.reason === 'replaced') return;
         const name = nameOf(w.peerId);
         if (data.reason === 'lost') {
@@ -380,7 +442,8 @@
         unfill,
         canWatch: peerId => shares.has(peerId) && !idle && !(watch && watch.peerId === peerId),
         watch: peerId => watchPeer(peerId),
-        stats: () => ({ ...totals, watching: watch?.peerId ?? null, config: watch?.config ?? null, lost: lost !== null,
-            stage: !stage.hidden, banner: !banner.hidden, note: note?.textContent ?? '', notice: notice?.textContent ?? '' })
+        stats: () => ({ ...totals, watching: watch?.peerId ?? null, watchingShare: watch?.shareId ?? null, config: watch?.config ?? null,
+            lost: lost !== null, shares: shares.size, switcher: Boolean(switcher && !switcher.hidden), stage: !stage.hidden,
+            banner: !banner.hidden, note: note?.textContent ?? '', notice: notice?.textContent ?? '' })
     });
 })();
