@@ -36,7 +36,8 @@
     "it-pushable": "^3.2.4",
     "libp2p": "3.5.1",
     "uint8arrays": "^5.1.0",
-    "uiohook-napi": "1.5.5"
+    "uiohook-napi": "1.5.5",
+    "youtubei.js": "18.3.0"
   },
   "devDependencies": {
     "electron": "45.4.1",

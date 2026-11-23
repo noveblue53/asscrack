@@ -181,6 +181,9 @@ export const EVENT_FIELDS = Object.freeze({
         sent: kinds.int, gateOpenPct: kinds.num, encodeErrors: kinds.int, sendErrors: kinds.int, secs: kinds.int },
     'voice-relay': { forwarded: kinds.int, dropped: kinds.int, duplicates: kinds.int, direct: kinds.int, host: kinds.bool },
     ptt: { status: kinds.code, mode: kinds.code, global: kinds.bool, presses: kinds.int },
+    // Room music (music-ipc.mjs): the kind of each event of the DJ. No title, link, video ID or path.
+    music: { event: oneOf('start', 'end', 'skip', 'error', 'stop'), source: oneOf('youtube', 'file'),
+        kind: oneOf('refused', 'unavailable', 'error'), ms: kinds.int },
     file: { event: oneOf('offer', 'action', 'done', 'failed', 'refused', 'cancelled', 'paused', 'resumed', 'restarted',
         'discarded', 'expired', 'retried'), offer: kinds.id, dir: oneOf('send', 'receive'), by: oneOf('self', 'peer', 'none'),
         size: kinds.int, reason: kinds.code, action: kinds.code, peer: kinds.peer, retryOf: kinds.id },

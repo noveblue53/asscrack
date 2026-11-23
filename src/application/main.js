@@ -2,6 +2,10 @@ import { app, BrowserWindow, Menu, Notification, nativeImage, protocol, Tray, sc
 import { createRoomMedia } from './room-media.mjs';
 import { createRoomIpc } from './room-ipc.mjs';
 import { createImageDecoder } from './image-decoder.mjs';
+import { createMusicEval } from './music-eval.mjs';
+import { attachMusic } from './music-ipc.mjs';
+import { MUSIC_PRIVILEGES, MUSIC_SCHEME } from './music-media.mjs';
+import { MUSIC_SETTINGS_FILE } from './music-settings.mjs';
 import { checkChosenFile, checkSaveTarget } from './file-choice.mjs';
 import { saveVerifiedCopy } from './media-save.mjs';
 import { sameAttachment } from '../network/attachment.mjs';
@@ -67,7 +71,7 @@ const RNNOISE_WORKLET = '/vendor/rnnoiseWorklet.js';
 Menu.setApplicationMenu(null);
 protocol.registerSchemesAsPrivileged([{ scheme: 'room-media', privileges: {
     standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true
-} }, { scheme: APP_SCHEME, privileges: APP_PRIVILEGES }]);
+} }, { scheme: APP_SCHEME, privileges: APP_PRIVILEGES }, { scheme: MUSIC_SCHEME, privileges: MUSIC_PRIVILEGES }]);
 const EVENTS = ['channels', 'peer-discovered', 'peer-joined', 'peer-left', 'message', 'history', 'voice-state', 'voice-roster', 'host-changed', 'peer-name',
     'file-offer', 'file-retried', 'file-progress', 'file-done', 'file-failed', 'file-refused', 'file-cancelled', 'topology', 'full-node', 'full-node-addrs',
     'voice-frame', 'connection', 'dial-failed', 'upnp', 'presence', 'topic', 'voice-channels',
@@ -280,6 +284,14 @@ if (saveToIndex !== -1 && process.argv[saveToIndex + 1] && !process.argv[saveToI
     saveTo = path.resolve(process.argv[saveToIndex + 1]);
 }
 
+// Test option: --music-pick <file>. Add files of the music bar adds this file with no Open dialog (the music check
+// needs it). The path checks stay the same.
+let musicPick = null;
+const musicPickIndex = process.argv.indexOf('--music-pick');
+if (musicPickIndex !== -1 && process.argv[musicPickIndex + 1] && !process.argv[musicPickIndex + 1].startsWith('--')) {
+    musicPick = [path.resolve(process.argv[musicPickIndex + 1])];
+}
+
 // Test options for the check scripts: --port <n>, --full-node <auto|on|off>, --allow-private-full-node, --relay-only.
 // With no flag, the node defaults do not change.
 const nodeFlags = {};
@@ -332,6 +344,16 @@ const DECODER_PAGE = appPage('image-decoder.html');
 const imageDecoder = createImageDecoder({ BrowserWindow, ipc: ipcMain, page: DECODER_PAGE,
     preload: path.join(__dirname, 'image-decoder-preload.cjs'), lock: lockDesktopNavigation,
     isFrame: (win, event) => isDesktopFrame(win, event.sender, event.senderFrame, DECODER_PAGE) });
+// Room music (MU-6): the YouTube player script runs in a hidden sandboxed window with no network, not here.
+const MUSIC_EVAL_PAGE = appPage('music-eval.html');
+const musicEval = createMusicEval({ BrowserWindow, ipc: ipcMain, page: MUSIC_EVAL_PAGE,
+    preload: path.join(__dirname, 'music-eval-preload.cjs'), lock: lockDesktopNavigation,
+    isFrame: (win, event) => isDesktopFrame(win, event.sender, event.senderFrame, MUSIC_EVAL_PAGE) });
+// Room music (music-ipc.mjs): the IPC of the music bar, the local files and the YouTube source of the DJ.
+const music = attachMusic({ handle: handleRoomIpc, on: onRoomIpc, getNode: () => node, getWindow: () => mainWindow, dialog,
+    chosenFile: file => chosenFile(file), settingsFile: () => path.join(app.getPath('userData'), MUSIC_SETTINGS_FILE),
+    journal: (type, fields) => journal(type, fields), log: (level, text) => writeLog(level, text), pick: musicPick,
+    evaluate: code => musicEval.run(code), idle: () => idlePeer });
 const roomMedia = createRoomMedia({ decodeImage: (info, limit) => imageDecoder.decode(info, limit),
     changed: id => sendToWindow('asscrack:media-changed', id) });
 let mediaGeneration = 0;
@@ -1023,6 +1045,8 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
         // easy-join part 2: the owner answers knocks; a relay lets a knock circuit reach the owner.
         // Part 3: isFriend for "Always allow my friends" (a friend that is not blocked).
         options.knock = { isFriend: deviceId => friendLinks.isFriend(deviceId) };
+        // Room music: the YouTube source of this computer when it is the DJ (music-source.mjs).
+        options.musicResolve = request => music.resolve(request);
         try {
             node = await createAsscrackNode(options);
         } catch (err) {
@@ -1121,6 +1145,10 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
     onLive('typing', data => sendToWindow('asscrack:typing', data));
     // Ready check (milestone 9): straight to the window, not in the event log (the log must not get the text).
     onLive('ready', data => sendToWindow('asscrack:ready', data));
+    // Room music: the view and the notices (titles: not in the event log), and the frames of the DJ (no decode here).
+    onLive('music', data => sendToWindow('asscrack:music', data));
+    onLive('music-notice', data => sendToWindow('asscrack:music-notice', data));
+    onLive('music-frame', data => { if (!idlePeer) sendToWindow('asscrack:music-frame', data); });
     // P8b: the screen share events (design section 4, IPC).
     forwardScreenEvents(onLive);
     for (const type of EVENTS) {
@@ -2177,6 +2205,9 @@ function leaveRoom() {
     // the profile, not to the room. Its in-memory state (the node store and the window rows) ends with the node
     // and the reload. The files stay in the scratch folder, and the next room of this run uses the same folder.
     try { current.resetReady?.(); } catch (err) { writeLog('WARN', `Ready check reset: ${err?.message ?? err}`); }
+    // Room music: the music of the room ends with the room. No URL, local key or folder ID stays.
+    try { current.music?.reset(); } catch (err) { writeLog('WARN', `Music reset: ${err?.message ?? err}`); }
+    music.reset();
     // P8b (conflict table of G5): Leave room stops the capture and the watch, and resets the screen state. The window
     // stops its capture track at the screen-state event, and the reload resets the window.
     resetScreen(current);
@@ -2237,6 +2268,7 @@ app.on('before-quit', event => {
     friendWindows.closeAll();
     friendsPopout.close();
     imageDecoder.dispose();
+    musicEval.dispose();
     // Saved rooms (milestone 6): close the archive. G7a: after the friend nodes stop (they write to it).
     const closeArchive = () => {
         if (!savedRooms) return;
@@ -2329,6 +2361,7 @@ app.whenReady().then(async () => {
         startRunner?.wake();
     });
     protocol.handle('room-media', request => roomMedia.serve(request));
+    protocol.handle(MUSIC_SCHEME, request => music.serve(request));
     protocol.handle(APP_SCHEME, createAppHandler({ root: __dirname,
         extra: { [RNNOISE_WORKLET]: require.resolve('@sapphi-red/web-noise-suppressor/rnnoiseWorklet.js') } }));
     installRoomPermissions(session.defaultSession, () => mainWindow, ROOM_PAGE, () => idlePeer, () => screenSources.hasPending());

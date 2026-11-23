@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' room-media:; media-src room-media:; connect-src 'self' room-media:; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' room-media:; media-src room-media: asscrack-music:; connect-src 'self' room-media:; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="styles.css">
@@ -23,6 +23,7 @@
   <link rel="stylesheet" href="transcript-notes.css">
   <link rel="stylesheet" href="voice-channels.css">
   <link rel="stylesheet" href="ready-check.css">
+  <link rel="stylesheet" href="music.css">
   <link rel="stylesheet" href="friends.css">
   <link rel="stylesheet" href="screen.css">
   <link rel="stylesheet" href="updates.css">
@@ -412,6 +413,35 @@
         <!-- ready-check-ui.js: the live ready checks of the room (milestone 9), one block for each check. They are not
              in the transcript. -->
         <section id="ready-bar" aria-label="Ready check" hidden></section>
+        <!-- music-ui.js: room music, in voice only. The titles come from the DJ: textContent only. -->
+        <section id="music-bar" aria-label="Music" hidden>
+          <div class="music-now">
+            <span class="music-dot" aria-hidden="true"></span>
+            <span id="music-title"></span>
+            <span id="music-meta"></span>
+          </div>
+          <div class="music-controls">
+            <button id="music-pause" type="button" aria-pressed="false" hidden>Pause</button>
+            <button id="music-skip" type="button" hidden>Skip</button>
+            <button id="music-stop" type="button" hidden>Stop</button>
+            <label class="music-volume">Volume <input id="music-volume" type="range" min="0" max="100" step="1" value="60"></label>
+            <label title="Lower the music while someone talks"><input id="music-ducking" type="checkbox" checked> Duck</label>
+            <button id="music-queue-toggle" type="button" aria-expanded="false" aria-controls="music-queue-panel">Queue <span id="music-count" class="count"></span></button>
+          </div>
+          <div id="music-queue-panel" hidden>
+            <form id="music-add-form">
+              <input id="music-link" type="text" placeholder="YouTube link" aria-label="YouTube link" maxlength="2048" autocomplete="off" spellcheck="false">
+              <button type="submit">Add</button>
+            </form>
+            <div class="music-local">
+              <button id="music-files" type="button">Add files</button>
+              <button id="music-folder" type="button">Music folder</button>
+            </div>
+            <ul id="music-folder-list" aria-label="Music folder" hidden></ul>
+            <ol id="music-queue" aria-label="Queue"></ol>
+          </div>
+          <p id="music-status" role="status"></p>
+        </section>
         <!-- G7a: friend-requests-ui.js shows a friend request of a person in this room. -->
         <div id="friend-request-bar" role="group" aria-labelledby="friend-request-text" hidden>
           <p id="friend-request-text"></p>
@@ -835,6 +865,8 @@
   <script src="voice-gate.js"></script>
   <script src="activity-view.js"></script>
   <script src="voice.js"></script>
+  <script src="music-core.js"></script>
+  <script src="music.js"></script>
   <script src="peer-inspector.js"></script>
   <script src="nodemap.js"></script>
   <script src="themes.js"></script>
@@ -858,6 +890,7 @@
   <script src="voice-channels-ui.js"></script>
   <script src="typing.js"></script>
   <script src="ready-check-ui.js"></script>
+  <script src="music-ui.js"></script>
   <script src="screen-frame-check.js"></script>
   <script src="screen-share.js"></script>
   <script src="screen-view.js"></script>

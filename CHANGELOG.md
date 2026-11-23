@@ -7,6 +7,24 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased: room music (branch `opus/music`)
+
+A music bot for the voice channel. The member who starts the music is the DJ. The DJ's computer plays each track and
+sends one stereo Opus stream (128 kbit/s) to the members of its voice channel. Each listener sets an own music
+volume, and the music goes lower while someone talks (Duck, on by default).
+
+- Sources: a YouTube link (a video or a playlist; the new dependency `youtubei.js` 18.3.0, MIT), local files and a
+  music folder of the DJ.
+- Queue: any member in the channel adds a YouTube link; the DJ adds files. Now playing, Pause, Skip, Remove, and
+  Move up and down for the DJ. Chat commands `/play <link>`, `/skip`, `/queue` and `/pause`.
+- The DJ leaves voice: the member with the smallest peer ID in the channel continues with the YouTube items.
+- Security: only YouTube video and playlist IDs cross the room; the YouTube player script runs in a hidden sandboxed
+  window with no network; local files only from the DJ's own pick (the L8 path rules); no decode of peer data in the
+  main process.
+- Diagnostics: the journal event `music` (start, end, skip, error kind, stop). No title, link or path.
+
+Checks: see the entry of the check results below.
+
 ## 1.0.3 (2026-11-22): message alerts, the image menu and three members that see each other
 
 Release 1.0.3 is the third update of 1.0.0. A 1.0.0, 1.0.1 or 1.0.2 app gets it with the signed update (View, About

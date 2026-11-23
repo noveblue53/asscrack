@@ -28,6 +28,7 @@ import { createHistory, HISTORY_LIMIT, MAX_MESSAGE_BYTES, validHistoryItem } fro
 import { createFileTransfer, FILE_PROTOCOLS } from './file-transfer.mjs'
 import { createScreenShare, SCREEN_PROTOCOL } from './screen-share.mjs'
 import { createVoiceRelay, VOICE_PROTOCOL, VOICE_DIRECT_PROTOCOL } from './voice-relay.mjs'
+import { createRoomMusic, MUSIC_DIRECT_PROTOCOL, MUSIC_LIMITS, MUSIC_PROTOCOL } from './music.mjs'
 import { makeInvite, makeMemberInvite, makeRoomCode, validAddr, validPeerId } from './invite.mjs'
 import { createKnockDesk, KNOCK_PROTOCOL } from './knock.mjs'
 import { knockChannel } from './knock-stream.mjs'
@@ -176,6 +177,10 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     knock = false,
     // Diagnostics (1.0.1): the longest wait of a failover line for the return of voice and chat (the tests use less).
     failoverWaitMs = FAILOVER_WAIT_MS,
+    // Room music (music.mjs): musicResolve({ video } | { list }) gives [{ video, title, dur }] (the YouTube source of the
+    // app), or throws an error with kind 'refused' or 'unavailable'. musicDirect: false for the relay cost check only
+    // (the host forwards all music frames).
+    musicResolve = undefined, musicDirect = true,
     // P9C: the update hub of the app (update-spread.mjs), or null: no update lines.
     updates = null } = {}) {
     if (typeof room !== 'string') throw new TypeError('room must be a string')
@@ -576,13 +581,18 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     const MAX_STREAM_ID = 64
     const validStreamId = value => typeof value === 'string' && value.length <= MAX_STREAM_ID
     let voiceRelay = null
+    let musicRelay = null
     // peerId -> the last valid 'direct' list of that peer: the peers that get its frames on a direct stream.
     const peerDirect = new Map()
+    // MU-2: peerId -> the last valid 'musicDirect' list of that peer.
+    const peerMusicDirect = new Map()
     const MAX_DIRECT = 64
     // A 0.5.2 peer ignores the field 'direct'.
     const voiceLine = () => JSON.stringify({
         type: 'voice', inVoice: voiceState.inVoice, streamId: voiceState.streamId, muted: voiceState.muted,
-        deafened: voiceState.deafened, channel: voiceState.channel, direct: voiceRelay ? voiceRelay.directList() : []
+        deafened: voiceState.deafened, channel: voiceState.channel, direct: voiceRelay ? voiceRelay.directList() : [],
+        // MU-2: the peers that get the music frames of this node on a direct music stream.
+        musicDirect: musicRelay ? musicRelay.directList() : []
     })
     // Manual status (presence) of this node. It lives for the life of the node.
     const PRESENCE_STATES = new Set(['available', 'away', 'dnd'])
@@ -640,6 +650,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             // this election got no history from openSession(). Send after the host announcement.
             if (info.peerId === selfId && !wasHost) queueMicrotask(sendHistoryToAll)
             voiceRelay?.hostChanged()
+            musicRelay?.hostChanged()
             // M4: a new host sends its roster. A roster of the old host is not valid now.
             if (peerRoster.hostId !== null && peerRoster.hostId !== info.peerId) setPeerRoster({ hostId: null, members: [] })
             queueMicrotask(shareRoster)
@@ -734,6 +745,62 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             const line = voiceLine()
             for (const session of sessions.values()) session.send(line)
         }
+    })
+    // MU-2: the music stream of a DJ. A second relay with the rules of voice (the channel, deafen, the direct streams)
+    // on its own protocols, queues and counters. The frames go to the window as 'music-frame' events: the main process
+    // does not decode them.
+    musicRelay = createVoiceRelay({
+        libp2p: node,
+        selfId: node.peerId.toString(),
+        protocol: MUSIC_PROTOCOL,
+        directProtocol: MUSIC_DIRECT_PROTOCOL,
+        label: 'Music',
+        hostId: () => {
+            const peerId = election.host()?.peerId
+            return peerId && (!hostAllowed || hostAllowed(peerId)) ? peerId : null
+        },
+        protectedRoom: Boolean(membership),
+        channelOf: channelOfPeer,
+        selfChannel: () => voiceState.channel,
+        voicePeers: () => musicVoicePeers(),
+        connectionFor: peerId => sessionConns.get(peerId) ?? node.getConnections().find(c => c.remotePeer.toString() === peerId),
+        onFrame: frame => events.emit('music-frame', frame),
+        directCandidates: () => !musicDirect ? [] : [...peerVoice.keys()].filter(p => {
+            const conn = sessionConns.get(p)
+            return sessions.has(p) && conn && !conn.remoteAddr.toString().includes('/p2p-circuit') &&
+                channelOfPeer(p) === voiceState.channel
+        }),
+        directListOf: peerId => peerMusicDirect.get(peerId) ?? null,
+        deafened: peerId => peerDeafened.has(peerId),
+        onDirectChanged: () => {
+            const line = voiceLine()
+            for (const session of sessions.values()) session.send(line)
+        }
+    })
+    function musicVoicePeers() {
+        const list = [...peerVoice.keys()].filter(p => sessions.has(p))
+        if (voiceState.inVoice) list.push(selfId)
+        return list
+    }
+    // Room music (music.mjs): the queue and the DJ. Session-only state, no history.
+    const music = createRoomMusic({
+        selfId,
+        send: (peerId, line) => memberAllowed(peerId) && sessions.get(peerId)?.send(JSON.stringify(line)) === true,
+        broadcast: line => {
+            const text = JSON.stringify(line)
+            let count = 0
+            for (const [peerId, session] of sessions) if (memberAllowed(peerId) && session.send(text)) count++
+            return count
+        },
+        changed: view => events.emit('music', view),
+        notice: value => events.emit('music-notice', value),
+        voiceOf: peerId => peerId === selfId ? { inVoice: voiceState.inVoice, channel: voiceState.channel }
+            : sessions.has(peerId) && peerVoice.has(peerId) ? { inVoice: true, channel: channelOfPeer(peerId) }
+                : { inVoice: false, channel: null },
+        voicePeers: musicVoicePeers,
+        resolve: typeof musicResolve === 'function' ? musicResolve : undefined,
+        allowLine: roomRateLimit(MUSIC_LIMITS.linesPerPeer, MUSIC_LIMITS.linesPerRoom),
+        allowAdd: roomRateLimit(MUSIC_LIMITS.addsPerPeer, MUSIC_LIMITS.addsPerRoom)
     })
 
     // G6: the voice channel catalog (owner-signed). The view goes to the window, the catalog to the archive.
@@ -1071,6 +1138,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                     else if (control.type === 'topic' && sessions.get(peerId) === session) topic.handle(peerId, control)
                     else if (control.type === 'history' && sessions.get(peerId) === session) handleHistory(peerId, control)
                     else if (control.type === 'ready' && sessions.get(peerId) === session) ready.handle(peerId, control)
+                    else if (control.type === 'music' && sessions.get(peerId) === session) music.handle(peerId, control)
                     else if ((control.type === 'app-version' || control.type === 'update-manifest') && sessions.get(peerId) === session) updateSpread.handle(peerId, session, control)
                     else if (control.type === 'bye') {
                         if (sessions.get(peerId) === session) byeSessions.add(session)
@@ -1138,13 +1206,21 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                         } else {
                             peerVoice.delete(peerId)
                             peerChannel.delete(peerId)
-                            if (membership) voiceRelay.closeInboundVoice(peerId)
+                            if (membership) {
+                                voiceRelay.closeInboundVoice(peerId)
+                                musicRelay.closeInboundVoice(peerId)
+                            }
                         }
                         const direct = control.inVoice === true ? validDirect(control.direct) : null
                         if (direct) peerDirect.set(peerId, direct)
                         else peerDirect.delete(peerId)
+                        const musicDirectList = control.inVoice === true ? validDirect(control.musicDirect) : null
+                        if (musicDirectList) peerMusicDirect.set(peerId, musicDirectList)
+                        else peerMusicDirect.delete(peerId)
                         voiceRelay.hostChanged()
+                        musicRelay.hostChanged()
                         shareRoster()
+                        music.voiceChanged()
                         events.emit('voice-state', {
                             peerId,
                             inVoice: control.inVoice === true,
@@ -1257,6 +1333,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         // M4: the host sends its current roster on a new session.
         if (election.isHost() && voiceRelay.receivers().length > 0) session.send(rosterLine())
         ready.opened(peerId)
+        music.opened(peerId)
         screen.opened(peerId)
         broadcastLinks()
         emitTopology()
@@ -1295,7 +1372,10 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 idlePeers.delete(peerId)
                 peerDirect.delete(peerId)
                 peerDeafened.delete(peerId)
+                peerMusicDirect.delete(peerId)
                 voiceRelay.peerLeft(peerId)
+                musicRelay.peerLeft(peerId)
+                music.peerLeft(peerId)
                 if (peerRoster.hostId === peerId) setPeerRoster({ hostId: null, members: [] })
                 election.sessionClosed(peerId)
                 topic.sessionClosed(peerId)
@@ -1357,6 +1437,22 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             return
         }
         voiceRelay.handleDirect(data)
+    }, { runOnTransientConnection: true })
+
+    // MU-2: the music streams have the rules of the voice streams.
+    await node.handle(MUSIC_PROTOCOL, async data => {
+        if (!await voiceAuthorized(data, false)) {
+            data.stream.abort?.(new Error('Music is not authorized'))
+            return
+        }
+        musicRelay.handle(data)
+    }, { runOnTransientConnection: true })
+    await node.handle(MUSIC_DIRECT_PROTOCOL, async data => {
+        if (!await voiceAuthorized(data, true)) {
+            data.stream.abort?.(new Error('Music is not authorized'))
+            return
+        }
+        musicRelay.handleDirect(data)
     }, { runOnTransientConnection: true })
 
     await node.handle(PREVIEW_PROTOCOL, data => {
@@ -1491,11 +1587,19 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         voiceState = { inVoice: active, streamId: validStreamId(streamId) ? streamId : null, muted: muted === true,
             deafened: active && deafened === true,
             channel: active && voiceChannels.has(channel) ? channel : GENERAL_VOICE_CHANNEL }
+        // MU-4: a DJ that leaves its channel sends its last music state before the voice line, thus the next DJ
+        // continues at the current position.
+        music.voiceChanged()
         const line = voiceLine()
         for (const session of sessions.values()) session.send(line)
         // A move inside voice starts the move hold.
-        if (before.inVoice && active && before.channel !== voiceState.channel) voiceRelay.channelChanged()
-        else voiceRelay.hostChanged()
+        if (before.inVoice && active && before.channel !== voiceState.channel) {
+            voiceRelay.channelChanged()
+            musicRelay.channelChanged()
+        } else {
+            voiceRelay.hostChanged()
+            musicRelay.hostChanged()
+        }
         // The channel in use: the window follows it when the node used General in place of an unknown ID.
         return { channel: voiceState.channel }
     }
@@ -2423,6 +2527,13 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         sendVoiceFrame: bytes => !selfIdle && (!membership || (membership.admitted() && voiceState.inVoice)) &&
             voiceRelay.sendFrame(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)),
         voiceStats: () => voiceRelay.stats(),
+        // Room music (music.mjs). Only the DJ in voice sends music frames.
+        sendMusicFrame: bytes => !selfIdle && voiceState.inVoice && (!membership || membership.admitted()) && music.isDj() &&
+            musicRelay.sendFrame(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)),
+        musicStats: () => musicRelay.stats(),
+        music: { state: music.state, add: music.add, addLocal: music.addLocal, skip: music.skip, pause: music.pause,
+            remove: music.remove, move: music.move, stop: music.stop, playing: music.playing, ended: music.ended,
+            failed: music.failed, progress: music.progress, reset: music.reset },
         // M4 (P10b): the last voice roster of the current host: { hostId, members: [{ peerId, channel }] }.
         voiceRoster: () => structuredClone(peerRoster),
         topic: topic.view,
@@ -2461,6 +2572,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             whispers.stop()
             typing.stop()
             ready.stop()
+            music.close()
             clearTimeout(upnpRenewTimer)
             clearInterval(redialTimer)
             for (const timer of waitingDial.values()) clearTimeout(timer)
@@ -2475,6 +2587,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             await screen.stop()
             election.stop()
             voiceRelay.stop()
+            musicRelay.stop()
             // Gap B1: tell each peer that this node quits, then give the lines time to go out. close() aborts the
             // stream at once and drops the queue. No open session: no wait.
             let byeSent = false
