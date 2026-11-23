@@ -171,9 +171,11 @@ test('the uninstaller keeps the data folder at an update and at an uninstall', (
     assert.match(nsh, /StrCmp \$R2 "data"/);
 });
 
-test('saved rooms of another Windows account or PC show a plain text, not a reason code', () => {
+// 1.0.6: the lock has more than one cause (another Windows account or PC, a kill of 1.0.5 or older in the first seconds
+// of a new data folder). The text says only that the key does not open (test/saved-rooms-window.test.mjs runs it).
+test('saved rooms with a key that does not open show a plain text, not a reason code', () => {
     const source = readFileSync(new URL('src/application/saved-rooms-ui.js', root), 'utf8');
-    assert.match(source, /result\.reason === 'key-unwrap-failed'[\s\S]{0,200}another Windows account or PC/);
+    assert.match(source, /result\.reason === 'key-unwrap-failed'\) \{\s*return 'Saved rooms are locked\. Can\\'t open their key\.';/);
 });
 
 test('the move works with the cpSync of Electron 45, which refuses an existing empty target folder', t => {
