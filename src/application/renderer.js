@@ -3187,6 +3187,16 @@ function startPresence() {
 if (hasApi('onPresence')) {
     window.asscrack.onPresence(data => setPeerPresence(data?.peerId, data));
 }
+// 1.0.4: the automatic status (auto-status.mjs) changed the own state.
+if (hasApi('onOwnPresence')) {
+    window.asscrack.onOwnPresence(value => {
+        const presence = readPresence(value);
+        if (!presence) return;
+        touchPresence('');
+        ownPresence = presence;
+        showOwnPresence();
+    });
+}
 // addPeer (an earlier listener) makes the line first. Then the line gets the known state.
 window.asscrack.onPeerJoined(data => showPeerPresence(data?.peerId));
 window.asscrack.onPeerLeft(data => forgetPresence(data?.peerId));

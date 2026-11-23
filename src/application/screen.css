@@ -113,6 +113,8 @@ body.screen-fill #screen-stage {
 .screen-source-name { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 #screen-border-hint { display: flex; align-items: center; gap: 8px; margin: 8px 0 0; font-size: 12px; }
 #screen-border-hint[hidden], #screen-border-switch[hidden] { display: none; }
+#screen-border-switch { background: none; border: 0; padding: 0; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; opacity: 0.8; }
+#screen-border-switch:hover, #screen-border-switch:focus-visible { opacity: 1; }
 .screen-picker-buttons .screen-no-audio { align-self: center; margin-right: auto; }
 .screen-picker-buttons { display: flex; justify-content: flex-end; gap: 8px; }
 

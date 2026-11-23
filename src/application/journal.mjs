@@ -212,6 +212,9 @@ export const EVENT_FIELDS = Object.freeze({
     // Easy-join (1.0.1): the friend invite and the code in the clipboard. No code and no room name.
     join: { event: oneOf('friend-invite-sent', 'friend-invite-received', 'friend-invite-used',
         'clipboard-prompt', 'clipboard-join', 'clipboard-dismiss'), kind: oneOf('room-code', 'device-invite'), result: kinds.code },
+    // 1.0.4: the automatic status. The event and its cause only: no input data, no idle time, no window.
+    status: { event: oneOf('auto-away', 'auto-dnd', 'auto-back'), reason: oneOf('idle', 'lock', 'sleep', 'fullscreen', 'input',
+        'unlock', 'resume', 'voice', 'off', 'fullscreen-end') },
     'writer-error': { code: kinds.code }
 });
 

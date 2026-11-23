@@ -20,7 +20,7 @@ import os from 'os';
 import { mkdirSync, appendFileSync, existsSync, readFileSync, writeFileSync, renameSync, rmSync, readdirSync, statSync } from 'fs';
 import { copyFile, rename, unlink, writeFile } from 'fs/promises';
 import { format, promisify } from 'util';
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { createAsscrackNode, keyedServiceTag } from '../network/node.mjs';
 import { isRoomCode, newRoomKey, readInvite, readRoomCode } from '../network/invite.mjs';
 import { knockRoom } from '../network/knock-client.mjs';
@@ -44,6 +44,9 @@ import { createLinkPolicy } from './link-policy.mjs';
 import { fitWindowBounds, MIN_WINDOW, readWindowBounds, saveWindowBounds } from './window-bounds.mjs';
 import { createTaskbarFlash } from './taskbar-flash.mjs';
 import { acceptScreenFrame, createScreenSources, windowShareHasBorder } from './screen-sources.mjs';
+import { createShareGuard } from './share-guard.mjs';
+import { guardScript, qunsScript, startHelper } from './win-helper.mjs';
+import { createAutoStatus, readSettings as readAutoStatus } from './auto-status.mjs';
 import { createFriendLinks } from './friend-links.mjs';
 import { withDeviceMarks } from './peer-marks.mjs';
 import { attachFriendWindows, registerFriendIpc } from './friend-windows.mjs';
@@ -1740,17 +1743,39 @@ onRoomIpc('asscrack:voice-frame', (_event, bytes) => {
 
 // P8b, screenshare (design work package W3): the source list, the pending selection, the capture permission and
 // the IPC of the share. The node does the protocol (src/network/screen-share.mjs).
+// 1.0.4: on Windows 10 a window that fills a screen is shared as that screen (no capture border), with the guard of
+// share-guard.mjs: the viewers get a "Paused" picture while the window is not in front. The guard helper has the
+// normal priority: a late pause shows more of the screen.
+const windowBorder = windowShareHasBorder(process.platform, os.release());
+const shareGuard = createShareGuard({
+    start: (hwnd, handlers) => startHelper({ spawn, script: guardScript(hwnd, process.pid), ...handlers }),
+    onChange: state => sendToWindow('asscrack:screen-guard', state),
+    log: writeLog
+});
+const physicalDisplays = () => screen.getAllDisplays().map(display => {
+    const r = screen.dipToScreenRect(null, display.bounds);
+    return { id: display.id, rect: { left: r.x, top: r.y, right: r.x + r.width, bottom: r.y + r.height } };
+});
 const screenSources = createScreenSources({
     desktopCapturer,
     isRoomFrame: frame => !!mainWindow && !mainWindow.isDestroyed() && isDesktopFrame(mainWindow, mainWindow.webContents, frame, ROOM_PAGE),
     isIdle: () => idlePeer || quitting || !node,
     log: writeLog,
-    windowBorder: windowShareHasBorder(process.platform, os.release())
+    windowBorder,
+    guard: windowBorder && process.platform === 'win32' ? shareGuard : null,
+    displays: physicalDisplays
 });
 let screenOwn = false;
+// A guard with no share after the selection time stops (the share did not start).
+let guardExpiry = null;
 const SCREEN_STOP_REASONS = new Set(['stopped', 'source', 'error']);
 handleRoomIpc('asscrack:screen-sources', () => (node && !idlePeer ? screenSources.list() : []));
-handleRoomIpc('asscrack:screen-pick', (_event, id, quality) => screenSources.pick(String(id ?? ''), String(quality ?? '')));
+handleRoomIpc('asscrack:screen-pick', async (_event, id, quality, options) => {
+    clearTimeout(guardExpiry);
+    const info = await screenSources.pick(String(id ?? ''), String(quality ?? ''), { border: options?.border === true });
+    if (info?.guard) guardExpiry = setTimeout(() => { if (!screenOwn) shareGuard.close('expired'); }, 15000);
+    return info;
+});
 handleRoomIpc('asscrack:screen-last-quality', () => screenSources.lastQuality());
 handleRoomIpc('asscrack:screen-start', (_event, options = {}) => {
     if (!node) throw new Error('Not logged in');
@@ -1785,6 +1810,7 @@ function forwardScreenEvents(onLiveEvent) {
     onLiveEvent('screen-state', data => {
         if (data?.own) {
             screenOwn = data.sharing === true;
+            if (!screenOwn) shareGuard.close('stop');
             taskbarFlash.setSharing(screenOwn);
             if (screenOwn) writeLog('EVENT', `screen share started preset ${data.preset}`);
             if (screenOwn) journal('screen', { event: 'start', share: data.shareId, preset: data.preset });
@@ -1793,6 +1819,7 @@ function forwardScreenEvents(onLiveEvent) {
     });
     onLiveEvent('screen-ended', data => {
         writeLog('EVENT', data?.own ? `screen share stopped reason ${data.reason}` : `screen watch ended reason ${data?.reason}`);
+        if (data?.own) shareGuard.close('stop');
         journal('screen', { event: data?.own ? 'stop' : 'watch-end', share: data?.shareId, reason: data?.reason });
         sendToWindow('asscrack:screen-ended', data);
     });
@@ -1819,6 +1846,7 @@ handleRoomIpc('asscrack:set-voice', (_event, state) => {
     journal('voice-state', { in: inVoice, muted: state?.muted === true, deafened: state?.deafened === true,
         host: node.host()?.peerId === node.peerId });
     updatePttHook(() => pttHook.setInVoice(inVoice));
+    autoStatus.voice();
     return result;
 });
 
@@ -1953,13 +1981,64 @@ onRoomIpc('asscrack:typing-edit', (_event, active) => {
     if (!idlePeer && shareTyping && typeof active === 'boolean') node?.setTyping(active);
 });
 
-handleRoomIpc('asscrack:set-presence', (_event, { state, note } = {}) => {
-    if (!node) throw new Error('Not logged in');
+// The same path for a choice of the user and for the automatic status.
+function applyPresence({ state, note }) {
     const updated = node.setPresence({ state, note });
     if (node.presence().state === 'dnd') attention.clear();
     // G7b: the friends see the same availability (design F11).
     friendLinks.setAvailability({ state: updated.state, note: updated.note });
     return updated;
+}
+handleRoomIpc('asscrack:set-presence', (_event, { state, note } = {}) => {
+    if (!node) throw new Error('Not logged in');
+    const updated = applyPresence({ state, note });
+    // A choice of the user wins over the automatic status.
+    autoStatus.manual();
+    return updated;
+});
+
+// 1.0.4: the automatic status (auto-status.mjs). The settings are in the profile. A dev start can give a short Away
+// time with --auto-away-ms <ms> for a check.
+const autoStatusFile = path.join(app.getPath('userData'), 'auto-status.json');
+let autoStatusSettings = readAutoStatus(null);
+try { autoStatusSettings = readAutoStatus(JSON.parse(readFileSync(autoStatusFile, 'utf8'))); } catch { /* new profile */ }
+const autoAwayIndex = process.argv.indexOf('--auto-away-ms');
+const autoAwayMs = !app.isPackaged && autoAwayIndex !== -1 ? Number(process.argv[autoAwayIndex + 1]) : null;
+const autoStatus = createAutoStatus({
+    presence: () => (node && !leaving ? node.presence() : null),
+    setPresence: value => {
+        const updated = applyPresence(value);
+        sendToWindow('asscrack:own-presence', updated);
+        return updated;
+    },
+    idleSeconds: () => powerMonitor.getSystemIdleTime(),
+    inVoice: () => inVoice,
+    idlePeer: () => idlePeer,
+    settings: () => autoStatusSettings,
+    // The notification state helper runs only while "Do not disturb in full-screen games" is on.
+    startQuns: process.platform === 'win32' ? (onState, onEnd) => startHelper({ spawn, script: qunsScript(process.pid),
+        setPriority: pid => os.setPriority(pid, os.constants.priority.PRIORITY_BELOW_NORMAL),
+        onLine: line => { const m = /^q (\d+)$/.exec(line); if (m) onState(Number(m[1])); },
+        onExit: info => { writeLog('WARN', `status helper ended code=${info?.code ?? 'none'}`); onEnd(); } }) : null,
+    journal: (event, reason) => {
+        journal('status', { event, reason });
+        writeRaw('EVENT', `status ${event} reason=${reason}`);
+    },
+    log: writeLog,
+    awayMs: () => autoAwayMs
+});
+handleRoomIpc('asscrack:auto-status', () => autoStatusSettings);
+handleRoomIpc('asscrack:set-auto-status', (_event, patch = {}) => {
+    const next = { ...autoStatusSettings };
+    if (patch?.awayMinutes !== undefined) next.awayMinutes = patch.awayMinutes;
+    if (patch?.dndFullscreen !== undefined) next.dndFullscreen = patch.dndFullscreen;
+    const checked = readAutoStatus(next);
+    if (checked.awayMinutes !== next.awayMinutes || checked.dndFullscreen !== next.dndFullscreen) throw new TypeError('Bad status setting.');
+    writeFileSync(autoStatusFile + '.tmp', JSON.stringify(checked));
+    renameSync(autoStatusFile + '.tmp', autoStatusFile);
+    autoStatusSettings = checked;
+    autoStatus.settingsChanged();
+    return checked;
 });
 
 handleRoomIpc('asscrack:presence', () => {
@@ -2275,6 +2354,8 @@ app.on('before-quit', event => {
     tray?.destroy();
     tray = null;
     pttHook.stop();
+    shareGuard.close('quit');
+    autoStatus.stop();
     friendWindows.closeAll();
     friendsPopout.close();
     imageDecoder.dispose();
@@ -2369,6 +2450,8 @@ app.whenReady().then(async () => {
         node?.refreshRoutes();
         startRunner?.wake();
     });
+    for (const event of ['lock-screen', 'unlock-screen', 'suspend', 'resume']) powerMonitor.on(event, () => autoStatus.power(event));
+    autoStatus.start();
     protocol.handle('room-media', request => roomMedia.serve(request));
     protocol.handle(APP_SCHEME, createAppHandler({ root: __dirname,
         extra: { [RNNOISE_WORKLET]: require.resolve('@sapphi-red/web-noise-suppressor/rnnoiseWorklet.js') } }));

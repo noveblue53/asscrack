@@ -38,8 +38,10 @@ const LAYOUT = [
 
 const flush = async () => { for (let i = 0; i < 6; i++) await new Promise(resolve => setImmediate(resolve)); };
 
+// guards: source ID -> the guard of the pick answer (1.0.4: a window that fills a screen is shared as that screen).
 function load({ storage = new Map(), sources: list = [{ id: 'screen:0:0', kind: 'screen', name: 'Screen 1', thumbnail: null },
-    { id: 'window:5:0', kind: 'window', name: 'Check window', thumbnail: null }], settings = { width: 2560, height: 1440, frameRate: 60 } } = {}) {
+    { id: 'window:5:0', kind: 'window', name: 'Check window', thumbnail: null }], settings = { width: 2560, height: 1440, frameRate: 60 },
+    guards = {} } = {}) {
     const { document, window, Event } = createDom(LAYOUT);
     const clock = { t: 1000 };
     const order = []; // track.stop and the IPC calls, in sequence
@@ -66,7 +68,11 @@ function load({ storage = new Map(), sources: list = [{ id: 'screen:0:0', kind: 
     const api = {
         getScreenSources: () => { record('getScreenSources'); return new Promise(resolve => { sourcesResolve = () => resolve(list); }); },
         getScreenQuality: async () => 'auto',
-        pickScreenSource: async (id, quality) => { record('pickScreenSource', id, quality); return { name: list.find(s => s.id === id)?.name, width: 2560, height: 1440, frameRate: 60, bitrate: 12000000 }; },
+        pickScreenSource: async (id, quality, options) => {
+            record('pickScreenSource', id, quality, options);
+            return { name: list.find(s => s.id === id)?.name, width: 2560, height: 1440, frameRate: 60, bitrate: 12000000,
+                ...(guards[id] && options?.border !== true ? { guard: guards[id] } : {}) };
+        },
         startScreenShare: async options => { record('startScreenShare', options); return { shareId: SHARE }; },
         stopScreenShare: reason => record('stopScreenShare', reason),
         sendScreenFrame: frame => record('sendScreenFrame', frame),
@@ -103,11 +109,17 @@ function load({ storage = new Map(), sources: list = [{ id: 'screen:0:0', kind: 
         }
     };
     const capture = { queue: [], waiting: null };
+    // 1.0.4: the "Paused" picture of a guarded share is drawn on an OffscreenCanvas.
+    class FakeOffscreenCanvas {
+        constructor(width, height) { this.width = width; this.height = height; this.picture = 'paused'; this.drawn = []; }
+        getContext() { const drawn = this.drawn; return { fillRect: () => drawn.push('fillRect'), fillText: text => drawn.push(text) }; }
+    }
     class FakeVideoFrame {
         constructor(src, init = {}) {
-            this.displayWidth = src.displayWidth; this.displayHeight = src.displayHeight;
-            this.codedWidth = src.codedWidth ?? src.displayWidth; this.codedHeight = src.codedHeight ?? src.displayHeight;
+            this.displayWidth = src.displayWidth ?? src.width; this.displayHeight = src.displayHeight ?? src.height;
+            this.codedWidth = src.codedWidth ?? this.displayWidth; this.codedHeight = src.codedHeight ?? this.displayHeight;
             this.timestamp = init.timestamp ?? src.timestamp ?? 0; this.closed = false;
+            this.picture = src.picture ?? 'captured'; this.text = src.drawn?.includes('Paused') ? 'Paused' : null;
         }
         clone() { return new FakeVideoFrame(this); }
         close() { this.closed = true; }
@@ -115,7 +127,7 @@ function load({ storage = new Map(), sources: list = [{ id: 'screen:0:0', kind: 
     class FakeEncoder {
         constructor({ output, error }) { this.output = output; this.error = error; this.state = 'unconfigured'; this.encodeQueueSize = 0; this.configs = []; this.frames = []; encoders.push(this); }
         configure(config) { this.configs.push(config); this.state = 'configured'; }
-        encode(frame, options) { this.frames.push({ timestamp: frame.timestamp, key: options?.keyFrame === true }); }
+        encode(frame, options) { this.frames.push({ timestamp: frame.timestamp, key: options?.keyFrame === true, picture: frame.picture }); }
         close() { this.state = 'closed'; }
         // The test makes the encoder give a chunk for its last frame.
         out(bytes, key = false) {
@@ -138,7 +150,7 @@ function load({ storage = new Map(), sources: list = [{ id: 'screen:0:0', kind: 
         MediaStream: class { constructor(tracks) { this.tracks = tracks; } getVideoTracks() { return this.tracks; } },
         localStorage: { getItem: k => (storage.has(k) ? storage.get(k) : null), setItem: (k, v) => storage.set(k, String(v)) },
         queueMicrotask, Promise, Map, Set, Object, Math, Number, String, Array, JSON, Uint8Array, Error,
-        VideoEncoder: FakeEncoder, VideoFrame: FakeVideoFrame, VideoDecoder: FakeDecoder,
+        VideoEncoder: FakeEncoder, VideoFrame: FakeVideoFrame, VideoDecoder: FakeDecoder, OffscreenCanvas: FakeOffscreenCanvas,
         EncodedVideoChunk: class { constructor(init) { Object.assign(this, init); } },
         MediaStreamTrackProcessor: class {
             constructor() {
@@ -223,37 +235,113 @@ test('W4 check 1: the picker shows Loading sources, then the two lists; Share wa
     assert.equal(names(f.calls, 'startScreenShare').length, 0);
 });
 
-test('capture border: a window that fills a screen shows the hint; Share screen starts the share of that screen', async () => {
+// 1.0.4 (operator, 2026-11-23): the share of a window that fills a screen uses the screen with no extra click. The main
+// process decides with the window guard (screen-sources.mjs). The switch shares the window itself, with the border.
+test('capture border: Share asks for the screen of a window that fills it; the switch shares the window with its border', async () => {
     const f = load({ sources: [
         { id: 'screen:0:0', kind: 'screen', name: 'Screen 1', thumbnail: null },
         { id: 'screen:1:0', kind: 'screen', name: 'Screen 2', thumbnail: null },
         { id: 'window:5:0', kind: 'window', name: 'Game', thumbnail: null, fillsScreen: true, screenId: 'screen:1:0' },
-        { id: 'window:6:0', kind: 'window', name: 'Notes', thumbnail: null, fillsScreen: false, screenId: null },
-        { id: 'window:7:0', kind: 'window', name: 'Twin', thumbnail: null, fillsScreen: true, screenId: null }
+        { id: 'window:6:0', kind: 'window', name: 'Notes', thumbnail: null, fillsScreen: false, screenId: null }
     ] });
-    f.el('share-screen').click();
-    await flush();
-    f.resolveSources();
-    await flush();
+    const open = async () => {
+        f.el('share-screen').click();
+        await flush();
+        f.resolveSources();
+        await flush();
+    };
+    await open();
     const hint = f.el('screen-border-hint'), toggle = f.el('screen-border-switch');
     const tile = id => f.el('screen-list-windows').querySelectorAll('.screen-source').find(b => b.dataset.id === id)
         ?? f.el('screen-list-screens').querySelectorAll('.screen-source').find(b => b.dataset.id === id);
     assert.equal(hint.hidden, true, 'no selection: no hint');
     tile('window:6:0').click();
     assert.equal(hint.hidden, true, 'a window that does not fill a screen');
-    tile('window:7:0').click();
-    assert.equal(hint.hidden, false);
-    assert.equal(toggle.hidden, true, 'the screen is not known: no switch');
+    assert.equal(toggle.hidden, true);
     tile('screen:0:0').click();
     assert.equal(hint.hidden, true, 'a screen');
     tile('window:5:0').click();
     assert.equal(hint.hidden, false);
-    assert.equal(toggle.hidden, false);
+    assert.equal(toggle.hidden, false, 'the switch to the window share with the border');
+    f.el('screen-share-go').click();
+    await flush();
+    const picks = () => JSON.stringify(names(f.calls, 'pickScreenSource').map(c => [c.args[0], c.args[2]]));
+    assert.equal(picks(), JSON.stringify([['window:5:0', { border: false }]]), 'Share sends the window: the main process uses its screen');
+    assert.equal(f.el('share-bar-source').textContent, 'You are sharing: Game', 'the bar shows the window name');
+    f.el('share-stop').click();
+    await open();
+    tile('window:5:0').click();
     toggle.click();
     await flush();
-    assert.deepEqual(names(f.calls, 'pickScreenSource').map(c => c.args[0]), ['screen:1:0'], 'the share is of the screen, not of the window');
-    assert.equal(names(f.calls, 'startScreenShare').length, 1);
+    assert.equal(picks(), JSON.stringify([['window:5:0', { border: false }], ['window:5:0', { border: true }]]),
+        'the switch asks for the window itself');
+    assert.equal(names(f.calls, 'startScreenShare').length, 2);
     assert.equal(f.picker.open, false);
+});
+
+// 1.0.4: the pause of a guarded share. The viewers get the "Paused" picture, never a captured frame, from the start
+// until the guard says that the window is in front, and again at each pause.
+test('guarded share: paused at the start; captured frames do not go out while paused; Paused at once as a keyframe', async () => {
+    const f = load({ sources: [{ id: 'screen:0:0', kind: 'screen', name: 'Screen 1', thumbnail: null },
+        { id: 'window:5:0', kind: 'window', name: 'Game', thumbnail: null, fillsScreen: true, screenId: 'screen:0:0' }],
+    guards: { 'window:5:0': { paused: true, reason: 'starting' } } });
+    f.el('share-screen').click();
+    await flush();
+    f.resolveSources();
+    await flush();
+    f.el('screen-list-windows').querySelector('.screen-source').click();
+    f.el('screen-share-go').click();
+    await flush();
+    let stats = f.window.screenShare.stats();
+    assert.equal(stats.guarded, true);
+    assert.equal(stats.paused, true, 'no guard state yet: paused');
+    assert.deepEqual(f.el('share-bar-notes').children.map(c => c.textContent), ['Paused']);
+    f.emit('onScreenEncoder', { tiers: [{ tier: 0, preset: 'max', fps: 60, bitrate: 12000000, keyFrame: true }] });
+    f.clock.t += 200;
+    f.emit('onScreenEncoder', { tiers: [{ tier: 0, preset: 'max', fps: 60, bitrate: 12000000, keyFrame: true }] });
+    for (let i = 0; i < 5; i++) { f.clock.t += 17; f.frame(); await flush(); }
+    const encoder = f.encoders[0];
+    assert.ok(encoder, 'the tier has an encoder');
+    assert.ok(encoder.frames.length >= 1);
+    assert.ok(encoder.frames.every(frame => frame.picture === 'paused'), 'only the Paused picture is encoded');
+    assert.equal(encoder.frames[0].key, true);
+    assert.deepEqual(encoder.configs[0] && [encoder.configs[0].width, encoder.configs[0].height], [2560, 1440], 'the capture size');
+    stats = f.window.screenShare.stats();
+    assert.equal(stats.pausedCaptured, 5, 'the captured frames are dropped');
+
+    // The window comes in front: the next captured frame goes out as a keyframe.
+    f.emit('onScreenGuard', { active: true, paused: false, reason: null });
+    assert.equal(f.window.screenShare.stats().paused, false);
+    assert.equal(f.el('share-bar-notes').hidden, true);
+    const before = encoder.frames.length;
+    f.clock.t += 17;
+    f.frame();
+    await flush();
+    assert.deepEqual(encoder.frames.slice(before).map(fr => [fr.picture, fr.key]), [['captured', true]]);
+
+    // Another window comes in front: the Paused picture goes out at once, with no captured frame.
+    f.emit('onScreenGuard', { active: true, paused: true, reason: 'background' });
+    const atPause = encoder.frames.length;
+    assert.deepEqual(encoder.frames.slice(atPause - 1).map(fr => [fr.picture, fr.key]), [['paused', true]], 'Paused at once');
+    for (let i = 0; i < 3; i++) { f.clock.t += 17; f.frame(); await flush(); }
+    // A refresh tick sends the Paused picture again, not the last captured frame.
+    f.emit('onScreenEncoder', { tiers: [{ tier: 0, preset: 'max', fps: 60, bitrate: 12000000, refresh: true }] });
+    assert.ok(encoder.frames.slice(atPause - 1).every(fr => fr.picture === 'paused'), 'no captured frame while paused');
+    assert.equal(encoder.frames.at(-1).picture, 'paused');
+    // The guard stops (no state): the share stays paused.
+    f.emit('onScreenGuard', { active: true, paused: false, reason: null });
+    f.emit('onScreenGuard', { active: false, paused: true, reason: 'off' });
+    assert.equal(f.window.screenShare.stats().paused, true, 'no guard: paused');
+    assert.equal(f.window.screenShare.stats().pauses, 3);
+});
+
+test('guarded share: a plain screen or window share has no guard and no pause', async () => {
+    const f = load();
+    await startShare(f);
+    f.emit('onScreenGuard', { active: true, paused: true, reason: 'background' });
+    const stats = f.window.screenShare.stats();
+    assert.equal(stats.guarded, false);
+    assert.equal(stats.paused, false, 'a guard event of another share changes nothing');
 });
 
 test('W4 check 2: Share screen is disabled in Idle Peer and while another member shares', async () => {
@@ -277,7 +365,8 @@ test('W4 check 2: Share screen is disabled in Idle Peer and while another member
 test('W4 check 3: Stop sharing calls track.stop() before it sends asscrack:screen-stop, and the bar goes away', async () => {
     const f = load();
     await startShare(f, 'standard');
-    assert.deepEqual(names(f.calls, 'pickScreenSource')[0].args, ['screen:0:0', 'standard']);
+    // 1.0.4: the third argument asks for the window itself (the border switch); a screen share sends border: false.
+    assert.equal(JSON.stringify(names(f.calls, 'pickScreenSource')[0].args), JSON.stringify(['screen:0:0', 'standard', { border: false }]));
     assert.deepEqual(JSON.parse(JSON.stringify(names(f.calls, 'getDisplayMedia')[0].args[0])),
         { video: { width: { max: 2560 }, height: { max: 1440 }, frameRate: { max: 60 } }, audio: false });
     assert.deepEqual(JSON.parse(JSON.stringify(names(f.calls, 'startScreenShare')[0].args[0])), { preset: 'standard', width: 2560, height: 1440 });

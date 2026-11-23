@@ -543,6 +543,17 @@
   <dialog id="availability-dialog" aria-labelledby="availability-title">
     <h2 id="availability-title">Your availability</h2>
     <div id="presence-fields"></div>
+    <div id="auto-status" hidden>
+      <label for="auto-away" title="No keyboard or mouse input, or the screen is locked. Not while in voice.">Away after</label>
+      <select id="auto-away">
+        <option value="5">5 min</option>
+        <option value="10">10 min</option>
+        <option value="15">15 min</option>
+        <option value="0">Off</option>
+      </select>
+      <label class="auto-dnd" title="Also during presentations."><input id="auto-dnd" type="checkbox"> Do not disturb in full-screen games</label>
+      <p id="auto-status-error" class="auto-status-error" role="alert" hidden></p>
+    </div>
     <form method="dialog"><button>Done</button></form>
   </dialog>
   <dialog id="message-details" aria-labelledby="message-details-title">
@@ -813,8 +824,8 @@
     <ul id="screen-list-screens" class="screen-sources" aria-labelledby="screen-screens-title"></ul>
     <h3 id="screen-windows-title">Windows</h3>
     <ul id="screen-list-windows" class="screen-sources" aria-labelledby="screen-windows-title"></ul>
-    <p id="screen-border-hint" hidden title="Windows 10 draws a yellow border around a shared window. A screen share shows all of that screen.">
-      Screen share has no border <button id="screen-border-switch" type="button">Share screen</button>
+    <p id="screen-border-hint" hidden title="Shared through its screen, with no yellow border. Viewers see Paused while another window is in front.">
+      No border. Paused when not in front. <button id="screen-border-switch" type="button">Share with border</button>
     </p>
     <label for="screen-quality">Quality</label>
     <select id="screen-quality"></select>
@@ -861,6 +872,7 @@
   <script src="screen-frame-check.js"></script>
   <script src="screen-share.js"></script>
   <script src="screen-view.js"></script>
+  <script src="auto-status-ui.js"></script>
   <script src="whispers.js"></script>
   <script src="saved-rooms-ui.js"></script>
   <script src="voice-panel.js"></script>

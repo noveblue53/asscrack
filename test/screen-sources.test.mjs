@@ -61,18 +61,18 @@ test('W3 check 4: the list has screens first, at most 40 entries, names of at mo
 
 test('W3 check 4: an ID that was not in the last list is refused; check 4a: the 6 qualities, Auto gives the size of Max', async () => {
     const { screen } = setup();
-    assert.throws(() => screen.pick('screen:0:0', 'auto'), /not in the list/, 'no list yet');
+    await assert.rejects(screen.pick('screen:0:0', 'auto'), /not in the list/, 'no list yet');
     await screen.list();
-    assert.throws(() => screen.pick('screen:9:0', 'auto'), /not in the list/);
-    assert.throws(() => screen.pick('web-contents-media-stream:7', 'auto'), /not in the list/);
+    await assert.rejects(screen.pick('screen:9:0', 'auto'), /not in the list/);
+    await assert.rejects(screen.pick('web-contents-media-stream:7', 'auto'), /not in the list/);
     assert.deepEqual(PICKER_QUALITIES.map(q => q.id), ['auto', 'standard', 'smooth', 'balanced', 'high', 'max']);
     assert.deepEqual(PICKER_QUALITIES.map(q => q.label), ['Auto', 'Standard (720p, 15 fps)',
         'Smooth (720p, 30 fps)', 'Balanced (1080p, 30 fps)', 'High (1080p, 60 fps)', 'Max (1440p, 60 fps)']);
-    assert.deepEqual(screen.pick('screen:0:0', 'auto'), { name: 'Screen 1', width: 2560, height: 1440, frameRate: 60, bitrate: 12000000 });
-    assert.deepEqual(screen.pick('window:11:0', 'standard'), { name: 'Notepad', width: 1280, height: 720, frameRate: 15, bitrate: 1500000 });
+    assert.deepEqual(await screen.pick('screen:0:0', 'auto'), { name: 'Screen 1', width: 2560, height: 1440, frameRate: 60, bitrate: 12000000 });
+    assert.deepEqual(await screen.pick('window:11:0', 'standard'), { name: 'Notepad', width: 1280, height: 720, frameRate: 15, bitrate: 1500000 });
     assert.equal(screen.lastQuality(), 'standard', 'the main process keeps the last quality in memory');
-    assert.throws(() => screen.pick('screen:0:0', 'sharp'), /Unknown screen quality/, 'revision 2 removed sharp');
-    assert.throws(() => screen.pick('screen:0:0', 'ultra'), /Unknown screen quality/);
+    await assert.rejects(screen.pick('screen:0:0', 'sharp'), /Unknown screen quality/, 'revision 2 removed sharp');
+    await assert.rejects(screen.pick('screen:0:0', 'ultra'), /Unknown screen quality/);
     assert.equal(screen.lastQuality(), 'standard', 'a refused quality does not change the last quality');
 });
 
@@ -112,7 +112,7 @@ test('W3 check 3: the display media handler refuses with null for each bad reque
     screen.pick('screen:0:0', 'auto');
     screen.clear();
     assert.equal(screen.hasPending(), false);
-    assert.throws(() => screen.pick('screen:0:0', 'auto'), /not in the list/);
+    await assert.rejects(screen.pick('screen:0:0', 'auto'), /not in the list/);
 });
 
 test('W3 check 3: the handler never calls back with an empty object, and pick is refused in Idle Peer', async () => {
@@ -126,7 +126,7 @@ test('W3 check 3: the handler never calls back with an empty object, and pick is
     }
     for (const value of answers) assert.ok(value === null || (value && value.video), `answer ${JSON.stringify(value)}`);
     state.idle = true;
-    assert.throws(() => screen.pick('screen:0:0', 'auto'), /Idle Peer/);
+    await assert.rejects(screen.pick('screen:0:0', 'auto'), /Idle Peer/);
 });
 
 test('W3 check 5: the frame IPC drops a frame with no share, with no Uint8Array, with 0 bytes and with 1 048 577 bytes', () => {
@@ -181,4 +181,73 @@ test('capture border: a window with the thumbnail size of one screen gets that s
     // Two screens with the same size: the window fills a screen, but which one is not known.
     const twins = [sources[0], { id: 'screen:0:0', name: 'Screen 1', thumbnail: sized(320, 180) }, { id: 'screen:1:0', name: 'Screen 2', thumbnail: sized(320, 180) }];
     assert.deepEqual(marks(await listOf(true, twins)), [['window:21:0', true, null]]);
+});
+
+// 1.0.4 (operator, 2026-11-23): Share of a window that fills a screen uses that screen, with no extra click. The guard
+// (share-guard.mjs, here a fake) gives the window state; the main process gives the physical display rectangles.
+function guardedSetup({ state, fail = false, displays } = {}) {
+    const sized = (width, height) => ({ isEmpty: () => false, toPNG: () => Buffer.alloc(10, 1), getSize: () => ({ width, height }) });
+    const sources = [
+        { id: 'window:132456:0', name: 'Game', thumbnail: sized(320, 180) },
+        { id: 'window:22:0', name: 'Notes', thumbnail: sized(320, 160) },
+        { id: 'screen:0:0', name: 'Screen 1', thumbnail: sized(320, 180), display_id: '101' },
+        { id: 'screen:1:0', name: 'Screen 2', thumbnail: sized(320, 134), display_id: '202' }
+    ];
+    const calls = [];
+    const logs = [];
+    const guard = {
+        open: async hwnd => { calls.push(['open', hwnd]); if (fail) throw new Error('The window guard did not start.'); return state; },
+        arm: monitor => { calls.push(['arm', monitor]); return { active: true, paused: true, reason: 'starting' }; },
+        state: () => ({ active: true, paused: true, reason: 'starting' }),
+        close: why => { calls.push(['close', why]); return true; }
+    };
+    const screen = createScreenSources({ desktopCapturer: { getSources: async () => sources }, isRoomFrame: frame => frame === roomFrame,
+        isIdle: () => false, log: (level, text) => logs.push(`${level} ${text}`), windowBorder: true, guard,
+        displays: () => displays ?? [{ id: 101, rect: { left: 0, top: 0, right: 2560, bottom: 1440 } },
+            { id: 202, rect: { left: -3440, top: 12, right: 0, bottom: 1452 } }] });
+    return { screen, calls, logs, sources };
+}
+const FULL = { alive: true, foreground: true, minimized: false, visible: true, rect: { left: 0, top: 0, right: 2560, bottom: 1440 },
+    monitor: { left: 0, top: 0, right: 2560, bottom: 1440 } };
+
+test('fill switch: Share of a window that fills a screen captures that screen, with the guard and the window name', async () => {
+    const { screen, calls, logs, sources } = guardedSetup({ state: FULL });
+    await screen.list();
+    const info = await screen.pick('window:132456:0', 'auto');
+    assert.equal(info.name, 'Game', 'the bar shows the window name');
+    assert.equal(info.guard?.paused, true, 'the share starts paused');
+    assert.deepEqual(calls.slice(0, 3), [['close', 'repick'], ['open', 132456], ['arm', FULL.monitor]]);
+    const answer = ask(screen, {});
+    assert.equal(answer.video, sources[2], 'the screen of the window, not the window');
+    assert.ok(logs.includes('EVENT screen capture request granted kind=screen from=window'), 'the log line of the path with no border');
+    assert.ok(logs.every(l => !/Game|132456/.test(l)), 'no window name and no handle in the log');
+    screen.clear();
+    assert.deepEqual(calls.at(-1), ['close', 'clear'], 'clear stops the guard');
+});
+
+test('fill switch: a window that does not fill its screen, a failed guard and the border switch give the window share', async () => {
+    const small = guardedSetup({ state: { ...FULL, rect: { left: 100, top: 100, right: 1380, bottom: 820 } } });
+    await small.screen.list();
+    const info = await small.screen.pick('window:132456:0', 'auto');
+    assert.equal(info.guard, undefined);
+    assert.equal(ask(small.screen, {}).video, small.sources[0], 'a 1280 x 720 window stays a window share');
+    assert.deepEqual(small.calls.at(-1), ['close', 'no-fill']);
+
+    const failed = guardedSetup({ state: FULL, fail: true });
+    await failed.screen.list();
+    await failed.screen.pick('window:132456:0', 'auto');
+    assert.equal(ask(failed.screen, {}).video, failed.sources[0], 'no guard: no screen');
+
+    const border = guardedSetup({ state: FULL });
+    await border.screen.list();
+    await border.screen.pick('window:132456:0', 'auto', { border: true });
+    assert.equal(ask(border.screen, {}).video, border.sources[0]);
+    assert.equal(border.calls.some(c => c[0] === 'open'), false, 'the border switch starts no guard');
+
+    const other = guardedSetup({ state: FULL });
+    await other.screen.list();
+    await other.screen.pick('window:22:0', 'auto');
+    assert.equal(other.calls.some(c => c[0] === 'open'), false, 'a window with no screen thumbnail size starts no guard');
+    await other.screen.pick('screen:0:0', 'auto');
+    assert.equal(other.calls.some(c => c[0] === 'open'), false, 'a screen starts no guard');
 });

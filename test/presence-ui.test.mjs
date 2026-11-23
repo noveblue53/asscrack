@@ -206,3 +206,19 @@ test('Do not disturb does not change the voice view and calls no voice function'
     assert.deepEqual(voiceBridge, []);
     assert.deepEqual(f.errors, []);
 });
+
+// 1.0.4: the automatic status of the main process (auto-status.mjs) sends the new own state to the window.
+test('an automatic status change sets the own badge and the status menu; a bad value changes nothing', async () => {
+    const f = await room();
+    assert.equal(selfBadge(f).textContent, 'Available');
+    f.handlers.onOwnPresence({ state: 'away', note: 'raid at 9' });
+    assert.equal(selfBadge(f).textContent, 'Away: raid at 9');
+    assert.equal(f.el('presence-state').value, 'away');
+    assert.equal(f.el('presence-note').value, 'raid at 9');
+    f.handlers.onOwnPresence({ state: 'asleep', note: 'x' });
+    assert.equal(selfBadge(f).textContent, 'Away: raid at 9', 'an unknown state changes nothing');
+    f.handlers.onOwnPresence({ state: 'available', note: 'raid at 9' });
+    assert.equal(selfBadge(f).textContent, 'Available: raid at 9');
+    assert.equal(f.el('presence-state').value, 'available');
+    assert.deepEqual(f.errors, []);
+});
