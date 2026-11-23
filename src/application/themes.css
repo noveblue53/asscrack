@@ -127,12 +127,13 @@
 
 /* Use the artwork as a mask so the glyph uses the same contrasting ink as the button label. */
 #map-toggle { --glyph: url('img/icon-map.svg'); }
+#view-toggle { --glyph: url('img/icon-gear.svg'); }
 #attach-file { --glyph: url('img/icon-file.svg'); }
 #send { --glyph: url('img/icon-send.svg'); }
 #join-voice, #mute, #voice-settings-toggle { --glyph: url('img/icon-mic-dark.svg'); }
 #leave-voice { --glyph: url('img/icon-leave.svg'); }
 #mute[aria-pressed="true"] { --glyph: url('img/icon-mic-off.svg'); }
-:root[data-theme] :is(#map-toggle,#attach-file,#send,#join-voice,#leave-voice,#mute,#voice-settings-toggle)::before {
+:root[data-theme] :is(#map-toggle,#view-toggle,#attach-file,#send,#join-voice,#leave-voice,#mute,#voice-settings-toggle)::before {
   background: currentColor; mask: var(--glyph) center/contain no-repeat;
 }
 /* The arrow of Log In: the same method. A white picture has no contrast on the light Pearl button. */

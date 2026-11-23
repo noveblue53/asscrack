@@ -1,4 +1,5 @@
-// The room window layout: the separators, the View menu, the Buddies drawer and the saved layout preference.
+// The room window layout: the separators, the Settings menu (until 1.0.5 "View"), the Buddies drawer and the saved
+// layout preference.
 // Classic script. It loads before renderer.js. renderer.js stays the owner of the map (body.map-open, #map-toggle).
 //
 // window.layoutCore: pure functions (no DOM). test/layout.test.mjs tests them.
@@ -309,6 +310,14 @@
         const inRoom = body.classList.contains('chat');
         for (const line of viewMenu.querySelectorAll('[data-room-only]')) line.hidden = !inRoom;
         if (items.drawer) items.drawer.hidden = !inRoom || !(eff && eff.buddyMode === 'drawer');
+        // The update part of About (updates-ui.js loads after this file).
+        const updates = byId('view-updates');
+        if (updates) updates.hidden = !window.updatesUi;
+        // A group with no visible line is hidden: no heading with no lines. Other scripts show or hide some lines
+        // (startup-ui.js, window-frame.js), thus this runs each time the menu opens.
+        for (const group of viewMenu.querySelectorAll('.view-group')) {
+            group.hidden = !Array.from(group.querySelectorAll('[role^="menuitem"]')).some(line => !line.hidden);
+        }
         if (items.side) {
             items.side.textContent = pref.buddySide === 'left' ? 'Move Buddies to the right' : 'Move Buddies to the left';
         }
@@ -536,7 +545,7 @@
         });
     }
 
-    // ---- The View menu ----
+    // ---- The Settings menu ----
 
     function isMenuOpen() {
         return Boolean(viewMenu && !viewMenu.hidden);
@@ -544,7 +553,12 @@
 
     function menuItems() {
         if (!viewMenu) return [];
-        return Array.from(viewMenu.querySelectorAll('[role^="menuitem"]')).filter(item => !item.hidden);
+        // A line in a hidden group is hidden too.
+        const shows = item => {
+            for (let n = item; n && n !== viewMenu; n = n.parentNode) if (n.hidden) return false;
+            return true;
+        };
+        return Array.from(viewMenu.querySelectorAll('[role^="menuitem"]')).filter(shows);
     }
 
     function focusItem(index) {
@@ -589,6 +603,17 @@
     viewToggle?.addEventListener('pointerdown', rememberTranscript);
     viewToggle?.addEventListener('keydown', rememberTranscript);
 
+    // Show the voice controls of the Buddies panel (Buddies shown, the drawer open in the drawer mode).
+    function showVoiceControls() {
+        if (!pref.buddiesShown) setPref({ buddiesShown: true });
+        if (eff.buddyMode === 'drawer') openDrawer(viewToggle);
+    }
+
+    // Open About, then put the focus on one of its controls (the update part or Save diagnostics).
+    function openAboutAt(id) {
+        Promise.resolve(window.appShell?.openAbout()).then(() => byId(id)?.focus(), () => {});
+    }
+
     function activate(item, keepOpen) {
         if (!item) return;
         const isCheck = item.getAttribute('role') === 'menuitemcheckbox';
@@ -600,10 +625,13 @@
         }
         if (!stay) closeMenu(true);
         if (item.id === 'view-voice') {
-            if (!pref.buddiesShown) setPref({ buddiesShown: true });
-            if (eff.buddyMode === 'drawer') openDrawer(viewToggle);
+            showVoiceControls();
             const join = byId('join-voice');
             (join.hidden ? byId('mute') : join).focus({ preventScroll: true });
+        } else if (item.id === 'view-voice-settings') {
+            showVoiceControls();
+            const toggle = byId('voice-settings-toggle');
+            if (toggle && toggle.getAttribute('aria-expanded') !== 'true') toggle.click();
         } else if (item.id === 'detach-voice') window.roomVoiceMonitor?.open();
         else if (item.id === 'view-compact') {
             window.reading.keepPosition(() => {
@@ -628,7 +656,11 @@
         else if (item.id === 'view-close-idle') window.idlePeer?.toggleClose();
         else if (item.id === 'view-quit') window.appShell ? window.appShell.quit() : window.asscrack.quit();
         else if (item.id === 'view-shortcuts') window.appShell?.openShortcuts();
+        // The place of "What's new" (view-whats-new): just above About.
         else if (item.id === 'view-about') window.appShell?.openAbout();
+        else if (item.id === 'view-updates') openAboutAt('about-update-check');
+        else if (item.id === 'view-diag') openAboutAt('about-diag-save');
+        else if (item.id === 'view-availability') window.editAvailability?.();
         else if (item.id === 'view-startup') window.startupUi?.open();
         else if (item.id === 'view-clear-previews') void window.chatMedia?.clearPreviews();
         else if (item.id === 'view-previews') window.chatMedia?.toggleAuto();
@@ -675,6 +707,18 @@
         viewMenu.addEventListener('click', event => {
             const item = event.target.closest('[role^="menuitem"]');
             if (item && viewMenu.contains(item)) activate(item, false);
+        });
+        // Ctrl+, opens and closes the Settings menu. Not while a dialog is open (a modal dialog owns the keys).
+        doc.addEventListener('keydown', event => {
+            if (event.key !== ',' || !event.ctrlKey || event.altKey || event.shiftKey || event.metaKey) return;
+            if (event.repeat || event.defaultPrevented || doc.querySelector('dialog[open]')) return;
+            event.preventDefault();
+            if (isMenuOpen()) {
+                closeMenu(true);
+                return;
+            }
+            rememberTranscript();
+            openMenu(0);
         });
     }
 
