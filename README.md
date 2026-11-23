@@ -85,7 +85,7 @@ Windows SmartScreen may warn you the first time: click <b>More info → Run anyw
 
 ## How it works
 
-- **There is no server.** A room lives on your friends' PCs. If the host leaves, another trusted PC takes over and the room keeps going.
+- **There is no server.** A room lives on your friends' PCs. If the host leaves, a friend you picked as backup host takes over and the room keeps going.
 - **Every connection is encrypted** between the two PCs on each end.
 - **The owner decides who gets in.** Share a room code or invite a friend, then click Allow when they knock.
 - **On the same network**, friends find each other on their own. Over the internet, one of you needs an open port, and the app can ask your router for one.
