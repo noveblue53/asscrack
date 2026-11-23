@@ -203,7 +203,8 @@ test('the uninstaller deletes the same start entry, but not at an upgrade', () =
 
 test('the installer is a per-user nsis build next to the unchanged portable build', () => {
     const pkg = JSON.parse(readFileSync(new URL('package.json', root), 'utf8'));
-    assert.equal(pkg.scripts.dist, 'electron-builder --win portable --publish never');
+    // R103-1: the portable exe has its own product name, thus its own Start menu shortcut (windows-identity.mjs).
+    assert.equal(pkg.scripts.dist, 'electron-builder --win portable --publish never -c.productName="ASSCRACK Portable" -c.executableName=ASSCRACK');
     assert.equal(pkg.scripts['dist:installer'], 'electron-builder --win nsis --publish never');
     assert.equal(pkg.build.win.target, 'portable');
     assert.equal(pkg.build.portable.artifactName, 'ASSCRACK-${version}-portable.exe');

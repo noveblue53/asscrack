@@ -7,6 +7,25 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased: one Start menu identity for each kind of build (2026-11-22)
+
+- Fault: a start of the portable .exe changed the Start menu shortcut `ASSCRACK.lnk` and the toast registration of the
+  installed copy. Both then pointed to the unpack folder of the portable .exe, which Windows deletes at exit. A click
+  on a toast or on the shortcut then did not start the app. On this PC this occurred to the installed copy during a
+  test. A dev start (`electron .`) changed the toast registration in the same way.
+- Cause: Electron 45 writes the shortcut `<product name of the exe>.lnk` and the toast registration
+  (`HKCU\Software\Classes\CLSID\<toast CLSID>\LocalServer32`) with the path of the running exe when the app makes
+  its first notification. All kinds of build had the same identity.
+- Fix: each kind of build has its own identity. The installed build keeps `ASSCRACK.lnk` and `com.asscrack.app`. The
+  portable build has the product name "ASSCRACK Portable" (`npm run dist`), the shortcut `ASSCRACK Portable.lnk`,
+  `com.asscrack.portable` and its own toast CLSID. After Electron writes them, the app points them to the portable
+  .exe, not to the unpack folder. A dev start uses `com.asscrack.dev` and its own CLSID (shortcut `Electron.lnk`). A
+  packaged exe started with `--profile` shows no desktop notifications, because its product name can be the name of
+  the installed copy.
+- **127.0.0.1**: `test/windows-identity.test.mjs` has 7 tests. On the code before the fix, the file fails (no
+  module). With only the new module added, 2 tests fail: the identity in `main.js` and the build script. After the
+  fix, all 7 pass.
+
 ## Unreleased: the image menu and the preview of the own share (2026-11-22)
 
 - Image menu (operator request: "right click here and save/copy image"). A right-click on a chat image shows "Copy

@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { ATTENTION_DEFAULTS, attentionSettings, createAttention, migrateAttention, muteActive, muteStore, muteUntil, noticeText, roomMuteId, registerNotificationShortcut, WINDOWS_APP_ID, WINDOWS_TOAST_ID } from '../src/application/attention.mjs';
+import { ATTENTION_DEFAULTS, attentionSettings, createAttention, migrateAttention, muteActive, muteStore, muteUntil, noticeText, roomMuteId } from '../src/application/attention.mjs';
 
 function setup() {
     const state = { prefs: { mentionAlert: true, whisperAlert: true, friendAlert: true, sound: false, previews: false }, quiet: false, allowed: true, room: {} };
@@ -115,24 +115,6 @@ test('a 1.0.x file gets the new defaults one time, keeps its real choices, and l
     assert.deepEqual(migrateAttention(null), ATTENTION_DEFAULTS);
     writeFileSync(file, '{bad');
     assert.deepEqual(attentionSettings(file).get(), ATTENTION_DEFAULTS);
-});
-
-test('portable notification identity uses the stable executable and preserves unrelated Start Menu shortcuts', t => {
-    const dir = mkdtempSync(path.join(os.tmpdir(), 'ac-shortcut-'));
-    t.after(() => rmSync(dir, { recursive: true, force: true }));
-    const calls = [];
-    let details = {};
-    const shell = { readShortcutLink: () => details, writeShortcutLink(file, op, value) {
-        calls.push([op, value]); details = value; writeFileSync(file, 'shortcut fixture'); return true;
-    } };
-    const opts = { appData: dir, executable: 'C:\\Games\\ASSCRACK.exe', shell };
-    registerNotificationShortcut(opts); registerNotificationShortcut(opts);
-    assert.deepEqual(calls, [['create', { target: opts.executable, args: '', appUserModelId: WINDOWS_APP_ID, toastActivatorClsid: WINDOWS_TOAST_ID }]]);
-    registerNotificationShortcut({ ...opts, executable: 'D:\\ASSCRACK.exe' });
-    assert.equal(calls[1][0], 'update');
-    details = { appUserModelId: 'other-app' };
-    assert.throws(() => registerNotificationShortcut(opts), /another app/);
-    assert.equal(calls.length, 2);
 });
 
 // ---- Message alerts (2026-11-22): who and where, every message, voice, one notification for each conversation ----

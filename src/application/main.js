@@ -19,7 +19,8 @@ import path from 'path';
 import os from 'os';
 import { mkdirSync, appendFileSync, existsSync, readFileSync, writeFileSync, renameSync, rmSync, readdirSync, statSync } from 'fs';
 import { copyFile, rename, unlink, writeFile } from 'fs/promises';
-import { format } from 'util';
+import { format, promisify } from 'util';
+import { execFile } from 'child_process';
 import { createAsscrackNode, keyedServiceTag } from '../network/node.mjs';
 import { isRoomCode, newRoomKey, readInvite, readRoomCode } from '../network/invite.mjs';
 import { knockRoom } from '../network/knock-client.mjs';
@@ -32,7 +33,8 @@ import { createSavedRooms, makeProtector } from './saved-rooms.mjs';
 import { roomFingerprint } from './room-archive.mjs';
 import * as voiceSettings from './voice-settings.mjs';
 import { listeningRoomTag, listeningStore } from './listening-store.mjs';
-import { ALERT_KEYS, attentionSettings, createAttention, muteStore, roomMuteId, overlayDotBitmap, overlayShareBitmap, registerNotificationShortcut, WINDOWS_APP_ID, WINDOWS_TOAST_ID } from './attention.mjs';
+import { ALERT_KEYS, attentionSettings, createAttention, muteStore, roomMuteId, overlayDotBitmap, overlayShareBitmap } from './attention.mjs';
+import { localServerRegistry, repairPortableIdentity, windowsIdentity } from './windows-identity.mjs';
 import { createPttHook } from './ptt-hook.mjs';
 import { createWindowFrame } from './window-frame.mjs';
 import { attachVoiceMonitor } from './voice-monitor.mjs';
@@ -66,11 +68,6 @@ Menu.setApplicationMenu(null);
 protocol.registerSchemesAsPrivileged([{ scheme: 'room-media', privileges: {
     standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true
 } }, { scheme: APP_SCHEME, privileges: APP_PRIVILEGES }]);
-if (process.platform === 'win32') {
-    app.setAppUserModelId(WINDOWS_APP_ID);
-    app.setToastActivatorCLSID(WINDOWS_TOAST_ID);
-}
-
 const EVENTS = ['channels', 'peer-discovered', 'peer-joined', 'peer-left', 'message', 'history', 'voice-state', 'voice-roster', 'host-changed', 'peer-name',
     'file-offer', 'file-retried', 'file-progress', 'file-done', 'file-failed', 'file-refused', 'file-cancelled', 'topology', 'full-node', 'full-node-addrs',
     'voice-frame', 'connection', 'dial-failed', 'upnp', 'presence', 'topic', 'voice-channels',
@@ -79,6 +76,18 @@ const EVENTS = ['channels', 'peer-discovered', 'peer-joined', 'peer-left', 'mess
 
 // Test option: --profile <dir> gives each instance its own user data folder.
 const profileIndex = process.argv.indexOf('--profile');
+// R103-1 (windows-identity.mjs): the AUMID and the toast CLSID of this kind of build. Electron writes a Start menu
+// shortcut and a CLSID key for them when it makes the notification presenter. A dev start or a start with --profile
+// thus never uses the shortcut or the CLSID of the installed copy. The test kind never makes the presenter.
+const winIdentity = windowsIdentity({ isPackaged: app.isPackaged, profile: profileIndex !== -1,
+    portableFile: process.env.PORTABLE_EXECUTABLE_FILE || null,
+    installed: isInstalledBuild({ platform: process.platform, isPackaged: app.isPackaged, env: process.env,
+        execPath: process.execPath, exists: existsSync }) });
+if (process.platform === 'win32') {
+    app.setAppUserModelId(winIdentity.appId);
+    app.setToastActivatorCLSID(winIdentity.clsid);
+}
+const winToasts = process.platform !== 'win32' || winIdentity.toasts;
 // One data folder (data-folder.mjs): the portable build uses "ASSCRACK Data" next to the .exe, the installed build
 // <install folder>\data, --profile its folder, npm start the Electron default. Each path is set before ready.
 const dataFolder = chooseDataFolder({ argv: process.argv, env: process.env, isPackaged: app.isPackaged,
@@ -427,6 +436,8 @@ const attention = createAttention({
     // Message alerts: the show and failed events of Windows go to the log too (a check that the toast came).
     notify: options => {
         writeLog('EVENT', 'notification requested');
+        // The test kind (R103-1): no presenter, thus no notification. attention.mjs catches the error.
+        if (!winToasts) throw new Error('No desktop notifications in this kind of start.');
         const notice = new Notification(options);
         notice.once('show', () => writeLog('EVENT', 'notification shown'));
         notice.once('failed', () => writeLog('WARN', 'notification failed'));
@@ -445,13 +456,22 @@ const attention = createAttention({
     channelName: channelId => node?.channels().channels.find(channel => channel.id === channelId)?.name ?? ''
 });
 
+// R103-1: Notification.isSupported() makes the presenter, and Electron then writes the shortcut and the CLSID key of
+// this identity. A portable start then points them to the portable .exe (one time for each run).
+let portableRepair = null;
 function registerAlerts() {
+    if (!winToasts) { writeLog('INFO', 'notification identity test: no desktop notifications'); return; }
     if (!Notification.isSupported()) throw new Error('Desktop notifications are unavailable on this system.');
-    if (process.platform === 'win32' && app.isPackaged) {
-        registerNotificationShortcut({
-            appData: app.getPath('appData'),
-            executable: process.env.PORTABLE_EXECUTABLE_FILE || process.execPath, shell
-        });
+    if (process.platform === 'win32' && winIdentity.kind === 'portable' && !portableRepair) {
+        const run = promisify(execFile);
+        portableRepair = repairPortableIdentity({
+            programsDir: path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
+            portableFile: process.env.PORTABLE_EXECUTABLE_FILE, execPath: process.execPath, shell,
+            registry: localServerRegistry((file, args) => run(file, args, { windowsHide: true })),
+            sleep: ms => new Promise(resolve => setTimeout(resolve, ms))
+        }).then(result => writeLog('INFO', `notification identity portable: shortcut ${result.shortcut}, server ${result.server}` +
+            (result.timedOut ? ' (no Electron write in time)' : '')))
+            .catch(err => writeLog('WARN', `notification identity portable not repaired: ${err?.message ?? err}`));
     }
 }
 

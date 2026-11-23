@@ -1,8 +1,7 @@
 // Native notifications belong to the current room session. Only the most recent target
 // in each conversation survives a burst. Nothing from this queue goes to disk or logs.
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import path from 'node:path';
+import { readFileSync, renameSync, writeFileSync } from 'node:fs';
 
 // Settings version 2 (message alerts, 2026-11-22): a grid of rows (chat: every room line, mention, whisper, friend,
 // voice: other people join or leave voice) and columns (Sound, Notification). version 1 (1.0.x) had one alerts box that
@@ -99,27 +98,10 @@ export function overlayShareBitmap() {
     return { buffer: pixels, width: side, height: side };
 }
 
+// The Windows identity of the installed build. Electron writes its Start menu shortcut and its CLSID key
+// (windows-identity.mjs, R103-1). The other kinds of build have their own values.
 export const WINDOWS_APP_ID = 'com.asscrack.app';
 export const WINDOWS_TOAST_ID = '{6CC57D8B-D0F0-4B19-AF70-A15B20DF2658}';
-
-// A portable executable has no installer to register its Start Menu identity.
-// Retain a stable target across unpacking to a different temporary folder.
-export function registerNotificationShortcut({ appData, executable, args = '', shell }) {
-    const dir = path.join(appData, 'Microsoft', 'Windows', 'Start Menu', 'Programs');
-    const file = path.join(dir, 'ASSCRACK.lnk');
-    mkdirSync(dir, { recursive: true });
-    const present = existsSync(file);
-    if (present) {
-        const old = shell.readShortcutLink(file);
-        if (old.appUserModelId !== WINDOWS_APP_ID) throw new Error('The Start menu shortcut belongs to another app.');
-        if (old.target === executable && (old.args || '') === args &&
-            old.toastActivatorClsid?.toLowerCase() === WINDOWS_TOAST_ID.toLowerCase()) return;
-    }
-    const ok = shell.writeShortcutLink(file, present ? 'update' : 'create', {
-        target: executable, args, appUserModelId: WINDOWS_APP_ID, toastActivatorClsid: WINDOWS_TOAST_ID
-    });
-    if (!ok) throw new Error('Windows couldn\'t add the notification shortcut.');
-}
 
 // A display name from the window or the node: no control characters, at most 64 characters.
 function cleanName(value) {
