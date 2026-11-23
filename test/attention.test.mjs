@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { ATTENTION_DEFAULTS, attentionSettings, createAttention, migrateAttention, registerNotificationShortcut, WINDOWS_APP_ID, WINDOWS_TOAST_ID } from '../src/application/attention.mjs';
+import { ATTENTION_DEFAULTS, attentionSettings, createAttention, migrateAttention, noticeText, registerNotificationShortcut, WINDOWS_APP_ID, WINDOWS_TOAST_ID } from '../src/application/attention.mjs';
 
 function setup() {
     const state = { prefs: { mentionAlert: true, whisperAlert: true, friendAlert: true, sound: false, previews: false }, quiet: false, allowed: true, room: {} };
@@ -28,7 +28,8 @@ test('native alerts coalesce each conversation, deduplicate live IDs, and open t
     attention.add(mention('a')); attention.add(mention('a')); attention.add(mention('b')); attention.add(whisper('p'));
     advance();
     assert.deepEqual(notices.map(n => [n.title, n.body, n.silent]), [
-        ['ASSCRACK', '2 new mentions', true], ['ASSCRACK', 'New private message', true]
+        // Message alerts: the title tells who and where (no names in this fixture).
+        ['Someone in #general', '2 new mentions', true], ['Someone (whisper)', 'New message', true]
     ]);
     attention.add(mention('c'));
     notices[0].emit('click');
@@ -45,7 +46,7 @@ test('native preview and sound are opt-in; private targets and content never app
     state.prefs.previews = true;
     state.prefs.sound = true;
     attention.add(mention('a')); attention.add(whisper('b')); advance();
-    assert.deepEqual(notices.map(n => [n.body, n.silent]), [['public preview', false], ['New private message', false]]);
+    assert.deepEqual(notices.map(n => [n.body, n.silent]), [['public preview', false], ['New message', false]]);
 });
 
 test('read, disabled, idle/DND and room/access changes suppress pending and stale native attention', () => {
@@ -125,4 +126,72 @@ test('portable notification identity uses the stable executable and preserves un
     details = { appUserModelId: 'other-app' };
     assert.throws(() => registerNotificationShortcut(opts), /another app/);
     assert.equal(calls.length, 2);
+});
+
+// ---- Message alerts (2026-11-22): who and where, every message, voice, one notification for each conversation ----
+
+test('the title tells who and where; the body is the text with previews on, else a short text', () => {
+    assert.deepEqual(noticeText({ kind: 'message', name: 'Sam', channel: 'games', preview: 'gg' }), { title: 'Sam in #games', body: 'gg' });
+    assert.deepEqual(noticeText({ kind: 'message', name: 'Sam', channel: 'general' }), { title: 'Sam in #general', body: 'New message' });
+    assert.deepEqual(noticeText({ kind: 'message', name: 'Sam', channel: 'general', count: 3, mentions: 1 }),
+        { title: 'Sam in #general', body: '3 new messages' });
+    assert.deepEqual(noticeText({ kind: 'mention', name: 'Sam', channel: 'general', mentions: 1 }), { title: 'Sam in #general', body: 'Mentioned you' });
+    assert.deepEqual(noticeText({ kind: 'mention', name: 'Sam', channel: 'general', count: 2, mentions: 2 }),
+        { title: 'Sam in #general', body: '2 new mentions' });
+    assert.deepEqual(noticeText({ kind: 'mention', name: 'Sam', channel: 'general', mentions: 1, preview: 'hi Parker' }),
+        { title: 'Sam in #general', body: 'hi Parker' });
+    // A whisper and a friend line never show their text.
+    assert.deepEqual(noticeText({ kind: 'whisper', name: 'Alex', preview: 'secret' }), { title: 'Alex (whisper)', body: 'New message' });
+    assert.deepEqual(noticeText({ kind: 'whisper', name: 'Alex', count: 2 }), { title: 'Alex (whisper)', body: '2 new messages' });
+    assert.deepEqual(noticeText({ kind: 'friend', name: 'Ben' }), { title: 'Ben', body: 'New message' });
+    assert.deepEqual(noticeText({ kind: 'friend', name: 'Ben', away: 3 }), { title: 'Ben', body: '3 messages while you were away' });
+    assert.deepEqual(noticeText({ kind: 'friend', name: '', away: 1 }), { title: 'A friend', body: 'Sent while you were away' });
+    assert.deepEqual(noticeText({ kind: 'voice', name: 'Sam', joined: true }), { title: 'Sam', body: 'Joined voice' });
+    assert.deepEqual(noticeText({ kind: 'voice', name: 'Sam', joined: false }), { title: 'Sam', body: 'Left voice' });
+    // Control characters and a long name do not reach the title.
+    assert.equal(noticeText({ kind: 'message', name: 'S\u0007am' + 'x'.repeat(100), channel: 'a\nb' }).title,
+        'S am' + 'x'.repeat(60) + ' in #a b');
+});
+
+test('a plain line and a mention of one channel replace one notification; each row of the grid gates its kind', () => {
+    const notices = [], timers = new Set();
+    const prefs = { chatAlert: true, mentionAlert: true, whisperAlert: true, friendAlert: true, voiceAlert: false, previews: true, sound: false };
+    const attention = createAttention({
+        settings: () => prefs, room: () => 'room', quiet: () => false, allowed: () => true, navigate: () => {},
+        notify: options => Object.assign(new EventEmitter(), { ...options, close() { this.closed = true; this.emit('close'); }, show() { notices.push(this); } }),
+        peerName: id => ({ p1: 'Alex' })[id] ?? '', channelName: id => ({ c1: 'games' })[id] ?? '',
+        schedule(fn) { timers.add(fn); return fn; }, cancel(fn) { timers.delete(fn); }
+    });
+    const advance = () => { for (const fn of [...timers]) { timers.delete(fn); fn(); } };
+    attention.add({ kind: 'message', channelId: 'c1', id: 'a', name: 'Sam', preview: 'first' });
+    advance();
+    assert.deepEqual(notices.map(n => [n.title, n.body]), [['Sam in #games', 'first']]);
+    attention.add({ kind: 'mention', channelId: 'c1', id: 'b', name: 'Sam', preview: 'hi Parker' });
+    attention.add({ kind: 'message', channelId: 'c1', id: 'c', name: 'Kim', preview: 'last' });
+    advance();
+    assert.equal(notices.length, 2);
+    assert.equal(notices[0].closed, true, 'the new notification replaces the old one of the same channel');
+    assert.deepEqual([notices[1].title, notices[1].body], ['Kim in #games', 'last']);
+    // The voice row is off by default; a whisper title has the name from the node.
+    attention.add({ kind: 'voice', peerId: 'p1', id: 'v1', joined: true });
+    attention.add({ kind: 'whisper', peerId: 'p1', id: 'w1', preview: 'secret' });
+    advance();
+    assert.deepEqual(notices.slice(2).map(n => [n.title, n.body]), [['Alex (whisper)', 'New message']]);
+    prefs.voiceAlert = true;
+    attention.add({ kind: 'voice', peerId: 'p1', id: 'v2', joined: true });
+    advance();
+    assert.deepEqual([notices.at(-1).title, notices.at(-1).body], ['Alex', 'Joined voice']);
+    // The row of all messages off: no plain line. A mention follows that row only when its own row is off.
+    prefs.chatAlert = false;
+    attention.add({ kind: 'message', channelId: 'c1', id: 'd', name: 'Sam' });
+    advance();
+    assert.equal(notices.length, 4);
+    prefs.mentionAlert = false;
+    attention.add({ kind: 'mention', channelId: 'c1', id: 'e', name: 'Sam' });
+    advance();
+    assert.equal(notices.length, 4);
+    prefs.chatAlert = true;
+    attention.add({ kind: 'mention', channelId: 'c1', id: 'f', name: 'Sam' });
+    advance();
+    assert.equal(notices.length, 5);
 });

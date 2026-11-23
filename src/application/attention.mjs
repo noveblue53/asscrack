@@ -116,41 +116,67 @@ export function registerNotificationShortcut({ appData, executable, args = '', s
     if (!ok) throw new Error('Windows couldn\'t add the notification shortcut.');
 }
 
+// A display name from the window or the node: no control characters, at most 64 characters.
+function cleanName(value) {
+    return typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 64) : '';
+}
+
+const shortId = value => typeof value === 'string' && value && value.length <= 128;
+
 function targetOf(raw) {
-    if (!raw || typeof raw.id !== 'string' || !raw.id || raw.id.length > 128) return null;
-    if (raw.kind === 'whisper' && typeof raw.peerId === 'string' && raw.peerId && raw.peerId.length <= 128)
-        return { kind: 'whisper', peerId: raw.peerId, id: raw.id };
-    if (raw.kind === 'mention' && typeof raw.channelId === 'string' && raw.channelId && raw.channelId.length <= 128)
-        return { kind: 'mention', channelId: raw.channelId, id: raw.id };
+    if (!raw || !shortId(raw.id)) return null;
+    if (raw.kind === 'whisper' && shortId(raw.peerId)) return { kind: 'whisper', peerId: raw.peerId, id: raw.id };
+    // Message alerts: a mention and a plain room line ('message') of one channel are one conversation. name: the
+    // sender name that the room line shows.
+    if ((raw.kind === 'mention' || raw.kind === 'message') && shortId(raw.channelId))
+        return { kind: raw.kind, channelId: raw.channelId, id: raw.id, name: cleanName(raw.name) };
     // G7b: a friend line (as a whisper). away: the number of lines of a batch that was sent while this device was away.
-    if (raw.kind === 'friend' && typeof raw.friendId === 'string' && raw.friendId && raw.friendId.length <= 128) {
+    if (raw.kind === 'friend' && shortId(raw.friendId)) {
         const away = Number.isInteger(raw.away) && raw.away > 0 && raw.away <= 10000 ? raw.away : 0;
         return { kind: 'friend', friendId: raw.friendId, id: raw.id, away };
     }
+    // Message alerts: a different person joins or leaves voice (the row of voice in the settings grid).
+    if (raw.kind === 'voice' && shortId(raw.peerId)) return { kind: 'voice', peerId: raw.peerId, id: raw.id, joined: raw.joined === true };
     return null;
 }
 
-// G7b: the text of a friend notification. name: the nickname of the friend (from the main process, not the window).
-export function friendNotice(name, count, away) {
-    const who = name || 'A friend';
-    if (away > 0) return away === 1 ? `${who} sent you a message while you were away.` : `${who} sent you ${away} messages while you were away.`;
-    return count > 1 ? `${count} new private messages from ${who}` : `New private message from ${who}`;
+// The title and the body of a notification (message alerts, operator 2026-11-22): the title tells who and where, the
+// body is the text (previews on) or a short text. A whisper and a friend line never show their text: they are private.
+// kind: 'mention', 'message', 'whisper', 'friend' or 'voice'. count: the lines since the last notification of this
+// conversation; mentions: how many of them are mentions. channel: the channel name with no '#'.
+export function noticeText({ kind, name, channel, count = 1, mentions = 0, preview = '', away = 0, joined = true }) {
+    const who = cleanName(name) || (kind === 'friend' ? 'A friend' : 'Someone');
+    const lines = n => (n > 1 ? `${n} new messages` : 'New message');
+    if (kind === 'friend') {
+        const body = away > 1 ? `${away} messages while you were away` : away === 1 ? 'Sent while you were away' : lines(count);
+        return { title: who, body };
+    }
+    if (kind === 'whisper') return { title: `${who} (whisper)`, body: lines(count) };
+    if (kind === 'voice') return { title: who, body: joined ? 'Joined voice' : 'Left voice' };
+    const title = `${who} in #${cleanName(channel) || 'general'}`;
+    if (preview) return { title, body: preview };
+    if (count > 1) return { title, body: mentions === count ? `${count} new mentions` : lines(count) };
+    return { title, body: mentions ? 'Mentioned you' : 'New message' };
 }
 
 // The Notification column of the settings grid for a target. A mention that its row does not allow follows the row of
 // every message (the window applies the room size rule of that row).
 export function alertOn(prefs, target) {
     if (target.kind === 'mention') return prefs.mentionAlert === true || prefs.chatAlert === true;
+    if (target.kind === 'message') return prefs.chatAlert === true;
     return prefs[ALERT_KEYS[target.kind]] === true;
 }
 
 // friendName(friendId): G7b, the nickname of a friend for the text. A friend notification does not belong to the room
 // session: the friend links run on the login screen too.
+// peerName(peerId) and channelName(channelId): message alerts, the names of the title (from the node).
 export function createAttention({ settings, room, quiet, allowed, notify, navigate, friendName = () => '',
-    schedule = (fn, ms) => setTimeout(fn, ms), cancel = clearTimeout }) {
+    peerName = () => '', channelName = () => '', schedule = (fn, ms) => setTimeout(fn, ms), cancel = clearTimeout }) {
     const groups = new Map();
     const seen = new Set();
-    const keyOf = obj => obj.kind + '/' + (obj.friendId ?? obj.peerId ?? obj.channelId);
+    // One notification for each conversation: a mention and a plain line of one channel replace each other.
+    const keyOf = obj => obj.kind === 'voice' ? 'voice'
+        : (obj.kind === 'message' ? 'mention' : obj.kind) + '/' + (obj.friendId ?? obj.peerId ?? obj.channelId);
     const roomOf = target => target.kind === 'friend' ? 'friends' : room();
 
     function dismiss(key) {
@@ -170,23 +196,26 @@ export function createAttention({ settings, room, quiet, allowed, notify, naviga
         if (groups.get(key) !== group) return;
         if (!eligible(group)) return dismiss(key);
         const prefs = settings();
-        const privateMessage = group.target.kind === 'whisper';
-        let body = privateMessage ? 'New private message' : 'You were mentioned';
-        if (group.count > 1) body = privateMessage ? group.count + ' new private messages' : group.count + ' new mentions';
-        else if (!privateMessage && prefs.previews && group.preview) body = group.preview;
-        if (group.target.kind === 'friend') body = friendNotice(friendName(group.target.friendId), group.count, group.target.away);
+        const target = group.target;
+        const name = target.kind === 'friend' ? friendName(target.friendId)
+            : target.kind === 'whisper' || target.kind === 'voice' ? peerName(target.peerId) : target.name;
+        const { title, body } = noticeText({ kind: target.kind, name, channel: target.channelId === 'general' ? 'general'
+            : channelName(target.channelId), count: group.count, mentions: group.mentions,
+            preview: prefs.previews ? group.preview : '', away: target.away, joined: target.joined });
         group.preview = '';
         group.count = 0;
+        group.mentions = 0;
         const shown = { ...group, target: group.target };
         const previous = group.notice;
         group.notice = null;
         previous?.close();
         try {
-            const notice = notify({ title: 'ASSCRACK', body, silent: !prefs.sound });
+            const notice = notify({ title, body, silent: !prefs.sound });
             group.notice = notice;
             notice.once('click', () => {
                 if (groups.get(key) !== group || group.notice !== notice || !eligible(shown)) return;
-                const target = shown.target;
+                // The window gets a routing reference, not the name of the title.
+                const { name: _name, ...target } = shown.target;
                 dismiss(key);
                 navigate(target);
             });
@@ -219,8 +248,9 @@ export function createAttention({ settings, room, quiet, allowed, notify, naviga
             if (!groups.has(key) && groups.size >= 64) dismiss(groups.keys().next().value);
             groups.set(key, group);
             group.count++;
-            group.preview = target.kind === 'mention' && settings().previews && typeof raw.preview === 'string'
-                ? raw.preview.slice(0, 160) : '';
+            if (target.kind === 'mention') group.mentions = (group.mentions ?? 0) + 1;
+            group.preview = (target.kind === 'mention' || target.kind === 'message') && settings().previews &&
+                typeof raw.preview === 'string' ? raw.preview.slice(0, 160) : '';
             if (!group.timer) group.timer = schedule(() => {
                 group.timer = null;
                 present(key, group);

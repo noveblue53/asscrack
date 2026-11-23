@@ -406,6 +406,7 @@ const attention = createAttention({
     allowed: target => target.kind === 'friend' ? friendLinks.friend(target.friendId) !== null
         : target.kind === 'whisper'
         ? node?.whisperPeers().includes(target.peerId)
+        : target.kind === 'voice' ? !!node
         : target.channelId === 'general' || node?.channels().channels.some(channel => channel.id === target.channelId),
     // G7b: one log line for each notification (no name, no text).
     notify: options => { writeLog('EVENT', 'notification requested'); return new Notification(options); },
@@ -413,9 +414,13 @@ const attention = createAttention({
     navigate: target => {
         if (target.kind === 'friend') { friendWindows.open(target.friendId); return; }
         restoreRoomWindow();
-        sendToWindow('asscrack:attention-open', target);
+        if (target.kind !== 'voice') sendToWindow('asscrack:attention-open', target);
     },
-    friendName: friendId => friendLinks.friend(friendId)?.name ?? ''
+    friendName: friendId => friendLinks.friend(friendId)?.name ?? '',
+    // Message alerts: the title tells who and where. The names come from the node, not from the window (a room line
+    // brings the name that its row shows).
+    peerName: peerId => node?.peerNames()?.[peerId] ?? '',
+    channelName: channelId => node?.channels().channels.find(channel => channel.id === channelId)?.name ?? ''
 });
 
 function registerAlerts() {

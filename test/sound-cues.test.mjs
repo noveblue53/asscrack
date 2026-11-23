@@ -456,3 +456,54 @@ test('a mention with its Sound box off uses the row of all messages', async () =
     assert.deepEqual(f.played, []);
     assert.equal(chatCues(tones), 1);
 });
+
+// ---- Message alerts: the notification rules of the window (attention.js) ----
+
+test('a plain line outside my view goes to the notification with the sender name and the text; in view it does not', async () => {
+    const f = await room({ chatAlert: true, previews: true });
+    f.receive({ from: 'Sam', text: 'in view', peerId: SAM, id: 'n0' });
+    assert.deepEqual(f.adds(), [], 'in view');
+    f.state.focus = false;
+    f.receive({ from: 'Parker', text: 'mine', peerId: SELF, id: 'n1' });
+    f.receive({ from: 'Sam', text: 'hello all', peerId: SAM, id: 'n2' });
+    assert.deepEqual(f.adds().map(c => ({ ...c.args[0] })), [{ kind: 'message', channelId: 'general', id: 'n2', name: 'Sam', preview: 'hello all' }]);
+    // Previews off: no text goes to the main process.
+    const g = await room({ chatAlert: true, previews: false });
+    g.state.focus = false;
+    g.receive({ from: 'Sam', text: 'hello all', peerId: SAM, id: 'n3' });
+    assert.equal(g.adds()[0].args[0].preview, '');
+    // Do not disturb: nothing.
+    const d = await room({ chatAlert: true });
+    d.state.focus = false;
+    await d.dnd();
+    d.receive({ from: 'Sam', text: 'hello all', peerId: SAM, id: 'n4' });
+    assert.deepEqual(d.adds(), []);
+});
+
+test('the row of all messages notifies only in a room of at most 10 people; a mention notifies in a big room', async () => {
+    const others = Array.from({ length: 10 }, (_, i) => ['12D3KooWpeer' + String(i).padStart(12, '0'), 'P' + i]);
+    const big = await room({ chatAlert: true, mentionAlert: true }, others);
+    big.state.focus = false;
+    big.receive({ from: 'P1', text: 'hello all', peerId: others[1][0], id: 'g1' });
+    big.receive({ from: 'P2', text: 'hi Parker', peerId: others[2][0], id: 'g2' });
+    assert.deepEqual(big.adds().map(c => [c.args[0].kind, c.args[0].id]), [['mention', 'g2']]);
+    const small = await room({ chatAlert: true, mentionAlert: true }, others.slice(0, 9));
+    small.state.focus = false;
+    small.receive({ from: 'P1', text: 'hello all', peerId: others[1][0], id: 's1' });
+    assert.deepEqual(small.adds().map(c => [c.args[0].kind, c.args[0].id]), [['message', 's1']], '10 people');
+});
+
+test('voice join and leave notify only with their box on, and not while the window is in view', async () => {
+    const off = await room({});
+    off.state.focus = false;
+    off.window.roomAttention.voice('other-join', SAM);
+    assert.deepEqual(off.adds(), []);
+    const on = await room({ voiceAlert: true });
+    on.window.roomAttention.voice('other-join', SAM);
+    assert.deepEqual(on.adds(), [], 'in view');
+    on.state.focus = false;
+    on.window.roomAttention.voice('other-leave', SAM);
+    const sent = on.adds().map(c => c.args[0]);
+    assert.equal(sent.length, 1);
+    assert.deepEqual({ ...sent[0], id: 'x' }, { kind: 'voice', peerId: SAM, id: 'x', joined: false });
+});

@@ -83,6 +83,8 @@
         // G7b: a friend line is in view only when the chat window of that friend has the focus (main.js tells it).
         if (target.kind === 'friend') return target.focused === true;
         if (!document.hasFocus() || document.visibilityState !== 'visible' || byId('chat-screen').hidden) return false;
+        // Voice join and leave: the room window is in view.
+        if (target.kind === 'voice') return true;
         if (target.kind === 'whisper') return !!window.whispers?.isViewing(target.peerId);
         if (window.whispers?.isOpen()) return false;
         return window.roomChannels?.isViewing(target.channelId) ?? target.channelId === 'general';
@@ -108,19 +110,29 @@
     function alertOn(target) {
         if (!prefs) return false;
         if (target.kind === 'mention') return prefs.mentionAlert === true;
+        if (target.kind === 'message') return prefs.chatAlert === true;
         return prefs[ALERT[target.kind]] === true;
     }
 
     // The native notification. It keeps its own column of the settings grid.
     function notify(target) {
         if (!alertOn(target) || !wanted(target)) return;
-        const key = target.kind + '/' + (target.friendId ?? target.peerId ?? target.channelId);
-        // Keep only a routing reference here, even when public previews are enabled.
-        const { preview, from, focused, ...route } = target;
+        // The key of attention.mjs: a mention and a plain line of one channel are one conversation.
+        const key = target.kind === 'voice' ? 'voice'
+            : (target.kind === 'message' ? 'mention' : target.kind) + '/' + (target.friendId ?? target.peerId ?? target.channelId);
+        // Keep only a routing reference here, even when public previews are enabled. A room line also sends the
+        // name that its row shows (the title of the notification).
+        const { preview, from, focused, name, ...route } = target;
         pending.delete(key);
         pending.set(key, route);
         if (pending.size > 64) pending.delete(pending.keys().next().value);
-        api.addAttention(from === undefined ? route : { ...route, preview });
+        api.addAttention(from === undefined || route.kind === 'voice' ? route : { ...route, preview, name });
+    }
+
+    // The row "All messages" notifies only in a small room: at most 10 people (me included) when the line comes.
+    const SMALL_ROOM = 10;
+    function roomSize() {
+        return (typeof peerItems === 'undefined' ? 0 : peerItems.size) + 1;
     }
 
     // Gap E1: the taskbar flash and the overlay dot. main.js flashes only a window with no focus that is not hidden
@@ -164,13 +176,26 @@
             if (matched && prefs?.mentionSound) cue('mention', 'message', target);
             else cue('chat', 'chat', target);
         }
-        if (!matched || !alertOn(target)) return;
+        // The notification: a mention by its row; a plain line (or a mention with its row off) by the row of all
+        // messages in a small room.
+        let kind = null;
+        if (matched && prefs?.mentionAlert) kind = 'mention';
+        else if (prefs?.chatAlert && roomSize() <= SMALL_ROOM) kind = 'message';
+        if (!kind) return;
         const quote = prefs.previews && window.quoteCore.split(data.text);
-        notify({ ...target, preview: prefs.previews ? (quote ? quote.rest : data.text).slice(0, 160) : '' });
+        notify({ ...target, kind, name: typeof data.from === 'string' ? data.from : '',
+            preview: prefs.previews ? (quote ? quote.rest : data.text).slice(0, 160) : '' });
+    }
+
+    // renderer.js: a different person joins or leaves voice (a real change, not the state at the start of a
+    // session). Only the notification: the cue of voice keeps its own rule (it plays only while I am in voice).
+    function voice(kind, peerId) {
+        if (typeof peerId !== 'string' || !peerId || (kind !== 'other-join' && kind !== 'other-leave')) return;
+        notify({ kind: 'voice', peerId, id: peerId + '/' + Date.now(), joined: kind === 'other-join', from: peerId });
     }
 
     function openTarget(target) {
-        if (quiet() || byId('chat-screen').hidden) return;
+        if (quiet() || byId('chat-screen').hidden || target?.kind === 'voice') return;
         if (target.kind === 'whisper') {
             window.whispers?.open(target.peerId, target.id);
             return;
@@ -300,7 +325,7 @@
     document.addEventListener('visibilitychange', viewChanged);
     window.addEventListener('focus', viewChanged);
     window.roomAttention = {
-        cue, wanted, mention, incoming, viewChanged,
+        cue, wanted, mention, incoming, voice, viewChanged,
         async openSettings() {
             await ready;
             if (!dialog.open) dialog.showModal();
