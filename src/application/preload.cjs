@@ -266,6 +266,16 @@ contextBridge.exposeInMainWorld('asscrack', {
     onMusicFrame: listen('asscrack:music-frame'),
     getMusicSettings: () => ipcRenderer.invoke('asscrack:music-settings'),
     setMusicSettings: patch => ipcRenderer.invoke('asscrack:set-music-settings', patch),
+    // A change of the pop-out window or of the main process.
+    onMusicSettings: listen('asscrack:music-settings-changed'),
+    // The player in its own window (music-popout.mjs): open or close it; { open } after each change.
+    musicPopout: open => ipcRenderer.invoke('asscrack:music-popout', open === true),
+    onMusicPopout: listen('asscrack:music-popout-state'),
+    // The visualizer (music-viz.js): the pop-out window asks for one frame; the answer is 18 bytes or null.
+    onMusicVizPull: listen('asscrack:music-viz-pull'),
+    sendMusicViz: bytes => ipcRenderer.send('asscrack:music-viz', bytes instanceof Uint8Array && bytes.length === 18 ? bytes : null),
+    // false while the room window is minimized or hidden (to the tray).
+    onMusicRoomShown: listen('asscrack:music-room-shown'),
     getTopic: () => ipcRenderer.invoke('asscrack:topic'),
     setTopic: text => ipcRenderer.invoke('asscrack:set-topic', text),
     onTopic: listen('asscrack:topic'),

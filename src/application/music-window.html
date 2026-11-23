@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en" data-theme="aero-classic">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Music – ASSCRACK</title>
+  <link rel="stylesheet" href="themes.css">
+  <link rel="stylesheet" href="music.css">
+  <link rel="stylesheet" href="music-window.css">
+  <link rel="stylesheet" href="ui-state.css">
+</head>
+<body>
+  <!-- The player in its own window (music-popout.mjs). music-ui.js fills it, as the music bar of the room window;
+       music-viz.js draws the large visualizer from the levels of the room window. The titles come from the DJ. -->
+  <section id="music-bar" data-mode="window" aria-label="Music">
+    <canvas id="music-spectrum" class="music-led" width="400" height="160" aria-hidden="true"></canvas>
+    <canvas id="music-vu" class="music-led" width="120" height="160" aria-hidden="true" hidden></canvas>
+    <div class="music-now">
+      <span class="music-dot" aria-hidden="true"></span>
+      <span id="music-title"></span>
+      <span id="music-meta"></span>
+    </div>
+    <div class="music-controls">
+      <button id="music-pause" type="button" aria-pressed="false" hidden>Pause</button>
+      <button id="music-skip" type="button" hidden>Skip</button>
+      <button id="music-stop" type="button" hidden>Stop</button>
+      <label class="music-volume">Volume <input id="music-volume" type="range" min="0" max="100" step="1" value="60"></label>
+      <label class="music-duck" title="Lower the music while someone talks"><input id="music-ducking" type="checkbox" checked> Duck</label>
+      <select id="music-visualizer" aria-label="Visualizer" title="Visualizer">
+        <option value="spectrum">Spectrum</option>
+        <option value="vu">VU</option>
+        <option value="off">Off</option>
+      </select>
+      <button id="music-queue-toggle" type="button" aria-expanded="true" aria-controls="music-queue-panel" hidden>Queue <span id="music-count" class="count"></span></button>
+    </div>
+    <div id="music-queue-panel">
+      <form id="music-add-form">
+        <input id="music-link" type="text" placeholder="YouTube link" aria-label="YouTube link" maxlength="2048" autocomplete="off" spellcheck="false">
+        <button type="submit">Add</button>
+      </form>
+      <div class="music-local">
+        <button id="music-files" type="button">Add files</button>
+        <button id="music-folder" type="button">Music folder</button>
+      </div>
+      <ul id="music-folder-list" aria-label="Music folder" hidden></ul>
+      <ol id="music-queue" aria-label="Queue"></ol>
+    </div>
+    <p id="music-status" role="status"></p>
+  </section>
+  <script src="music-window.js"></script>
+  <script src="music-core.js"></script>
+  <script src="music-ui.js"></script>
+  <script src="music-viz-core.js"></script>
+  <script src="music-viz.js"></script>
+</body>
+</html>

@@ -55,6 +55,7 @@ import { createFriendLinks } from './friend-links.mjs';
 import { withDeviceMarks } from './peer-marks.mjs';
 import { attachFriendWindows, registerFriendIpc } from './friend-windows.mjs';
 import { attachFriendsPopout } from './friends-popout.mjs';
+import { attachMusicPopout } from './music-popout.mjs';
 import { createFriendJoins, savedRoomHasId } from './friend-join.mjs';
 import { createClipboardJoin, createAskedStore, ASKED_FILE } from './clipboard-join.mjs';
 import { installInterfaceCache } from '../network/interface-cache.mjs';
@@ -355,10 +356,28 @@ const musicEval = createMusicEval({ BrowserWindow, ipc: ipcMain, page: MUSIC_EVA
     preload: path.join(__dirname, 'music-eval-preload.cjs'), lock: lockDesktopNavigation,
     isFrame: (win, event) => isDesktopFrame(win, event.sender, event.senderFrame, MUSIC_EVAL_PAGE) });
 // Room music (music-ipc.mjs): the IPC of the music bar, the local files and the YouTube source of the DJ.
-const music = attachMusic({ handle: handleRoomIpc, on: onRoomIpc, getNode: () => node, getWindow: () => mainWindow, dialog,
+// The file dialogs have the window of the call as parent (the room window or the music pop-out window).
+const music = attachMusic({ handle: handleRoomIpc, on: onRoomIpc, getNode: () => node, dialog,
+    getWindow: event => (event?.sender && BrowserWindow.fromWebContents(event.sender)) || mainWindow,
     chosenFile: file => chosenFile(file), settingsFile: () => path.join(app.getPath('userData'), MUSIC_SETTINGS_FILE),
     journal: (type, fields) => journal(type, fields), log: (level, text) => writeLog(level, text), pick: musicPick,
-    evaluate: code => musicEval.run(code), idle: () => idlePeer });
+    evaluate: code => musicEval.run(code), idle: () => idlePeer,
+    onSettings: value => { sendToWindow('asscrack:music-settings-changed', value); musicPopout?.settings(value); } });
+// Room music: the player in its own window (music-popout.mjs). "Pop out" in the music bar opens it, only in a room.
+// It closes at Leave room, with the room window and at Quit; the settings keep it open for the next voice session.
+// The visualizer of the window asks the room window for the levels (a pull for each frame, no network).
+const musicPopout = attachMusicPopout({
+    BrowserWindow, ipc: ipcMain, screen, profile: app.getPath('userData'), assets: __dirname, controls: music.controls,
+    names: () => node?.peerNames?.() ?? {}, icon: path.join(__dirname, 'img', 'app.ico'),
+    nearBounds: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : null),
+    remember: on => music.setPopout(on), onState: state => sendToWindow('asscrack:music-popout-state', state),
+    pull: () => sendToWindow('asscrack:music-viz-pull', null), warn: message => writeLog('WARN', message)
+});
+handleRoomIpc('asscrack:music-popout', (_event, open) => {
+    if (open !== true) { musicPopout.closeByUser(); return false; }
+    return node ? musicPopout.open() : false;
+});
+onRoomIpc('asscrack:music-viz', (_event, bytes) => musicPopout.viz(bytes));
 // 1.0.4: the thumbnails of a saved room that keeps history stay in its encrypted archive (the data folder), thus the
 // history shows them again after a quit, a Leave room or an update.
 const roomMedia = createRoomMedia({ decodeImage: (info, limit) => imageDecoder.decode(info, limit),
@@ -971,7 +990,13 @@ function createMainWindow() {
         if (!quitting && closeToTray && (enterIdlePeer() || hideForFriends())) event.preventDefault();
     });
     // G7a: the friend chat windows close with the main window (then the app quits as before).
-    mainWindow.on('closed', () => { friendWindows.closeAll(); friendsPopout.close(); imageDecoder.close(); });
+    mainWindow.on('closed', () => { friendWindows.closeAll(); friendsPopout.close(); musicPopout.close(); imageDecoder.close(); });
+    // Room music: the visualizer of the bar stops while the room window is minimized or hidden.
+    for (const name of ['minimize', 'hide', 'restore', 'show', 'maximize', 'unmaximize']) {
+        mainWindow.on(name, () => {
+            if (mainWindow && !mainWindow.isDestroyed()) sendToWindow('asscrack:music-room-shown', mainWindow.isVisible() && !mainWindow.isMinimized());
+        });
+    }
     // Windows shutdown may bypass before-quit. Do not hide or veto session termination.
     mainWindow.on('session-end', () => { quitting = true; diag?.quit(); });
 
@@ -1192,8 +1217,8 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
     // Ready check (milestone 9): straight to the window, not in the event log (the log must not get the text).
     onLive('ready', data => sendToWindow('asscrack:ready', data));
     // Room music: the view and the notices (titles: not in the event log), and the frames of the DJ (no decode here).
-    onLive('music', data => sendToWindow('asscrack:music', data));
-    onLive('music-notice', data => sendToWindow('asscrack:music-notice', data));
+    onLive('music', data => { sendToWindow('asscrack:music', data); musicPopout.view(data); });
+    onLive('music-notice', data => { sendToWindow('asscrack:music-notice', data); musicPopout.notice(data); });
     onLive('music-track', data => music.trackDone(data));
     onLive('music-frame', data => { if (!idlePeer) sendToWindow('asscrack:music-frame', data); });
     // P8b: the screen share events (design section 4, IPC).
@@ -2351,6 +2376,7 @@ function leaveRoom() {
     // Room music: the music of the room ends with the room. No URL, local key or folder ID stays.
     try { current.music?.reset(); } catch (err) { writeLog('WARN', `Music reset: ${err?.message ?? err}`); }
     music.reset();
+    musicPopout.close();
     // P8b (conflict table of G5): Leave room stops the capture and the watch, and resets the screen state. The window
     // stops its capture track at the screen-state event, and the reload resets the window.
     resetScreen(current);
@@ -2412,6 +2438,7 @@ app.on('before-quit', event => {
     autoStatus.stop();
     friendWindows.closeAll();
     friendsPopout.close();
+    musicPopout.close();
     imageDecoder.dispose();
     musicEval.dispose();
     // Saved rooms (milestone 6): close the archive. G7a: after the friend nodes stop (they write to it).

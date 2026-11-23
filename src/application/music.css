@@ -38,3 +38,42 @@
 #music-bar .music-file-add { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
 #music-status { margin: 0; color: var(--ink-soft, #5b7a99); min-height: 0; }
 #music-status:empty { display: none; }
+
+/* The visualizer (music-viz.js): a dark LED panel. The panel follows the accent of the theme; the LEDs have fixed
+   colors (music-viz-core.js). The canvas has the CSS size; music-viz.js sets its pixel size. */
+.music-led {
+  flex: 0 0 auto;
+  display: block;
+  border: 1px solid color-mix(in srgb, var(--line, #9fb6cc) 40%, #000);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent, #2f7fd0) 14%, #06080b);
+}
+.music-led[hidden] { display: none; }
+#music-bar .music-head { display: flex; gap: 8px; align-items: center; min-width: 0; }
+#music-bar .music-main { flex: 1 1 auto; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+#music-bar .music-head #music-spectrum { width: 150px; height: 46px; }
+#music-bar .music-head #music-vu { width: 26px; height: 46px; }
+#music-bar .music-tools { flex: 0 0 auto; display: flex; flex-direction: column; gap: 3px; align-self: flex-start; }
+#music-bar .music-tools button { min-width: 24px; height: 20px; padding: 0 5px; line-height: 1; }
+
+/* The collapsed bar: a thin strip with the VU meter, now playing, Pause and Skip. */
+#music-bar.collapsed { padding: 2px 8px; overflow: hidden; }
+#music-bar.collapsed .music-main { flex-direction: row; align-items: center; gap: 8px; }
+#music-bar.collapsed .music-now { flex: 1 1 auto; align-items: center; }
+#music-bar.collapsed .music-controls { flex-wrap: nowrap; }
+#music-bar.collapsed :is(#music-meta, #music-stop, .music-volume, .music-duck, #music-queue-toggle, #music-visualizer) { display: none; }
+#music-bar.collapsed #music-queue-panel { display: none; }
+#music-bar.collapsed .music-tools { flex-direction: row; align-self: center; }
+#music-bar.collapsed .music-head #music-vu { width: 22px; height: 26px; }
+
+/* The mark of the hidden player in the status bar (View > Music player). */
+#music-mark {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 40%;
+  padding: 0 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#music-mark[hidden] { display: none; }

@@ -212,7 +212,9 @@ test('music IPC: a link gives only an ID to the node; files only from the own pi
         assert.deepEqual(await call('asscrack:music-open', '00000000000000bb'), { error: 'error' }, 'only the current item');
         music.reset();
         assert.equal((await music.serve(new Request(opened.url))).status, 404, 'Leave room revokes the URL');
-        assert.deepEqual(await call('asscrack:set-music-settings', { volume: 33, folder: 'C:\\Windows' }), { volume: 33, ducking: true });
+        // The window gets the visualizer and the layout fields too, never the folder path.
+        assert.deepEqual(await call('asscrack:set-music-settings', { volume: 33, folder: 'C:\\Windows' }),
+            { volume: 33, ducking: true, visualizer: 'spectrum', collapsed: false, hidden: false, popout: false });
         assert.deepEqual(await call('asscrack:music-folder'), { folder: '', files: [] }, 'the window did not set a folder');
     } finally {
         await rm(dir, { recursive: true, force: true });
