@@ -22,6 +22,12 @@ const ATTENTION = [
         { id: 'attention-sound', tag: 'input' }, { id: 'attention-status', tag: 'p' },
         // G5 (E1): the box of the flash setting is in the dialog.
         { id: 'attention-flash', tag: 'input' }
+    ] },
+    // Message alerts: the mute dialog.
+    { id: 'mute-dialog', tag: 'dialog', children: [
+        { id: 'mute-title', tag: 'h2' }, { id: 'mute-time', tag: 'select', value: 'hour' },
+        { id: 'mute-mentions', tag: 'input' }, { id: 'mute-status', tag: 'p' }, { id: 'mute-off', tag: 'button' },
+        { id: 'mute-cancel', tag: 'button' }, { id: 'mute-on', tag: 'button' }
     ] }
 ];
 
@@ -30,7 +36,7 @@ const ATTENTION = [
 // own cue kinds), state ({ idle, focus }) and the helpers below.
 async function room(prefs = {}, peers = [[SAM, 'Sam'], [ALEX, 'Alex']], audio = null) {
     const clock = createClock();
-    const settings = { voiceCues: true, otherVoiceCues: true, messageCues: true, volume: 35, alerts: false,
+    const settings = { voiceCues: true, voiceSound: true, mentionSound: true, whisperSound: true, friendSound: true, volume: 35, mentionAlert: false, whisperAlert: false, friendAlert: false,
         previews: false, sound: false, ...prefs };
     const f = await loadRoomWindow({
         clock,
@@ -193,7 +199,7 @@ test('the voice cues of other people are silent in Idle Peer, in Do not disturb 
     dnd.el('mute').click();
     assert.deepEqual(dnd.own, ['join', 'mute']);
 
-    const off = await room({ otherVoiceCues: false });
+    const off = await room({ voiceSound: false });
     await off.joinVoice();
     off.clock.advance(5000);
     off.voiceState(SAM, true);
@@ -257,7 +263,7 @@ test('the message cues are silent in Idle Peer, in Do not disturb and when the s
     dnd.window.roomAttention.incoming({ kind: 'whisper', peerId: SAM, id: 'd2' });
     assert.deepEqual(dnd.played, []);
 
-    const off = await room({ messageCues: false });
+    const off = await room({ mentionSound: false, whisperSound: false, friendSound: false });
     off.state.focus = false;
     off.receive({ from: 'Sam', text: 'hi Parker', peerId: SAM, id: 'f1' });
     off.window.roomAttention.incoming({ kind: 'whisper', peerId: SAM, id: 'f2' });
@@ -265,7 +271,7 @@ test('the message cues are silent in Idle Peer, in Do not disturb and when the s
 });
 
 test('at most one message cue each 2 s; with alerts on each line still goes to the notification', async () => {
-    const f = await room({ alerts: true });
+    const f = await room({ mentionAlert: true, whisperAlert: true, friendAlert: true });
     f.state.focus = false;
     f.receive({ from: 'Sam', text: 'Parker 1', peerId: SAM, id: 'r1' });
     f.clock.advance(500);
@@ -347,4 +353,270 @@ test('the cues play on the output device of the voice settings, with the default
     assert.equal(await f.window.roomAttention.cue('unmute'), true);
     assert.deepEqual(sinks, ['speakers-1', 'speakers-2', '', 'speakers-2'], 'the next cue tries the device again');
     assert.deepEqual(f.own, ['join', 'leave', 'mute', 'unmute']);
+});
+
+// ---- Message alerts (2026-11-22): the cue of every room line (the row "All messages" of the settings grid) ----
+
+// An AudioContext that records the pitch of each tone (the chat tone is made in attention.js, not in voice-cues.js).
+function toneRecorder() {
+    const tones = [];
+    const node = () => ({ connect: next => next, disconnect() {} });
+    const audio = { state: 'running', currentTime: 0, destination: {}, async resume() {},
+        createOscillator: () => Object.assign(node(), { frequency: { value: 0 }, start() { tones.push(this.frequency.value); }, stop() {} }),
+        createGain: () => Object.assign(node(), { gain: { setValueAtTime() {}, linearRampToValueAtTime() {} } }) };
+    return { audio, tones };
+}
+const CHAT_ON = { chatSound: true };
+// The chat tone gives the pitch 784 (attention.js CHAT_TONE).
+const chatCues = tones => tones.filter(hz => hz === 784).length;
+
+test('a plain room line outside my view plays the message cue; in view, my own line and history do not', async () => {
+    const { audio, tones } = toneRecorder();
+    const f = await room(CHAT_ON, undefined, audio);
+    f.receive({ from: 'Sam', text: 'hello all', peerId: SAM, id: 'c1' });
+    await settle();
+    assert.equal(chatCues(tones), 0, 'the line is in view and the window has the focus');
+    f.state.focus = false;
+    f.receive({ from: 'Parker', text: 'my line', peerId: SELF, id: 'c2' });
+    f.history([{ from: 'Sam', text: 'old line', time: Date.now(), id: 'h1' }]);
+    await settle();
+    assert.equal(chatCues(tones), 0, 'my own line and a history replay');
+    f.receive({ from: 'Sam', text: 'hello all', peerId: SAM, id: 'c3' });
+    await settle();
+    assert.equal(chatCues(tones), 1, 'the window has no focus');
+    // A different channel is not in view also when the window has the focus.
+    f.state.focus = true;
+    f.clock.advance(3000);
+    f.window.roomAttention.mention({ from: 'Sam', text: 'in games', peerId: SAM, id: 'c4', channelId: 'games' });
+    await settle();
+    assert.equal(chatCues(tones), 2, 'another channel is shown');
+    // Minimized or in the tray: the page is hidden.
+    f.clock.advance(3000);
+    f.document.visibilityState = 'hidden';
+    f.receive({ from: 'Alex', text: 'hi', peerId: ALEX, id: 'c5' });
+    await settle();
+    assert.equal(chatCues(tones), 3, 'the page is hidden');
+    assert.deepEqual(f.played, [], 'no mention or whisper cue for a plain line');
+    assert.deepEqual(f.errors, []);
+});
+
+test('at most one message cue each 2 s; a burst after a gap gives one cue; a chat cue does not drop a mention cue', async () => {
+    const { audio, tones } = toneRecorder();
+    const f = await room(CHAT_ON, undefined, audio);
+    f.state.focus = false;
+    for (let i = 0; i < 20; i++) f.receive({ from: 'Sam', text: 'line ' + i, peerId: SAM, id: 'b' + i });
+    await settle();
+    assert.equal(chatCues(tones), 1, 'a burst of 20 lines');
+    f.clock.advance(1000);
+    f.receive({ from: 'Alex', text: 'hi Parker', peerId: ALEX, id: 'm1' });
+    await settle();
+    assert.deepEqual(f.played, ['mention'], 'the mention cue plays 1 s after a chat cue');
+    f.clock.advance(1500);
+    f.receive({ from: 'Sam', text: 'more', peerId: SAM, id: 'b20' });
+    await settle();
+    assert.equal(chatCues(tones), 1, 'a chat cue 1.5 s after the mention cue is dropped');
+    f.clock.advance(2000);
+    f.receive({ from: 'Sam', text: 'more', peerId: SAM, id: 'b21' });
+    await settle();
+    assert.equal(chatCues(tones), 2);
+});
+
+test('the chat cue is silent in Idle Peer, in Do not disturb and with its box off; background off plays it in view', async () => {
+    const idle = toneRecorder();
+    const a = await room(CHAT_ON, undefined, idle.audio);
+    a.state.focus = false;
+    a.state.idle = true;
+    a.window.roomAttention.mention({ from: 'Sam', text: 'hello', peerId: SAM, id: 'i1' });
+    await settle();
+    assert.equal(chatCues(idle.tones), 0, 'Idle Peer');
+
+    const dnd = toneRecorder();
+    const b = await room(CHAT_ON, undefined, dnd.audio);
+    b.state.focus = false;
+    await b.dnd();
+    b.receive({ from: 'Sam', text: 'hello', peerId: SAM, id: 'd1' });
+    await settle();
+    assert.equal(chatCues(dnd.tones), 0, 'Do not disturb');
+
+    const off = toneRecorder();
+    const c = await room({ chatSound: false }, undefined, off.audio);
+    c.state.focus = false;
+    c.receive({ from: 'Sam', text: 'hello', peerId: SAM, id: 'f1' });
+    await settle();
+    assert.equal(chatCues(off.tones), 0, 'the box is off');
+
+    const view = toneRecorder();
+    const d = await room({ chatSound: true, background: false }, undefined, view.audio);
+    d.receive({ from: 'Sam', text: 'hello', peerId: SAM, id: 'v1' });
+    d.receive({ from: 'Parker', text: 'mine', peerId: SELF, id: 'v2' });
+    await settle();
+    assert.equal(chatCues(view.tones), 1, 'background off: a line in view plays, my own line does not');
+});
+
+test('a mention with its Sound box off uses the row of all messages', async () => {
+    const { audio, tones } = toneRecorder();
+    const f = await room({ chatSound: true, mentionSound: false }, undefined, audio);
+    f.state.focus = false;
+    f.receive({ from: 'Sam', text: 'hi Parker', peerId: SAM, id: 'm1' });
+    await settle();
+    assert.deepEqual(f.played, []);
+    assert.equal(chatCues(tones), 1);
+});
+
+// ---- Message alerts: the notification rules of the window (attention.js) ----
+
+test('a plain line outside my view goes to the notification with the sender name and the text; in view it does not', async () => {
+    const f = await room({ chatAlert: true, previews: true });
+    f.receive({ from: 'Sam', text: 'in view', peerId: SAM, id: 'n0' });
+    assert.deepEqual(f.adds(), [], 'in view');
+    f.state.focus = false;
+    f.receive({ from: 'Parker', text: 'mine', peerId: SELF, id: 'n1' });
+    f.receive({ from: 'Sam', text: 'hello all', peerId: SAM, id: 'n2' });
+    assert.deepEqual(f.adds().map(c => ({ ...c.args[0] })), [{ kind: 'message', channelId: 'general', id: 'n2', name: 'Sam', preview: 'hello all' }]);
+    // Previews off: no text goes to the main process.
+    const g = await room({ chatAlert: true, previews: false });
+    g.state.focus = false;
+    g.receive({ from: 'Sam', text: 'hello all', peerId: SAM, id: 'n3' });
+    assert.equal(g.adds()[0].args[0].preview, '');
+    // Do not disturb: nothing.
+    const d = await room({ chatAlert: true });
+    d.state.focus = false;
+    await d.dnd();
+    d.receive({ from: 'Sam', text: 'hello all', peerId: SAM, id: 'n4' });
+    assert.deepEqual(d.adds(), []);
+});
+
+test('the row of all messages notifies only in a room of at most 10 people; a mention notifies in a big room', async () => {
+    const others = Array.from({ length: 10 }, (_, i) => ['12D3KooWpeer' + String(i).padStart(12, '0'), 'P' + i]);
+    const big = await room({ chatAlert: true, mentionAlert: true }, others);
+    big.state.focus = false;
+    big.receive({ from: 'P1', text: 'hello all', peerId: others[1][0], id: 'g1' });
+    big.receive({ from: 'P2', text: 'hi Parker', peerId: others[2][0], id: 'g2' });
+    assert.deepEqual(big.adds().map(c => [c.args[0].kind, c.args[0].id]), [['mention', 'g2']]);
+    const small = await room({ chatAlert: true, mentionAlert: true }, others.slice(0, 9));
+    small.state.focus = false;
+    small.receive({ from: 'P1', text: 'hello all', peerId: others[1][0], id: 's1' });
+    assert.deepEqual(small.adds().map(c => [c.args[0].kind, c.args[0].id]), [['message', 's1']], '10 people');
+});
+
+test('voice join and leave notify only with their box on, and not while the window is in view', async () => {
+    const off = await room({});
+    off.state.focus = false;
+    off.window.roomAttention.voice('other-join', SAM);
+    assert.deepEqual(off.adds(), []);
+    const on = await room({ voiceAlert: true });
+    on.window.roomAttention.voice('other-join', SAM);
+    assert.deepEqual(on.adds(), [], 'in view');
+    on.state.focus = false;
+    on.window.roomAttention.voice('other-leave', SAM);
+    const sent = on.adds().map(c => c.args[0]);
+    assert.equal(sent.length, 1);
+    assert.deepEqual({ ...sent[0], id: 'x' }, { kind: 'voice', peerId: SAM, id: 'x', joined: false });
+});
+
+// ---- Message alerts: mute per channel and per room ----
+
+// view: the mutes that main.js gives for the open room. Returns the fixture after refreshMutes.
+async function muted(view, prefs = { chatSound: true, chatAlert: true, mentionAlert: true, voiceAlert: true }) {
+    const rec = toneRecorder();
+    const f = await room(prefs, undefined, rec.audio);
+    const requests = [];
+    f.window.asscrack.getAttentionMutes = async () => view;
+    f.window.asscrack.setAttentionMute = async request => { requests.push({ ...request }); return view; };
+    await f.window.roomAttention.refreshMutes();
+    f.state.focus = false;
+    return Object.assign(f, { tones: rec.tones, requests });
+}
+
+test('a muted channel: no cue and no notification for a plain line; a mention still notifies when the mute allows it', async () => {
+    const f = await muted({ room: null, channels: { general: { until: null, mentions: true } } });
+    f.receive({ from: 'Sam', text: 'hello all', peerId: SAM, id: 'p1' });
+    await settle();
+    assert.equal(chatCues(f.tones), 0);
+    assert.deepEqual(f.adds(), []);
+    f.receive({ from: 'Sam', text: 'hi Parker', peerId: SAM, id: 'p2' });
+    await settle();
+    assert.deepEqual(f.played, ['mention']);
+    assert.deepEqual(f.adds().map(c => c.args[0].kind), ['mention']);
+    // A different channel is not muted.
+    f.clock.advance(3000);
+    f.window.roomAttention.mention({ from: 'Sam', text: 'in games', peerId: SAM, id: 'p3', channelId: 'games' });
+    await settle();
+    assert.equal(chatCues(f.tones), 1);
+    assert.equal(f.window.roomAttention.isMuted('general'), true);
+    assert.equal(f.window.roomAttention.isMuted('games'), false);
+
+    const strict = await muted({ room: null, channels: { general: { until: null, mentions: false } } });
+    strict.receive({ from: 'Sam', text: 'hi Parker', peerId: SAM, id: 's1' });
+    await settle();
+    assert.deepEqual(strict.played, [], '"Mentions still notify" off');
+    assert.deepEqual(strict.adds(), []);
+});
+
+test('a muted room: no cue and no notification in any channel and for voice; the mark is on the room name', async () => {
+    const f = await muted({ room: { until: null, mentions: true }, channels: {} });
+    f.window.roomAttention.mention({ from: 'Sam', text: 'in games', peerId: SAM, id: 'r1', channelId: 'games' });
+    f.receive({ from: 'Sam', text: 'hello', peerId: SAM, id: 'r2' });
+    f.window.roomAttention.voice('other-join', SAM);
+    await settle();
+    assert.equal(chatCues(f.tones), 0);
+    assert.deepEqual(f.adds(), []);
+    assert.equal(f.el('chat-room').classList.contains('muted'), true);
+    f.receive({ from: 'Sam', text: 'hi Parker', peerId: SAM, id: 'r3' });
+    await settle();
+    assert.deepEqual(f.adds().map(c => c.args[0].kind), ['mention'], 'a mention still notifies');
+});
+
+test('a mute ends at its time: the cue and the notification come back, and the mark goes away', async () => {
+    // The start of the fake clock (test/helpers/fake-clock.mjs) plus 1 hour.
+    const end = new Date(2026, 10, 21, 21, 0, 0).getTime() + 3600 * 1000;
+    const f = await muted({ room: null, channels: { general: { until: end, mentions: true } } });
+    assert.equal(f.window.roomAttention.isMuted('general'), true);
+    f.receive({ from: 'Sam', text: 'hello', peerId: SAM, id: 'e1' });
+    await settle();
+    assert.equal(chatCues(f.tones), 0);
+    f.clock.advance(3600 * 1000 + 100);
+    assert.equal(f.window.roomAttention.isMuted('general'), false);
+    f.receive({ from: 'Sam', text: 'hello again', peerId: SAM, id: 'e2' });
+    await settle();
+    assert.equal(chatCues(f.tones), 1);
+    assert.deepEqual(f.adds().map(c => c.args[0].id), ['e2']);
+});
+
+test('the mute dialog sends the scope, the time and the mentions choice; Unmute sends off', async () => {
+    const f = await muted({ room: null, channels: {} });
+    const dialog = f.el('mute-dialog');
+    dialog.open = false;
+    dialog.showModal = () => { dialog.open = true; };
+    dialog.close = () => { dialog.open = false; };
+    f.window.roomAttention.openMute({ scope: 'channel', channelId: 'general' });
+    assert.equal(dialog.open, true);
+    assert.equal(f.el('mute-title').textContent, 'Mute #general');
+    assert.equal(f.el('mute-off').hidden, true);
+    f.el('mute-time').value = 'tomorrow';
+    f.el('mute-mentions').checked = false;
+    f.el('mute-on').click();
+    await settle();
+    assert.deepEqual(f.requests, [{ scope: 'channel', channelId: 'general', time: 'tomorrow', mentions: false }]);
+    assert.equal(dialog.open, false);
+    f.window.roomAttention.openMute({ scope: 'room' });
+    assert.equal(f.el('mute-title').textContent, 'Mute room');
+    f.el('mute-off').click();
+    await settle();
+    assert.deepEqual(f.requests[1], { scope: 'room', time: 'off', mentions: true });
+});
+
+test('the message sound setting chooses one of the built-in tones', async () => {
+    const chime = toneRecorder();
+    const f = await room({ chatSound: true, chatTone: 'chime' }, undefined, chime.audio);
+    f.state.focus = false;
+    f.receive({ from: 'Sam', text: 'hello', peerId: SAM, id: 't1' });
+    await settle();
+    assert.deepEqual(chime.tones, [988, 659]);
+    const pop = toneRecorder();
+    const g = await room({ chatSound: true, chatTone: 'pop' }, undefined, pop.audio);
+    g.state.focus = false;
+    g.receive({ from: 'Sam', text: 'hello', peerId: SAM, id: 't2' });
+    await settle();
+    assert.deepEqual(pop.tones, [1397]);
 });

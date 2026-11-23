@@ -32,7 +32,7 @@ import { createSavedRooms, makeProtector } from './saved-rooms.mjs';
 import { roomFingerprint } from './room-archive.mjs';
 import * as voiceSettings from './voice-settings.mjs';
 import { listeningRoomTag, listeningStore } from './listening-store.mjs';
-import { attentionSettings, createAttention, overlayDotBitmap, overlayShareBitmap, registerNotificationShortcut, WINDOWS_APP_ID, WINDOWS_TOAST_ID } from './attention.mjs';
+import { ALERT_KEYS, attentionSettings, createAttention, muteStore, roomMuteId, overlayDotBitmap, overlayShareBitmap, registerNotificationShortcut, WINDOWS_APP_ID, WINDOWS_TOAST_ID } from './attention.mjs';
 import { createPttHook } from './ptt-hook.mjs';
 import { createWindowFrame } from './window-frame.mjs';
 import { attachVoiceMonitor } from './voice-monitor.mjs';
@@ -421,16 +421,28 @@ const attention = createAttention({
     allowed: target => target.kind === 'friend' ? friendLinks.friend(target.friendId) !== null
         : target.kind === 'whisper'
         ? node?.whisperPeers().includes(target.peerId)
+        : target.kind === 'voice' ? !!node
         : target.channelId === 'general' || node?.channels().channels.some(channel => channel.id === target.channelId),
     // G7b: one log line for each notification (no name, no text).
-    notify: options => { writeLog('EVENT', 'notification requested'); return new Notification(options); },
+    // Message alerts: the show and failed events of Windows go to the log too (a check that the toast came).
+    notify: options => {
+        writeLog('EVENT', 'notification requested');
+        const notice = new Notification(options);
+        notice.once('show', () => writeLog('EVENT', 'notification shown'));
+        notice.once('failed', () => writeLog('WARN', 'notification failed'));
+        return notice;
+    },
     // G7b: a friend notification opens the chat window of that friend (the main window stays as it is).
     navigate: target => {
         if (target.kind === 'friend') { friendWindows.open(target.friendId); return; }
         restoreRoomWindow();
-        sendToWindow('asscrack:attention-open', target);
+        if (target.kind !== 'voice') sendToWindow('asscrack:attention-open', target);
     },
-    friendName: friendId => friendLinks.friend(friendId)?.name ?? ''
+    friendName: friendId => friendLinks.friend(friendId)?.name ?? '',
+    // Message alerts: the title tells who and where. The names come from the node, not from the window (a room line
+    // brings the name that its row shows).
+    peerName: peerId => node?.peerNames()?.[peerId] ?? '',
+    channelName: channelId => node?.channels().channels.find(channel => channel.id === channelId)?.name ?? ''
 });
 
 function registerAlerts() {
@@ -444,10 +456,25 @@ function registerAlerts() {
 }
 
 handleRoomIpc('asscrack:attention-settings', () => attentionPrefs.get());
+// Message alerts: the mutes of the open room (attention.mjs muteStore). The window gets the mutes, not the room ID.
+const attentionMutes = muteStore(path.join(app.getPath('userData'), 'attention-mutes.json'));
+const openRoomMuteId = () => (node && roomName !== null ? roomMuteId(node.roomKey(), roomName) : null);
+handleRoomIpc('asscrack:attention-mutes', () => {
+    const id = openRoomMuteId();
+    return id ? attentionMutes.view(id) : { room: null, channels: {} };
+});
+handleRoomIpc('asscrack:attention-mute', (_event, request) => {
+    const result = attentionMutes.set(openRoomMuteId(), request);
+    writeLog('EVENT', `mute ${request?.scope === 'room' ? 'room' : 'channel'} ${request?.time === 'off' ? 'off' : 'on'}`);
+    return result;
+});
+// The Notification column of the settings grid: a box that goes on registers the Start menu shortcut first.
+const anyAlert = prefs => Object.values(ALERT_KEYS).some(key => prefs?.[key] === true);
 handleRoomIpc('asscrack:attention-set', (_event, patch) => {
-    if (patch?.alerts === true) registerAlerts();
+    if (anyAlert(patch)) registerAlerts();
     const next = attentionPrefs.set(patch);
-    if (patch?.alerts === false || patch?.previews !== undefined || patch?.sound !== undefined) attention.clear();
+    if (Object.values(ALERT_KEYS).some(key => patch?.[key] === false) || patch?.previews !== undefined ||
+        patch?.sound !== undefined) attention.clear();
     return next;
 });
 onRoomIpc('asscrack:attention-add', (_event, target) => attention.add(target));
@@ -2287,7 +2314,7 @@ app.whenReady().then(async () => {
     // P8b: getDisplayMedia of the room window gets only the source of the pending selection (design section 2.1).
     session.defaultSession.setDisplayMediaRequestHandler((request, callback) => screenSources.handleDisplayMedia(request, callback));
     pttHook.configure(currentVoiceSettings());
-    if (attentionPrefs.get().alerts && process.platform === 'win32' && app.isPackaged) {
+    if (anyAlert(attentionPrefs.get()) && process.platform === 'win32' && app.isPackaged) {
         try { registerAlerts(); } catch { writeLog('WARN', 'Windows notification registration unavailable'); }
     }
     // open() never rejects. A failure gives the state locked with the reason open-failed.

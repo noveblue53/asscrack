@@ -206,6 +206,9 @@ contextBridge.exposeInMainWorld('asscrack', {
     openMediaOriginal: (messageId, ref) => ipcRenderer.invoke('asscrack:media-open-original', String(messageId ?? ''), ref),
     onMediaSaved: listen('asscrack:media-saved'),
     getAttentionSettings: () => ipcRenderer.invoke('asscrack:attention-settings'),
+    // Message alerts: the mutes of the open room ({ room, channels }) and a change ({ scope, channelId, time, mentions }).
+    getAttentionMutes: () => ipcRenderer.invoke('asscrack:attention-mutes'),
+    setAttentionMute: request => ipcRenderer.invoke('asscrack:attention-mute', request),
     setAttentionSettings: patch => ipcRenderer.invoke('asscrack:attention-set', patch),
     addAttention: data => ipcRenderer.send('asscrack:attention-add', data),
     readAttention: data => ipcRenderer.send('asscrack:attention-read', data),

@@ -217,8 +217,8 @@ async function windowRoom({ owner = true, channels = [GENERAL, { id: RAID, name:
             renameVoiceChannel: async (id, name) => { edits.push(['rename', id, name]); },
             deleteVoiceChannel: async id => { edits.push(['delete', id]); },
             ...(attention ? {
-                getAttentionSettings: async () => ({ voiceCues: true, otherVoiceCues: true, messageCues: false, volume: 35,
-                    alerts: false, previews: false, sound: false }),
+                getAttentionSettings: async () => ({ voiceCues: true, voiceSound: true, mentionSound: false, whisperSound: false, friendSound: false, volume: 35,
+                    mentionAlert: false, whisperAlert: false, friendAlert: false, previews: false, sound: false }),
                 setAttentionSettings: async patch => patch
             } : {})
         }

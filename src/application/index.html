@@ -323,6 +323,11 @@
             <button id="mark-problem" type="button" aria-haspopup="dialog" aria-controls="mark-dialog">Mark a problem…</button>
             <button id="ask-everyone" type="button">Ask everyone for diagnostics</button>
           </div>
+          <!-- Message alerts (attention.js): mute the channel that is shown, or the room. -->
+          <div class="room-menu-actions" id="mute-actions">
+            <button id="mute-channel-open" type="button" aria-haspopup="dialog" aria-controls="mute-dialog">Mute channel…</button>
+            <button id="mute-room-open" type="button" aria-haspopup="dialog" aria-controls="mute-dialog">Mute room…</button>
+          </div>
           <span id="topic-unavailable" hidden>Can't edit the topic right now.</span>
           <div id="topic-editor" hidden>
             <input type="text" id="topic-input" aria-label="Room topic" placeholder="Leave empty to clear" autocomplete="off">
@@ -570,29 +575,51 @@
 
   <dialog id="attention-settings" aria-labelledby="attention-title">
     <h2 id="attention-title">Sound &amp; notifications</h2>
-    <fieldset>
-      <legend>Sound cues</legend>
-      <label title="Join, leave, mute, unmute and deafen"><input id="attention-cues" type="checkbox"> My voice actions</label>
-      <label><input id="attention-other-cues" type="checkbox"> Others join or leave voice</label>
-      <label><input id="attention-message-cues" type="checkbox"> Mentions and whispers</label>
-      <label for="attention-volume">Cue volume <output id="attention-percent" for="attention-volume"></output></label>
+    <table id="attention-grid">
+      <thead><tr><td></td><th scope="col">Sound</th><th scope="col" id="attention-alerts-label">Notification</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">All messages</th><td><input id="attention-chat-sound" type="checkbox" aria-label="All messages: sound"></td><td><input id="attention-chat-alert" type="checkbox" aria-label="All messages: notification" title="Rooms up to 10 people"></td></tr>
+        <tr><th scope="row">Mentions</th><td><input id="attention-mention-sound" type="checkbox" aria-label="Mentions: sound"></td><td><input id="attention-mention-alert" type="checkbox" aria-label="Mentions: notification"></td></tr>
+        <tr><th scope="row">Whispers</th><td><input id="attention-whisper-sound" type="checkbox" aria-label="Whispers: sound"></td><td><input id="attention-whisper-alert" type="checkbox" aria-label="Whispers: notification"></td></tr>
+        <tr><th scope="row">Friend messages</th><td><input id="attention-friend-sound" type="checkbox" aria-label="Friend messages: sound"></td><td><input id="attention-friend-alert" type="checkbox" aria-label="Friend messages: notification"></td></tr>
+        <tr><th scope="row">People joining or leaving voice</th><td><input id="attention-voice-sound" type="checkbox" aria-label="People joining or leaving voice: sound"></td><td><input id="attention-voice-alert" type="checkbox" aria-label="People joining or leaving voice: notification"></td></tr>
+      </tbody>
+    </table>
+    <label><input id="attention-content" type="checkbox"> Show message text</label>
+    <label title="Off: also while the chat is in view"><input id="attention-background" type="checkbox"> Only when in the background</label>
+    <fieldset id="attention-sounds">
+      <legend>Sounds</legend>
+      <label class="attention-wide" title="Join, leave, mute, unmute and deafen"><input id="attention-cues" type="checkbox"> My voice actions</label>
+      <label for="attention-chat-tone">Message sound</label>
+      <select id="attention-chat-tone"><option value="soft">Soft</option><option value="chime">Chime</option><option value="pop">Pop</option></select>
+      <span></span>
+      <label for="attention-volume">Volume</label>
       <input id="attention-volume" type="range" min="0" max="100" step="1">
-      <label for="attention-tone">Preview cue</label>
-      <select id="attention-tone"><option value="join">Join voice</option><option value="leave">Leave voice</option><option value="mute">Mute</option><option value="unmute">Unmute</option><option value="other-join">Other person joins voice</option><option value="other-leave">Other person leaves voice</option><option value="mention">Mention</option><option value="whisper">Whisper</option></select>
-      <button id="attention-preview" type="button">Play preview</button>
+      <output id="attention-percent" for="attention-volume"></output>
+      <label for="attention-tone">Preview</label>
+      <select id="attention-tone"><option value="join">Join voice</option><option value="leave">Leave voice</option><option value="mute">Mute</option><option value="unmute">Unmute</option><option value="other-join">Other person joins voice</option><option value="other-leave">Other person leaves voice</option><option value="chat">Message</option><option value="mention">Mention</option><option value="whisper">Whisper</option></select>
+      <button id="attention-preview" type="button">Play</button>
     </fieldset>
     <fieldset>
-      <legend>Desktop notifications</legend>
-      <label id="attention-alerts-label" title="Not for the chat you have open"><input id="attention-alerts" type="checkbox"> Mentions, whispers and messages</label>
-      <label><input id="attention-content" type="checkbox"> Show message text</label>
-      <label><input id="attention-sound" type="checkbox"> Play Windows sound</label>
-    </fieldset>
-    <fieldset>
-      <legend>Taskbar</legend>
-      <label><input id="attention-flash" type="checkbox"> Flash on mentions, whispers and messages</label>
+      <legend>Windows</legend>
+      <label><input id="attention-sound" type="checkbox"> Windows sound on notifications</label>
+      <label><input id="attention-flash" type="checkbox"> Flash the taskbar on mentions and whispers</label>
     </fieldset>
     <p id="attention-status" role="status"></p>
     <form method="dialog"><button>Done</button></form>
+  </dialog>
+
+  <dialog id="mute-dialog" aria-labelledby="mute-title">
+    <h2 id="mute-title">Mute</h2>
+    <label for="mute-time">For</label>
+    <select id="mute-time"><option value="hour">1 hour</option><option value="tomorrow">Until tomorrow</option><option value="forever">Until I unmute</option></select>
+    <label><input id="mute-mentions" type="checkbox" checked> Mentions still notify</label>
+    <p id="mute-status" role="status"></p>
+    <div class="dialog-buttons">
+      <button id="mute-off" type="button" hidden>Unmute</button>
+      <button id="mute-cancel" type="button">Cancel</button>
+      <button id="mute-on" type="button">Mute</button>
+    </div>
   </dialog>
 
   <dialog id="listening-dialog" aria-labelledby="listening-title">

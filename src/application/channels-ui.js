@@ -25,7 +25,9 @@
             option.value = id;
             const suffix = counts.get(name) > 1 ? ' · ' + id.slice(-6) : '';
             const missed = state(id).missed;
-            option.textContent = '#' + (id === 'general' ? 'general' : name) + suffix + (missed ? ' (' + missed + ' unread)' : '');
+            // Message alerts: a muted channel has a mark (attention.js).
+            const muted = window.roomAttention?.isMuted?.(id) ? ' · muted' : '';
+            option.textContent = '#' + (id === 'general' ? 'general' : name) + suffix + muted + (missed ? ' (' + missed + ' unread)' : '');
             return option;
         }));
         picker.value = selected;
@@ -124,7 +126,9 @@
             if (s.draft === draft) s.draft = '';
             if (s.quote === quote) s.quote = null;
         },
+        refresh,
         async start() {
+            void window.roomAttention?.refreshMutes?.();
             const version = revision;
             const snapshot = await window.asscrack.getChannels();
             if (version === revision) update(snapshot);

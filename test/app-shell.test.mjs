@@ -41,7 +41,7 @@ const SHELL = [
 // Parker, with Sam and Alex in the room.
 async function room(prefs = {}, api = {}) {
     const clock = createClock();
-    const settings = { voiceCues: true, otherVoiceCues: true, messageCues: true, volume: 35, alerts: false,
+    const settings = { voiceCues: true, voiceSound: true, mentionSound: true, whisperSound: true, friendSound: true, volume: 35, mentionAlert: false, whisperAlert: false, friendAlert: false,
         previews: false, sound: false, flash: true, ...prefs };
     const f = await loadRoomWindow({
         clock,
@@ -93,7 +93,7 @@ async function room(prefs = {}, api = {}) {
 // ---- E1: the taskbar flash uses wanted(target) and its own setting ----
 
 test('a mention outside my view sends the flash with alerts off; a whisper outside its view sends it too', async () => {
-    const f = await room({ alerts: false });
+    const f = await room({ mentionAlert: false, whisperAlert: false, friendAlert: false });
     f.state.focus = false;
     f.receive({ from: 'Sam', text: 'hi Parker', peerId: SAM, id: 'm1' });
     assert.equal(f.flashes(), 1);

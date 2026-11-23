@@ -518,7 +518,7 @@ function otherVoiceState(peerId, inVoice, channel = 'general') {
     const after = otherInVoice(next, now);
     // No entry: a state before the session event. Not a known change.
     if (!entry || inBase || before === null || before === after) return;
-    otherVoiceCue(after ? 'other-join' : 'other-leave');
+    otherVoiceCue(after ? 'other-join' : 'other-leave', peerId);
 }
 
 // The roster removes the line of a peer: at once after a bye, or at the end of the grey time.
@@ -527,11 +527,13 @@ function otherVoiceGone(peerId) {
     otherVoice.delete(peerId);
     // No leave cue when I have 0 peers after the event (my own loss).
     if (entry?.lost || otherInVoice(entry, Date.now()) !== true) return;
-    if ((roster?.link().peers ?? peerItems.size) > 0) otherVoiceCue('other-leave');
+    if ((roster?.link().peers ?? peerItems.size) > 0) otherVoiceCue('other-leave', peerId);
 }
 
-function otherVoiceCue(kind) {
+// Message alerts: the notification of voice join and leave (default off) does not need me in voice.
+function otherVoiceCue(kind, peerId) {
     if (ownInVoice && !joining) window.roomAttention?.cue(kind, 'voice-other');
+    window.roomAttention?.voice?.(kind, peerId);
 }
 
 window.asscrack.onVoiceState(data => otherVoiceState(data?.peerId, data?.inVoice === true,

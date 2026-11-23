@@ -7,7 +7,7 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { createDom } from './helpers/fake-dom.mjs';
 import { loadRoomWindow, settle } from './helpers/renderer-fixture.mjs';
-import { createAttention, friendNotice } from '../src/application/attention.mjs';
+import { createAttention, noticeText } from '../src/application/attention.mjs';
 
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 
@@ -164,7 +164,7 @@ const ATTENTION = [
 
 async function attentionWindow() {
     const on = {};
-    const settings = { voiceCues: true, otherVoiceCues: true, messageCues: true, volume: 35, alerts: true,
+    const settings = { voiceCues: true, voiceSound: true, mentionSound: true, whisperSound: true, friendSound: true, volume: 35, mentionAlert: true, whisperAlert: true, friendAlert: true,
         previews: false, sound: false, flash: true };
     const f = await loadRoomWindow({
         elements: ATTENTION,
@@ -244,23 +244,24 @@ test('attention.mjs: a friend notification needs no room, has the name, and one 
     };
     let quiet = false;
     const attention = createAttention({
-        settings: () => ({ alerts: true, previews: false, sound: false }), room: () => null, quiet: () => quiet,
+        settings: () => ({ mentionAlert: true, whisperAlert: true, friendAlert: true, previews: false, sound: false }), room: () => null, quiet: () => quiet,
         allowed: target => target.kind === 'friend' && target.friendId === 'f1', notify: notice, navigate: () => {},
         friendName: id => (id === 'f1' ? 'Ben' : ''),
         schedule: fn => { timers.push(fn); return timers.length; }, cancel: () => {}
     });
     attention.add({ kind: 'friend', friendId: 'f1', id: 'batch', away: 3 });
     timers.shift()();
-    assert.deepEqual(shown.map(o => o.body), ['Ben sent you 3 messages while you were away.']);
+    // Message alerts: the title is the name of the friend; the body never has the text.
+    assert.deepEqual(shown.map(o => [o.title, o.body]), [['Ben', '3 messages while you were away']]);
     attention.add({ kind: 'friend', friendId: 'f1', id: 'l1', away: 0 });
     attention.add({ kind: 'friend', friendId: 'f1', id: 'l2', away: 0 });
     timers.shift()();
-    assert.equal(shown.at(-1).body, '2 new private messages from Ben');
+    assert.equal(shown.at(-1).body, '2 new messages');
     // Not a friend of this device, or quiet (DND or Idle Peer in main.js): nothing.
     attention.add({ kind: 'friend', friendId: 'other', id: 'l3', away: 0 });
     quiet = true;
     attention.add({ kind: 'friend', friendId: 'f1', id: 'l4', away: 0 });
     assert.equal(timers.length, 0);
-    assert.equal(friendNotice('Ben', 1, 1), 'Ben sent you a message while you were away.');
-    assert.equal(friendNotice('Ben', 1, 0), 'New private message from Ben');
+    assert.deepEqual(noticeText({ kind: 'friend', name: 'Ben', away: 1 }), { title: 'Ben', body: 'Sent while you were away' });
+    assert.deepEqual(noticeText({ kind: 'friend', name: 'Ben' }), { title: 'Ben', body: 'New message' });
 });

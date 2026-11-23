@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { EventEmitter } from 'node:events';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { attentionSettings, createAttention, registerNotificationShortcut, WINDOWS_APP_ID, WINDOWS_TOAST_ID } from '../src/application/attention.mjs';
+import { ATTENTION_DEFAULTS, attentionSettings, createAttention, migrateAttention, muteActive, muteStore, muteUntil, noticeText, roomMuteId, registerNotificationShortcut, WINDOWS_APP_ID, WINDOWS_TOAST_ID } from '../src/application/attention.mjs';
 
 function setup() {
-    const state = { prefs: { alerts: true, sound: false, previews: false }, quiet: false, allowed: true, room: {} };
+    const state = { prefs: { mentionAlert: true, whisperAlert: true, friendAlert: true, sound: false, previews: false }, quiet: false, allowed: true, room: {} };
     const notices = [], opens = [], timers = new Set();
     const attention = createAttention({
         settings: () => state.prefs, room: () => state.room, quiet: () => state.quiet, allowed: () => state.allowed,
@@ -28,7 +28,8 @@ test('native alerts coalesce each conversation, deduplicate live IDs, and open t
     attention.add(mention('a')); attention.add(mention('a')); attention.add(mention('b')); attention.add(whisper('p'));
     advance();
     assert.deepEqual(notices.map(n => [n.title, n.body, n.silent]), [
-        ['ASSCRACK', '2 new mentions', true], ['ASSCRACK', 'New private message', true]
+        // Message alerts: the title tells who and where (no names in this fixture).
+        ['Someone in #general', '2 new mentions', true], ['Someone (whisper)', 'New message', true]
     ]);
     attention.add(mention('c'));
     notices[0].emit('click');
@@ -45,14 +46,14 @@ test('native preview and sound are opt-in; private targets and content never app
     state.prefs.previews = true;
     state.prefs.sound = true;
     attention.add(mention('a')); attention.add(whisper('b')); advance();
-    assert.deepEqual(notices.map(n => [n.body, n.silent]), [['public preview', false], ['New private message', false]]);
+    assert.deepEqual(notices.map(n => [n.body, n.silent]), [['public preview', false], ['New message', false]]);
 });
 
 test('read, disabled, idle/DND and room/access changes suppress pending and stale native attention', () => {
     const { state, attention, advance, notices, opens } = setup();
     attention.add(mention('a')); attention.read(mention('a')); advance();
-    state.prefs.alerts = false; attention.add(mention('b')); advance();
-    state.prefs.alerts = true; attention.add(mention('c')); state.quiet = true; advance();
+    state.prefs.mentionAlert = false; attention.add(mention('b')); advance();
+    state.prefs.mentionAlert = true; attention.add(mention('c')); state.quiet = true; advance();
     attention.add(mention('d')); state.quiet = false; advance();
     attention.add(mention('e')); state.room = {}; advance();
     assert.equal(notices.length, 0);
@@ -67,23 +68,53 @@ test('sound and privacy settings are per profile, validated, and retain mute and
     t.after(() => rmSync(dir, { recursive: true, force: true }));
     const file = path.join(dir, 'prefs.json');
     const prefs = attentionSettings(file);
-    // G5 (E1) adds the key flash (default true).
-    assert.deepEqual(prefs.get(), { alerts: false, previews: false, sound: false, voiceCues: true, otherVoiceCues: true,
-        messageCues: true, volume: 35, flash: true });
-    prefs.set({ alerts: true, previews: 'yes', voiceCues: false, otherVoiceCues: 'no', messageCues: 0, volume: 120 });
+    // Settings version 2 (message alerts): the grid of Sound and Notification boxes. All on, except the notification
+    // of voice join and leave; previews on; only in the background. The Windows sound stays off.
+    assert.deepEqual(prefs.get(), { voiceCues: true, volume: 35, chatSound: true, mentionSound: true, whisperSound: true,
+        friendSound: true, voiceSound: true, chatAlert: true, mentionAlert: true, whisperAlert: true, friendAlert: true,
+        voiceAlert: false, previews: true, sound: false, flash: true, background: true, chatTone: 'soft' });
+    prefs.set({ chatAlert: false, previews: 'no', voiceCues: false, voiceSound: 'no', mentionSound: 0, volume: 120, background: false });
     const reopened = attentionSettings(file).get();
-    assert.equal(reopened.alerts, true); assert.equal(reopened.previews, false);
+    assert.equal(reopened.chatAlert, false); assert.equal(reopened.previews, true);
     assert.equal(reopened.voiceCues, false); assert.equal(reopened.volume, 100);
-    // P11 keys: the same validation as the old keys (only a boolean changes them).
-    assert.equal(reopened.otherVoiceCues, true); assert.equal(reopened.messageCues, true);
-    // E1: flash has the same validation (only a boolean changes it).
+    assert.equal(reopened.voiceSound, true); assert.equal(reopened.mentionSound, true);
+    assert.equal(reopened.background, false);
     prefs.set({ flash: 'off' });
     assert.equal(attentionSettings(file).get().flash, true);
-    prefs.set({ flash: false });
+    prefs.set({ flash: false, voiceAlert: true });
     assert.equal(attentionSettings(file).get().flash, false);
-    prefs.set({ otherVoiceCues: false, messageCues: false });
-    assert.equal(attentionSettings(file).get().otherVoiceCues, false);
-    assert.equal(attentionSettings(file).get().messageCues, false);
+    assert.equal(attentionSettings(file).get().voiceAlert, true);
+    // The message sound: one of the built-in tones only.
+    prefs.set({ chatTone: 'loud.wav' });
+    assert.equal(attentionSettings(file).get().chatTone, 'soft');
+    prefs.set({ chatTone: 'pop' });
+    assert.equal(attentionSettings(file).get().chatTone, 'pop');
+});
+
+test('a 1.0.x file gets the new defaults one time, keeps its real choices, and later choices stay', t => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'ac-migrate-'));
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    const file = path.join(dir, 'attention.json');
+    // A 1.0.x file: alerts and previews false were the defaults, not choices. The other keys were choices.
+    writeFileSync(file, JSON.stringify({ voiceCues: false, otherVoiceCues: false, messageCues: false, volume: 20,
+        alerts: false, previews: false, sound: true, flash: false }));
+    const first = attentionSettings(file).get();
+    // messageCues false was a choice: the cue of every message stays off too.
+    assert.deepEqual(first, { ...ATTENTION_DEFAULTS, voiceCues: false, voiceSound: false, mentionSound: false,
+        whisperSound: false, friendSound: false, chatSound: false, volume: 20, sound: true, flash: false });
+    assert.equal(first.chatAlert && first.mentionAlert && first.whisperAlert && first.friendAlert && first.previews, true);
+    // A 1.0.x file with the message cues on (the default) gets the cue of every message.
+    assert.equal(migrateAttention({ messageCues: true, alerts: false }).chatSound, true);
+    // The migration is in the file at once (version 2), so the next start does not migrate again.
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).version, 2);
+    attentionSettings(file).set({ mentionAlert: false, previews: false, chatSound: false });
+    const later = attentionSettings(file).get();
+    assert.equal(later.mentionAlert, false); assert.equal(later.previews, false); assert.equal(later.chatSound, false);
+    // A file with no keys of 1.0.x choices, a damaged file and no file give the defaults.
+    assert.deepEqual(migrateAttention({}), ATTENTION_DEFAULTS);
+    assert.deepEqual(migrateAttention(null), ATTENTION_DEFAULTS);
+    writeFileSync(file, '{bad');
+    assert.deepEqual(attentionSettings(file).get(), ATTENTION_DEFAULTS);
 });
 
 test('portable notification identity uses the stable executable and preserves unrelated Start Menu shortcuts', t => {
@@ -102,4 +133,118 @@ test('portable notification identity uses the stable executable and preserves un
     details = { appUserModelId: 'other-app' };
     assert.throws(() => registerNotificationShortcut(opts), /another app/);
     assert.equal(calls.length, 2);
+});
+
+// ---- Message alerts (2026-11-22): who and where, every message, voice, one notification for each conversation ----
+
+test('the title tells who and where; the body is the text with previews on, else a short text', () => {
+    assert.deepEqual(noticeText({ kind: 'message', name: 'Sam', channel: 'games', preview: 'gg' }), { title: 'Sam in #games', body: 'gg' });
+    assert.deepEqual(noticeText({ kind: 'message', name: 'Sam', channel: 'general' }), { title: 'Sam in #general', body: 'New message' });
+    assert.deepEqual(noticeText({ kind: 'message', name: 'Sam', channel: 'general', count: 3, mentions: 1 }),
+        { title: 'Sam in #general', body: '3 new messages' });
+    assert.deepEqual(noticeText({ kind: 'mention', name: 'Sam', channel: 'general', mentions: 1 }), { title: 'Sam in #general', body: 'Mentioned you' });
+    assert.deepEqual(noticeText({ kind: 'mention', name: 'Sam', channel: 'general', count: 2, mentions: 2 }),
+        { title: 'Sam in #general', body: '2 new mentions' });
+    assert.deepEqual(noticeText({ kind: 'mention', name: 'Sam', channel: 'general', mentions: 1, preview: 'hi Parker' }),
+        { title: 'Sam in #general', body: 'hi Parker' });
+    // A whisper and a friend line never show their text.
+    assert.deepEqual(noticeText({ kind: 'whisper', name: 'Alex', preview: 'secret' }), { title: 'Alex (whisper)', body: 'New message' });
+    assert.deepEqual(noticeText({ kind: 'whisper', name: 'Alex', count: 2 }), { title: 'Alex (whisper)', body: '2 new messages' });
+    assert.deepEqual(noticeText({ kind: 'friend', name: 'Ben' }), { title: 'Ben', body: 'New message' });
+    assert.deepEqual(noticeText({ kind: 'friend', name: 'Ben', away: 3 }), { title: 'Ben', body: '3 messages while you were away' });
+    assert.deepEqual(noticeText({ kind: 'friend', name: '', away: 1 }), { title: 'A friend', body: 'Sent while you were away' });
+    assert.deepEqual(noticeText({ kind: 'voice', name: 'Sam', joined: true }), { title: 'Sam', body: 'Joined voice' });
+    assert.deepEqual(noticeText({ kind: 'voice', name: 'Sam', joined: false }), { title: 'Sam', body: 'Left voice' });
+    // Control characters and a long name do not reach the title.
+    assert.equal(noticeText({ kind: 'message', name: 'S\u0007am' + 'x'.repeat(100), channel: 'a\nb' }).title,
+        'S am' + 'x'.repeat(60) + ' in #a b');
+});
+
+test('a plain line and a mention of one channel replace one notification; each row of the grid gates its kind', () => {
+    const notices = [], timers = new Set();
+    const prefs = { chatAlert: true, mentionAlert: true, whisperAlert: true, friendAlert: true, voiceAlert: false, previews: true, sound: false };
+    const attention = createAttention({
+        settings: () => prefs, room: () => 'room', quiet: () => false, allowed: () => true, navigate: () => {},
+        notify: options => Object.assign(new EventEmitter(), { ...options, close() { this.closed = true; this.emit('close'); }, show() { notices.push(this); } }),
+        peerName: id => ({ p1: 'Alex' })[id] ?? '', channelName: id => ({ c1: 'games' })[id] ?? '',
+        schedule(fn) { timers.add(fn); return fn; }, cancel(fn) { timers.delete(fn); }
+    });
+    const advance = () => { for (const fn of [...timers]) { timers.delete(fn); fn(); } };
+    attention.add({ kind: 'message', channelId: 'c1', id: 'a', name: 'Sam', preview: 'first' });
+    advance();
+    assert.deepEqual(notices.map(n => [n.title, n.body]), [['Sam in #games', 'first']]);
+    attention.add({ kind: 'mention', channelId: 'c1', id: 'b', name: 'Sam', preview: 'hi Parker' });
+    attention.add({ kind: 'message', channelId: 'c1', id: 'c', name: 'Kim', preview: 'last' });
+    advance();
+    assert.equal(notices.length, 2);
+    assert.equal(notices[0].closed, true, 'the new notification replaces the old one of the same channel');
+    assert.deepEqual([notices[1].title, notices[1].body], ['Kim in #games', 'last']);
+    // The same Windows tag replaces the old toast also in the Action Center.
+    assert.match(notices[0].id, /^[0-9a-f]{16}$/);
+    assert.equal(notices[1].id, notices[0].id);
+    // The voice row is off by default; a whisper title has the name from the node.
+    attention.add({ kind: 'voice', peerId: 'p1', id: 'v1', joined: true });
+    attention.add({ kind: 'whisper', peerId: 'p1', id: 'w1', preview: 'secret' });
+    advance();
+    assert.deepEqual(notices.slice(2).map(n => [n.title, n.body]), [['Alex (whisper)', 'New message']]);
+    assert.notEqual(notices[2].id, notices[0].id, 'a different conversation has a different tag');
+    prefs.voiceAlert = true;
+    attention.add({ kind: 'voice', peerId: 'p1', id: 'v2', joined: true });
+    advance();
+    assert.deepEqual([notices.at(-1).title, notices.at(-1).body], ['Alex', 'Joined voice']);
+    // The row of all messages off: no plain line. A mention follows that row only when its own row is off.
+    prefs.chatAlert = false;
+    attention.add({ kind: 'message', channelId: 'c1', id: 'd', name: 'Sam' });
+    advance();
+    assert.equal(notices.length, 4);
+    prefs.mentionAlert = false;
+    attention.add({ kind: 'mention', channelId: 'c1', id: 'e', name: 'Sam' });
+    advance();
+    assert.equal(notices.length, 4);
+    prefs.chatAlert = true;
+    attention.add({ kind: 'mention', channelId: 'c1', id: 'f', name: 'Sam' });
+    advance();
+    assert.equal(notices.length, 5);
+});
+
+// ---- Message alerts: mute per channel and per room ----
+
+test('the mute times: 1 hour, the next 08:00 and until I unmute', () => {
+    const evening = new Date(2026, 10, 22, 21, 30).getTime();
+    assert.equal(muteUntil('hour', evening), evening + 3600 * 1000);
+    assert.equal(muteUntil('tomorrow', evening), new Date(2026, 10, 23, 8, 0).getTime());
+    const night = new Date(2026, 10, 23, 2, 0).getTime();
+    assert.equal(muteUntil('tomorrow', night), new Date(2026, 10, 23, 8, 0).getTime(), 'before 04:00: the same morning');
+    assert.equal(muteUntil('forever', evening), null);
+    assert.throws(() => muteUntil('week', evening), /mute time/);
+    assert.equal(muteActive({ until: null }), true);
+    assert.equal(muteActive({ until: evening }, evening), false);
+});
+
+test('the mutes are per room (a hash), end at their time, and stay after a restart', t => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'ac-mute-'));
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    const file = path.join(dir, 'attention-mutes.json');
+    let now = new Date(2026, 10, 22, 12, 0).getTime();
+    const store = muteStore(file, () => now);
+    const a = roomMuteId('key-a', 'Room'), b = roomMuteId(null, 'LAN room');
+    assert.match(a, /^[0-9a-f]{24}$/);
+    assert.notEqual(a, roomMuteId('key-b', 'Room'));
+    assert.deepEqual(store.view(a), { room: null, channels: {} });
+    store.set(a, { scope: 'channel', channelId: 'games', time: 'hour', mentions: true });
+    store.set(a, { scope: 'room', time: 'forever', mentions: false });
+    store.set(b, { scope: 'channel', channelId: 'general', time: 'forever' });
+    assert.deepEqual(store.view(a), { room: { until: null, mentions: false }, channels: { games: { until: now + 3600 * 1000, mentions: true } } });
+    assert.deepEqual(store.view(b).channels.general, { until: null, mentions: true });
+    // The file has no room key and no room name.
+    const text = readFileSync(file, 'utf8');
+    assert.equal(text.includes('key-a') || text.includes('Room'), false);
+    // A restart keeps the mutes; the end of the hour removes the channel mute.
+    now += 3600 * 1000;
+    const again = muteStore(file, () => now);
+    assert.deepEqual(again.view(a), { room: { until: null, mentions: false }, channels: {} });
+    again.set(a, { scope: 'room', time: 'off' });
+    assert.deepEqual(again.view(a), { room: null, channels: {} });
+    assert.throws(() => again.set(null, { scope: 'room', time: 'hour' }), /Open a room/);
+    assert.throws(() => again.set(a, { scope: 'channel', time: 'hour' }), /channel or the room/);
 });
