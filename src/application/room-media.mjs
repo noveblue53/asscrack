@@ -1,6 +1,6 @@
 // Room-scoped media capabilities. The renderer receives only opaque read-only URLs.
 // Encoder/decoder input is bounded separately from unrestricted streamed originals.
-import { sameAttachment } from '../network/attachment.mjs';
+import { normalizeAttachment, sameAttachment } from '../network/attachment.mjs';
 import { open, lstat } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
@@ -55,7 +55,9 @@ export function mediaBody(stream) {
 // decodeImage(info, limit): L7, the decoder outside the main process (image-decoder.mjs). It gets { bytes, width,
 // height } of inspectImage and gives PNG bytes or null. The main process does not decode a peer image: it checks the
 // PNG with the wire rules only. With no decoder, no preview is made.
-export function createRoomMedia({ decodeImage = async () => null, changed = () => {} }) {
+// store (1.0.4): { save(descriptor, png) -> true when an archived card took it, load(descriptor) -> png or null }, the
+// thumbnails of the saved room in its encrypted archive (saved-rooms.mjs). The memory cache alone is gone after a quit.
+export function createRoomMedia({ decodeImage = async () => null, changed = () => {}, store = null }) {
     const entries = new Map(), routes = new Map(), cache = new Map(), streams = new Set();
     let bytesUsed = 0, decoding = 0, epoch = 0, thumbnailEpoch = 0, openingOriginals = 0;
     const hashWaiters = [];
@@ -104,14 +106,40 @@ export function createRoomMedia({ decodeImage = async () => null, changed = () =
         finally { await fh?.close(); decoding--; }
     }
 
-    function saveThumbnail(d, bytes) {
+    function keep(d, bytes) {
+        if (!store?.save || d?.kind !== 'image') return false;
+        try { return store.save(d, bytes) === true; } catch { return false; }
+    }
+
+    // stored: the bytes came from the store (no new save, no change event: the caller gives the info).
+    function saveThumbnail(d, bytes, stored = false) {
         const entry = entryFor(d);
         if (!entry || !bytes?.length || bytes.length > PREVIEW_LIMIT) return false;
         if (cache.has(entry)) { bytesUsed -= entry.thumbnail.length; cache.delete(entry); }
         while (bytesUsed + bytes.length > CACHE_LIMIT) dropPreview(cache.keys().next().value);
         entry.thumbnail = bytes;
-        cache.set(entry, true); bytesUsed += bytes.length; changed(d.id);
+        cache.set(entry, true); bytesUsed += bytes.length;
+        entry.stored = stored || keep(entry, bytes);
+        if (!stored) changed(d.id);
         return true;
+    }
+
+    // The stored thumbnail of an archived image card (after a quit or a Leave room). The PNG gets the wire check again.
+    // A thumbnail in memory that the store did not take (its card was not in the archive yet) goes to the store now.
+    // Gives true when the card has a thumbnail.
+    function loadStored(ref) {
+        const d = normalizeAttachment(ref);
+        if (!store || d?.kind !== 'image') return false;
+        const old = entries.get(d.id);
+        if (old && !sameAttachment(old, d)) return false;
+        if (old?.thumbnail) {
+            if (!old.stored) old.stored = keep(old, old.thumbnail);
+            return true;
+        }
+        let bytes = null;
+        try { bytes = store.load?.(d) ?? null; } catch { bytes = null; }
+        const png = bytes?.length ? inspectImage(Buffer.from(bytes), true)?.bytes : null;
+        return Boolean(png && saveThumbnail(d, png, true));
     }
 
     async function storePreview(d, bytes) {
@@ -275,5 +303,5 @@ export function createRoomMedia({ decodeImage = async () => null, changed = () =
         for (const id of ids) changed(id);
     }
 
-    return { makePreview, storePreview, verified, restore, canReveal, info, previewBytes, serve, clear, clearPreviews };
+    return { makePreview, storePreview, verified, restore, canReveal, info, loadStored, previewBytes, serve, clear, clearPreviews };
 }

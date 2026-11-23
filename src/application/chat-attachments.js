@@ -143,7 +143,7 @@
             }
             await fetchOriginal(card);
         });
-        window.chatMedia?.decorate(row, descriptor);
+        window.chatMedia?.decorate(row, descriptor, own);
     }
     api.onAttachmentStatus(({ id, available, descriptor }) => {
         for (const card of cards.values()) if (card.descriptor.id === id && card.descriptor.source === descriptor?.source && card.descriptor.sha256 === descriptor.sha256) {

@@ -166,7 +166,7 @@ ${text}`).digest('hex')
 
 export async function createAsscrackNode({ room, listen, port = 0, discovery = true, discoveryInterval, name,
     heartbeatInterval = 1000, hostTimeout = 5000, electionDelay = 3000, downloadDir, scratchDir, fileAckTimeout, partials,
-    previewProvider = null, receiveWhisper = null, fullNode = 'auto', allowPrivateFullNode = false, relayOnly = false, roomKey = null, announce = [], storePath = null,
+    previewProvider = null, storedPreview = null, receiveWhisper = null, fullNode = 'auto', allowPrivateFullNode = false, relayOnly = false, roomKey = null, announce = [], storePath = null,
     redialInterval = 5000, inviteNodes = [], upnp = false, upnpTimeout = 70000, upnpLeaseSeconds = 1800,
     upnpClient = null, seedHistory = [], seedChannels = [], seedVoiceChannels = null, membership = null,
     screen: screenOptions = {},
@@ -826,7 +826,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         if (info.clock) sendClock(peerId)
     }
     const attachments = createAttachments({
-        self: node.peerId.toString(), sessions, connections: () => node.getConnections(), files, events, previewProvider, sendRecord,
+        self: node.peerId.toString(), sessions, connections: () => node.getConnections(), files, events, previewProvider, storedPreview, sendRecord,
         canPost(channelId, peer) {
             if (channelId === 'general') return true
             if (!channels.known(channelId) || !channels.available()) throw new Error('This channel is read-only.')
@@ -2346,6 +2346,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         removeShelfFile: shelf.remove, downloadShelfFile: shelf.download, shelfTransfer: shelf.transferId,
         postAttachment: attachments.post, requestOriginal: attachments.requestOriginal, requestPreviewById: attachments.requestPreviewById,
         attachmentAvailable: attachments.available, attachmentDescriptor: attachments.descriptor,
+        attachmentSourceOnline: attachments.sourceOnline,
         sendRecord,
         readyCheck: ready.state, openReady: ready.open, voteReady: ready.vote, closeReady: ready.close, resetReady: ready.reset,
         setTyping: active => { if (!stopped && !selfIdle && typeof active === 'boolean') typing.edited(active) },

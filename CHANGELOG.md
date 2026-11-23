@@ -7,6 +7,62 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased
+
+### Thumbnails of the history after a room reopen (1.0.4)
+
+- Fault (operator report 2026-11-23, installed 1.0.3, real use): after a reopen of a saved protected room, the image
+  cards of the history showed no thumbnail. A click on "Show thumbnail" did nothing that the user could see. This
+  occurred for received images and for own images.
+- Cause: the app kept each thumbnail only in memory (`src/application/room-media.mjs`, the cache of
+  `createRoomMedia`). After a quit or a Leave room, the cache was empty and `asscrack:media-info` gave no thumbnail.
+  The sender kept its preview source only in memory (`src/network/attachment.mjs`, `sources`). The source ended
+  after the 30 minutes of the offer or at a quit. Also, the peer ID of the sender is new at each start. Thus no copy
+  could give the thumbnail again. When the request failed, `paint` in `chat-media.js` did not change the card, thus
+  the click was silent.
+- Not a regression of 1.0.x: the same check on 1.0.0 (`af40267`), 1.0.1 (`cfa4e27`), 1.0.2 (`92b9f74`) and 1.0.3
+  (`181f431`) gives the same result. Since the first media cards (`a00033a`), thumbnails were in memory only.
+- Fix:
+  - The encrypted room archive (`archive.db` in the data folder of 1.0.1) has a new table `message_thumbnails`. It
+    keeps the checked preview PNG of each archived image card of a room that keeps history: own posts and received
+    images. The limits are 512 KiB for each PNG and 32 MiB for each room. The oldest PNG goes first. The PNG goes
+    with its card (Clear history, Forget, the room limits). "Clear thumbnail cache" also deletes the stored
+    thumbnails of the room. The archive keeps `user_version` 3, thus 1.0.3 can still open it.
+  - When the window asks for a card, the main process loads the stored PNG. It checks the PNG again with the wire
+    rules (`inspectImage`). The history shows the thumbnail with no network request.
+  - A sender gives the stored thumbnail of its own post after a restart or after the 30 minutes of the offer. The
+    receiver sends the request to the session peer with the proved device ID of the line. In a protected room, the
+    line ID starts with that device ID. The pair of line and card comes from the archive. The archive keeps only
+    checked live lines and own lines.
+  - The card tells the user why it has no thumbnail. "Loading thumbnail…": a request runs. "Sender offline. Try
+    again": no session of the sender is open. "Thumbnail unavailable. Try again": the sender has no thumbnail, or the
+    card is an own post with no stored thumbnail. When the device of an offline sender is back, the card asks again
+    with no click.
+  - Protocol change: the preview request has no 30-minute limit now. An old sender (1.0.3 or older) still refuses a
+    request after the 30 minutes.
+- "Original unavailable" on a received image while its sender is online is not a fault. The offer of an original is
+  in the memory of the sender. It ends after 30 minutes or at a quit of the sender. No change.
+- Known limits: images of a history from 1.0.3 or older have no stored thumbnail. They show "Thumbnail unavailable.
+  Try again", or the thumbnail of a saved original. A room with no membership has no device ID in the line ID. In
+  such a room, a request goes only to the peer ID of the post.
+
+Results:
+- `npm test` (127.0.0.1): 1095 tests, 1077 pass, 0 fail, 18 skipped. `test/history-thumbnails.test.mjs` (new,
+  10 tests): 9 fail on 1.0.3 and 10 pass with the fix.
+- **this PC**, not a LAN result. Two copies of `electron .` ran with `--profile` and their own `APPDATA`, in a
+  protected LAN room on this PC, with CDP on 127.0.0.1. Each side posted an image (a file and a pasted image). Both
+  quit. Then:
+  - Both reopen, both online: each copy shows the 3 thumbnails from its archive (3 of 3 `room-media` requests 200).
+  - A reopens alone: A shows the 3 thumbnails. After "Clear thumbnail cache" and a click on each card, the card of B
+    says "Sender offline. Try again". The own cards of A say "Thumbnail unavailable. Try again". B starts and
+    reopens with a new peer ID. A then shows the thumbnail of B with no click.
+  - The history of a 1.0.3 run, reopened with the fix: each card says "Thumbnail unavailable. Try again".
+  - The same offline case 32 minutes after the posts (after the 30 minutes of the offers): the same result. B gives
+    its stored thumbnail after the 30 minutes.
+  - One start with a fresh profile: no error line. The reopen runs: no ERROR line in the main logs. Before and after
+    each run, the Start menu shortcut and the toast registration of the installed copy on this PC had the same values.
+- No LAN test and no internet test occurred.
+
 ## 1.0.3 (2026-11-22): message alerts, the image menu and three members that see each other
 
 Release 1.0.3 is the third update of 1.0.0. A 1.0.0, 1.0.1 or 1.0.2 app gets it with the signed update (View, About

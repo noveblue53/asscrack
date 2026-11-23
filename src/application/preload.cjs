@@ -197,8 +197,11 @@ contextBridge.exposeInMainWorld('asscrack', {
     revealSavedOriginal: (messageId, descriptorId) => ipcRenderer.invoke('asscrack:reveal-saved-original', messageId, descriptorId),
     clearMediaPreviews: () => ipcRenderer.invoke('asscrack:media-clear-previews'),
     getMediaInfo: ref => ipcRenderer.invoke('asscrack:media-info', ref),
-    requestMediaPreview: ref => ipcRenderer.invoke('asscrack:media-preview', ref),
+    // messageId: the ID of the line of the card (the main process finds the sender of an archived line with it).
+    requestMediaPreview: (ref, messageId) => ipcRenderer.invoke('asscrack:media-preview', ref, String(messageId ?? '')),
     onMediaChanged: listen('asscrack:media-changed'),
+    // 1.0.4: a sender can answer thumbnail requests again: { peer, device } (device: its proved device ID, or null).
+    onMediaPeer: listen('asscrack:media-peer'),
     // The image menu (menu.js, chat-media.js). The main process checks each descriptor and each path.
     copyMediaImage: ref => ipcRenderer.invoke('asscrack:media-copy-image', ref),
     saveMediaImage: (messageId, ref) => ipcRenderer.invoke('asscrack:media-save-image', String(messageId ?? ''), ref),
