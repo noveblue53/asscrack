@@ -30,6 +30,9 @@
     let vuAt = 0;
     let last = null;
     let pullAt = 0;
+    // The pop-out window: the room window answered null (no music on this PC, for example while deafened). The loop
+    // stops; the slow check asks again one time each second.
+    let roomSilent = false;
     const bandPeaks = vc.createPeaks(vc.BANDS);
     const vuPeaks = vc.createPeaks(2);
 
@@ -132,11 +135,15 @@
 
     // ---- The loop ----
 
+    // The pop-out window: the setting, the view of the node and the page let it draw.
+    function wanted() {
+        const playing = view?.inVoice === true && Boolean(view?.now) && view.paused !== true;
+        return mode() !== 'off' && playing && pageShown();
+    }
+
     function decide() {
         if (windowMode) {
-            const m = mode();
-            const playing = view?.inVoice === true && Boolean(view?.now) && view.paused !== true;
-            return m !== 'off' && playing && pageShown() ? m : null;
+            return wanted() && !roomSilent ? mode() : null;
         }
         const tap = window.music.tap?.();
         return vc.barTarget({ mode: mode(), playing: tap?.playing === true, barShown: !bar.hidden, collapsed: collapsed(),
@@ -177,6 +184,9 @@
     if (windowMode) {
         api.onMusicViz?.(bytes => {
             pullAt = 0;
+            const wasSilent = roomSilent;
+            roomSilent = !bytes;
+            if (roomSilent !== wasSilent) refresh();
             const target = decide();
             if (!target) return;
             const frame = vc.decodeFrame(bytes instanceof Uint8Array ? bytes : bytes ? new Uint8Array(bytes) : null);
@@ -195,14 +205,23 @@
         });
     }
 
-    api.onMusic?.(next => { view = next ?? null; refresh(); });
+    api.onMusic?.(next => {
+        view = next ?? null;
+        // A new track or the end of a pause: ask again at once.
+        roomSilent = false;
+        refresh();
+    });
     Promise.resolve(api.getMusic?.()).then(value => { if (value && !view) { view = value; refresh(); } }).catch(() => {});
     window.music.onChange?.(refresh);
     bar.addEventListener('musiclayout', refresh);
     document.addEventListener('visibilitychange', refresh);
     window.addEventListener('resize', () => { if (!loop.running()) clear(); });
     // The audio starts after the view (the context, the first frames of the DJ): a slow check starts the loop.
-    setInterval(() => { if (!loop.running()) refresh(); }, 1000);
+    setInterval(() => {
+        if (loop.running()) return;
+        if (windowMode && roomSilent && wanted()) api.musicVizPull?.();
+        else refresh();
+    }, 1000);
     refresh();
 
     // For the checks: the loop state and the last levels (rounded).

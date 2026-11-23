@@ -224,15 +224,16 @@ function load({ windowMode = false, settings = {}, playing = true, view: start }
     window.window = window;
     let frames = [];
     let clock = 0;
+    const intervals = [];
     const context = { window, document, Event, console, Promise, Math, Number, String, Object, Array, JSON, Uint8Array,
-        Float32Array, setTimeout, clearTimeout, setInterval: () => 0, performance: { now: () => clock },
+        Float32Array, setTimeout, clearTimeout, setInterval: fn => intervals.push(fn), performance: { now: () => clock },
         requestAnimationFrame: fn => { frames.push(fn); return frames.length; }, cancelAnimationFrame: () => { frames = []; } };
     vm.createContext(context);
     for (const name of ['music-core.js', 'music-ui.js', 'music-viz-core.js', 'music-viz.js']) vm.runInContext(sources[name], context, { filename: name });
     const tick = (ms = 34) => { clock += ms; const run = frames; frames = []; run.forEach(fn => fn()); };
     const setView = next => { view = next; hooks.music(next); };
     return { el, window, document, hooks, calls, draws, tick, tapState, setView, settings: () => s, viz: () => window.musicViz.state(),
-        frames: () => frames.length };
+        frames: () => frames.length, second: () => intervals.forEach(fn => fn()) };
 }
 
 test('room window: the spectrum in the bar while music plays; the loop stops when the room window is minimized', async () => {
@@ -408,4 +409,36 @@ test('pop-out window: the large spectrum asks the room window for each frame; it
     win.setView({ inVoice: false, dj: null, now: null, queue: [] });
     assert.equal(win.el('music-bar').hidden, false);
     assert.equal(win.el('music-title').textContent, 'Not in voice');
+});
+
+test('pop-out window: no music on this PC (a null answer, for example while deafened) stops the loop; the 1 s check asks again', async () => {
+    const win = load({ windowMode: true });
+    await settle();
+    const pulls = () => win.calls.filter(c => c[0] === 'pull').length;
+    win.tick();
+    assert.equal(pulls(), 1);
+    win.hooks.viz(null);
+    win.tick();
+    win.tick();
+    assert.equal(win.viz().running, false, 'stopped: the room window has no music');
+    assert.equal(pulls(), 1, 'no pull at 30 frames each second');
+    // The 1 s check: one pull, the loop stays stopped while the answer is null.
+    win.second();
+    assert.equal(pulls(), 2);
+    win.hooks.viz(null);
+    win.tick();
+    assert.equal(win.viz().running, false);
+    // The music comes back: the next answer starts the loop.
+    win.second();
+    assert.equal(pulls(), 3);
+    win.hooks.viz(new Uint8Array(18).fill(128));
+    assert.equal(win.viz().running, true);
+    win.tick();
+    assert.equal(pulls(), 4);
+    // A new view (for example the end of a pause) asks again at once.
+    win.hooks.viz(null);
+    win.tick();
+    assert.equal(win.viz().running, false);
+    win.setView({ inVoice: true, dj: 'p1', self: 'p2', now: { id: 'b', title: 'Song B' }, paused: false, queue: [] });
+    assert.equal(win.viz().running, true);
 });

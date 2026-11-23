@@ -20,9 +20,10 @@ no new network traffic.
   (`music.js`). The pop-out window has no audio: for each frame it asks the room window for 18 bytes through the main
   process.
 - The draw loop has a maximum of about 30 frames each second. It runs only while the canvas is on the screen and
-  music plays. It stops when the bar is not shown, or when the window is not on the screen
+  music plays on this PC. It stops when the bar is not shown, or when the window is not on the screen
   (minimized, hidden, or fully under other windows). It also stops with the setting Off and when the music pauses
-  or stops.
+  or stops. A deafened listener has no music, thus the pop-out window asks the room window again only one time
+  each second.
 - New setting in the bar and in the pop-out window: Visualizer Spectrum, VU or Off. The LED colors do not change. The
   dark panel has the accent color of the theme.
 - Collapse (the button at the right of the bar) folds the bar to a strip: the VU meter, now playing, Pause and Skip.
@@ -35,27 +36,31 @@ no new network traffic.
   at the next join of voice.
 
 Results:
-- New tests: `test/music-viz.test.mjs` has 14 tests. They check the band mapping, the peak caps, the LED colors, the
+- New tests: `test/music-viz.test.mjs` has 15 tests. They check the band mapping, the peak caps, the LED colors, the
   VU level, the frame and the draw loop. They also check the room bar and the pop-out window in the fake DOM. `test/music-popout.test.mjs`
   has 3 tests: the window rules, the bridge and the settings. On the base `d664ef8` they fail (the modules and the
-  settings fields are not there). Two tests had a fixed list of the settings fields:
+  settings fields are not there). The test of the pop-out window with no music on this PC came after the first
+  commit of this branch. It fails on that commit (the pop-out window asked 30 times each second) and passes now. Two tests had a fixed list of the settings fields:
   `test/music-media.test.mjs` and `test/music-source.test.mjs` now include the new fields.
-- `npm test` (127.0.0.1): 1167 tests, 1149 pass, 0 fail, 18 skipped.
+- `npm test` (127.0.0.1): 1168 tests, 1150 pass, 0 fail, 18 skipped.
 - **this PC, 127.0.0.1**, two copies of `electron .` with `--profile`, a fake APPDATA and outputs on the Steam
   Streaming Speakers. A is the DJ with a local test file, B is a listener:
   - The bars move on both copies (16 bands, values of the analysers and lit pixels of the canvas). At a volume of 0 %
-    the bars of B still move.
+    the bars of B still move. When B is deafened, the pop-out loop and the room loop stop. They start again after
+    the undeafen.
   - Collapse: the strip with the VU meter, saved in the settings. Pop out: one window with the large spectrum, the
     bar is a strip, Pause and Play from the window work. With the room window minimized, the room loop stops and the
     pop-out window still moves. Pop in closes the window and clears the setting. View > Music player hides the bar,
     the mark shows the track, and a click on the mark shows the bar again. After Stop, the loops of A and B stop.
-  - CPU (all processes of one copy, % of one core, 10 s each): in voice with no music 4.1 (A) and 5.1 (B). Music
-    with Spectrum in the bar 13.3 (A) and 12.4 (B). Music with Off 7.8 (A) and 6.1 (B). Thus the bar visualizer
-    costs about 6 % of one core (about 3 % renderer and 3 % GPU). Values of B: the collapsed VU 12.7, the pop-out
-    window open 19.5, the bar hidden 6.3. The room window minimized with the pop-out window open: 13.2.
+  - CPU (all processes of one copy, % of one core, 10 s each): in voice with no music 4.1 (A) and 4.9 (B). Music
+    with Spectrum in the bar 14.4 (A) and 13.5 (B). Music with Off 7.9 (A) and 6.7 (B). Thus the bar visualizer
+    costs about 6 to 7 % of one core (about 3 % renderer and 3 to 4 % GPU). Values of B: the collapsed VU 13.2, the
+    pop-out window open 18.9, the bar hidden 6.0, deafened with the pop-out window open 4.6. The room window
+    minimized with the pop-out window open: 12.5.
   - The check starts the copies with `--disable-features=CalculateNativeWinOcclusion`: other windows of this PC can
     cover the test windows, and Chromium then stops the loop. A first run without this option showed that stop.
-  - Console and terminal: no error line.
+  - Console and terminal: no error line. One more start of `electron .` with a fresh `--profile` and a fake APPDATA
+    (no other test option), a LAN room and voice: no error line.
   - The Start menu shortcut and the toast registration of the installed copy on this PC had the same values before
     and after the runs.
 - No LAN test occurred.
