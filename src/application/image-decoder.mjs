@@ -4,6 +4,11 @@
 // does not decode it.
 const JOB = 'asscrack:image-decode';
 const RESULT = 'asscrack:image-decoded';
+// Copy image: the page shows a preview PNG in an <img> and tells when the image is ready. Then the main process calls
+// copyImageAt on the decoder window. Chromium copies the decoded bitmap of that renderer to the clipboard (the formats
+// PNG, CF_DIBV5, CF_DIB and CF_BITMAP). The main process does not decode the image.
+const COPY = 'asscrack:image-copy';
+const COPY_READY = 'asscrack:image-copy-ready';
 
 // BrowserWindow, ipc: of Electron (a test gives fakes). page: the URL of image-decoder.html. preload: the path of
 // image-decoder-preload.cjs. isFrame(win, event): the sender check (isDesktopFrame of desktop-boundary.mjs).
@@ -57,6 +62,13 @@ export function createImageDecoder({ BrowserWindow, ipc, page, preload, isFrame,
         finish(id, bytes instanceof Uint8Array && bytes.length > 0 ? Buffer.from(bytes) : null);
     });
 
+    ipc.on(COPY_READY, (event, id, ok) => {
+        const job = jobs.get(id);
+        if (!win || !isFrame(win, event) || !job?.copy) return;
+        if (ok !== true) { finish(id, false); return; }
+        try { win.webContents.copyImageAt(0, 0); finish(id, true); } catch { finish(id, false); }
+    });
+
     // info: { bytes, width, height } of inspectImage. limit: the PNG size limit. Gives the PNG bytes or null.
     async function decode(info, limit) {
         if (disposed || !info?.bytes?.length || info.bytes.length > maxBytes) return null;
@@ -72,10 +84,26 @@ export function createImageDecoder({ BrowserWindow, ipc, page, preload, isFrame,
         return result;
     }
 
+    // png: the bytes of a preview PNG that room-media.mjs checked (made by this decoder). Gives true when the window
+    // copied the image to the clipboard, else false.
+    async function copy(png) {
+        if (disposed || !png?.length || png.length > maxBytes) return false;
+        clearTimer(idle);
+        const id = ++seq;
+        const result = new Promise(resolve => {
+            const timer = setTimer(() => finish(id, false), timeoutMs);
+            timer?.unref?.();
+            jobs.set(id, { resolve, timer, copy: true });
+        });
+        if (!await open() || !jobs.has(id) || !win) { finish(id, false); return result; }
+        win.webContents.send(COPY, id, new Uint8Array(png));
+        return result;
+    }
+
     function dispose() {
         disposed = true;
         close();
     }
 
-    return { decode, close, dispose };
+    return { decode, copy, close, dispose };
 }

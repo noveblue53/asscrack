@@ -33,6 +33,24 @@
         }
     }
 
+    // Copy image: the image is at the top left corner of the page, where the main process calls copyImageAt(0, 0).
+    // It stays until the next copy, because copyImageAt reads it after this answer.
+    let shown = null;
+    window.imageDecoder.onCopy?.(async (id, bytes) => {
+        if (shown) { URL.revokeObjectURL(shown.src); shown.remove(); shown = null; }
+        let ok = false;
+        try {
+            const image = new Image();
+            image.className = 'copy';
+            image.src = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
+            document.body.prepend(image);
+            shown = image;
+            await image.decode();
+            ok = image.naturalWidth > 0 && image.naturalHeight > 0;
+        } catch { ok = false; }
+        window.imageDecoder.copyReady(id, ok);
+    });
+
     window.imageDecoder.onJob(async (id, bytes, size) => {
         let out = null;
         try { out = await preview(bytes, size); } catch { out = null; }

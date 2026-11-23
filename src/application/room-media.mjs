@@ -254,6 +254,12 @@ export function createRoomMedia({ decodeImage = async () => null, changed = () =
         return version === epoch && allowed();
     }
 
+    // Copy image: the checked preview PNG (made by the decoder, checked by encode), or null. No decode here.
+    function previewBytes(ref) {
+        const e = entries.get(ref?.id);
+        return e && sameAttachment(e, ref) && e.thumbnail ? e.thumbnail : null;
+    }
+
     function clearPreviews() {
         thumbnailEpoch++;
         for (const entry of [...cache.keys()]) dropPreview(entry);
@@ -269,5 +275,5 @@ export function createRoomMedia({ decodeImage = async () => null, changed = () =
         for (const id of ids) changed(id);
     }
 
-    return { makePreview, storePreview, verified, restore, canReveal, info, serve, clear, clearPreviews };
+    return { makePreview, storePreview, verified, restore, canReveal, info, previewBytes, serve, clear, clearPreviews };
 }

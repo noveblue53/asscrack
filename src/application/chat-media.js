@@ -8,7 +8,7 @@
     // Gap D7: the image viewer. A click on a chat image, or the row action "View image", opens it.
     const viewer = document.getElementById('image-viewer');
     const viewerImage = document.getElementById('image-viewer-image');
-    let viewing = 0;
+    let viewing = 0, viewed = null;
     const key = 'asscrack.automaticThumbnails.v1';
     let auto = true, active = 0, playing = null;
     try { auto = localStorage.getItem(key) !== 'false'; } catch {}
@@ -170,10 +170,22 @@
         if (call !== viewing || !url) return false;
         viewerImage.src = url;
         viewerImage.alt = entry.descriptor.name || 'Image';
+        viewed = entry;
         if (!viewer.open) viewer.showModal();
         return true;
     }
-    viewer?.addEventListener('close', () => { viewing++; viewerImage?.removeAttribute('src'); });
+    viewer?.addEventListener('close', () => { viewing++; viewed = null; viewerImage?.removeAttribute('src'); });
+    // The image menu (menu.js): Copy image, Save image as and Open original. The main process checks each request.
+    // Copy image needs the preview PNG (the decoder window copies it). Save image as without a local original starts
+    // the download of the original (chat-attachments.js), and the main process saves the file at its end.
+    async function saveImage(entry) {
+        if (!entry || !api.saveMediaImage) return null;
+        const result = await api.saveMediaImage(entry.row.dataset.id, entry.descriptor);
+        if (!result?.pending) return result;
+        if (await window.chatAttachments?.download?.(entry.row)) return result;
+        await api.cancelMediaSave?.(entry.descriptor.id);
+        return { ok: false, reason: 'unavailable' };
+    }
     function decorate(row, descriptor) {
         if (!row || !descriptor?.id) return;
         const old = records.get(descriptor.id);
@@ -200,6 +212,12 @@
     window.chatMedia = { decorate,
         hasImage: row => imageEntry(row) !== null,
         viewImage: row => view(imageEntry(row)),
+        canCopy: row => Boolean(imageEntry(row)?.url && api.copyMediaImage),
+        copyImage: async row => { const entry = imageEntry(row); return Boolean(entry?.url) && await api.copyMediaImage(entry.descriptor) === true; },
+        saveImage: row => saveImage(imageEntry(row)),
+        openOriginal: async row => { const entry = imageEntry(row); return Boolean(entry) && (await api.openMediaOriginal?.(row.dataset.id, entry.descriptor))?.ok === true; },
+        // The row of the image in the open viewer, or null.
+        viewerRow: () => (viewer?.open && viewed?.row.isConnected ? viewed.row : null),
         async clearPreviews() {
         for (const entry of records.values()) { entry.attempted = true; entry.manual = false; }
         await api.clearMediaPreviews();
