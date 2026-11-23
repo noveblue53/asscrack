@@ -218,3 +218,16 @@ test('L3: the friend request bar shows the device mark beside the name', async (
     on.request({ kind: 'incoming', id: 'r1', name: 'Sam', mark: 'a1b2c3' })
     assert.match(room.el('friend-request-text').textContent, /^Sam #a1b2c3 wants to be friends\./)
 })
+
+test('Friends panel (1.0.6): a friend with a profile picture gets an <img> of the app scheme; a bad value gets none', async () => {
+    const hash = 'ab'.repeat(32);
+    const { room } = await load(open({ friends: [
+        { friendId: 'f1', name: 'Ben', state: 'online', lastSeen: 1, unread: 0, avatar: hash },
+        { friendId: 'f2', name: 'Cat', state: 'offline', lastSeen: 1, unread: 0, avatar: '../x' },
+        { friendId: 'f3', name: 'Dan', state: 'offline', lastSeen: 1, unread: 0, avatar: null }] }));
+    const [ben, cat, dan] = room.el('friend-list').children;
+    assert.equal(ben.children[0].className, 'friend-pic avatar-pic');
+    assert.equal(ben.children[0].src ?? ben.children[0].getAttribute('src'), `avatar/${hash}`);
+    assert.equal(cat.querySelector('.friend-pic'), null);
+    assert.equal(dan.querySelector('.friend-pic'), null);
+});

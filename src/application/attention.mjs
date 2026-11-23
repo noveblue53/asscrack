@@ -163,7 +163,7 @@ export function toastTag(key) {
 // session: the friend links run on the login screen too.
 // peerName(peerId) and channelName(channelId): message alerts, the names of the title (from the node).
 export function createAttention({ settings, room, quiet, allowed, notify, navigate, friendName = () => '',
-    peerName = () => '', channelName = () => '', schedule = (fn, ms) => setTimeout(fn, ms), cancel = clearTimeout }) {
+    peerName = () => '', channelName = () => '', avatarOf = () => null, schedule = (fn, ms) => setTimeout(fn, ms), cancel = clearTimeout }) {
     const groups = new Map();
     const seen = new Set();
     // One notification for each conversation: a mention and a plain line of one channel replace each other.
@@ -204,7 +204,9 @@ export function createAttention({ settings, room, quiet, allowed, notify, naviga
         try {
             // id: the Windows tag of the toast. A toast with the same tag replaces the old one also in the Action
             // Center (close() removes only a toast that is on the screen). A hash: no channel or peer ID in the tag.
-            const notice = notify({ title, body, silent: !prefs.sound, id: toastTag(key) });
+            // 1.0.6: avatarHash, the profile picture of a friend or a peer (main.js makes the icon).
+            const avatarHash = avatarOf(target);
+            const notice = notify({ title, body, silent: !prefs.sound, id: toastTag(key), ...(avatarHash ? { avatarHash } : {}) });
             group.notice = notice;
             notice.once('click', () => {
                 if (groups.get(key) !== group || group.notice !== notice || !eligible(shown)) return;

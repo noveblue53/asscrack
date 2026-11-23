@@ -365,5 +365,13 @@ contextBridge.exposeInMainWorld('asscrack', {
     onOwnPresence: listen('asscrack:own-presence'),
     getAutoStatus: () => ipcRenderer.invoke('asscrack:auto-status'),
     setAutoStatus: patch => ipcRenderer.invoke('asscrack:set-auto-status', {
-        awayMinutes: patch?.awayMinutes, dndFullscreen: patch?.dndFullscreen })
+        awayMinutes: patch?.awayMinutes, dndFullscreen: patch?.dndFullscreen }),
+    // 1.0.6: profile pictures (avatars.mjs). The window gets hashes, a pick token and the preview size; the crop is
+    // four numbers.
+    getAvatars: () => ipcRenderer.invoke('asscrack:avatars'),
+    onAvatars: listen('asscrack:avatars'),
+    pickAvatar: () => ipcRenderer.invoke('asscrack:avatar-pick'),
+    setAvatar: (token, crop) => ipcRenderer.invoke('asscrack:avatar-set', String(token ?? ''),
+        { x: Number(crop?.x), y: Number(crop?.y), w: Number(crop?.w), h: Number(crop?.h) }),
+    removeAvatar: () => ipcRenderer.invoke('asscrack:avatar-remove')
 });

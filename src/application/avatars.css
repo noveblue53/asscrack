@@ -1,0 +1,102 @@
+/* 1.0.6: profile pictures (avatars-ui.js, friends-ui.js, knock-ui.js). A picture covers the letter ball; with no
+   picture the letter stays. */
+.avatar-pic {
+  display: block;
+  border-radius: 50%;
+  object-fit: cover;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* The buddy ball: the picture covers the letter; the voice light (::before, ::after) stays on top. */
+#peers .avatar > .buddy-pic {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* A chat line: a small picture before the name. */
+.from > .chat-pic {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  margin: 0 5px 0 0;
+  vertical-align: -4px;
+}
+
+/* The voice list. */
+.vc-person > .vc-pic {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+/* The friends list (the panel and the Friends window). */
+#friend-list > li { position: relative; }
+#friend-list > li:has(> .friend-pic) { padding-left: 38px; }
+#friend-list > li > .friend-pic {
+  position: absolute;
+  left: 7px;
+  top: 50%;
+  width: 24px;
+  height: 24px;
+  transform: translateY(-50%);
+}
+
+/* The knock bar. */
+#knock-pic { flex: none; width: 28px; height: 28px; }
+#knock-pic[hidden] { display: none; }
+
+/* The availability dialog: the own picture and the button. */
+.avatar-line { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; }
+.avatar-line .own-avatar {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--line-soft, #c9d6e3);
+  overflow: hidden;
+}
+.avatar-line .own-pic { width: 100%; height: 100%; }
+
+/* The crop square of the dialog. With no new picture it shows the own picture. */
+#avatar-dialog { width: 260px; }
+#avatar-crop {
+  position: relative;
+  width: 200px;
+  height: 200px;
+  margin: 8px auto;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--line-soft, #c9d6e3);
+  touch-action: none;
+  cursor: default;
+}
+#avatar-crop.picked { cursor: grab; }
+#avatar-crop:focus-visible { outline: 2px solid var(--focus, #235aa5); outline-offset: 2px; }
+#avatar-crop > .own-pic { width: 100%; height: 100%; border-radius: 0; }
+#avatar-crop.picked > .own-pic { display: none; }
+#avatar-crop-image {
+  position: absolute;
+  left: 0;
+  top: 0;
+  max-width: none;
+  transform-origin: 0 0;
+  user-select: none;
+  pointer-events: none;
+}
+/* The round mask: the part outside the circle is darker (the picture shows as a circle). */
+#avatar-crop.picked::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 0 200px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+.avatar-zoom { display: flex; align-items: center; gap: 8px; }
+.avatar-zoom input { flex: 1; }
+#avatar-error { color: #b3261e; margin: 6px 0 0; }
+.avatar-buttons { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; margin-top: 10px; }
+.avatar-buttons form { margin: 0; }

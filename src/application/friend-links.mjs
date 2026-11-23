@@ -99,7 +99,8 @@ function ownCandidates(friendNode, roomNode, port) {
 // The test options: basePort, cap, startStep, ackMs, now, setTimer, clearTimer, candidates (false: no candidate).
 export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = {}, log = () => {},
     basePort = FRIEND_BASE_PORT, cap = FRIEND_CAP, startStep = FRIEND_START_STEP_MS, ackMs, requestMs, rateMs,
-    now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout, candidates = true, discovery = true } = {}) {
+    now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout, candidates = true, discovery = true,
+    avatarOf = () => null } = {}) {
     const events = new EventEmitter();
     let identity = null;
     let archive = null;
@@ -174,7 +175,9 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
         const view = {
             friendId: entry.row.roomId, name: entry.row.nickname, unread: entry.unread,
             state: removed ? 'removed-you' : peerId ? 'online' : inRoom ? 'room' : 'offline',
-            lastSeen: entry.row.lastSeen ?? null
+            lastSeen: entry.row.lastSeen ?? null,
+            // 1.0.6: the hash of the profile picture of the friend device (avatars.mjs), or null (the letter).
+            avatar: avatarOf(entry.row.deviceId) ?? null
         };
         if (peerId && !removed) Object.assign(view, friendAvailability(entry, peerId));
         if (inRoom) view.roomName = room.name ?? '';
@@ -1000,6 +1003,8 @@ export function createFriendLinks({ createNode, hintFiles = null, nodeOptions = 
             const entry = friends.get(friendId);
             return entry ? friendView(entry) : null;
         },
+        // 1.0.6: a profile picture changed: the list again.
+        avatarsChanged() { if (state === 'open') emitChanged(); },
         markRead(friendId) {
             const entry = friends.get(friendId);
             if (!entry || entry.unread === 0) return;

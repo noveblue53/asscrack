@@ -623,6 +623,7 @@
         else if (item === items.map && mapToggle) mapToggle.click();
         else if (item.id === 'view-music') void window.musicUi?.toggleHidden();
         else if (item.id === 'view-theme') window.roomThemes.open(viewOrigin);
+        else if (item.id === 'view-avatar') window.avatarsUi?.open();
         else if (item.id === 'view-system-buttons') window.frameControls?.toggleSystemButtons();
         else if (item.id === 'view-idle') window.idlePeer?.enter();
         else if (item.id === 'view-close-idle') window.idlePeer?.toggleClose();

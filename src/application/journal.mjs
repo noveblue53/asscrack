@@ -218,6 +218,8 @@ export const EVENT_FIELDS = Object.freeze({
     // 1.0.4: the automatic status. The event and its cause only: no input data, no idle time, no window.
     status: { event: oneOf('auto-away', 'auto-dnd', 'auto-back'), reason: oneOf('idle', 'lock', 'sleep', 'fullscreen', 'input',
         'unlock', 'resume', 'voice', 'off', 'fullscreen-end') },
+    // 1.0.6: profile pictures (avatars.mjs). The step and its result only: no picture data, no hash, no name.
+    avatar: { event: oneOf('set', 'removed', 'fetch'), result: kinds.code, bytes: kinds.int, peer: kinds.peer },
     'writer-error': { code: kinds.code }
 });
 

@@ -21,6 +21,7 @@
   <link rel="stylesheet" href="desktop-controls.css">
   <link rel="stylesheet" href="shared-shelf.css">
   <link rel="stylesheet" href="transcript-notes.css">
+  <link rel="stylesheet" href="avatars.css">
   <link rel="stylesheet" href="voice-channels.css">
   <link rel="stylesheet" href="ready-check.css">
   <link rel="stylesheet" href="music.css">
@@ -157,6 +158,7 @@
         <li id="view-clear-previews" data-room-only hidden role="menuitem" tabindex="-1">Clear thumbnail cache</li>
         <li class="view-rule" role="separator" data-room-only hidden></li>
         <li id="view-theme" role="menuitem" aria-haspopup="dialog" aria-controls="theme-gallery" tabindex="-1">Theme…</li>
+        <li id="view-avatar" data-room-only hidden role="menuitem" aria-haspopup="dialog" aria-controls="avatar-dialog" tabindex="-1">Profile picture…</li>
         <li id="view-attention" role="menuitem" aria-haspopup="dialog" aria-controls="attention-settings" tabindex="-1">Sound &amp; notifications…</li>
         <li id="view-shortcuts" role="menuitem" aria-haspopup="dialog" aria-controls="shortcuts-dialog" aria-keyshortcuts="F1" tabindex="-1">Keyboard shortcuts…</li>
         <li id="view-about" role="menuitem" aria-haspopup="dialog" aria-controls="about-dialog" tabindex="-1">About ASSCRACK…</li>
@@ -468,6 +470,7 @@
         </div>
         <!-- easy-join part 2, knock-ui.js: a request to join with a room code (owner only). -->
         <div id="knock-bar" role="group" aria-labelledby="knock-text" hidden>
+          <img id="knock-pic" class="avatar-pic" alt="" hidden>
           <p id="knock-text"></p>
           <span id="knock-more" class="state-tag" hidden></span>
           <button id="knock-allow" type="button">Allow</button>
@@ -591,6 +594,7 @@
 
   <dialog id="availability-dialog" aria-labelledby="availability-title">
     <h2 id="availability-title">Your availability</h2>
+    <p class="avatar-line"><span class="own-avatar" aria-hidden="true"></span><button type="button" data-avatar-open aria-haspopup="dialog" aria-controls="avatar-dialog">Profile picture…</button></p>
     <div id="presence-fields"></div>
     <div id="auto-status" hidden>
       <label for="auto-away" title="No keyboard or mouse input, or the screen is locked. Not while in voice.">Away after</label>
@@ -604,6 +608,20 @@
       <p id="auto-status-error" class="auto-status-error" role="alert" hidden></p>
     </div>
     <form method="dialog"><button>Done</button></form>
+  </dialog>
+  <dialog id="avatar-dialog" aria-labelledby="avatar-title">
+    <h2 id="avatar-title">Profile picture</h2>
+    <div id="avatar-crop" class="own-avatar" tabindex="0" aria-label="Crop. Drag or use the arrow keys to move.">
+      <img id="avatar-crop-image" alt="" draggable="false" hidden>
+    </div>
+    <label class="avatar-zoom">Zoom <input id="avatar-zoom" type="range" min="1" max="4" step="0.01" value="1" disabled></label>
+    <p id="avatar-error" role="alert" hidden></p>
+    <div class="avatar-buttons">
+      <button id="avatar-choose" type="button">Choose…</button>
+      <button id="avatar-remove" type="button">Remove</button>
+      <button id="avatar-save" type="button" disabled>Save</button>
+      <form method="dialog"><button>Cancel</button></form>
+    </div>
   </dialog>
   <dialog id="message-details" aria-labelledby="message-details-title">
     <h2 id="message-details-title">Message details</h2>
@@ -933,6 +951,7 @@
   <script src="friends-ui.js"></script>
   <script src="friend-requests-ui.js"></script>
   <script src="knock-ui.js"></script>
+  <script src="avatars-ui.js"></script>
   <script src="menu.js"></script>
   <script src="shared-shelf.js"></script>
   <script src="title.js"></script>

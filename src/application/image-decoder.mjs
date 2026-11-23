@@ -70,7 +70,8 @@ export function createImageDecoder({ BrowserWindow, ipc, page, preload, isFrame,
     });
 
     // info: { bytes, width, height } of inspectImage. limit: the PNG size limit. Gives the PNG bytes or null.
-    async function decode(info, limit) {
+    // job (profile pictures, avatars.mjs): { mode: 'avatar', crop } or { mode: 'avatar-show' } (image-decoder.js).
+    async function decode(info, limit, job = null) {
         if (disposed || !info?.bytes?.length || info.bytes.length > maxBytes) return null;
         clearTimer(idle);
         const id = ++seq;
@@ -80,7 +81,10 @@ export function createImageDecoder({ BrowserWindow, ipc, page, preload, isFrame,
             jobs.set(id, { resolve, timer });
         });
         if (!await open() || !jobs.has(id) || !win) { finish(id, null); return result; }
-        win.webContents.send(JOB, id, new Uint8Array(info.bytes), { width: info.width, height: info.height, limit });
+        const size = { width: info.width, height: info.height, limit };
+        if (job?.mode === 'avatar') Object.assign(size, { mode: 'avatar', crop: { ...job.crop } });
+        else if (job?.mode === 'avatar-show') size.mode = 'avatar-show';
+        win.webContents.send(JOB, id, new Uint8Array(info.bytes), size);
         return result;
     }
 
