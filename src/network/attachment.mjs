@@ -52,7 +52,11 @@ async function readBounded(stream, max) {
     return Buffer.concat(chunks, length)
 }
 
-export function createAttachments({ self, sessions, connections, files, events, previewProvider, sendRecord, canPost }) {
+// storedPreview(id, live) -> { descriptor, png } or null (1.0.4): the stored thumbnail of an own post of this device (the
+// archive of the app). live: the descriptor when this node made the post, else null (the post of an earlier start has
+// the peer ID of that start). It answers a preview request when the post has no current offer: after a restart, or
+// after its 30 minutes.
+export function createAttachments({ self, sessions, connections, files, events, previewProvider, storedPreview = null, sendRecord, canPost }) {
     const sources = new Map()
     const known = new Map()
     const capable = new Set()
@@ -116,6 +120,8 @@ export function createAttachments({ self, sessions, connections, files, events, 
             if (capable.has(peer)) return
             capable.add(peer)
             for (const d of known.values()) if (d.source === peer && d.expires > Date.now()) send(peer, 'query', { id: d.id, stamp: descriptorHash(d).toString('hex') })
+            // The peer can answer preview requests now (the window asks again for its cards with no thumbnail).
+            events.emit('attachment-peer', { peer })
             return
         }
         const { op, id } = control
@@ -202,7 +208,7 @@ export function createAttachments({ self, sessions, connections, files, events, 
 
     async function handlePreview({ stream, connection }) {
         const peer = connection.remotePeer.toString()
-        if (stopped || serving >= 2 || !sessions.has(peer) || !capable.has(peer) || !previewProvider || !allowPreview(peer)) {
+        if (stopped || serving >= 2 || !sessions.has(peer) || !capable.has(peer) || (!previewProvider && !storedPreview) || !allowPreview(peer)) {
             stream.abort(new Error('Preview unavailable')); return
         }
         serving++
@@ -210,21 +216,39 @@ export function createAttachments({ self, sessions, connections, files, events, 
         try {
             const id = (await readBounded(stream, 36)).toString('ascii')
             const source = sources.get(id)
-            if (!source || source.descriptor.expires <= Date.now() || !await files.unchanged(source.prepared)) throw new Error('Original unavailable')
-            const bytes = await publisherPreview(source)
-            if (!bytes?.length || bytes.length > MAX_PREVIEW_BYTES || !sessions.has(peer) || stopped) throw new Error('Preview unavailable')
-            if (sources.get(id) !== source || !await files.unchanged(source.prepared)) throw new Error('Original changed')
-            await stream.sink([descriptorHash(source.descriptor), createHash('sha256').update(bytes).digest(), bytes])
+            let descriptor, bytes
+            if (source && source.descriptor.expires > Date.now()) {
+                if (!previewProvider || !await files.unchanged(source.prepared)) throw new Error('Original unavailable')
+                bytes = await publisherPreview(source)
+                if (!bytes?.length || bytes.length > MAX_PREVIEW_BYTES || !sessions.has(peer) || stopped) throw new Error('Preview unavailable')
+                if (sources.get(id) !== source || !await files.unchanged(source.prepared)) throw new Error('Original changed')
+                descriptor = source.descriptor
+            } else {
+                // An own post with no current offer: the stored thumbnail of this device, bound to its own descriptor.
+                const live = known.get(id)
+                const stored = storedPreview ? await storedPreview(id, live?.source === self ? live : null) : null
+                descriptor = normalizeAttachment(stored?.descriptor)
+                bytes = stored?.png
+                if (descriptor?.id !== id || !bytes?.length || bytes.length > MAX_PREVIEW_BYTES || !sessions.has(peer) || stopped) {
+                    throw new Error('Preview unavailable')
+                }
+            }
+            await stream.sink([descriptorHash(descriptor), createHash('sha256').update(bytes).digest(), bytes])
             await stream.close()
         } catch (err) { stream.abort(err) }
         finally { done(); serving-- }
     }
-    async function requestPreviewById(ref) {
-        const descriptor = resolve(ref)
+    // options.via: the peer to ask (default: the source of the post). After a restart the sender has a new peer ID; the
+    // app gives the session peer with the proved device ID of the post. options.descriptor: a descriptor that the app
+    // checked (its archive) for a post that is not in this node (the node keeps the newest 200).
+    async function requestPreviewById(ref, options = {}) {
+        const given = normalizeAttachment(options.descriptor)
+        const descriptor = resolve(ref) ?? (given && (typeof ref === 'string' ? ref === given.id : sameAttachment(given, ref)) ? given : undefined)
         const id = descriptor?.id
-        if (!descriptor || !capable.has(descriptor.source) || descriptor.expires <= Date.now() ||
-            activeReads.size >= 2 || activeReads.has(id) || stopped) return null
-        const connection = connections().find(c => c.status === 'open' && c.remotePeer.toString() === descriptor.source)
+        const target = typeof options.via === 'string' ? options.via : descriptor?.source
+        // No expiry check: a thumbnail can come after the 30 minutes of the offer (storedPreview of the sender).
+        if (!descriptor || !capable.has(target) || activeReads.size >= 2 || activeReads.has(id) || stopped) return null
+        const connection = connections().find(c => c.status === 'open' && c.remotePeer.toString() === target)
         if (!connection) return null
         activeReads.add(id)
         let stream, done
@@ -249,6 +273,8 @@ export function createAttachments({ self, sessions, connections, files, events, 
     }
     return { post, opened, handle, remember, closed, handlePreview, requestPreviewById, requestOriginal,
         descriptor: ref => resolve(ref) ?? null,
+        // True when the sender of the post has an open session that answers attachment requests.
+        sourceOnline(ref) { const d = resolve(ref); return Boolean(d && capable.has(d.source)) },
         available(ref) { const d = resolve(ref); return Boolean(d && d.expires > Date.now() && availability.get(d.id)) },
         stop() {
             stopped = true

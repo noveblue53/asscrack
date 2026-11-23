@@ -103,6 +103,11 @@ CREATE TABLE IF NOT EXISTS message_attachments(room_id TEXT NOT NULL REFERENCES 
 -- This table is never joined into public history, network replay or renderer rows.
 CREATE TABLE IF NOT EXISTS verified_downloads(room_id TEXT NOT NULL,msg_id TEXT NOT NULL,path TEXT NOT NULL,
   PRIMARY KEY(room_id,msg_id), FOREIGN KEY(room_id,msg_id) REFERENCES message_attachments(room_id,msg_id) ON DELETE CASCADE);
+-- 1.0.4: the checked preview PNG of an archived image card (room-media.mjs). It is local to this PC, like
+-- verified_downloads, and goes when its card goes. The table needs no new user_version: 1.0.3 opens the file.
+CREATE TABLE IF NOT EXISTS message_thumbnails(room_id TEXT NOT NULL,msg_id TEXT NOT NULL,png BLOB NOT NULL,
+  saved_at INTEGER NOT NULL, PRIMARY KEY(room_id,msg_id),
+  FOREIGN KEY(room_id,msg_id) REFERENCES message_attachments(room_id,msg_id) ON DELETE CASCADE);
 CREATE TRIGGER IF NOT EXISTS remove_general_attachment AFTER DELETE ON messages BEGIN
   DELETE FROM message_attachments WHERE room_id=OLD.room_id AND msg_id=OLD.msg_id;
 END;
@@ -136,6 +141,9 @@ END;
 
 // Limits of each room and of each row (DECISIONS.md P6).
 export const ARCHIVE_LIMITS = Object.freeze({ maxRows: 10000, maxBytes: 8388608, maxRowBytes: MAX_MESSAGE_BYTES });
+// The stored thumbnails of each room (message_thumbnails): one PNG of at most 512 KiB (PREVIEW_LIMIT of
+// media-formats.mjs), at most 32 MiB for each room (the size of the memory cache of room-media.mjs). The oldest go first.
+export const THUMBNAIL_LIMITS = Object.freeze({ maxPng: 512 * 1024, maxRoomBytes: 32 * 1024 * 1024 });
 
 const ROW_BYTES_SQL = "length(CAST(body AS BLOB)) + length(CAST(coalesce(sender, '') AS BLOB)) + length(CAST(coalesce(descriptor, '') AS BLOB))";
 
@@ -563,6 +571,59 @@ function makeRoomArchive({ dir, protector, limits = null }) {
       if (!row) return null;
       const descriptor = normalizeAttachment(JSON.parse(row.descriptor));
       return descriptor?.id === descriptorId ? { descriptor, path: row.path } : null;
+    },
+    // The thumbnail of an archived image card, keyed by the exact descriptor (as rememberDownload). The caller
+    // gives only PNG bytes that room-media.mjs checked. Gives true when a card took the PNG.
+    rememberThumbnail(roomId, descriptor, png) {
+      const valid = normalizeAttachment(descriptor);
+      if (!valid || valid.kind !== 'image' || !Buffer.isBuffer(png) || png.length < 1 || png.length > THUMBNAIL_LIMITS.maxPng) return false;
+      const d = need();
+      const roomBytes = lim.maxThumbnailRoomBytes ?? THUMBNAIL_LIMITS.maxRoomBytes;
+      return d.transaction(() => {
+        const stored = d.prepare(`INSERT INTO message_thumbnails(room_id,msg_id,png,saved_at)
+          SELECT room_id,msg_id,?,? FROM message_attachments WHERE room_id=? AND descriptor=?
+          ON CONFLICT(room_id,msg_id) DO UPDATE SET png=excluded.png,saved_at=excluded.saved_at`)
+          .run(png, Date.now(), roomId, JSON.stringify(valid)).changes > 0;
+        if (!stored) return false;
+        let bytes = d.prepare('SELECT coalesce(sum(length(png)),0) AS b FROM message_thumbnails WHERE room_id=?').get(roomId).b;
+        if (bytes > roomBytes) {
+          const del = d.prepare('DELETE FROM message_thumbnails WHERE room_id=? AND msg_id=?');
+          const victims = [];
+          for (const r of d.prepare(`SELECT msg_id, length(png) AS sz FROM message_thumbnails WHERE room_id=?
+            ORDER BY saved_at ASC, rowid ASC`).iterate(roomId)) {
+            if (bytes <= roomBytes) break;
+            victims.push(r.msg_id); bytes -= r.sz;
+          }
+          for (const m of victims) del.run(roomId, m);
+        }
+        return true;
+      })();
+    },
+    getThumbnail(roomId, descriptor) {
+      const valid = normalizeAttachment(descriptor);
+      if (!valid || valid.kind !== 'image') return null;
+      const row = need().prepare(`SELECT t.png FROM message_thumbnails t JOIN message_attachments a USING(room_id,msg_id)
+        WHERE t.room_id=? AND a.descriptor=?`).get(roomId, JSON.stringify(valid));
+      return row ? Buffer.from(row.png) : null;
+    },
+    // The card of one archived line: { descriptor, own } or null. The archive keeps only live lines (the node checked
+    // the device prefix of the ID and the source of the descriptor) and own lines, thus the pair is a checked pair.
+    messageCard(roomId, messageId) {
+      const row = need().prepare(`SELECT a.descriptor, p.own FROM message_attachments a JOIN public_messages p
+        USING(room_id,msg_id) WHERE a.room_id=? AND a.msg_id=?`).get(roomId, String(messageId));
+      const descriptor = row && normalizeAttachment(JSON.parse(row.descriptor));
+      return descriptor ? { descriptor, own: row.own === 1 } : null;
+    },
+    // The descriptor of an own card with this descriptor ID, or null (a preview request of a peer names only the ID).
+    ownCard(roomId, descriptorId) {
+      const row = need().prepare(`SELECT a.descriptor FROM message_attachments a JOIN public_messages p USING(room_id,msg_id)
+        WHERE a.room_id=? AND p.own=1 AND json_extract(a.descriptor,'$.id')=?`).get(roomId, String(descriptorId));
+      const descriptor = row && normalizeAttachment(JSON.parse(row.descriptor));
+      return descriptor?.id === descriptorId ? descriptor : null;
+    },
+    // Clear thumbnail cache (View menu): the stored thumbnails of one room. The cards stay.
+    clearThumbnails(roomId) {
+      return need().prepare('DELETE FROM message_thumbnails WHERE room_id=?').run(roomId).changes;
     },
     channels(roomId) {
       return need().prepare('SELECT channel_id AS id, name FROM channels WHERE room_id=? ORDER BY channel_id').all(roomId);

@@ -332,8 +332,11 @@ const DECODER_PAGE = appPage('image-decoder.html');
 const imageDecoder = createImageDecoder({ BrowserWindow, ipc: ipcMain, page: DECODER_PAGE,
     preload: path.join(__dirname, 'image-decoder-preload.cjs'), lock: lockDesktopNavigation,
     isFrame: (win, event) => isDesktopFrame(win, event.sender, event.senderFrame, DECODER_PAGE) });
+// 1.0.4: the thumbnails of a saved room that keeps history stay in its encrypted archive (the data folder), thus the
+// history shows them again after a quit, a Leave room or an update.
 const roomMedia = createRoomMedia({ decodeImage: (info, limit) => imageDecoder.decode(info, limit),
-    changed: id => sendToWindow('asscrack:media-changed', id) });
+    changed: id => sendToWindow('asscrack:media-changed', id),
+    store: { save: (d, png) => getSavedRooms().rememberThumbnail(d, png), load: d => getSavedRooms().getThumbnail(d) } });
 let mediaGeneration = 0;
 function clearRoomMedia() { mediaGeneration++; roomMedia.clear(); localOriginals.clear(); pendingSaves.clear(); }
 // The image menu (chat-media.js): descriptor ID -> the path of a local original (an own post or a received file).
@@ -368,17 +371,45 @@ handleRoomIpc('asscrack:reveal-saved-original', async (_event, messageId, descri
     shell.showItemInFolder(download.path);
     return { ok: true };
 });
-handleRoomIpc('asscrack:media-clear-previews', () => { mediaGeneration++; roomMedia.clearPreviews(); });
-handleRoomIpc('asscrack:media-info', (_event, ref) => node ? roomMedia.info(ref) : {});
-handleRoomIpc('asscrack:media-preview', async (_event, id) => {
-    if (!node?.attachmentDescriptor(id)) return {};
-    const version = mediaGeneration;
-    if (!roomMedia.info(id).thumbnailUrl) {
-        const result = await node.requestPreviewById(id);
-        if (version !== mediaGeneration) return {};
-        if (result) await roomMedia.storePreview(result.descriptor, result.bytes);
+handleRoomIpc('asscrack:media-clear-previews', () => {
+    mediaGeneration++; roomMedia.clearPreviews(); getSavedRooms().clearThumbnails();
+});
+// OI2: a read-only call. The window can ask during a Quit.
+queryRoomIpc('asscrack:media-info', (_event, ref) => {
+    if (!node) return {};
+    roomMedia.loadStored(ref);
+    return roomMedia.info(ref);
+});
+// The thumbnail of a card: the stored one, else a request to the sender. With no thumbnail, reason tells the window
+// why: 'offline' (no session of the sender; the window asks again when the sender is back) or 'unavailable'.
+// The peer ID of a sender is new at each start. In a protected room the ID of a line starts with the device ID of its
+// sender, and the archive keeps only checked pairs of line and card: the request goes to the session peer with that
+// proved device ID.
+const deviceOfLine = id => /^([A-Za-z0-9_-]{43})\./.exec(id)?.[1] ?? null;
+handleRoomIpc('asscrack:media-preview', async (_event, ref, messageId) => {
+    if (!node) return {};
+    if (roomMedia.loadStored(ref)) return roomMedia.info(ref);
+    const card = getSavedRooms().messageCard(messageId);
+    const archived = card && sameAttachment(card.descriptor, ref) ? card : null;
+    const descriptor = node.attachmentDescriptor(ref) ?? archived?.descriptor ?? null;
+    if (!descriptor) return { reason: 'unavailable' };
+    // An own post: no other copy has it.
+    if (archived?.own || descriptor.source === node.peerId) return { ...roomMedia.info(ref), reason: 'unavailable' };
+    const lineDevice = deviceOfLine(messageId), device = archived ? lineDevice : null;
+    const via = node.attachmentSourceOnline(descriptor) ? descriptor.source :
+        device ? node.peers().find(peer => node.deviceOf(peer) === device) ?? null : null;
+    if (!via) {
+        // A line that is not in the archive (a host replay, or a room with no saved history) is not a checked pair: no
+        // request on the device route. Its device can be online with a new peer ID: then the card is unavailable.
+        const online = Boolean(lineDevice) && node.peers().some(peer => node.deviceOf(peer) === lineDevice);
+        return { ...roomMedia.info(ref), reason: online ? 'unavailable' : 'offline' };
     }
-    return roomMedia.info(id);
+    const version = mediaGeneration, current = node;
+    const result = await node.requestPreviewById(descriptor, { via, descriptor });
+    if (version !== mediaGeneration || node !== current) return {};
+    if (result) await roomMedia.storePreview(result.descriptor, result.bytes);
+    const info = roomMedia.info(ref);
+    return info.thumbnailUrl ? info : { ...info, reason: 'unavailable' };
 });
 const MAX_RECEIVED_KEY = 300;
 let loginStarted = false;
@@ -1012,6 +1043,12 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
             options.upnp = false;
         }
         options.previewProvider = (descriptor, filePath) => roomMedia.makePreview(filePath, descriptor);
+        // 1.0.4: an own post after a restart or after its 30 minutes: the stored thumbnail (checked again on load). An
+        // own card of the archive, or the live descriptor of an own post of this start.
+        options.storedPreview = (id, live) => {
+            const descriptor = getSavedRooms().ownCard(id) ?? live;
+            return descriptor && roomMedia.loadStored(descriptor) ? { descriptor, png: roomMedia.previewBytes(descriptor) } : null;
+        };
         options.receiveWhisper = message => {
             if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isCrashed()) return false;
             sendToWindow('asscrack:whisper', message);
@@ -1072,6 +1109,10 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
     }
     // Record the path before the window gets the event, so that a Show in Explorer at once finds it.
     onLive('attachment-status', data => sendToWindow('asscrack:attachment-status', data));
+    // 1.0.4: a peer can answer thumbnail requests again (its attachment hello). The window asks again for the cards
+    // of that sender that have no thumbnail.
+    onLive('attachment-peer', data => sendToWindow('asscrack:media-peer',
+        { peer: data?.peer ?? null, device: node?.deviceOf(data?.peer) ?? null }));
     onLive('shelf', data => sendToWindow('asscrack:shelf', data));
     onLive('shelf-offered', data => sendToWindow('asscrack:shelf-offered', data));
     onLive('membership', () => sendToWindow('asscrack:membership', node.memberState()));

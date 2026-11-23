@@ -90,18 +90,34 @@
         void draw(false);
     }
 
+    // The button of an image with no thumbnail. A click is never silent: it shows the request, then the result.
+    // offline: the sender is not connected (the request runs again when the sender is back). unavailable: no
+    // stored thumbnail and the sender has none to give.
+    function thumbnailText(entry) {
+        if (entry.loading) return 'Loading thumbnail…';
+        if (entry.reason === 'offline') return 'Sender offline. Try again';
+        if (entry.reason === 'unavailable') return 'Thumbnail unavailable. Try again';
+        return 'Show thumbnail';
+    }
+
     function paint(entry, info) {
         const { descriptor, box } = entry;
         const url = descriptor.kind === 'image' ? (auto || entry.manual ? info.thumbnailUrl : null) : info.originalUrl;
-        if (entry.url === (url || null)) return;
+        const shown = url ? 'url ' + url : 'button ' + thumbnailText(entry);
+        if (entry.shown === shown) return;
+        entry.shown = shown;
         entry.stop?.(); entry.stop = null;
         entry.url = url || null;
         box.replaceChildren();
         if (!url) {
             if (descriptor.kind === 'image') {
                 const b = document.createElement('button');
-                b.type = 'button'; b.textContent = 'Show thumbnail';
-                b.addEventListener('click', () => { entry.manual = true; entry.attempted = false; enqueue(entry); });
+                b.type = 'button'; b.textContent = thumbnailText(entry); b.disabled = Boolean(entry.loading);
+                b.addEventListener('click', () => {
+                    if (entry.loading) return;
+                    entry.manual = true; entry.attempted = false; entry.loading = true;
+                    paint(entry, {}); enqueue(entry);
+                });
                 box.append(b);
             }
             return;
@@ -135,12 +151,15 @@
 
     // At most two bounded preview requests, including the decoder work in main.
     async function run(entry) {
-        let info = await api.getMediaInfo(entry.descriptor);
+        let info = await api.getMediaInfo(entry.descriptor) ?? {};
         if (entry.descriptor.kind === 'image' && !info.thumbnailUrl && (auto || entry.manual) && !entry.attempted) {
             entry.attempted = true;
-            info = await api.requestMediaPreview(entry.descriptor);
+            info = await api.requestMediaPreview(entry.descriptor, entry.row.dataset.id) ?? {};
+            // An own post: no other copy has it (the sender is this copy).
+            entry.reason = info.thumbnailUrl ? null : info.reason === 'offline' && !entry.own ? 'offline' : 'unavailable';
         }
-        if (info.thumbnailUrl) entry.attempted = true;
+        if (info.thumbnailUrl) { entry.attempted = true; entry.reason = null; }
+        entry.loading = false;
         if (records.get(entry.descriptor.id) === entry) paint(entry, info);
     }
     function drain() {
@@ -148,7 +167,7 @@
             const entry = queue.values().next().value; queue.delete(entry);
             if (entry.busy) { entry.again = true; continue; }
             active++; entry.busy = true;
-            void run(entry).catch(() => paint(entry, {})).finally(() => {
+            void run(entry).catch(() => { entry.loading = false; paint(entry, {}); }).finally(() => {
                 entry.busy = false; active--;
                 if (entry.again) { entry.again = false; queue.add(entry); }
                 drain();
@@ -186,7 +205,7 @@
         await api.cancelMediaSave?.(entry.descriptor.id);
         return { ok: false, reason: 'unavailable' };
     }
-    function decorate(row, descriptor) {
+    function decorate(row, descriptor, own = false) {
         if (!row || !descriptor?.id) return;
         const old = records.get(descriptor.id);
         if (old?.row === row) return;
@@ -194,13 +213,23 @@
         if (old) { old.box.remove(); queue.delete(old); }
         const box = document.createElement('div'); box.className = 'chat-media';
         row.append(box);
-        const entry = { row, box, descriptor, manual: false, attempted: false };
+        const entry = { row, box, descriptor, own: own === true, manual: false, attempted: false, reason: null, loading: false };
         records.set(descriptor.id, entry); enqueue(entry);
     }
     api.onMediaChanged(id => { const entry = records.get(id); if (entry) enqueue(entry); });
     api.onAttachmentStatus?.(data => {
         const entry = records.get(data.id);
         if (entry && data.available && !entry.url) { entry.attempted = false; enqueue(entry); }
+    });
+    // The sender is back ({ peer, device }): ask again for each of its cards that got no thumbnail because it was
+    // offline. The peer ID is new at each start; the ID of a line of a protected room starts with the device ID.
+    api.onMediaPeer?.(data => {
+        const device = typeof data?.device === 'string' && data.device ? data.device + '.' : null;
+        for (const entry of records.values()) {
+            if (entry.url || entry.reason !== 'offline') continue;
+            if (entry.descriptor.source !== data?.peer && !(device && entry.row.dataset.id?.startsWith(device))) continue;
+            entry.attempted = false; enqueue(entry);
+        }
     });
     function pauseHidden() {
         if (playing && !visible(playing.entry)) stopPlayback();
@@ -219,13 +248,13 @@
         // The row of the image in the open viewer, or null.
         viewerRow: () => (viewer?.open && viewed?.row.isConnected ? viewed.row : null),
         async clearPreviews() {
-        for (const entry of records.values()) { entry.attempted = true; entry.manual = false; }
+        for (const entry of records.values()) { entry.attempted = true; entry.manual = false; entry.reason = null; }
         await api.clearMediaPreviews();
     }, toggleAuto() {
         auto = !auto;
         try { localStorage.setItem(key, String(auto)); } catch {}
         menuState();
-        for (const entry of records.values()) { entry.manual = false; entry.attempted = false; enqueue(entry); }
+        for (const entry of records.values()) { entry.manual = false; entry.attempted = false; entry.reason = null; enqueue(entry); }
     } };
     menuState();
 })();

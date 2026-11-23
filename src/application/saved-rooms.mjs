@@ -372,6 +372,39 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
         catch { return null; }
     }
 
+    // 1.0.4: the checked thumbnail of an archived image card of the open room (room-media.mjs gives it). Only a room
+    // that keeps history stores it, as rememberDownload. Gives true when a card took it.
+    function rememberThumbnail(descriptor, png) {
+        if (!active?.keepHistory || !archive) return false;
+        try { return archive.rememberThumbnail(active.roomId, descriptor, png); }
+        catch { log('WARN', 'Thumbnail could not be saved'); return false; }
+    }
+
+    function getThumbnail(descriptor) {
+        if (!active?.keepHistory || !archive) return null;
+        try { return archive.getThumbnail(active.roomId, descriptor); }
+        catch { return null; }
+    }
+
+    // The checked card of an archived line of the open room ({ descriptor, own }), or null.
+    function messageCard(messageId) {
+        if (!active || !archive || typeof messageId !== 'string' || !messageId || messageId.length > 128) return null;
+        try { return archive.messageCard(active.roomId, messageId); }
+        catch { return null; }
+    }
+
+    function ownCard(descriptorId) {
+        if (!active || !archive || typeof descriptorId !== 'string' || descriptorId.length !== 36) return null;
+        try { return archive.ownCard(active.roomId, descriptorId); }
+        catch { return null; }
+    }
+
+    function clearThumbnails() {
+        if (!active || !archive) return;
+        try { archive.clearThumbnails(active.roomId); }
+        catch { log('WARN', 'Stored thumbnails could not be deleted'); }
+    }
+
     function activeInfo() {
         return active ? { roomId: active.roomId, keepHistory: active.keepHistory } : null;
     }
@@ -436,7 +469,7 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
     }
 
     return {
-        open, rememberDownload, getDownload, status, unlock, lines, getRoom, loadChannels, persistChannels, loadVoiceChannels, persistVoiceChannels, prepareReplay, releaseReplay, afterLogin, recordSend, attachNode, setKeepHistory, setUserName, clear, forget, activeInfo,
+        open, rememberDownload, getDownload, rememberThumbnail, getThumbnail, clearThumbnails, messageCard, ownCard, status, unlock, lines, getRoom, loadChannels, persistChannels, loadVoiceChannels, persistVoiceChannels, prepareReplay, releaseReplay, afterLogin, recordSend, attachNode, setKeepHistory, setUserName, clear, forget, activeInfo,
         deviceIdentity, isProtectedRoom, persistMembership, leave, close, active: () => active, friendArchive, isFriendRoom
     };
 }
