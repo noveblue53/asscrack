@@ -11,7 +11,7 @@
 <br>
 
 [![Latest release](https://img.shields.io/github/v/release/noveblue53/asscrack?label=release&color=00a9c6)](https://github.com/noveblue53/asscrack/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/noveblue53/asscrack/total?color=07536b)](https://github.com/noveblue53/asscrack/releases)
+[![Installs](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnoveblue53%2Fasscrack%2Fbadges%2Finstalls.json)](https://github.com/noveblue53/asscrack/releases)
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white)](https://github.com/noveblue53/asscrack/releases/latest)
 [![License: MIT](https://img.shields.io/github/license/noveblue53/asscrack?color=2e7d32)](LICENSE)
 

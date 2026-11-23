@@ -68,6 +68,20 @@ export function fileName(version, kind) {
     return `${PRODUCT}-${version}-${kind}.exe`;
 }
 
+// The name of the download copy of each executable (the same bytes as fileName). The updater downloads this copy, and
+// the release page counts only the fileName downloads as installs. The download copy of the installer is
+// ASSCRACK-<v>-update.exe, of the portable file ASSCRACK-<v>-portable-update.exe.
+export function updateFileName(version, kind) {
+    if (!KINDS.includes(kind) || !parseVersion(version)) throw new TypeError('Not a valid file kind or version');
+    return `${PRODUCT}-${version}-${kind === 'setup' ? 'update' : 'portable-update'}.exe`;
+}
+
+// The file name that the updater downloads for a manifest entry. The 1.0.1 to 1.0.4 clients ignore "download" and
+// download "name". The local copy always has the name "name".
+export function downloadName(entry) {
+    return entry.download ?? entry.name;
+}
+
 // The public key: the base64url text of the 32 raw bytes of an Ed25519 key (JWK "x").
 export function publicKeyObject(raw) {
     if (typeof raw !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(raw)) throw new TypeError('Not a valid update public key');
@@ -96,6 +110,7 @@ function checkFields(value) {
         const file = files[kind];
         if (file === null || typeof file !== 'object') return 'bad file';
         if (file.name !== fileName(value.version, kind)) return 'bad file name';
+        if (file.download !== undefined && file.download !== updateFileName(value.version, kind)) return 'bad download name';
         if (!Number.isSafeInteger(file.size) || file.size < 1 || file.size > MAX_FILE_BYTES) return 'bad file size';
         if (typeof file.sha256 !== 'string' || !SHA256.test(file.sha256)) return 'bad file hash';
     }

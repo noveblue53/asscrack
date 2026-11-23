@@ -7,13 +7,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { generateKeyPairSync } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { UPDATE_KEY_IS_TEST } from '../src/application/update-key.mjs';
 import { parseVersion, verifyManifest } from '../src/application/update-manifest.mjs';
-import { manifestBytes, releaseProblems, signBytes } from '../tools/sign-update.mjs';
+import { manifestBytes, releaseProblems, signBytes, writeRelease } from '../tools/sign-update.mjs';
 import { insideGitTree } from '../tools/update-key.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -45,6 +45,36 @@ test('a signed manifest of the sign script passes the app check, and its exact b
     const r = verifyManifest(bytes, sig, { publicKey: publicKey.export({ format: 'jwk' }).x, currentVersion: '1.0.0' });
     assert.equal(r.ok, true);
     assert.equal(r.manifest.notes, 'Line 1\nLine 2');
+});
+
+test('the sign script writes a download copy of each file and puts its name in the signed manifest', async t => {
+    const dist = mkdtempSync(path.join(os.tmpdir(), 'asscrack-copy-test-'));
+    t.after(() => rmSync(dist, { recursive: true, force: true }));
+    writeFileSync(path.join(dist, 'ASSCRACK-1.0.5-setup.exe'), 'setup bytes');
+    writeFileSync(path.join(dist, 'ASSCRACK-1.0.5-portable.exe'), 'portable bytes');
+    const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+    const key = publicKey.export({ format: 'jwk' }).x;
+    const r = await writeRelease(dist, { version: '1.0.5', date: '2026-12-01', notes: 'n', kinds: ['setup', 'portable'], privateKey,
+        publicKey: key });
+    assert.equal(r.ok, true, r.problem);
+    assert.equal(readFileSync(path.join(dist, 'ASSCRACK-1.0.5-update.exe'), 'utf8'), 'setup bytes');
+    assert.equal(readFileSync(path.join(dist, 'ASSCRACK-1.0.5-portable-update.exe'), 'utf8'), 'portable bytes');
+    const bytes = readFileSync(path.join(dist, 'update.json'));
+    const check = verifyManifest(bytes, readFileSync(path.join(dist, 'update.json.sig'), 'utf8'), { publicKey: key, currentVersion: '1.0.4' });
+    assert.equal(check.ok, true, check.reason);
+    assert.deepEqual(Object.fromEntries(Object.entries(check.manifest.files).map(([kind, file]) => [kind, [file.name, file.download]])), {
+        setup: ['ASSCRACK-1.0.5-setup.exe', 'ASSCRACK-1.0.5-update.exe'],
+        portable: ['ASSCRACK-1.0.5-portable.exe', 'ASSCRACK-1.0.5-portable-update.exe']
+    });
+    // A key that does not agree: no copy and no manifest.
+    const other = mkdtempSync(path.join(os.tmpdir(), 'asscrack-copy-test-'));
+    t.after(() => rmSync(other, { recursive: true, force: true }));
+    writeFileSync(path.join(other, 'ASSCRACK-1.0.5-setup.exe'), 'setup bytes');
+    const wrong = await writeRelease(other, { version: '1.0.5', date: '2026-12-01', notes: 'n', kinds: ['setup'],
+        privateKey: generateKeyPairSync('ed25519').privateKey, publicKey: key });
+    assert.equal(wrong.ok, false);
+    assert.match(wrong.problem, /does not agree with the public key/);
+    assert.deepEqual(readdirSync(other), ['ASSCRACK-1.0.5-setup.exe']);
 });
 
 test('the key script refuses a folder in a Git work tree and a key that exists, and never prints the private key', t => {

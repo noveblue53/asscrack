@@ -15,10 +15,12 @@ const other = generateKeyPairSync('ed25519');
 const sha = data => createHash('sha256').update(data).digest('hex');
 const source = releaseSource('http://127.0.0.1:9');
 
-function release(version, { files = {}, key = keys.privateKey, tag = `v${version}` } = {}) {
+// copies: the manifest gives the download copy of each file (tools/sign-update.mjs from 1.0.5 on).
+function release(version, { files = {}, key = keys.privateKey, tag = `v${version}`, copies = false } = {}) {
     const entries = {};
     for (const [kind, data] of Object.entries(files)) {
         entries[kind] = { name: `ASSCRACK-${version}-${kind}.exe`, size: data.length, sha256: sha(data) };
+        if (copies) entries[kind].download = `ASSCRACK-${version}-${kind === 'setup' ? 'update' : 'portable-update'}.exe`;
     }
     const bytes = Buffer.from(JSON.stringify({ product: 'ASSCRACK', format: 1, version, date: '2026-12-01', notes: `Notes of ${version}.`, files: entries }, null, 2) + '\n');
     return { version, tag, bytes, signature: sign(null, bytes, key).toString('base64'), files, entries };
@@ -46,7 +48,7 @@ function serve(rel, { body } = {}) {
         [source.file(rel.tag, 'update.json.sig')]: Buffer.from(rel.signature + '\n')
     };
     for (const [kind, data] of Object.entries(rel.files)) {
-        routes[source.file(`v${rel.version}`, `ASSCRACK-${rel.version}-${kind}.exe`)] = body?.[kind] ?? data;
+        routes[source.file(`v${rel.version}`, rel.entries[kind].download ?? rel.entries[kind].name)] = body?.[kind] ?? data;
     }
     return routes;
 }
@@ -98,6 +100,32 @@ test('a check finds the newer signed release, downloads the setup file, checks i
         source.file('v1.0.1-test', 'update.json.sig'), source.file('v1.0.1-test', 'ASSCRACK-1.0.1-test-setup.exe')]);
     // The window view has no path.
     assert.doesNotMatch(JSON.stringify(view), /\\|\//);
+});
+
+test('with the download copy in the manifest, the updater downloads the copy and keeps the file name of the manifest', async t => {
+    const rel = release('1.0.1-test', { files: { setup: Buffer.from('setup file bytes'), portable: Buffer.from('portable bytes') }, copies: true });
+    const s = setup({ routes: serve(rel) });
+    t.after(s.done);
+    await s.updater.check();
+    await waitReady(s.updater);
+    assert.equal(s.updater.view().update.ready, true);
+    const plan = await s.updater.prepareRestart();
+    assert.equal(path.basename(plan.file), 'ASSCRACK-1.0.1-test-setup.exe');
+    assert.equal(readFileSync(plan.file, 'utf8'), 'setup file bytes');
+    assert.deepEqual(s.fetch.calls.map(c => c.url), [source.latest, source.file('v1.0.1-test', 'update.json'),
+        source.file('v1.0.1-test', 'update.json.sig'), source.file('v1.0.1-test', 'ASSCRACK-1.0.1-test-update.exe')]);
+    // The portable build: the copy ASSCRACK-<v>-portable-update.exe, kept as ASSCRACK-<v>-portable.exe next to the old
+    // file (the next update deletes the old file by this name).
+    const folder = mkdtempSync(path.join(os.tmpdir(), 'asscrack-portable-test-'));
+    t.after(() => rmSync(folder, { recursive: true, force: true }));
+    const p = setup({ kind: 'portable', routes: serve(rel), portableDir: folder });
+    t.after(p.done);
+    await p.updater.check();
+    await waitReady(p.updater);
+    assert.equal(p.updater.view().update.ready, true);
+    assert.equal(p.fetch.calls.at(-1).url, source.file('v1.0.1-test', 'ASSCRACK-1.0.1-test-portable-update.exe'));
+    assert.deepEqual(readdirSync(folder), ['ASSCRACK-1.0.1-test-portable.exe']);
+    assert.equal(readFileSync(path.join(folder, 'ASSCRACK-1.0.1-test-portable.exe'), 'utf8'), 'portable bytes');
 });
 
 test('a file with a wrong size or a wrong SHA-256 is refused: no ready bar, no restart, no file left', async t => {
