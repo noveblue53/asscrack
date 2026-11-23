@@ -7,6 +7,21 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased
+
+### Test suite reliability, speed, and pre-release smoke check
+
+- **mDNS room isolation (`127.0.0.1`):** Use unique room names per test in `test/node.test.mjs`, `test/knock-node.test.mjs`, and `test/connect-race.test.mjs`. Parallel `node --test test/node.test.mjs` runs do not connect across worker processes (`10` pass, `0` fail in two parallel runs).
+- **Deterministic journal flush (`127.0.0.1`):** Flush pending async writes in `test/diag-knock.test.mjs`, `test/diag-failover.test.mjs`, `test/diag-screen.test.mjs`, `test/diag-canary.test.mjs`, and `test/diag-dial.test.mjs` before `flushSync()`. Add a regression test in `test/journal.test.mjs`.
+- **Windows paths and environment (`127.0.0.1`):** Fix `URL.pathname` encoding in `test/windows-identity.test.mjs` and `test/upnp.test.mjs` so checkouts with spaces pass. Clear `ELECTRON_RUN_AS_NODE` before `tools/second-start-check.mjs` starts Electron (`21` pass, `0` fail with `ELECTRON_RUN_AS_NODE=1`).
+- **Disjoint friend test port blocks (`127.0.0.1`):** Assign disjoint port blocks in `20000-46900` across the `9` friend test files and close `profile.rooms` in `test/helpers/friends.mjs` cleanup hooks. Five consecutive runs across all `9` friend test files passed (`58` pass, `0` fail).
+- **Intra-file concurrency (`127.0.0.1`):** Run independent tests and loops concurrently across `18` test files while keeping assertions, timeouts, frame counts, and file sizes unchanged. Five consecutive runs of `test/transfer-resume.test.mjs` and `test/transfer-resume-restart.test.mjs` passed (`18` pass, `0` fail).
+- **Pre-release smoke check helper (`this PC`):** Add `tools/app-smoke-check.mjs` (zero new dependencies) and `6` unit tests in `test/app-smoke-check.test.mjs`. The helper starts Electron with a new `--profile`, fake `APPDATA`, no `ELECTRON_RUN_AS_NODE`, and a free CDP port in `9500-9599`. It checks DOM readiness, error output, and `--check-no-dev-shortcut`, then stops the child by PID.
+- **Checks (`127.0.0.1` and `this PC`):**
+  - Low-priority `npm test` (3 runs on `origin/main` `05fa933`, `127.0.0.1`): `89.54 s`, `85.87 s`, and `89.34 s` (mean `88.25 s`, `1174` pass, `1` fail on `test/windows-identity.test.mjs`, `18` skipped).
+  - Low-priority `npm test` (3 runs on branch tip `54742ed`, `127.0.0.1`): `57.45 s`, `57.90 s`, and `57.69 s` (mean `57.68 s`, `1182` pass, `0` fail, `18` skipped).
+  - Live app start (`node tools/app-smoke-check.mjs --check-no-dev-shortcut`, `this PC`): passed in `2813 ms` on port `9500` with `0` console or process errors, no `Electron.lnk`, and no dev CLSID.
+
 ## 1.0.5 (2026-11-23): times for the join and leave lines, the music visualizer and the installs badge
 
 Release 1.0.5 is the fifth update of 1.0.0. A 1.0.0, 1.0.1, 1.0.2, 1.0.3 or 1.0.4 app gets it with the signed update
