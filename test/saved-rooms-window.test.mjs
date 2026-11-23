@@ -37,6 +37,29 @@ function archiveFact(f, row) {
     return f.el('message-detail-archive').textContent;
 }
 
+// 1.0.6: a lock with the reason key-unwrap-failed has more than one cause (another Windows account or PC, a kill of
+// 1.0.5 or older in the first seconds of a new data folder, a failure of the unwrap). The text says only what is known,
+// and "Try again" opens the archive again.
+test('a locked archive (key-unwrap-failed) says only that the key does not open; Try again opens it', async () => {
+    let unlocks = 0;
+    const f = await savedRoomWindow({ api: {
+        listSavedRooms: async () => ({ state: 'locked', reason: 'key-unwrap-failed', rooms: [] }),
+        unlockArchive: async () => { unlocks++; return { state: 'open', rooms: [{ roomId: 'r1', name: 'Garage', userName: 'Ann', protected: true }] }; }
+    } });
+    const text = f.el('archive-state');
+    assert.equal(text.hidden, false);
+    assert.equal(text.textContent, 'Saved rooms are locked. Can\'t open their key.');
+    assert.doesNotMatch(text.textContent, /Windows account|PC/);
+    assert.equal(f.el('archive-unlock').hidden, false);
+    f.el('archive-unlock').click();
+    await settle();
+    assert.equal(unlocks, 1);
+    assert.equal(text.hidden, true);
+    assert.equal(f.el('archive-unlock').hidden, true);
+    assert.equal(f.el('saved-rooms').querySelectorAll('.saved-room').length, 1);
+    assert.deepEqual(f.errors, []);
+});
+
 test('an own line that no peer accepted gets the local-only mark; an accepted line gets no mark', async () => {
     const records = [{ id: 'm1', time: 1000, accepted: 0 }, { id: 'm2', time: 2000, accepted: 2 }];
     const f = await savedRoomWindow({ send: async () => records.shift() });

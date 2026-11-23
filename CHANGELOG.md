@@ -343,6 +343,10 @@ Checks (127.0.0.1 and this PC only):
   (this PC, CDP: 18 x 16 px with the theme gradient). The badge is now hidden while the queue is empty, in the room
   window and in the pop-out window. Test: `test/music-viz.test.mjs` (fails on the merge commit `a2404ba`). After the
   fix, the CDP probe gives `display: none` and the button is 69 px wide, not 93 px (this PC).
+- Saved rooms: the lock text for the reason `key-unwrap-failed` was "This data folder belongs to another Windows
+  account or PC" for each lock. Since the archive-lock change above, this lock also comes from a kill of 1.0.5 or
+  older in the first seconds of a new data folder. The text is now "Saved rooms are locked. Can't open their key." The
+  "Try again" button stays. Test: `test/saved-rooms-window.test.mjs` (fails on `0ce3f8e`).
 
 ## 1.0.5 (2026-11-23): times for the join and leave lines, the music visualizer and the installs badge
 

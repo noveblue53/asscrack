@@ -79,10 +79,12 @@
         if (result.state === 'unavailable') {
             return 'Can\'t save rooms: secure storage is unavailable.';
         }
-        // One data folder: a copy of the folder on an other computer or for an other Windows user cannot open the
-        // protected key (safeStorage).
+        // The protected key (safeStorage) does not open. Known causes: a copy of the data folder on another computer or
+        // for another Windows user, a kill of 1.0.5 or older in the first seconds of a new data folder (room-archive.mjs,
+        // archive-lock), or a failure of the unwrap. The window cannot tell which one: the text says only what is
+        // known. "Try again" (#archive-unlock) tries the open again.
         if (result.reason === 'key-unwrap-failed') {
-            return 'Saved rooms are locked. This data folder belongs to another Windows account or PC.';
+            return 'Saved rooms are locked. Can\'t open their key.';
         }
         return `Saved rooms are locked (${result.reason ?? 'unknown'})`;
     }
