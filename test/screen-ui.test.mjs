@@ -91,7 +91,15 @@ function load({ storage = new Map(), sources: list = [{ id: 'screen:0:0', kind: 
         stop() { this.readyState = 'ended'; order.push('track.stop'); },
         getSettings: () => settings,
         addEventListener(type, fn) { (this.listeners[type] ??= []).push(fn); },
-        applyConstraints(c) { this.constraints.push(c); return Promise.resolve(); }
+        applyConstraints(c) { this.constraints.push(c); return Promise.resolve(); },
+        // The preview of the own share gets a clone at a low frame rate.
+        clones: [],
+        clone() {
+            const copy = { source: this, readyState: 'live', constraints: [], stop() { this.readyState = 'ended'; },
+                applyConstraints(c) { this.constraints.push(c); return Promise.resolve(); } };
+            this.clones.push(copy);
+            return copy;
+        }
     };
     const capture = { queue: [], waiting: null };
     class FakeVideoFrame {
@@ -536,7 +544,9 @@ test('the share bar shows a preview of the own capture; the toggle hides it and 
     await startShare(f, 'standard');
     assert.equal(video.hidden, false);
     assert.equal(video.muted, true);
-    assert.equal(video.srcObject.getVideoTracks()[0], f.track, 'the captured track, no copy and no encode');
+    const first = video.srcObject.getVideoTracks()[0];
+    assert.equal(first.source, f.track, 'a clone of the captured track: no copy of the frames and no encode');
+    assert.deepEqual(JSON.parse(JSON.stringify(first.constraints)), [{ frameRate: { max: 5 } }]);
     assert.ok(video.plays >= 1);
     const sends = names(f.calls, 'sendScreenFrame').length;
     const toggle = f.el('share-preview-toggle');
@@ -544,23 +554,26 @@ test('the share bar shows a preview of the own capture; the toggle hides it and 
     toggle.click();
     assert.equal(video.hidden, true);
     assert.equal(video.srcObject, null, 'off: the video has no track');
+    assert.equal(first.readyState, 'ended', 'off: the clone stops');
     assert.equal(toggle.textContent, 'Show preview');
     assert.equal(toggle.getAttribute('aria-pressed'), 'false');
     assert.equal(storage.get('asscrack.sharePreview.v1'), 'false');
     toggle.click();
     assert.equal(video.hidden, false);
-    assert.equal(video.srcObject.getVideoTracks()[0], f.track);
+    assert.equal(video.srcObject.getVideoTracks()[0].source, f.track);
     // A hidden window: no track in the video. Visible again: the track comes back.
     f.document.visibilityState = 'hidden';
     f.document.dispatchEvent(new f.Event('visibilitychange'));
     assert.equal(video.srcObject, null);
+    assert.equal(f.track.clones[1].readyState, 'ended');
     f.document.visibilityState = 'visible';
     f.document.dispatchEvent(new f.Event('visibilitychange'));
-    assert.equal(video.srcObject.getVideoTracks()[0], f.track);
+    assert.equal(video.srcObject.getVideoTracks()[0].source, f.track);
     assert.equal(names(f.calls, 'sendScreenFrame').length, sends, 'the preview sends nothing');
     f.el('share-stop').click();
     assert.equal(video.hidden, true);
     assert.equal(video.srcObject, null, 'stop: the preview lets the track go');
+    assert.ok(f.track.clones.every(c => c.readyState === 'ended'), 'no clone keeps the capture open');
     // The stored choice: a new window starts with the preview off.
     storage.set('asscrack.sharePreview.v1', 'false');
     const g = load({ storage });

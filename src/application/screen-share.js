@@ -39,6 +39,8 @@
     const previewToggle = byId('share-preview-toggle');
     const PREVIEW_KEY = 'asscrack.sharePreview.v1';
     let previewOn = true;
+    let previewTrack = null; // { source, clone }
+    const PREVIEW_FPS = 5;
     try { previewOn = localStorage.getItem(PREVIEW_KEY) !== 'false'; } catch { /* no storage */ }
     const errorLine = byId('share-error');
     const pickStatus = byId('screen-picker-status');
@@ -550,15 +552,25 @@
         const track = share?.track ?? null;
         preview.hidden = !(track && previewOn);
         if (track && previewOn && document.visibilityState !== 'hidden' && typeof MediaStream === 'function') {
-            if (preview.srcObject?.getVideoTracks?.()[0] !== track) {
+            if (previewTrack?.source !== track) {
+                stopPreviewTrack();
+                // A clone of the captured track at PREVIEW_FPS: Chromium drops the other frames before the video.
+                const clone = track.clone?.() ?? null;
+                if (!clone) return;
+                previewTrack = { source: track, clone };
+                Promise.resolve(clone.applyConstraints?.({ frameRate: { max: PREVIEW_FPS } })).catch(() => {});
                 preview.muted = true;
-                preview.srcObject = new MediaStream([track]);
+                preview.srcObject = new MediaStream([clone]);
             }
             Promise.resolve(preview.play?.()).catch(() => {});
-        } else if (preview.srcObject) {
-            preview.pause?.();
-            preview.srcObject = null;
-        }
+        } else stopPreviewTrack();
+    }
+    // The clone stops with the preview. A clone that runs keeps the capture of the source open.
+    function stopPreviewTrack() {
+        const current = previewTrack;
+        previewTrack = null;
+        if (preview?.srcObject) { preview.pause?.(); preview.srcObject = null; }
+        try { current?.clone.stop(); } catch { /* stopped */ }
     }
     function render() {
         updateButton();
