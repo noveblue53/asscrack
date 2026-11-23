@@ -1,0 +1,40 @@
+/* Room music (music-ui.js): the music bar above the composer, in voice only. */
+#music-bar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 45vh;
+  margin: 0 6px 4px;
+  padding: 5px 8px;
+  border: 1px solid var(--line, #9fb6cc);
+  border-radius: 6px;
+  background: var(--surface-raised, #f4f8fc);
+  color: var(--ink, #1d2b3a);
+  font: 12px/1.35 var(--font-small);
+  overflow-y: auto;
+}
+#music-bar[hidden] { display: none; }
+#music-bar .music-now { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+#music-bar .music-dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: var(--ink-soft, #5b7a99); opacity: 0.4; }
+#music-bar.active .music-dot { background: var(--accent, #2f7fd0); opacity: 1; }
+#music-title { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+#music-meta { color: var(--ink-soft, #5b7a99); white-space: nowrap; }
+#music-bar .music-controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+#music-bar .music-volume { display: inline-flex; gap: 4px; align-items: center; }
+#music-volume { width: 90px; }
+#music-queue-panel { display: flex; flex-direction: column; gap: 4px; }
+#music-queue-panel[hidden] { display: none; }
+#music-add-form { display: flex; gap: 6px; }
+#music-link { flex: 1 1 auto; min-width: 0; }
+#music-bar .music-local { display: flex; gap: 6px; }
+#music-queue, #music-folder-list { margin: 0; padding: 0 0 0 18px; max-height: 180px; overflow-y: auto; }
+#music-folder-list { list-style: none; padding-left: 0; }
+#music-folder-list[hidden] { display: none; }
+#music-bar .music-item { display: flex; gap: 6px; align-items: center; min-width: 0; }
+#music-bar .music-item-title { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#music-bar .music-item-meta, #music-bar .music-empty { color: var(--ink-soft, #5b7a99); white-space: nowrap; }
+#music-bar .music-empty { list-style: none; font-style: italic; }
+#music-bar .music-file-add { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+#music-status { margin: 0; color: var(--ink-soft, #5b7a99); min-height: 0; }
+#music-status:empty { display: none; }

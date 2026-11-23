@@ -124,9 +124,12 @@ async function readFrames(source, onBody, onOversize) {
 // M4 (P10b): onReceiversChanged(): called when the set of members with a voice stream to this host changes (the host
 // sends its voice roster). deafened(peerId): true when that member said in its voice line that it is deafened. The
 // host forwards no frame to it.
+// MU-2 (room music): protocol, directProtocol and label give a second relay with the same rules on its own streams
+// (the music stream of the DJ). Its queues, sequence numbers, counters and events are separate from the voice relay.
 export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectionFor, onFrame,
     directCandidates = () => [], directListOf = () => null, onDirectChanged = () => {}, protectedRoom = false,
-    channelOf = () => 'general', selfChannel = () => 'general', onReceiversChanged = () => {}, deafened = () => false }) {
+    channelOf = () => 'general', selfChannel = () => 'general', onReceiversChanged = () => {}, deafened = () => false,
+    protocol = VOICE_PROTOCOL, directProtocol = VOICE_DIRECT_PROTOCOL, label = 'Voice' }) {
     // Host side: peerId -> { stream, queue }. Member side: one entry to the host.
     const members = new Map()
     let upstream = null
@@ -171,7 +174,7 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
         droppedOversize++
         if (!oversizeWarned) {
             oversizeWarned = true
-            console.warn(`Voice frame dropped: body of ${len} bytes is above ${MAX_BODY}`)
+            console.warn(`${label} frame dropped: body of ${len} bytes is above ${MAX_BODY}`)
         }
     }
 
@@ -202,7 +205,7 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
         try {
             onFrame(frame)
         } catch (err) {
-            console.warn('Voice onFrame failed:', err?.message ?? err)
+            console.warn(`${label} onFrame failed:`, err?.message ?? err)
         }
     }
 
@@ -233,7 +236,7 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
                 droppedOrigin++
                 if (!entry.originWarned) {
                     entry.originWarned = true
-                    console.warn(`Voice frame dropped: origin ${frame.origin} is not the sender ${peerId}`)
+                    console.warn(`${label} frame dropped: origin ${frame.origin} is not the sender ${peerId}`)
                 }
                 return
             }
@@ -311,14 +314,14 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
         upstreamPending = pending
         let stream
         try {
-            stream = await conn.newStream(VOICE_PROTOCOL, { runOnTransientConnection: true })
+            stream = await conn.newStream(protocol, { runOnTransientConnection: true })
         } catch (err) {
             if (upstreamPending === pending) {
                 upstreamPending = null
                 closedDrops += pending.queue.drops
                 pending.queue.end()
             }
-            console.warn('Voice stream open failed:', err?.message ?? err)
+            console.warn(`${label} stream open failed:`, err?.message ?? err)
             scheduleRetry(host)
             return
         }
@@ -419,7 +422,7 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
                 droppedOrigin++
                 if (!entry.originWarned) {
                     entry.originWarned = true
-                    console.warn(`Voice frame dropped: origin ${frame.origin} is not the sender ${peerId} (direct)`)
+                    console.warn(`${label} frame dropped: origin ${frame.origin} is not the sender ${peerId} (direct)`)
                 }
                 return
             }
@@ -464,12 +467,12 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
         directPending.add(peerId)
         let stream
         try {
-            stream = await conn.newStream(VOICE_DIRECT_PROTOCOL, { runOnTransientConnection: true })
+            stream = await conn.newStream(directProtocol, { runOnTransientConnection: true })
         } catch (err) {
             directPending.delete(peerId)
             // Do not try again for this session. The peer gets the frames through the host.
             directRefused.add(peerId)
-            console.info(`Voice direct stream to ${peerId} not opened: ${err?.message ?? err}`)
+            console.info(`${label} direct stream to ${peerId} not opened: ${err?.message ?? err}`)
             return
         }
         directPending.delete(peerId)
@@ -495,7 +498,7 @@ export function createVoiceRelay({ libp2p, selfId, hostId, voicePeers, connectio
         if (stopped || directReopenTimers.has(peerId)) return
         const count = stable ? 0 : (directReopens.get(peerId) ?? 0)
         if (count >= MAX_DIRECT_REOPENS) {
-            console.info(`Voice direct stream to ${peerId} closed ${count} times: the peer gets the frames through the host`)
+            console.info(`${label} direct stream to ${peerId} closed ${count} times: the peer gets the frames through the host`)
             return
         }
         directReopens.set(peerId, count + 1)

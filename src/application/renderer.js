@@ -940,6 +940,16 @@ async function sendMessage() {
         try { if (await ready && messageInput.value === reply) messageInput.value = ''; } finally { sendBusy = false; }
         return;
     }
+    // Room music: /play <link>, /skip, /queue and /pause (music-ui.js). A reserved command never becomes a chat line.
+    if (window.musicCore?.isCommand(reply)) {
+        if (!window.musicUi) {
+            status.textContent = 'Music is unavailable.';
+            return;
+        }
+        sendBusy = true;
+        try { if (await window.musicUi.command(reply) && messageInput.value === reply) messageInput.value = ''; } finally { sendBusy = false; }
+        return;
+    }
     const command = !quote && /^\/(topic|away)(?:\s+([\s\S]*))?$/i.exec(reply.trim());
     if (command) {
         sendBusy = true;
@@ -998,7 +1008,8 @@ async function sendMessage() {
 async function submitComposer() {
     const reply = messageInput.value;
     if (reply.trim()) window.composerKeys?.remember(reply);
-    if (!pendingFile) return sendMessage();
+    // A music command is never the caption of a file (music-core.js isCommand).
+    if (!pendingFile || window.musicCore?.isCommand(reply)) return sendMessage();
     if (fileRecipient.value === 'room') {
         if (isMediaFile(pendingFile)) return sendFile();
         const channelId = window.roomChannels?.active() ?? 'general';
