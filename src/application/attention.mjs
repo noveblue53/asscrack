@@ -273,3 +273,90 @@ export function createAttention({ settings, room, quiet, allowed, notify, naviga
         }
     };
 }
+
+// ---- Mute per channel and per room (message alerts, operator 2026-11-22) ----
+// A mute stops the cue and the notification of the room lines of a channel (or of all channels and voice of a room).
+// mentions: a mention still plays and notifies ("Mentions still notify"). until: the end in ms, or null (until I unmute).
+// The file has a hash of the room for each room: no room key, no room name.
+export const MUTE_TIMES = Object.freeze(['hour', 'tomorrow', 'forever']);
+const MAX_MUTED_ROOMS = 200;
+const MAX_MUTED_CHANNELS = 200;
+
+// The end of a mute: 1 hour, the next 08:00 (today before 04:00, else tomorrow), or null.
+export function muteUntil(time, now = Date.now()) {
+    if (time === 'hour') return now + 3600 * 1000;
+    if (time === 'forever') return null;
+    if (time !== 'tomorrow') throw new Error('Choose a mute time.');
+    const end = new Date(now);
+    if (end.getHours() >= 4) end.setDate(end.getDate() + 1);
+    end.setHours(8, 0, 0, 0);
+    return end.getTime();
+}
+
+export function muteActive(entry, now = Date.now()) {
+    return !!entry && (entry.until === null || (Number.isFinite(entry.until) && entry.until > now));
+}
+
+export function roomMuteId(roomKey, roomName) {
+    return createHash('sha256').update('asscrack-mute/' + (roomKey ? 'key/' + roomKey : 'name/' + (roomName ?? ''))).digest('hex').slice(0, 24);
+}
+
+function cleanEntry(raw, now) {
+    if (!raw || typeof raw !== 'object') return null;
+    const until = raw.until === null ? null : Number.isFinite(raw.until) ? raw.until : undefined;
+    if (until === undefined) return null;
+    const entry = { until, mentions: raw.mentions !== false };
+    return muteActive(entry, now) ? entry : null;
+}
+
+function cleanRoom(raw, now) {
+    const room = cleanEntry(raw?.room, now);
+    const channels = {};
+    for (const [id, value] of Object.entries(raw?.channels ?? {}).slice(0, MAX_MUTED_CHANNELS)) {
+        const entry = typeof id === 'string' && id.length <= 128 ? cleanEntry(value, now) : null;
+        if (entry) channels[id] = entry;
+    }
+    return room || Object.keys(channels).length ? { room, channels } : null;
+}
+
+// The mutes of this device (one file). view(roomId): { room, channels } with only the mutes that are on now.
+// set(roomId, { scope: 'room' | 'channel', channelId, time, mentions }): time 'off' removes the mute.
+export function muteStore(file, clock = () => Date.now()) {
+    let rooms = {};
+    try {
+        const saved = JSON.parse(readFileSync(file, 'utf8'));
+        for (const [id, value] of Object.entries(saved?.rooms ?? {})) {
+            const room = /^[0-9a-f]{24}$/.test(id) ? cleanRoom(value, clock()) : null;
+            if (room) rooms[id] = room;
+        }
+    } catch {}
+    const view = roomId => {
+        const room = cleanRoom(rooms[roomId], clock());
+        return room ? { room: room.room, channels: room.channels } : { room: null, channels: {} };
+    };
+    return {
+        view,
+        set(roomId, request) {
+            if (!/^[0-9a-f]{24}$/.test(roomId ?? '')) throw new Error('Open a room first.');
+            const scope = request?.scope;
+            const channelId = request?.channelId;
+            if (scope !== 'room' && !(scope === 'channel' && typeof channelId === 'string' && channelId && channelId.length <= 128))
+                throw new Error('Choose a channel or the room.');
+            const now = clock();
+            const entry = request.time === 'off' ? null : { until: muteUntil(request.time, now), mentions: request.mentions !== false };
+            const next = { ...rooms };
+            const room = cleanRoom(next[roomId], now) ?? { room: null, channels: {} };
+            if (scope === 'room') room.room = entry;
+            else if (entry) room.channels = { ...room.channels, [channelId]: entry };
+            else { room.channels = { ...room.channels }; delete room.channels[channelId]; }
+            if (room.room || Object.keys(room.channels).length) next[roomId] = room;
+            else delete next[roomId];
+            const ids = Object.keys(next);
+            for (const id of ids.slice(0, Math.max(0, ids.length - MAX_MUTED_ROOMS))) delete next[id];
+            writeFileSync(file + '.tmp', JSON.stringify({ v: 1, rooms: next }));
+            renameSync(file + '.tmp', file);
+            rooms = next;
+            return view(roomId);
+        }
+    };
+}

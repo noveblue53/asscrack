@@ -30,7 +30,7 @@ import { createSavedRooms, makeProtector } from './saved-rooms.mjs';
 import { roomFingerprint } from './room-archive.mjs';
 import * as voiceSettings from './voice-settings.mjs';
 import { listeningRoomTag, listeningStore } from './listening-store.mjs';
-import { ALERT_KEYS, attentionSettings, createAttention, overlayDotBitmap, overlayShareBitmap, registerNotificationShortcut, WINDOWS_APP_ID, WINDOWS_TOAST_ID } from './attention.mjs';
+import { ALERT_KEYS, attentionSettings, createAttention, muteStore, roomMuteId, overlayDotBitmap, overlayShareBitmap, registerNotificationShortcut, WINDOWS_APP_ID, WINDOWS_TOAST_ID } from './attention.mjs';
 import { createPttHook } from './ptt-hook.mjs';
 import { createWindowFrame } from './window-frame.mjs';
 import { attachVoiceMonitor } from './voice-monitor.mjs';
@@ -441,6 +441,18 @@ function registerAlerts() {
 }
 
 handleRoomIpc('asscrack:attention-settings', () => attentionPrefs.get());
+// Message alerts: the mutes of the open room (attention.mjs muteStore). The window gets the mutes, not the room ID.
+const attentionMutes = muteStore(path.join(app.getPath('userData'), 'attention-mutes.json'));
+const openRoomMuteId = () => (node && roomName !== null ? roomMuteId(node.roomKey(), roomName) : null);
+handleRoomIpc('asscrack:attention-mutes', () => {
+    const id = openRoomMuteId();
+    return id ? attentionMutes.view(id) : { room: null, channels: {} };
+});
+handleRoomIpc('asscrack:attention-mute', (_event, request) => {
+    const result = attentionMutes.set(openRoomMuteId(), request);
+    writeLog('EVENT', `mute ${request?.scope === 'room' ? 'room' : 'channel'} ${request?.time === 'off' ? 'off' : 'on'}`);
+    return result;
+});
 // The Notification column of the settings grid: a box that goes on registers the Start menu shortcut first.
 const anyAlert = prefs => Object.values(ALERT_KEYS).some(key => prefs?.[key] === true);
 handleRoomIpc('asscrack:attention-set', (_event, patch) => {

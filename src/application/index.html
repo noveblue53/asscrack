@@ -320,6 +320,11 @@
             <button id="mark-problem" type="button" aria-haspopup="dialog" aria-controls="mark-dialog">Mark a problem…</button>
             <button id="ask-everyone" type="button">Ask everyone for diagnostics</button>
           </div>
+          <!-- Message alerts (attention.js): mute the channel that is shown, or the room. -->
+          <div class="room-menu-actions" id="mute-actions">
+            <button id="mute-channel-open" type="button" aria-haspopup="dialog" aria-controls="mute-dialog">Mute channel…</button>
+            <button id="mute-room-open" type="button" aria-haspopup="dialog" aria-controls="mute-dialog">Mute room…</button>
+          </div>
           <span id="topic-unavailable" hidden>Can't edit the topic right now.</span>
           <div id="topic-editor" hidden>
             <input type="text" id="topic-input" aria-label="Room topic" placeholder="Leave empty to clear" autocomplete="off">
@@ -595,6 +600,19 @@
     </fieldset>
     <p id="attention-status" role="status"></p>
     <form method="dialog"><button>Done</button></form>
+  </dialog>
+
+  <dialog id="mute-dialog" aria-labelledby="mute-title">
+    <h2 id="mute-title">Mute</h2>
+    <label for="mute-time">For</label>
+    <select id="mute-time"><option value="hour">1 hour</option><option value="tomorrow">Until tomorrow</option><option value="forever">Until I unmute</option></select>
+    <label><input id="mute-mentions" type="checkbox" checked> Mentions still notify</label>
+    <p id="mute-status" role="status"></p>
+    <div class="dialog-buttons">
+      <button id="mute-off" type="button" hidden>Unmute</button>
+      <button id="mute-cancel" type="button">Cancel</button>
+      <button id="mute-on" type="button">Mute</button>
+    </div>
   </dialog>
 
   <dialog id="listening-dialog" aria-labelledby="listening-title">

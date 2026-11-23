@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { ATTENTION_DEFAULTS, attentionSettings, createAttention, migrateAttention, noticeText, registerNotificationShortcut, WINDOWS_APP_ID, WINDOWS_TOAST_ID } from '../src/application/attention.mjs';
+import { ATTENTION_DEFAULTS, attentionSettings, createAttention, migrateAttention, muteActive, muteStore, muteUntil, noticeText, roomMuteId, registerNotificationShortcut, WINDOWS_APP_ID, WINDOWS_TOAST_ID } from '../src/application/attention.mjs';
 
 function setup() {
     const state = { prefs: { mentionAlert: true, whisperAlert: true, friendAlert: true, sound: false, previews: false }, quiet: false, allowed: true, room: {} };
@@ -198,4 +198,46 @@ test('a plain line and a mention of one channel replace one notification; each r
     attention.add({ kind: 'mention', channelId: 'c1', id: 'f', name: 'Sam' });
     advance();
     assert.equal(notices.length, 5);
+});
+
+// ---- Message alerts: mute per channel and per room ----
+
+test('the mute times: 1 hour, the next 08:00 and until I unmute', () => {
+    const evening = new Date(2026, 10, 22, 21, 30).getTime();
+    assert.equal(muteUntil('hour', evening), evening + 3600 * 1000);
+    assert.equal(muteUntil('tomorrow', evening), new Date(2026, 10, 23, 8, 0).getTime());
+    const night = new Date(2026, 10, 23, 2, 0).getTime();
+    assert.equal(muteUntil('tomorrow', night), new Date(2026, 10, 23, 8, 0).getTime(), 'before 04:00: the same morning');
+    assert.equal(muteUntil('forever', evening), null);
+    assert.throws(() => muteUntil('week', evening), /mute time/);
+    assert.equal(muteActive({ until: null }), true);
+    assert.equal(muteActive({ until: evening }, evening), false);
+});
+
+test('the mutes are per room (a hash), end at their time, and stay after a restart', t => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'ac-mute-'));
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    const file = path.join(dir, 'attention-mutes.json');
+    let now = new Date(2026, 10, 22, 12, 0).getTime();
+    const store = muteStore(file, () => now);
+    const a = roomMuteId('key-a', 'Room'), b = roomMuteId(null, 'LAN room');
+    assert.match(a, /^[0-9a-f]{24}$/);
+    assert.notEqual(a, roomMuteId('key-b', 'Room'));
+    assert.deepEqual(store.view(a), { room: null, channels: {} });
+    store.set(a, { scope: 'channel', channelId: 'games', time: 'hour', mentions: true });
+    store.set(a, { scope: 'room', time: 'forever', mentions: false });
+    store.set(b, { scope: 'channel', channelId: 'general', time: 'forever' });
+    assert.deepEqual(store.view(a), { room: { until: null, mentions: false }, channels: { games: { until: now + 3600 * 1000, mentions: true } } });
+    assert.deepEqual(store.view(b).channels.general, { until: null, mentions: true });
+    // The file has no room key and no room name.
+    const text = readFileSync(file, 'utf8');
+    assert.equal(text.includes('key-a') || text.includes('Room'), false);
+    // A restart keeps the mutes; the end of the hour removes the channel mute.
+    now += 3600 * 1000;
+    const again = muteStore(file, () => now);
+    assert.deepEqual(again.view(a), { room: { until: null, mentions: false }, channels: {} });
+    again.set(a, { scope: 'room', time: 'off' });
+    assert.deepEqual(again.view(a), { room: null, channels: {} });
+    assert.throws(() => again.set(null, { scope: 'room', time: 'hour' }), /Open a room/);
+    assert.throws(() => again.set(a, { scope: 'channel', time: 'hour' }), /channel or the room/);
 });

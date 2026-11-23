@@ -170,6 +170,7 @@
     function mention(data) {
         if (!data?.peerId || data.peerId === (selfId ?? topologySelf)) return;
         const matched = !!window.chatHighlights?.matches(data.text);
+        if (silenced(data.channelId || 'general', matched)) return;
         const target = { kind: matched ? 'mention' : 'chat', channelId: data.channelId || 'general', id: data.id, from: data.peerId };
         if (wanted(target)) {
             if (matched) flash();
@@ -191,6 +192,7 @@
     // session). Only the notification: the cue of voice keeps its own rule (it plays only while I am in voice).
     function voice(kind, peerId) {
         if (typeof peerId !== 'string' || !peerId || (kind !== 'other-join' && kind !== 'other-leave')) return;
+        if (silenced(null, false)) return;
         notify({ kind: 'voice', peerId, id: peerId + '/' + Date.now(), joined: kind === 'other-join', from: peerId });
     }
 
@@ -319,13 +321,107 @@
     // The Start menu shortcut of the notifications (Windows only): a tooltip, not a paragraph.
     const alertsLabel = byId('attention-alerts-label');
     if (alertsLabel && navigator.userAgent.includes('Windows')) alertsLabel.title = 'Adds a Start menu shortcut';
+    // ---- Mute per channel and per room (message alerts) ----
+    // mutes: the mutes of the open room from main.js ({ room, channels }: { until, mentions }; until null: until I
+    // unmute). The end of a mute is checked at each line, so a mute ends on time with no timer.
+    let mutes = { room: null, channels: {} };
+    let muteTimer = null;
+    const muteDialog = byId('mute-dialog');
+    let muteScope = null; // { scope: 'room' } or { scope: 'channel', channelId }
+
+    function activeMute(entry) {
+        return !!entry && (entry.until === null || entry.until > Date.now());
+    }
+
+    // The mute of a channel, else of the room. channelId null: the room only (voice).
+    function muteOf(channelId) {
+        const channel = channelId === null ? null : mutes.channels?.[channelId];
+        if (activeMute(channel)) return channel;
+        return activeMute(mutes.room) ? mutes.room : null;
+    }
+
+    // A muted conversation plays no cue and shows no notification; a mention passes when the mute allows it.
+    function silenced(channelId, isMention) {
+        const mute = muteOf(channelId);
+        return !!mute && !(isMention && mute.mentions);
+    }
+
+    function channelName(channelId) {
+        const option = [...(byId('channel-select')?.options ?? [])].find(o => o.value === channelId);
+        return option ? option.textContent.replace(/ \(.*$/, '').replace(/ · muted$/, '') : '#' + channelId;
+    }
+
+    // The marks: " · muted" in the channel list (channels-ui.js asks isMuted), a class on the room name.
+    function showMutes() {
+        byId('chat-room')?.classList.toggle('muted', activeMute(mutes.room));
+        window.roomChannels?.refresh?.();
+        clearTimeout(muteTimer);
+        const ends = [mutes.room, ...Object.values(mutes.channels ?? {})].filter(m => m && m.until !== null && m.until > Date.now())
+            .map(m => m.until - Date.now());
+        // The mark goes away at the end of the next mute (at most 24 days ahead for setTimeout).
+        if (ends.length) muteTimer = setTimeout(showMutes, Math.min(Math.min(...ends) + 50, 2 ** 31 - 1));
+    }
+
+    async function refreshMutes() {
+        try { mutes = (await api.getAttentionMutes?.()) ?? { room: null, channels: {} }; } catch { mutes = { room: null, channels: {} }; }
+        showMutes();
+    }
+
+    function openMute(scope) {
+        if (!muteDialog || byId('chat-screen').hidden) return;
+        muteScope = scope;
+        const entry = scope.scope === 'room' ? mutes.room : mutes.channels?.[scope.channelId];
+        const on = activeMute(entry);
+        byId('mute-title').textContent = scope.scope === 'room' ? 'Mute room' : 'Mute ' + channelName(scope.channelId);
+        byId('mute-mentions').checked = on ? entry.mentions : true;
+        byId('mute-off').hidden = !on;
+        byId('mute-status').textContent = '';
+        if (!muteDialog.open) muteDialog.showModal();
+    }
+
+    async function applyMute(time) {
+        if (!muteScope) return;
+        try {
+            mutes = await api.setAttentionMute({ ...muteScope, time, mentions: byId('mute-mentions').checked });
+            showMutes();
+            muteDialog.close();
+        } catch (err) {
+            byId('mute-status').textContent = String(err?.message ?? 'Couldn\'t save the mute.').replace(/^Error invoking remote method '[^']+': Error: /, '');
+        }
+    }
+
+    if (muteDialog) {
+        byId('mute-on').addEventListener('click', () => applyMute(byId('mute-time').value));
+        byId('mute-off').addEventListener('click', () => applyMute('off'));
+        byId('mute-cancel').addEventListener('click', () => muteDialog.close());
+        byId('mute-channel-open')?.addEventListener('click', () => {
+            byId('room-options')?.hidePopover?.();
+            openMute({ scope: 'channel', channelId: window.roomChannels?.active() ?? 'general' });
+        });
+        byId('mute-room-open')?.addEventListener('click', () => {
+            byId('room-options')?.hidePopover?.();
+            openMute({ scope: 'room' });
+        });
+        // Right-click on the channel list (the channel that it shows) or on the room name.
+        byId('channel-select')?.addEventListener('contextmenu', event => {
+            event.preventDefault();
+            openMute({ scope: 'channel', channelId: window.roomChannels?.active() ?? 'general' });
+        });
+        byId('chat-room')?.addEventListener('contextmenu', event => {
+            event.preventDefault();
+            openMute({ scope: 'room' });
+        });
+    }
+
     api.onAttentionOpen(openTarget);
     // G7b: the friend lines come from the main process (friend-links.mjs), not from the room.
     window.friends?.onAttention?.(target => incoming(target && typeof target === 'object' ? { ...target, kind: 'friend' } : null));
     document.addEventListener('visibilitychange', viewChanged);
     window.addEventListener('focus', viewChanged);
     window.roomAttention = {
-        cue, wanted, mention, incoming, voice, viewChanged,
+        cue, wanted, mention, incoming, voice, viewChanged, refreshMutes, openMute,
+        // The mark of a channel: a mute of that channel (a room mute has its mark on the room name).
+        isMuted: channelId => activeMute(mutes.channels?.[channelId]),
         async openSettings() {
             await ready;
             if (!dialog.open) dialog.showModal();

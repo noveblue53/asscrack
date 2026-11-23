@@ -17,3 +17,8 @@
 #attention-grid td { text-align: center; width: 6.5rem; }
 #attention-grid input[type="checkbox"] { margin: 0; }
 #attention-settings fieldset { margin: 6px 0; }
+/* Message alerts: the mute dialog and the mark of a muted room (a muted channel has " · muted" in the list). */
+#mute-dialog { width: min(20rem, calc(100vw - 24px)); }
+#mute-dialog label { display: block; margin: 6px 0; }
+#mute-dialog #mute-status:empty { display: none; }
+#chat-room.muted::after { content: " · muted"; font-size: 0.6em; font-weight: normal; color: var(--ink-soft); }

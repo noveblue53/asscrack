@@ -22,6 +22,12 @@ const ATTENTION = [
         { id: 'attention-sound', tag: 'input' }, { id: 'attention-status', tag: 'p' },
         // G5 (E1): the box of the flash setting is in the dialog.
         { id: 'attention-flash', tag: 'input' }
+    ] },
+    // Message alerts: the mute dialog.
+    { id: 'mute-dialog', tag: 'dialog', children: [
+        { id: 'mute-title', tag: 'h2' }, { id: 'mute-time', tag: 'select', value: 'hour' },
+        { id: 'mute-mentions', tag: 'input' }, { id: 'mute-status', tag: 'p' }, { id: 'mute-off', tag: 'button' },
+        { id: 'mute-cancel', tag: 'button' }, { id: 'mute-on', tag: 'button' }
     ] }
 ];
 
@@ -506,4 +512,96 @@ test('voice join and leave notify only with their box on, and not while the wind
     const sent = on.adds().map(c => c.args[0]);
     assert.equal(sent.length, 1);
     assert.deepEqual({ ...sent[0], id: 'x' }, { kind: 'voice', peerId: SAM, id: 'x', joined: false });
+});
+
+// ---- Message alerts: mute per channel and per room ----
+
+// view: the mutes that main.js gives for the open room. Returns the fixture after refreshMutes.
+async function muted(view, prefs = { chatSound: true, chatAlert: true, mentionAlert: true, voiceAlert: true }) {
+    const rec = toneRecorder();
+    const f = await room(prefs, undefined, rec.audio);
+    const requests = [];
+    f.window.asscrack.getAttentionMutes = async () => view;
+    f.window.asscrack.setAttentionMute = async request => { requests.push({ ...request }); return view; };
+    await f.window.roomAttention.refreshMutes();
+    f.state.focus = false;
+    return Object.assign(f, { tones: rec.tones, requests });
+}
+
+test('a muted channel: no cue and no notification for a plain line; a mention still notifies when the mute allows it', async () => {
+    const f = await muted({ room: null, channels: { general: { until: null, mentions: true } } });
+    f.receive({ from: 'Sam', text: 'hello all', peerId: SAM, id: 'p1' });
+    await settle();
+    assert.equal(chatCues(f.tones), 0);
+    assert.deepEqual(f.adds(), []);
+    f.receive({ from: 'Sam', text: 'hi Parker', peerId: SAM, id: 'p2' });
+    await settle();
+    assert.deepEqual(f.played, ['mention']);
+    assert.deepEqual(f.adds().map(c => c.args[0].kind), ['mention']);
+    // A different channel is not muted.
+    f.clock.advance(3000);
+    f.window.roomAttention.mention({ from: 'Sam', text: 'in games', peerId: SAM, id: 'p3', channelId: 'games' });
+    await settle();
+    assert.equal(chatCues(f.tones), 1);
+    assert.equal(f.window.roomAttention.isMuted('general'), true);
+    assert.equal(f.window.roomAttention.isMuted('games'), false);
+
+    const strict = await muted({ room: null, channels: { general: { until: null, mentions: false } } });
+    strict.receive({ from: 'Sam', text: 'hi Parker', peerId: SAM, id: 's1' });
+    await settle();
+    assert.deepEqual(strict.played, [], '"Mentions still notify" off');
+    assert.deepEqual(strict.adds(), []);
+});
+
+test('a muted room: no cue and no notification in any channel and for voice; the mark is on the room name', async () => {
+    const f = await muted({ room: { until: null, mentions: true }, channels: {} });
+    f.window.roomAttention.mention({ from: 'Sam', text: 'in games', peerId: SAM, id: 'r1', channelId: 'games' });
+    f.receive({ from: 'Sam', text: 'hello', peerId: SAM, id: 'r2' });
+    f.window.roomAttention.voice('other-join', SAM);
+    await settle();
+    assert.equal(chatCues(f.tones), 0);
+    assert.deepEqual(f.adds(), []);
+    assert.equal(f.el('chat-room').classList.contains('muted'), true);
+    f.receive({ from: 'Sam', text: 'hi Parker', peerId: SAM, id: 'r3' });
+    await settle();
+    assert.deepEqual(f.adds().map(c => c.args[0].kind), ['mention'], 'a mention still notifies');
+});
+
+test('a mute ends at its time: the cue and the notification come back, and the mark goes away', async () => {
+    // The start of the fake clock (test/helpers/fake-clock.mjs) plus 1 hour.
+    const end = new Date(2026, 10, 21, 21, 0, 0).getTime() + 3600 * 1000;
+    const f = await muted({ room: null, channels: { general: { until: end, mentions: true } } });
+    assert.equal(f.window.roomAttention.isMuted('general'), true);
+    f.receive({ from: 'Sam', text: 'hello', peerId: SAM, id: 'e1' });
+    await settle();
+    assert.equal(chatCues(f.tones), 0);
+    f.clock.advance(3600 * 1000 + 100);
+    assert.equal(f.window.roomAttention.isMuted('general'), false);
+    f.receive({ from: 'Sam', text: 'hello again', peerId: SAM, id: 'e2' });
+    await settle();
+    assert.equal(chatCues(f.tones), 1);
+    assert.deepEqual(f.adds().map(c => c.args[0].id), ['e2']);
+});
+
+test('the mute dialog sends the scope, the time and the mentions choice; Unmute sends off', async () => {
+    const f = await muted({ room: null, channels: {} });
+    const dialog = f.el('mute-dialog');
+    dialog.open = false;
+    dialog.showModal = () => { dialog.open = true; };
+    dialog.close = () => { dialog.open = false; };
+    f.window.roomAttention.openMute({ scope: 'channel', channelId: 'general' });
+    assert.equal(dialog.open, true);
+    assert.equal(f.el('mute-title').textContent, 'Mute #general');
+    assert.equal(f.el('mute-off').hidden, true);
+    f.el('mute-time').value = 'tomorrow';
+    f.el('mute-mentions').checked = false;
+    f.el('mute-on').click();
+    await settle();
+    assert.deepEqual(f.requests, [{ scope: 'channel', channelId: 'general', time: 'tomorrow', mentions: false }]);
+    assert.equal(dialog.open, false);
+    f.window.roomAttention.openMute({ scope: 'room' });
+    assert.equal(f.el('mute-title').textContent, 'Mute room');
+    f.el('mute-off').click();
+    await settle();
+    assert.deepEqual(f.requests[1], { scope: 'room', time: 'off', mentions: true });
 });
