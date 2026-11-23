@@ -7,6 +7,15 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased: README cover page (2026-11-22)
+
+- The README is a cover page for users: the app icon, release badges, download buttons, screenshots in a light and
+  a dark theme, the features, the first steps and the privacy points.
+- The technical text of the old README moved without change to `docs/STATUS.md` (status, phase, roadmap, known
+  limits) and `docs/DEVELOPMENT.md` (build, tests, terminal demo).
+- **this PC**: the screenshots come from the 1.0.2 app on 127.0.0.1 with test names. A check found each image, badge
+  and link of the three files on GitHub (27, 16 and 2 items, each with status 200).
+
 ## 1.0.2 (2026-11-22): short texts and state marks
 
 Release 1.0.2 is the second update of 1.0.0. A 1.0.0 or 1.0.1 app gets it with the signed update (View, About
