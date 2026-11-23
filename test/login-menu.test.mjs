@@ -8,7 +8,8 @@ import { createDom } from './helpers/fake-dom.mjs';
 
 const html = await readFile(new URL('../src/application/index.html', import.meta.url), 'utf8');
 const layoutSource = await readFile(new URL('../src/application/layout.js', import.meta.url), 'utf8');
-const LOGIN_LINES = ['Theme…', 'Sound & notifications…', 'Keyboard shortcuts…', 'About ASSCRACK…',
+// What's new (2026-11-23): the notes line is also a login line (no data-room-only).
+const LOGIN_LINES = ['Theme…', 'Sound & notifications…', 'Keyboard shortcuts…', 'About ASSCRACK…', "What's new…",
     'Native title bar', 'Quit'];
 
 // The <li> lines of #view-menu in index.html: { id, attrs, hidden, text }.
@@ -64,7 +65,7 @@ function load() {
     return { document, window, menu, visible, key, toggle: document.getElementById('view-toggle') };
 }
 
-test('the View menu on the login screen has the six login lines, and the arrow keys skip the other lines', () => {
+test('the View menu on the login screen has the seven login lines, and the arrow keys skip the other lines', () => {
     const r = load();
     r.toggle.click();
     assert.equal(r.menu.hidden, false);
@@ -72,9 +73,9 @@ test('the View menu on the login screen has the six login lines, and the arrow k
     // No separator of a room group shows (no empty rules).
     const rules = r.menu.children.filter(li => li.getAttribute('role') === 'separator' && !li.hidden);
     assert.equal(rules.length, 1);
-    // The focus goes through the six lines only, and back to the first one.
+    // The focus goes through the seven lines only, and back to the first one.
     const seen = [r.document.activeElement.textContent];
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < LOGIN_LINES.length; i++) {
         r.key('ArrowDown');
         seen.push(r.document.activeElement.textContent);
     }

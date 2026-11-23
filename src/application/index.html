@@ -27,6 +27,7 @@
   <link rel="stylesheet" href="friends.css">
   <link rel="stylesheet" href="screen.css">
   <link rel="stylesheet" href="updates.css">
+  <link rel="stylesheet" href="whats-new.css">
   <link rel="stylesheet" href="diagnostics.css">
   <link rel="stylesheet" href="clipboard-join.css">
   <link rel="stylesheet" href="ui-state.css">
@@ -160,6 +161,7 @@
         <li id="view-attention" role="menuitem" aria-haspopup="dialog" aria-controls="attention-settings" tabindex="-1">Sound &amp; notifications…</li>
         <li id="view-shortcuts" role="menuitem" aria-haspopup="dialog" aria-controls="shortcuts-dialog" aria-keyshortcuts="F1" tabindex="-1">Keyboard shortcuts…</li>
         <li id="view-about" role="menuitem" aria-haspopup="dialog" aria-controls="about-dialog" tabindex="-1">About ASSCRACK…</li>
+        <li id="view-whats-new" role="menuitem" aria-haspopup="dialog" aria-controls="whats-new-dialog" tabindex="-1">What's new…</li>
         <li id="view-startup" role="menuitem" aria-haspopup="dialog" aria-controls="startup-dialog" tabindex="-1" hidden>Start at sign-in…</li>
         <li id="view-system-buttons" role="menuitemcheckbox" aria-checked="false" tabindex="-1" title="Applies after restart" hidden>Native title bar</li>
         <li id="view-reset" data-room-only hidden role="menuitem" tabindex="-1">Reset layout</li>
@@ -734,6 +736,7 @@
       <button id="about-update-check" type="button">Check now</button>
     </div>
     <div class="about-actions">
+      <button id="about-whats-new" type="button" aria-haspopup="dialog" aria-controls="whats-new-dialog">What's new</button>
       <button id="about-copy" type="button">Copy version info</button>
       <button id="about-data" type="button">Open data folder</button>
     </div>
@@ -811,6 +814,21 @@
     <pre id="update-notes-text"></pre>
     <form method="dialog"><button>Close</button></form>
   </dialog>
+  <!-- What's new (whats-new.js): the release notes of the app, newest first, and the card after an update. -->
+  <dialog id="whats-new-dialog" aria-labelledby="whats-new-title">
+    <h2 id="whats-new-title">What's new</h2>
+    <div id="whats-new-list" tabindex="0"></div>
+    <p id="whats-new-empty" hidden>No notes.</p>
+    <form method="dialog"><button>Done</button></form>
+  </dialog>
+  <section id="whats-new-card" aria-labelledby="whats-new-card-title" hidden>
+    <h2 id="whats-new-card-title">What's new</h2>
+    <div id="whats-new-card-notes"></div>
+    <div class="whats-new-card-buttons">
+      <button id="whats-new-card-all" type="button" aria-haspopup="dialog" aria-controls="whats-new-dialog">All notes</button>
+      <button id="whats-new-card-close" type="button">Close</button>
+    </div>
+  </section>
   <dialog id="update-busy-dialog" aria-labelledby="update-busy-title">
     <h2 id="update-busy-title">Restart now?</h2>
     <p id="update-busy-text"></p>
@@ -939,6 +957,7 @@
   <script src="app-shell.js"></script>
   <script src="startup-ui.js"></script>
   <script src="updates-ui.js"></script>
+  <script src="whats-new.js"></script>
   <script src="diagnostics-ui.js"></script>
   <script src="clipboard-join-ui.js"></script>
 </body>

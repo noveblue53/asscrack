@@ -7,6 +7,38 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased: release notes in the app ("What's new")
+
+Operator request (2026-11-23): the users can read the release notes in the app.
+
+- `src/application/release-notes.json` is the one source of the release notes. It has an entry for each release from
+  1.0.0 to 1.0.5, newest first: the version, the date and the note lines. The text of 1.0.1 to 1.0.5 is the text of
+  the published `update.json` of each release (the same text as the GitHub release). Only the first line "What's new
+  in 1.0.x:" of 1.0.3 to 1.0.5 is not in the file: the app shows that title. 1.0.0 had no published notes: its entry is
+  a short text from the 1.0.0 entry of this file.
+- View, What's new, and About ASSCRACK, What's new, open a list of all versions with their dates (`whats-new.js`).
+  The list works offline.
+- At the first start after an update, a card "What's new in <version>" shows at the bottom right. It is not a modal
+  dialog and it does not take the focus. The file `whats-new.json` in the data folder keeps the last version. The main
+  process writes it at the start, thus the card shows one time for each version. A new install shows no card. A data
+  folder of 1.0.0 to 1.0.5 has no `whats-new.json`: a file of an older version (`Local State`, `window-bounds.json` or
+  `update-state.json`) then counts as an update.
+- `tools/sign-update.mjs` with no `--notes` and no `--notes-file` takes the note text of the version from the notes
+  file, and refuses a version with no entry. The two options still replace the text. See `docs/RELEASE_UPDATES.md`.
+- `test/release-notes.test.mjs` fails when the version of `package.json` has no entry in the notes file.
+- `test/login-menu.test.mjs`: the login screen now shows seven View menu lines ("What's new…" is new). The test had the
+  old list of six lines.
+
+**Results: 127.0.0.1 and this PC.** No LAN test and no internet test.
+- `npm test`: 1205 tests, 1187 pass, 0 fail, 18 skipped (127.0.0.1).
+- The new tests fail on the base `05fa933`: the module `release-notes.mjs` and the two bridge calls are not there.
+  With the new files and the version 1.0.6 in `package.json`, the release check fails ("no entry for 1.0.6").
+- this PC, `electron .` with `--profile` and a fake `APPDATA`, read with CDP: an empty profile shows no card. View,
+  What's new, and About, What's new, show the six versions. A profile with the last version 1.0.4 shows the card
+  "What's new in 1.0.5" one time. The next start shows no card. A profile with only `update-state.json` shows the card.
+  No error line in the terminal or in the developer console. The shortcut `ASSCRACK.lnk` and the `LocalServer32`
+  value of the installed app did not change.
+
 ## 1.0.5 (2026-11-23): times for the join and leave lines, the music visualizer and the installs badge
 
 Release 1.0.5 is the fifth update of 1.0.0. A 1.0.0, 1.0.1, 1.0.2, 1.0.3 or 1.0.4 app gets it with the signed update

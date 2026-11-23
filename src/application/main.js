@@ -60,6 +60,7 @@ import { createFriendJoins, savedRoomHasId } from './friend-join.mjs';
 import { createClipboardJoin, createAskedStore, ASKED_FILE } from './clipboard-join.mjs';
 import { installInterfaceCache } from '../network/interface-cache.mjs';
 import { createUpdateService } from './update-service.mjs';
+import { hadOldProfile, readLastSeen, readReleaseNotes, whatsNewStart, writeLastSeen } from './release-notes.mjs';
 import { chooseDataFolder, cleanHoldFolders, dataPaths, downloadOwner, holdFolder, legacyFolder, moveFailedText, moveOldData, needsMove,
     notWritableText, probeWritable, writeKeptMarker } from './data-folder.mjs';
 import { CHOICE_FILE, choiceAfterForget, createStartEntry, createStartRunner, isInstalledBuild, isStaleChoice, normalizeChoice,
@@ -126,6 +127,9 @@ if (dataFolder.dir) {
         useDataFolder(dataFolder.dir);
     }
 }
+
+// What's new (release-notes.mjs): a file of an older version in the data folder, before this run writes to it.
+const oldProfile = !moveOffer && hadOldProfile(app.getPath('userData'));
 
 // Single instance lock (F1, goal 7): only for the packaged build with the default user data folder. Electron keys the
 // lock on the user data folder. The check scripts start 2 or more copies with --profile, and npm start has no lock.
@@ -788,6 +792,33 @@ handleRoomIpc('asscrack:about', () => ({
     system: `${process.platform === 'win32' ? 'Windows' : process.platform} ${process.getSystemVersion()}`,
     debugLog: logFile !== null
 }));
+// What's new: the notes list (release-notes.json) and the card of the first start after an update. The decision and
+// the save of the version happen one time for each run; the card stays until the window closes it.
+let whatsNew = null;
+function whatsNewState() {
+    if (whatsNew) return whatsNew;
+    let list = [];
+    try { list = readReleaseNotes(); } catch (err) { writeLog('WARN', `Release notes not read: ${err?.message ?? err}`); }
+    let pending = null;
+    if (isFirstInstance && !moveOffer) {
+        const dir = app.getPath('userData');
+        const decision = whatsNewStart({ current: app.getVersion(), lastSeen: readLastSeen(dir), oldProfile, list });
+        if (decision.save) {
+            try { writeLastSeen(dir, decision.save); } catch (err) { writeLog('WARN', `What's new state not saved: ${err?.message ?? err}`); }
+        }
+        pending = decision.show;
+    }
+    whatsNew = { list, pending };
+    return whatsNew;
+}
+handleRoomIpc('asscrack:whats-new', () => {
+    const state = whatsNewState();
+    return { current: app.getVersion(), entries: state.list, pending: state.pending };
+});
+handleRoomIpc('asscrack:whats-new-done', () => {
+    whatsNewState().pending = null;
+    return true;
+});
 // ---- Diagnostics: requests, bundles and marks (1.0.1, docs/DIAGNOSTICS.md). The window gets no path. ----
 const diagFolder = () => path.join(app.getPath('userData'), JOURNAL_DIR);
 const receivedFolder = () => path.join(diagFolder(), 'received');
