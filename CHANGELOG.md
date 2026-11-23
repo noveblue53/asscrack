@@ -7,6 +7,69 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased: several screen shares at the same time (step 1)
+
+Up to 3 members of a room can share a screen at the same time. Each viewer watches one share and can switch between
+the shares. The download and the CPU load of a viewer do not change: a viewer gets the frames of one share only.
+
+Protocol (`src/network/screen-share.mjs`):
+- The one-share rule is gone. A room has at most 3 shares (`maxShares`): the own share and one share of each other
+  member. A fourth Start gets "Share limit reached (3).".
+- Why 3: the relay limit of the rate control (6 Mbit/s) is for each sharer. Thus 3 shares keep the screen data through
+  a host relay at 18 Mbit/s or less in each direction.
+- Two members can start a share at the same moment when the room has 2 shares. Then the room has 4 shares. In the
+  conflict time (3 s) after the own start, the young shares with the highest peer IDs stop (reason `limit`). A share
+  line does not stop a share below the limit, and a later share line does not stop a running share (L11).
+- A new Watch ends the old watch at its sharer (reason `switched`). The sharer of the old share then sends no frames
+  to this viewer.
+- The events `screen-frame`, `screen-config`, `screen-ended` and `screen-state` (also the stop) carry the share ID.
+- The wire format does not change: the same stream, the same records and the same `screen` line (`v: 1`).
+- The L11 limits do not change (30 screen lines for each peer and 240 for the room each minute). Each member sends
+  only its own lines, thus the number of shares does not change the number of lines.
+- The rate control and Auto quality do not change. They are for each sharer and each viewer.
+
+Window:
+- Each member that shares has a "Live" badge on the buddy line. A click on the badge watches that share. The own line
+  has the badge as a mark only.
+- The stage has a switcher with the sharer names when 2 or more shares are live. A switch keeps the stage and Fill
+  window open.
+- The banner shows the live shares while the member watches none, for example "Ann and Bo are sharing screens.".
+- Share stays enabled while other members share. At the limit, a click shows "Share limit reached (3).".
+- The share bar, the preview and the share guard are for the own share (one own share at a time).
+
+Diagnostics journal: the screen events `start`, `stop`, `live`, `gone`, `watch`, `watch-end` and `limit` carry the
+share ID and the peer ID. They have no names.
+
+Released clients (1.0.1 to 1.0.5, the same protocol code since 1.0.1):
+- An old viewer shows a "sharing screen" mark on the line of each sharer. Its banner shows the first share only. Watch
+  in the banner watches that share. "Watch screen" in the menu of a buddy line watches each share.
+- An old client cannot start a share while another member shares. Its window disables the button, and its node
+  refuses with "Another member shares a screen.".
+- An old sharer stops its share when a new member with a lower peer ID starts a share in 3 s after the old start.
+  This is the old rule, with the text "<name> started sharing. Your share stopped.". The new member does not stop.
+  The source of this item is the old code and check 11 on the base. The runs on this PC did not show this case.
+
+Checks (127.0.0.1 and this PC only):
+- New tests that fail on the base (`05fa933`) and pass now: 9 tests in `test/multi-share.test.mjs` and 3 tests in
+  `test/screen-ui.test.mjs`. Five old tests had the one-share rule. Check 11 and two L11 tests now use a limit of 1, so
+  that they test the same rules as before. Check 1 and W4 check 2 now expect that a second member can start a share.
+- `npm test`: 1205 tests, 1187 pass, 0 fail, 18 skipped (127.0.0.1).
+- One start of the app with a fresh `--profile` and a fake APPDATA: no error line (this PC).
+- Three copies on this PC (127.0.0.1, direct sessions): Ann and Bo shared small test windows of the check. Cy clicked
+  the Live badge of Ann, then the switcher button of Bo, then the Live badge of Ann. Each watch decoded 15.1 frames
+  each second (about 0.7 Mbit/s). In 1 s after each switch, the old sharer had 0 viewers and the new sharer had 1.
+  No error line in the terminal or the developer console.
+- Host relay bytes (127.0.0.1, real nodes): H is the host, and A, B and C use only the relay of H. With two shares
+  and no viewer, H relayed about 15 kbit/s. While C watched one share, H relayed about 0.96 Mbit/s, the data of one
+  share.
+  The sharer that C did not watch sent about 3 kbit/s.
+- A 1.0.5 copy (`electron .` of `830bc60`) as the old viewer with two new sharers: see "Released clients" above. It
+  watched each share at 15 frames each second, with no error line.
+- The voice regression: 16 of 16 voice tests, and `voice-check.mjs` with the expected byte counts.
+- Before and after the runs, the Start menu shortcut and the toast registration of the installed copy on this PC had
+  the same values.
+- No LAN test and no internet test occurred.
+
 ## 1.0.5 (2026-11-23): times for the join and leave lines, the music visualizer and the installs badge
 
 Release 1.0.5 is the fifth update of 1.0.0. A 1.0.0, 1.0.1, 1.0.2, 1.0.3 or 1.0.4 app gets it with the signed update
