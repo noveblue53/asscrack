@@ -1587,6 +1587,26 @@ handleRoomIpc('asscrack:saved-room-lines', (_event, roomId, opts) => {
     }
 });
 
+// The presence lines of a saved room: from <= time < to (null: no limit).
+handleRoomIpc('asscrack:saved-room-notes', (_event, roomId, range) => {
+    if (!validRoomId(roomId)) return [];
+    const bound = value => (value === null || value === undefined || !Number.isFinite(Number(value)) ? null : Number(value));
+    try {
+        return getSavedRooms().notes(roomId, { from: bound(range?.from), to: bound(range?.to) });
+    } catch (err) {
+        writeLog('WARN', `Saved presence lines not read: ${err?.message ?? err}`);
+        return [];
+    }
+});
+
+// A presence line of the open room (transcript-notes.js). A one-way message: a window that closes at Quit gives no
+// error line. room-archive.mjs checks each field. During a Quit or a Leave room, the own node stops: the peers go
+// with no bye and the window sees "Connection lost.". That line is not a fact of the room, thus it is not saved.
+onRoomIpc('asscrack:save-note', (_event, note) => {
+    if (!node || quitting || leaving || !note || typeof note !== 'object') return;
+    getSavedRooms().saveNote({ id: note.id, kind: note.kind, text: note.text, time: note.time, replaces: note.replaces });
+});
+
 handleRoomIpc('asscrack:reopen-room', async (_event, roomId, allowLegacy) => {
     if (loginStarted) throw new Error('Already logged in');
     // easy-join part 2: a knock waits for the owner. A reopen now would make the Allow of the owner fail.

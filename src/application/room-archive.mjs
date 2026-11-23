@@ -108,6 +108,12 @@ CREATE TABLE IF NOT EXISTS verified_downloads(room_id TEXT NOT NULL,msg_id TEXT 
 CREATE TABLE IF NOT EXISTS message_thumbnails(room_id TEXT NOT NULL,msg_id TEXT NOT NULL,png BLOB NOT NULL,
   saved_at INTEGER NOT NULL, PRIMARY KEY(room_id,msg_id),
   FOREIGN KEY(room_id,msg_id) REFERENCES message_attachments(room_id,msg_id) ON DELETE CASCADE);
+-- The presence lines of a room (joins, leaves, a lost link, the reconnect): local events of this PC. They are never
+-- in public_messages, thus never in the host replay and never sent. A new table needs no new user_version: 1.0.4
+-- opens the file and does not read this table.
+CREATE TABLE IF NOT EXISTS room_notes(room_id TEXT NOT NULL REFERENCES rooms(room_id) ON DELETE CASCADE,
+  note_id TEXT NOT NULL, kind TEXT NOT NULL, body TEXT NOT NULL, time INTEGER NOT NULL, PRIMARY KEY(room_id, note_id));
+CREATE INDEX IF NOT EXISTS room_note_order ON room_notes(room_id, time);
 CREATE TRIGGER IF NOT EXISTS remove_general_attachment AFTER DELETE ON messages BEGIN
   DELETE FROM message_attachments WHERE room_id=OLD.room_id AND msg_id=OLD.msg_id;
 END;
@@ -144,6 +150,23 @@ export const ARCHIVE_LIMITS = Object.freeze({ maxRows: 10000, maxBytes: 8388608,
 // The stored thumbnails of each room (message_thumbnails): one PNG of at most 512 KiB (PREVIEW_LIMIT of
 // media-formats.mjs), at most 32 MiB for each room (the size of the memory cache of room-media.mjs). The oldest go first.
 export const THUMBNAIL_LIMITS = Object.freeze({ maxPng: 512 * 1024, maxRoomBytes: 32 * 1024 * 1024 });
+
+// The presence lines of each room (room_notes): at most maxRows lines, the oldest go first. A line has at most
+// maxText characters and a note ID of at most maxId characters.
+export const NOTE_LIMITS = Object.freeze({ maxRows: 500, maxText: 300, maxId: 64 });
+const NOTE_KINDS = new Set(['presence', 'link']);
+
+// A valid presence line, or null.
+export function validNote(note) {
+  if (!note || typeof note !== 'object') return null;
+  const { id, kind, text, time } = note;
+  if (typeof id !== 'string' || !/^[A-Za-z0-9_-]+$/.test(id) || id.length > NOTE_LIMITS.maxId) return null;
+  if (!NOTE_KINDS.has(kind) || typeof text !== 'string' || !text || text.length > NOTE_LIMITS.maxText) return null;
+  if (!Number.isSafeInteger(time) || time <= 0) return null;
+  const replaces = typeof note.replaces === 'string' && /^[A-Za-z0-9_-]+$/.test(note.replaces)
+    && note.replaces.length <= NOTE_LIMITS.maxId ? note.replaces : null;
+  return { id, kind, text, time, replaces };
+}
 
 const ROW_BYTES_SQL = "length(CAST(body AS BLOB)) + length(CAST(coalesce(sender, '') AS BLOB)) + length(CAST(coalesce(descriptor, '') AS BLOB))";
 
@@ -451,6 +474,7 @@ function makeRoomArchive({ dir, protector, limits = null }) {
       const d = need();
       d.transaction(() => {
         d.prepare('DELETE FROM messages WHERE room_id = ?').run(roomId);
+        d.prepare('DELETE FROM room_notes WHERE room_id = ?').run(roomId);
         d.prepare('DELETE FROM rooms WHERE room_id = ?').run(roomId);
       })();
     },
@@ -743,8 +767,36 @@ function makeRoomArchive({ dir, protector, limits = null }) {
       return d.transaction(() => {
         const ids = d.prepare('SELECT msg_id FROM public_messages WHERE room_id = ?').all(roomId).map((r) => r.msg_id);
         d.prepare('DELETE FROM public_messages WHERE room_id = ?').run(roomId);
+        d.prepare('DELETE FROM room_notes WHERE room_id = ?').run(roomId);
         return ids;
       })();
+    },
+    // A presence line of this PC. replaces: the ID of an older line that this line takes the place of (a leave and a
+    // rejoin in 60 s). Returns false for a line that is not valid or that is already saved.
+    addNote(roomId, note) {
+      const d = need();
+      const n = validNote(note);
+      if (!n) return false;
+      const cap = lim.maxNotes ?? NOTE_LIMITS.maxRows;
+      return d.transaction(() => {
+        if (n.replaces) d.prepare('DELETE FROM room_notes WHERE room_id=? AND note_id=?').run(roomId, n.replaces);
+        const added = d.prepare(`INSERT INTO room_notes(room_id,note_id,kind,body,time) VALUES(?,?,?,?,?)
+          ON CONFLICT(room_id,note_id) DO NOTHING`).run(roomId, n.id, n.kind, n.text, n.time).changes === 1;
+        const { c } = d.prepare('SELECT count(*) AS c FROM room_notes WHERE room_id=?').get(roomId);
+        if (c > cap) {
+          d.prepare(`DELETE FROM room_notes WHERE rowid IN (SELECT rowid FROM room_notes WHERE room_id=?
+            ORDER BY time ASC, rowid ASC LIMIT ?)`).run(roomId, c - cap);
+        }
+        return added;
+      })();
+    },
+    // The presence lines with from <= time < to (null: no limit), in time order.
+    listNotes(roomId, { from = null, to = null } = {}) {
+      const lo = Number.isFinite(from) ? from : -1;
+      const hi = Number.isFinite(to) ? to : Number.MAX_SAFE_INTEGER;
+      return need().prepare(`SELECT note_id, kind, body, time FROM room_notes WHERE room_id=? AND time>=? AND time<?
+        ORDER BY time ASC, rowid ASC`).all(roomId, lo, hi)
+        .map(r => ({ id: r.note_id, kind: r.kind, text: r.body, time: r.time }));
     },
     roomUsage(roomId) {
       const r = need().prepare(`SELECT count(*) AS n, coalesce(sum(${ROW_BYTES_SQL}), 0) AS b FROM archived_messages

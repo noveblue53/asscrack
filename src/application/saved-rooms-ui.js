@@ -281,6 +281,21 @@
         }
     }
 
+    // The saved presence lines (joins, leaves, a lost link, the reconnect) of a page of general lines. A full page
+    // (more older lines) gets the lines from the time of its first line; the last page gets all the older lines.
+    // before: the time of the first shown line for an older page (the lines of that time came with the newer page).
+    async function readNotes(roomId, lines, full, before = null) {
+        if (typeof api.savedRoomNotes !== 'function') return [];
+        const from = full && lines.length ? Number(lines[0].time) : null;
+        try {
+            const notes = await api.savedRoomNotes(roomId, { from, to: before });
+            return Array.isArray(notes) ? notes : [];
+        } catch (err) {
+            console.warn(`Saved presence lines not read: ${err?.message ?? err}`);
+            return [];
+        }
+    }
+
     function setOlder(value) {
         messageList.dataset.older = value;
     }
@@ -295,6 +310,11 @@
             loadedPages.delete(pageKey);
             return;
         }
+        const notes = channelId === 'general' ? await readNotes(roomId, lines, lines.length >= FIRST_PAGE) : [];
+        if (openRoomId !== roomId) {
+            loadedPages.delete(pageKey);
+            return;
+        }
         linesLoadedFor = roomId;
         for (const line of lines) if (line.id) savedMessageIds.add(String(line.id));
         const fresh = window.readingCore.newHistoryLines(lines, id => {
@@ -306,6 +326,7 @@
         const empty = !hasContentRows(messageList);
         const insertPage = () => {
             for (const line of fresh) insertMessage(line.from, line.text, line.time, line.id, line.own === true, line.channelId, line.attachment);
+            window.transcriptNotes?.restore(notes);
         };
         const visible = !window.roomChannels || window.roomChannels.isViewing(channelId);
         if (visible) window.reading.keepPosition(insertPage);
@@ -332,11 +353,15 @@
         try {
             const roomId = openRoomId;
             const channelId = window.roomChannels?.active() ?? 'general';
-            const lines = await readLines(roomId, { time: Number(first.dataset.time) || 0, id: first.dataset.id }, channelId);
+            const firstTime = Number(first.dataset.time) || 0;
+            const lines = await readLines(roomId, { time: firstTime, id: first.dataset.id }, channelId);
             if (!lines || roomId !== openRoomId) return;
+            const notes = channelId === 'general' ? await readNotes(roomId, lines, lines.length >= OLDER_PAGE, firstTime) : [];
+            if (roomId !== openRoomId) return;
             for (const line of lines) if (line.id) savedMessageIds.add(String(line.id));
             const insertPage = () => {
                 for (const line of lines) insertMessage(line.from, line.text, line.time, line.id, line.own === true, line.channelId, line.attachment);
+                window.transcriptNotes?.restore(notes);
             };
             if (!window.roomChannels || window.roomChannels.isViewing(channelId)) window.reading.keepPosition(insertPage);
             else insertPage();
@@ -438,6 +463,7 @@
         try {
             const lines = await readLines(room.roomId);
             if (!lines && archiveChanges.get(room.roomId)?.pending) return;
+            const notes = lines ? await readNotes(room.roomId, lines, lines.length >= FIRST_PAGE) : [];
             // Gap A2: the room-link texts of a reopened room (renderer.js).
             roomRole = 'reopen';
             const result = await api.reopenRoom(room.roomId, allowLegacy);
@@ -448,6 +474,7 @@
                 if (line.id) savedMessageIds.add(String(line.id));
                 addMessage(line.from, line.text, line.time, line.own === true, line.id, line.peerId ?? null, line.channelId, line.attachment);
             }
+            window.transcriptNotes?.restore(notes);
             if (lines) {
                 linesLoadedFor = String(room.roomId);
                 loadedPages.add(linesLoadedFor + '/general');

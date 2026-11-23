@@ -118,6 +118,14 @@ contextBridge.exposeInMainWorld('asscrack', {
         const before = b ? { time: Number(b.time), id: String(b.id) } : null;
         return ipcRenderer.invoke('asscrack:saved-room-lines', String(roomId), { before, channelId: opts?.channelId });
     },
+    // The presence lines of a saved room: range { from, to } (times, null: no limit).
+    savedRoomNotes: (roomId, range) => ipcRenderer.invoke('asscrack:saved-room-notes', String(roomId),
+        { from: range?.from ?? null, to: range?.to ?? null }),
+    // note: { id, kind, text, time, replaces } of transcript-notes.js.
+    saveNote: note => ipcRenderer.send('asscrack:save-note', {
+        id: String(note?.id ?? ''), kind: String(note?.kind ?? ''), text: String(note?.text ?? ''),
+        time: Number(note?.time), replaces: note?.replaces ? String(note.replaces) : null
+    }),
     setKeepHistory: (roomId, on) => ipcRenderer.invoke('asscrack:set-keep-history', String(roomId), on === true),
     setSavedRoomName: (roomId, name) => ipcRenderer.invoke('asscrack:saved-room-name', String(roomId), String(name)),
     clearHistory: roomId => ipcRenderer.invoke('asscrack:clear-history', String(roomId)),

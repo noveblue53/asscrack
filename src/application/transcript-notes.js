@@ -1,6 +1,8 @@
 // Note rows in the chat list (gaps B1 and D6): who came and who went, the own connection, and the day rows.
 // A note row is <li class="note" data-kind="presence|link|day|offer" data-time="…"><span class="note-text"/></li>.
-// It has no data-id, no .from, no .text and no button. It is never unread, never saved, and plays no sound.
+// It has no data-id, no .from, no .text and no button. It is never unread and plays no sound. A row that is not a day
+// row has a span.time (the time, as a chat line). The presence and link notes of the roster have a data-note-id: a
+// saved room keeps them in its archive (room_notes of room-archive.mjs), as local events of this PC.
 //
 // window.rosterNotesCore: a pure part with no DOM and no clock. createRoster() gives a state machine. Each call gets
 // the time and returns actions for the window. The tests load this file with node:vm and give the time.
@@ -18,6 +20,10 @@
     // A note waits for the name of the peer for this time at most.
     const NAME_WAIT_MS = 2 * 1000;
     const ID_CHARS = 12;
+    // A rejoin in this time after the leave note or the lost note of the same person replaces that note with one
+    // "<name> reconnected." note. The person is the key that the window gives (the device mark of a protected room),
+    // else the name: an app restart gives a new peer ID.
+    const MERGE_MS = 60 * 1000;
 
     function clock(ms) {
         const d = new Date(ms);
@@ -25,14 +31,22 @@
     }
 
     // options.creator: this computer created the room now (it always gets the join note of the first friend).
+    // options.makeId(time): optional, the ID of a new note (tests).
     // Actions: { type: 'add' | 'restore' | 'grey' | 'remove', peerId } for the buddy list, and
-    // { type: 'note', kind: 'presence' | 'link', text, time } for the chat list.
+    // { type: 'note', kind: 'presence' | 'link', text, time, id, replaces } for the chat list. replaces: the ID of an
+    // earlier note that this note takes the place of, or null.
     function createRoster(options = {}) {
         const creator = options.creator === true;
+        let idCount = 0;
+        const makeId = typeof options.makeId === 'function' ? options.makeId
+            : time => `${Number(time).toString(36)}-${(++idCount).toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+        // person -> { id, time } of the last leave or lost note of that person.
+        const gone = new Map();
+        const persons = new Map(); // peer ID -> person key of the window
         const present = new Set();
         const held = new Map(); // peer ID -> the end of its grey time
         const names = new Map();
-        const waiting = []; // notes that wait for a name: { peerId, make, due }
+        const waiting = []; // notes that wait for a name: { peerId, make, join, due }
         let out = [];
         let firstDone = false;
         let quietUntil = -Infinity;
@@ -45,14 +59,29 @@
         // After the return: { at, before }. A peer of before that is not back at at + HOLD_MS gets its note then.
         let back = null;
 
-        function note(kind, text, time) {
-            out.push({ type: 'note', kind, text, time });
+        function note(kind, text, time, replaces = null) {
+            const action = { type: 'note', kind, text, time, id: String(makeId(time)), replaces };
+            out.push(action);
+            return action;
         }
 
-        function peerNote(peerId, make, now) {
+        // A join note after a leave or lost note of the same person in MERGE_MS replaces that note.
+        function emitPeer(peerId, make, join, name, now) {
+            const person = persons.get(peerId) ?? `name:${name}`;
+            const last = gone.get(person);
+            if (join) {
+                gone.delete(person);
+                if (last && now - last.time <= MERGE_MS) note('presence', reconnectedText(name), now, last.id);
+                else note('presence', make(name), now);
+                return;
+            }
+            gone.set(person, { id: note('presence', make(name), now).id, time: now });
+        }
+
+        function peerNote(peerId, make, now, join = false) {
             const name = names.get(peerId);
-            if (name) note('presence', make(name), now);
-            else waiting.push({ peerId, make, due: now + NAME_WAIT_MS });
+            if (name) emitPeer(peerId, make, join, name, now);
+            else waiting.push({ peerId, make, join, due: now + NAME_WAIT_MS });
         }
 
         function flush() {
@@ -64,24 +93,27 @@
         const joinedText = name => `${name} joined the room.`;
         const leftText = name => `${name} left the room.`;
         const lostText = name => `${name} lost the connection.`;
+        const reconnectedText = name => `${name} reconnected.`;
 
-        function setName(peerId, name, now) {
+        // person: optional, the key of the person (the window gives the device mark of a protected room).
+        function setName(peerId, name, now, person) {
+            if (typeof person === 'string' && person) persons.set(peerId, person);
             if (typeof name !== 'string' || !name) return;
             names.set(peerId, name);
             for (let i = 0; i < waiting.length; i++) {
                 if (waiting[i].peerId !== peerId) continue;
-                note('presence', waiting[i].make(name), now);
+                emitPeer(peerId, waiting[i].make, waiting[i].join, name, now);
                 waiting.splice(i--, 1);
             }
         }
 
         return {
-            joined(peerId, now, name) {
-                setName(peerId, name, now);
+            joined(peerId, now, name, person) {
+                setName(peerId, name, now, person);
                 if (present.has(peerId)) return flush();
                 const wasEmpty = present.size === 0;
                 if (wasEmpty && loss) {
-                    note('link', `Reconnected at ${clock(now)}.`, now);
+                    note('link', 'Reconnected.', now);
                     restoredAt = now;
                     back = { at: now, before: loss.before };
                     loss = null;
@@ -97,7 +129,7 @@
                 present.add(peerId);
                 seen = true;
                 out.push({ type: heldBack ? 'restore' : 'add', peerId });
-                if (!heldBack && !lossBack && ((first && creator) || now >= quietUntil)) peerNote(peerId, joinedText, now);
+                if (!heldBack && !lossBack && ((first && creator) || now >= quietUntil)) peerNote(peerId, joinedText, now, true);
                 return flush();
             },
             // withBye: the 'peer-left' event had left: true.
@@ -119,13 +151,13 @@
                         back = null;
                         restoredAt = null;
                         loss = { at: now, before };
-                        note('link', `Connection lost at ${clock(now)}.`, now);
+                        note('link', 'Connection lost.', now);
                     }
                 }
                 return flush();
             },
-            named(peerId, name, now) {
-                setName(peerId, name, now);
+            named(peerId, name, now, person) {
+                setName(peerId, name, now, person);
                 return flush();
             },
             // Call at nextDue() and later. Ends the grey times, the time after the return and the name waits.
@@ -142,7 +174,8 @@
                 }
                 for (let i = 0; i < waiting.length; i++) {
                     if (waiting[i].due > now) continue;
-                    note('presence', waiting[i].make(String(waiting[i].peerId).slice(0, ID_CHARS)), now);
+                    const w = waiting[i];
+                    emitPeer(w.peerId, w.make, w.join, String(w.peerId).slice(0, ID_CHARS), now);
                     waiting.splice(i--, 1);
                 }
                 return flush();
@@ -159,7 +192,7 @@
         };
     }
 
-    window.rosterNotesCore = Object.freeze({ HOLD_MS, QUIET_MS, NAME_WAIT_MS, clock, createRoster });
+    window.rosterNotesCore = Object.freeze({ HOLD_MS, QUIET_MS, NAME_WAIT_MS, MERGE_MS, clock, createRoster });
 
     // ---- Day rows (gap D6) ----
 
@@ -254,15 +287,24 @@
     const messageList = document.getElementById('messages');
     let labelDay = dayKey(Date.now());
 
-    function makeNote(kind, text, time) {
+    // id: the note ID of a roster note (data-note-id), or nothing. A row that is not a day row shows its time.
+    function makeNote(kind, text, time, id = null) {
         const item = document.createElement('li');
         item.className = 'note';
         item.dataset.kind = kind;
         item.dataset.time = String(time);
+        if (id) item.dataset.noteId = String(id);
         const span = document.createElement('span');
         span.className = 'note-text';
         span.textContent = String(text);
         item.append(span);
+        if (kind !== 'day') {
+            const timeSpan = document.createElement('span');
+            timeSpan.className = 'time';
+            timeSpan.textContent = clock(Number(time) || 0);
+            timeSpan.title = new Date(Number(time) || 0).toLocaleString();
+            item.append(timeSpan);
+        }
         return item;
     }
 
@@ -297,12 +339,13 @@
 
     // A note at the end of the list of a channel (default: general, for presence and link notes). Gap N5 gives the
     // channel of a file offer. The visible list keeps its reading position.
-    function append(kind, text, time = Date.now(), channelId = 'general') {
+    // id: the note ID of a roster note, or nothing.
+    function append(kind, text, time = Date.now(), channelId = 'general', id = null) {
         const list = window.roomChannels?.listFor(channelId) ?? messageList;
         if (!list) return null;
         const visible = list === messageList;
         const state = visible ? window.reading?.beforeChange() : null;
-        const item = makeNote(kind, text, time);
+        const item = makeNote(kind, text, time, id);
         list.appendChild(item);
         placed(list, item);
         if (visible) window.reading?.afterChange(state);
@@ -318,7 +361,41 @@
         after();
     }
 
-    window.transcriptNotes = Object.freeze({ append, placed, remove, checkDay, makeNote });
+    function generalList() {
+        return window.roomChannels?.listFor('general') ?? messageList;
+    }
+
+    // Remove the roster note with this note ID from the general list (a rejoin in 60 s replaces it).
+    function removeNote(id) {
+        const list = generalList();
+        if (!list || !id) return;
+        const row = Array.from(list.children).find(li => li.dataset?.noteId === String(id));
+        if (row) remove(row);
+    }
+
+    // Saved presence lines ([{ id, kind, text, time }] of the archive) into the general list, each before the first
+    // row that is newer. A note ID that is shown does not come again. The caller keeps the reading position.
+    function restore(notes) {
+        const list = generalList();
+        if (!list || !Array.isArray(notes)) return 0;
+        const shown = new Set(Array.from(list.children).map(li => li.dataset?.noteId).filter(Boolean));
+        let count = 0;
+        for (const n of notes) {
+            const t = Number(n?.time);
+            if (!n || typeof n.id !== 'string' || shown.has(n.id) || !Number.isFinite(t)) continue;
+            if (n.kind !== 'presence' && n.kind !== 'link') continue;
+            shown.add(n.id);
+            const item = makeNote(n.kind, String(n.text ?? ''), t, n.id);
+            const rows = Array.from(list.children);
+            const i = rows.findIndex(li => Number(li.dataset?.time) > t);
+            list.insertBefore(item, i < 0 ? null : rows[i]);
+            placed(list, item);
+            count++;
+        }
+        return count;
+    }
+
+    window.transcriptNotes = Object.freeze({ append, placed, remove, removeNote, restore, checkDay, makeNote });
     // Each minute: a new local day writes the labels again ("Today" becomes "Yesterday").
     setInterval(checkDay, 60 * 1000);
 })();

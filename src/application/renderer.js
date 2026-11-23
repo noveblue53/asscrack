@@ -458,9 +458,25 @@ function rosterNow() {
     return roster;
 }
 
+// A roster note: a rejoin in 60 s removes the leave note first. A saved room that keeps history saves the note in its
+// archive (main.js decides). The note does not go to the room.
+function addRosterNote(action) {
+    if (action.replaces) window.transcriptNotes?.removeNote(action.replaces);
+    window.transcriptNotes?.append(action.kind, action.text, action.time, 'general', action.id);
+    window.asscrack.saveNote?.({ id: action.id, kind: action.kind, text: action.text, time: action.time, replaces: action.replaces });
+}
+
+// The person of a peer for the 60 s merge of the roster notes: in a protected room the device mark (the same after an
+// app restart, which gives a new peer ID), else nothing (the roster uses the name).
+let roomProtected = false;
+function personKey(peerId) {
+    const mark = roomProtected ? peerMarks.get(peerId) : null;
+    return mark ? `device:${mark}` : undefined;
+}
+
 function applyRoster(actions) {
     for (const action of actions ?? []) {
-        if (action.type === 'note') window.transcriptNotes?.append(action.kind, action.text, action.time);
+        if (action.type === 'note') addRosterNote(action);
         else if (action.type === 'add' || action.type === 'restore') addPeer(action.peerId);
         else if (action.type === 'grey') removePeer(action.peerId, true);
         else if (action.type === 'remove') {
@@ -542,7 +558,7 @@ window.asscrack.onVoiceState(data => otherVoiceState(data?.peerId, data?.inVoice
 function peerJoined(peerId) {
     otherVoiceOpened(peerId);
     const notes = rosterNow();
-    if (notes) applyRoster(notes.joined(peerId, Date.now(), peerNames.get(peerId)));
+    if (notes) applyRoster(notes.joined(peerId, Date.now(), peerNames.get(peerId), personKey(peerId)));
     else addPeer(peerId);
     restoreListening(peerId);
 }
@@ -576,7 +592,7 @@ window.asscrack.onPeerName(data => {
         refreshFileRecipients();
     }
     refreshPeerMarks();
-    if (roster) applyRoster(roster.named(data.peerId, data.name, Date.now()));
+    if (roster) applyRoster(roster.named(data.peerId, data.name, Date.now(), personKey(data.peerId)));
 });
 window.asscrack.onMessage(data => {
     const item = peerItems.get(data.peerId);
@@ -823,6 +839,7 @@ function showChat(name, room) {
 function roomStarted(result) {
     // Gap A2: the room-link state starts before the membership, which can change it.
     const membership = result?.membership?.protected === true ? result.membership : null;
+    roomProtected = membership !== null;
     window.roomLink?.start({ role: roomRole, owner: membership?.owner === true,
         admitted: membership ? membership.admitted !== false : true, revoked: membership?.revoked === true });
     window.roomLink?.presence(rosterNow()?.link());

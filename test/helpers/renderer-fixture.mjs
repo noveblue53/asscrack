@@ -181,9 +181,10 @@ export async function loadRoomWindow(options = {}) {
         },
         // The rows of #messages with no note rows (transcript-notes.js: day, presence and link rows).
         rows: () => document.getElementById('messages').children.filter(row => !row.classList.contains('note')),
-        // The note rows of #messages: [{ kind, text }].
+        // The note rows of #messages: [{ kind, text, time }]. text: the note text, without the time (span.time).
         notes: () => document.getElementById('messages').children.filter(row => row.classList.contains('note'))
-            .map(row => ({ kind: row.dataset.kind, text: row.textContent })),
+            .map(row => ({ kind: row.dataset.kind, text: (row.querySelector('.note-text') ?? row).textContent,
+                time: row.querySelector('.time')?.textContent ?? null })),
         key(target, key, init = {}) {
             const event = new Event('keydown', { key, ...init });
             target.dispatchEvent(event);

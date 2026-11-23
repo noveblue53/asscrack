@@ -68,7 +68,8 @@ test('own loss: one link note, no "lost the connection" notes, then the return a
     const roster = connected();
     roster.left('peer-a', false, T0);
     const lost = roster.left('peer-b', false, T0 + 500);
-    assert.deepEqual(notes(lost), ['Connection lost at 21:04.']);
+    // The time of a note row is in its time column (span.time), not in the text.
+    assert.deepEqual(notes(lost), ['Connection lost.']);
     const link = roster.link();
     assert.equal(link.peers, 0);
     assert.equal(link.seen, true);
@@ -81,7 +82,7 @@ test('own loss: one link note, no "lost the connection" notes, then the return a
     // The return at 21:05: Alice comes back; Bob does not.
     const ret = new Date(2026, 10, 21, 21, 5, 10).getTime();
     const back = roster.joined('peer-a', ret);
-    assert.deepEqual(notes(back), ['Reconnected at 21:05.'], 'no join note for a peer that was there before the loss');
+    assert.deepEqual(notes(back), ['Reconnected.'], 'no join note for a peer that was there before the loss');
     assert.equal(roster.link().restoredAt, ret);
     assert.deepEqual(notes(roster.tick(ret + 9999)), []);
     assert.deepEqual(notes(roster.tick(ret + HOLD_MS)), ['Bob lost the connection.']);
