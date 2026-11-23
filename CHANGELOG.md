@@ -7,7 +7,45 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
-## Unreleased: one Start menu identity for each kind of build (2026-11-22)
+## 1.0.3 (2026-11-22): message alerts, the image menu and three members that see each other
+
+Release 1.0.3 is the third update of 1.0.0. A 1.0.0, 1.0.1 or 1.0.2 app gets it with the signed update (View, About
+ASSCRACK, Check now). The entries below this heading, down to the 1.0.2 entry, were "Unreleased" entries. Each entry
+gives its changes and its checks. Since 1.0.2, the app has these new items:
+
+- Message alerts: a sound and a desktop notification for each room line when the conversation is not in view, a grid
+  in Sound & notifications, three message sounds, and mutes for a channel or the room.
+- The image menu: Copy image, Save image as… and Open original on a chat image and in the image viewer.
+- A small preview of the own screen share in the share bar.
+- A hint against the yellow border of a window share on Windows 10, with a "Share screen" button.
+- A fix: in a protected room, each member now gets a session with each other member after the first admission.
+- A fix: each kind of build has its own Start menu shortcut and toast registration. A portable start no longer
+  changes the shortcut of an installed copy.
+
+Build:
+- `npm run dist` makes `ASSCRACK-1.0.3-portable.exe` (product name "ASSCRACK Portable"). `npm run dist:installer`
+  makes `ASSCRACK-1.0.3-setup.exe` (product name "ASSCRACK").
+- The source of the two files is the commit of this entry. The signed `update.json` of the release gives the byte size
+  and the SHA-256 of each file. The files have no code signature.
+
+Results:
+- **127.0.0.1 and this PC only.** Each entry below gives its results with their labels.
+- The integrated source (`npm test` in a fresh worktree after `npm run install:clean`): 1085 tests, 1067 pass, 0
+  fail, 18 skipped (127.0.0.1).
+- **this PC** (copies of `electron .` with `--profile`, rooms on 127.0.0.1 and the LAN address of this PC): one start
+  with no error line; the voice regression (16 of 16 tests and `voice-check.mjs` with the expected byte counts);
+  three copies: knock and Allow two times, each copy shows 3 people and gets each of 6 chat lines; the image menu
+  (Copy image, Save image as… with the same SHA-256, Zone.Identifier on the file of a peer) and the share preview
+  (5.75 frames per second); the border hint and its "Share screen" button; message alerts 18 of 18 (one cue and one
+  notification for a burst while minimized, none in view). Before and after each run, the Start menu shortcut and
+  the toast registration of the installed copy on this PC had the same values.
+- `src/network/` changes only in `node.mjs` (the dial after the first admission). No new line on the network.
+- Known failures: the same as 1.0.2 (check 19 of P8b, check 18 of P8a, the timed screen check 16 of
+  `test/screen-auto.test.mjs`). One case of `test/transfer-resume-restart.test.mjs` can fail under load and passes
+  alone.
+- No LAN test and no internet test of 1.0.3 occurred.
+
+### One Start menu identity for each kind of build (1.0.3)
 
 - Fault: a start of the portable .exe changed the Start menu shortcut `ASSCRACK.lnk` and the toast registration of the
   installed copy. Both then pointed to the unpack folder of the portable .exe, which Windows deletes at exit. A click
@@ -26,7 +64,7 @@ Each result has one of these labels:
   module). With only the new module added, 2 tests fail: the identity in `main.js` and the build script. After the
   fix, all 7 pass.
 
-## Unreleased: the image menu and the preview of the own share (2026-11-22)
+### The image menu and the preview of the own share (1.0.3)
 
 - Image menu (operator request: "right click here and save/copy image"). A right-click on a chat image shows "Copy
   image", "Save image as…" and, when the original is on this computer, "Open original". These items are first in the
@@ -59,7 +97,7 @@ Each result has one of these labels:
   of A in 8 s: 406 ms with the preview, 250 ms without it. With the full frame rate of the track (17 frames per second
   in the preview), the values were 484 ms and 203 ms.
 
-## Unreleased: message alerts (2026-11-22)
+### Message alerts (1.0.3)
 
 - Fault: a plain room line gave no cue and no desktop notification. Only a mention, a whisper or a friend line did.
   Desktop notifications were off by default, and a file of 1.0.x kept them off. The title of a notification was the
@@ -90,7 +128,7 @@ Each result has one of these labels:
   A played one cue, and Windows fired one show event. The toast "<name> in #general" was in the notification history
   of `com.asscrack.app`. A later line replaced that toast in the history. With A in view: no cue, no notification.
 
-## Unreleased: a hint against the yellow border of a window share (2026-11-22)
+### A hint against the yellow border of a window share (1.0.3)
 
 - Fault (operator, 2026-11-22): a window share of a game in full screen has a thin yellow border. The app does not
   draw it. Windows draws it when a program captures a window with Windows Graphics Capture (WGC).
@@ -111,7 +149,7 @@ Each result has one of these labels:
   change and pass after the change. Two app copies did three shares: a screen, the test window (the hint shows), and
   the "Share screen" button (the share is of the screen). The viewer got frames each time.
 
-## Unreleased: sessions between members after the first admission (2026-11-22)
+### Sessions between members after the first admission (1.0.3)
 
 - Fault: in a protected room with an owner and two members, the second member often had no session with the first
   member. The two members did not see each other. Their chat lines did not get to each other, because the host does
@@ -133,7 +171,7 @@ Each result has one of these labels:
   occurred in 3 runs, and each time the new member dialed again. In all 4 runs, each copy showed 3 people and got
   each chat line.
 
-## Unreleased: README cover page (2026-11-22)
+### README cover page (1.0.3)
 
 - The README is a cover page for users: the app icon, release badges, download buttons, screenshots in a light and
   a dark theme, the features, the first steps and the privacy points.
