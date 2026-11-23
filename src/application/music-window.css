@@ -1,0 +1,38 @@
+/* The player in its own window (music-window.html). The colors are the theme variables of themes.css; the bar of
+   music.css fills the window, with the large visualizer on top. */
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; }
+:root[data-theme] body { font: 14px var(--font-ui, 'Segoe UI', Tahoma, sans-serif); color: var(--ink); background: var(--surface); }
+#music-bar[data-mode="window"] {
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  padding: 10px;
+  gap: 8px;
+  border: 0;
+  border-radius: 0;
+  background: var(--surface);
+  font-size: 13px;
+  overflow: hidden;
+}
+#music-bar[data-mode="window"] .music-led { width: 100%; height: 36vh; min-height: 90px; }
+#music-bar[data-mode="window"] #music-vu { width: 40%; align-self: center; }
+#music-bar[data-mode="window"] #music-queue-panel { flex: 1 1 auto; min-height: 0; }
+#music-bar[data-mode="window"] #music-queue { flex: 1 1 auto; max-height: none; }
+button, select {
+  height: 26px;
+  padding: 0 10px;
+  font: 600 12px var(--font-ui, 'Segoe UI', Tahoma, sans-serif);
+  color: var(--ink);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  cursor: pointer;
+}
+button:hover:not(:disabled) { filter: brightness(1.07) saturate(1.12); }
+button:disabled { opacity: 0.55; cursor: default; }
+select { border-radius: 4px; }
+:root[data-theme="amber-terminal"] button { border-radius: 3px; }
+input[type="text"] { height: 26px; padding: 0 8px; border: 1px solid var(--line); border-radius: 4px; font: inherit; color: var(--ink); background: var(--chat); }
+.count { display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 9px; font-size: 11px; font-weight: 700; text-align: center; }

@@ -8,6 +8,9 @@
 // - Listener: api.onMusicFrame (only the frames of the DJ of the own channel) -> AudioDecoder (stereo) ->
 //   'music-playback' worklet (jitter buffer) -> the music gain -> the output device of the voice settings.
 // - The music gain: the music volume of this listener and the ducking while someone talks (music-core.js).
+// - The visualizer tap (music-viz.js): the music before the music gain (the bars move at each volume): the DJ's
+//   element or the listener's playback worklet -> the tap -> one analyser (spectrum) and a splitter -> two analysers
+//   (the VU meter). The analysers have no output; the browser reads them only when music-viz.js asks.
 // Music plays only in voice and not while deafened.
 (function () {
     const api = window.asscrack;
@@ -26,6 +29,7 @@
     let captureNode = null;
     let playbackNode = null;
     let gainNode = null;
+    let tap = null;
     let encoder = null;
     let encodeTs = 0;
     let decoder = null;
@@ -65,6 +69,8 @@
             gainNode.connect(ctx.destination);
             playbackNode = new AudioWorkletNode(ctx, 'music-playback', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] });
             playbackNode.connect(gainNode);
+            tap = makeTap(ctx);
+            playbackNode.connect(tap.input);
             captureNode = new AudioWorkletNode(ctx, 'music-capture', {
                 numberOfInputs: 1, numberOfOutputs: 0, channelCount: 2, channelCountMode: 'explicit' });
             captureNode.port.onmessage = ({ data }) => onBlock(data);
@@ -79,12 +85,37 @@
         return contextReady;
     }
 
+    function makeTap(ctx) {
+        // Two channels: a mono file gives the same level on the left and the right.
+        const input = ctx.createGain();
+        input.channelCount = 2;
+        input.channelCountMode = 'explicit';
+        input.channelInterpretation = 'speakers';
+        const spectrum = ctx.createAnalyser();
+        spectrum.fftSize = 2048;
+        spectrum.smoothingTimeConstant = 0.5;
+        spectrum.minDecibels = -90;
+        spectrum.maxDecibels = -25;
+        input.connect(spectrum);
+        const splitter = ctx.createChannelSplitter(2);
+        input.connect(splitter);
+        const left = ctx.createAnalyser();
+        const right = ctx.createAnalyser();
+        left.fftSize = 1024;
+        right.fftSize = 1024;
+        splitter.connect(left, 0);
+        splitter.connect(right, 1);
+        return { input, spectrum, left, right, splitter, sampleRate: ctx.sampleRate };
+    }
+
     function closeAudio() {
         stopTrack();
         closeEncoder();
         closeDecoder();
         try { playbackNode?.disconnect(); } catch { /* already */ }
         try { gainNode?.disconnect(); } catch { /* already */ }
+        try { tap?.input.disconnect(); tap?.splitter.disconnect(); } catch { /* already */ }
+        tap = null;
         if (captureNode) captureNode.port.onmessage = null;
         playbackNode = null;
         gainNode = null;
@@ -191,6 +222,7 @@
         own.source = context.createMediaElementSource(audio);
         own.source.connect(captureNode);
         own.source.connect(gainNode);
+        if (tap) own.source.connect(tap.input);
         audio.onended = () => { if (track === own) api.musicEnded(item.id); };
         audio.onerror = () => {
             if (track !== own) return;
@@ -308,7 +340,14 @@
     api.onMusic(apply);
     window.voice?.onChange?.(() => update());
     Promise.resolve(api.getMusic?.()).then(value => { if (value && !view) apply(value); }).catch(() => {});
-    Promise.resolve(api.getMusicSettings?.()).then(value => { if (value) { settings = value; applyGain(); } }).catch(() => {});
+    Promise.resolve(api.getMusicSettings?.()).then(value => { if (value) { settings = value; applyGain(); changed(); } }).catch(() => {});
+    // A change of the pop-out window or of the main process.
+    api.onMusicSettings?.(value => {
+        if (!value || typeof value !== 'object') return;
+        settings = value;
+        applyGain();
+        changed();
+    });
 
     // Ducking: each 100 ms, the voice levels of the others and the own send state.
     if (typeof setInterval === 'function') {
@@ -336,6 +375,13 @@
             return settings;
         },
         onChange(fn) { if (typeof fn === 'function') listeners.push(fn); },
+        // The visualizer (music-viz.js): the analysers of the music before the gain, or null with no audio. playing:
+        // a track plays on this PC now (the DJ's element, or the frames of the DJ for a listener who hears).
+        tap() {
+            if (!tap || !context || context.state !== 'running') return null;
+            const playing = Boolean(view?.now) && view.paused !== true && (view.mine ? Boolean(track?.audio && !track.audio.paused) : canHear());
+            return { spectrum: tap.spectrum, left: tap.left, right: tap.right, sampleRate: tap.sampleRate, playing };
+        },
         // For the checks and the panel: the counters and the level of the last 300 ms.
         state() {
             const now = performance.now();

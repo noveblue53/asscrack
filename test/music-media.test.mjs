@@ -111,10 +111,12 @@ test('music folder: audio files only, no subfolders, sorted', async () => {
 });
 
 test('settings: volume 0 to 100, ducking, the folder only from the dialog of the main process', () => {
-    assert.deepEqual(musicSettings.normalize(null), { volume: 60, ducking: true, folder: '' });
-    assert.deepEqual(musicSettings.normalize({ volume: 250, ducking: 'yes', folder: 'relative/dir' }), { volume: 100, ducking: true, folder: '' });
+    // The visualizer and the layout fields have their defaults (test/music-popout.test.mjs checks them).
+    const layout = { visualizer: 'spectrum', collapsed: false, hidden: false, popout: false };
+    assert.deepEqual(musicSettings.normalize(null), { volume: 60, ducking: true, folder: '', ...layout });
+    assert.deepEqual(musicSettings.normalize({ volume: 250, ducking: 'yes', folder: 'relative/dir' }), { volume: 100, ducking: true, folder: '', ...layout });
     const next = musicSettings.merge({ volume: 30 }, { volume: 12.6, ducking: false, folder: 'C:\\Windows' });
-    assert.deepEqual(next, { volume: 13, ducking: false, folder: '' }, 'the window cannot set the folder');
+    assert.deepEqual(next, { volume: 13, ducking: false, folder: '', ...layout }, 'the window cannot set the folder');
     assert.equal(musicSettings.merge(next, { volume: 'loud' }).volume, 13);
     assert.equal(musicSettings.normalize({ folder: '\\\\?\\C:\\x' }).folder, '');
 });

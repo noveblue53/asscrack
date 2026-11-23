@@ -303,6 +303,7 @@
         if (items.buddies) items.buddies.setAttribute('aria-checked', String(pref.buddiesShown));
         if (items.transfers) items.transfers.setAttribute('aria-checked', String(pref.transfersPinned));
         if (items.map) items.map.setAttribute('aria-checked', String(mapIsOpen()));
+        if (window.musicUi?.hidden) byId('view-music')?.setAttribute('aria-checked', String(!window.musicUi.hidden()));
         // Gap E5: on the login screen only the lines with no data-room-only attribute show. menuItems() skips the
         // lines with the hidden attribute, thus the keys skip them too.
         const inRoom = body.classList.contains('chat');
@@ -620,6 +621,7 @@
             setPref({ transfersPinned: transfersOpen });
         }
         else if (item === items.map && mapToggle) mapToggle.click();
+        else if (item.id === 'view-music') void window.musicUi?.toggleHidden();
         else if (item.id === 'view-theme') window.roomThemes.open(viewOrigin);
         else if (item.id === 'view-system-buttons') window.frameControls?.toggleSystemButtons();
         else if (item.id === 'view-idle') window.idlePeer?.enter();

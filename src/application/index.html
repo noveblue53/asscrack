@@ -146,6 +146,7 @@
         <li id="view-side" data-room-only hidden role="menuitem" tabindex="-1">Move Buddies to the right</li>
         <li id="view-transfers" data-room-only hidden role="menuitemcheckbox" aria-checked="false" tabindex="-1">Pin Transfers</li>
         <li id="view-map" data-room-only hidden role="menuitemcheckbox" aria-checked="false" tabindex="-1">Network map</li>
+        <li id="view-music" data-room-only hidden role="menuitemcheckbox" aria-checked="true" tabindex="-1">Music player</li>
         <li class="view-rule" role="separator" data-room-only hidden></li>
         <li id="view-voice" data-room-only hidden role="menuitem" tabindex="-1">Voice controls</li>
         <li id="detach-voice" data-room-only hidden role="menuitem" tabindex="-1">Detach voice panel</li>
@@ -414,19 +415,36 @@
              in the transcript. -->
         <section id="ready-bar" aria-label="Ready check" hidden></section>
         <!-- music-ui.js: room music, in voice only. The titles come from the DJ: textContent only. -->
+        <!-- music-viz.js: the LED spectrum or the VU meter of the music on this PC. The bar folds to a strip (now
+             playing, VU, Pause, Skip), also while the player is in its own window (music-popout.mjs). -->
         <section id="music-bar" aria-label="Music" hidden>
-          <div class="music-now">
-            <span class="music-dot" aria-hidden="true"></span>
-            <span id="music-title"></span>
-            <span id="music-meta"></span>
-          </div>
-          <div class="music-controls">
-            <button id="music-pause" type="button" aria-pressed="false" hidden>Pause</button>
-            <button id="music-skip" type="button" hidden>Skip</button>
-            <button id="music-stop" type="button" hidden>Stop</button>
-            <label class="music-volume">Volume <input id="music-volume" type="range" min="0" max="100" step="1" value="60"></label>
-            <label title="Lower the music while someone talks"><input id="music-ducking" type="checkbox" checked> Duck</label>
-            <button id="music-queue-toggle" type="button" aria-expanded="false" aria-controls="music-queue-panel">Queue <span id="music-count" class="count"></span></button>
+          <div class="music-head">
+            <canvas id="music-spectrum" class="music-led" width="150" height="46" aria-hidden="true"></canvas>
+            <canvas id="music-vu" class="music-led" width="18" height="46" aria-hidden="true" hidden></canvas>
+            <div class="music-main">
+              <div class="music-now">
+                <span class="music-dot" aria-hidden="true"></span>
+                <span id="music-title"></span>
+                <span id="music-meta"></span>
+              </div>
+              <div class="music-controls">
+                <button id="music-pause" type="button" aria-pressed="false" hidden>Pause</button>
+                <button id="music-skip" type="button" hidden>Skip</button>
+                <button id="music-stop" type="button" hidden>Stop</button>
+                <label class="music-volume">Volume <input id="music-volume" type="range" min="0" max="100" step="1" value="60"></label>
+                <label class="music-duck" title="Lower the music while someone talks"><input id="music-ducking" type="checkbox" checked> Duck</label>
+                <button id="music-queue-toggle" type="button" aria-expanded="false" aria-controls="music-queue-panel">Queue <span id="music-count" class="count"></span></button>
+                <select id="music-visualizer" aria-label="Visualizer" title="Visualizer">
+                  <option value="spectrum">Spectrum</option>
+                  <option value="vu">VU</option>
+                  <option value="off">Off</option>
+                </select>
+              </div>
+            </div>
+            <div class="music-tools">
+              <button id="music-collapse" type="button" aria-expanded="true" aria-label="Collapse" title="Collapse">▾</button>
+              <button id="music-popout" type="button" aria-pressed="false" aria-label="Pop out" title="Pop out">↗</button>
+            </div>
           </div>
           <div id="music-queue-panel" hidden>
             <form id="music-add-form">
@@ -555,6 +573,7 @@
     <footer id="statusbar">
       <span id="full-node-state" class="reach-dot" data-state="lan" hidden></span>
       <span class="net-note">Local network</span>
+      <button id="music-mark" type="button" title="Show the music player" hidden></button>
     </footer>
     <dialog id="room-activity" aria-labelledby="activity-title">
       <h2 id="activity-title">Room activity</h2>
@@ -902,6 +921,8 @@
   <script src="typing.js"></script>
   <script src="ready-check-ui.js"></script>
   <script src="music-ui.js"></script>
+  <script src="music-viz-core.js"></script>
+  <script src="music-viz.js"></script>
   <script src="screen-frame-check.js"></script>
   <script src="screen-share.js"></script>
   <script src="screen-view.js"></script>

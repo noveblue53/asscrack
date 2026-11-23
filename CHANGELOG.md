@@ -7,6 +7,59 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased: the music visualizer, and collapse, pop-out and hide for the music player
+
+Operator design of 2026-11-23. The changes are in `src/application/` only. There is no change in `src/network/` and
+no new network traffic.
+
+- Visualizer: an LED spectrum of 16 bands (bass to treble) with 14 LEDs each band. The LEDs are green, yellow, orange
+  and red from the bottom up. A white peak cap holds for 0.3 s and then falls. The collapsed bar shows a stereo VU
+  meter (two LED columns with the same colors and peak caps).
+- The source is the music on this PC before the music volume: the DJ's local playback, or the stream of the DJ at a
+  listener. Thus the bars move at each volume, also at 0 %. The analysers are in the audio graph of the room window
+  (`music.js`). The pop-out window has no audio: for each frame it asks the room window for 18 bytes through the main
+  process.
+- The draw loop has a maximum of about 30 frames each second. It runs only while the canvas is on the screen and
+  music plays. It stops when the bar is not shown, or when the window is not on the screen
+  (minimized, hidden, or fully under other windows). It also stops with the setting Off and when the music pauses
+  or stops.
+- New setting in the bar and in the pop-out window: Visualizer Spectrum, VU or Off. The LED colors do not change. The
+  dark panel has the accent color of the theme.
+- Collapse (the button at the right of the bar) folds the bar to a strip: the VU meter, now playing, Pause and Skip.
+- Pop out opens the player in its own window: the queue, the controls and the large visualizer. There is one window
+  at most. The window keeps its size and position (`music-window.json`), follows the theme and closes at Leave room,
+  with the room window and at Quit. While it is open, the bar of the room window is a strip.
+- View > Music player hides the bar. A "Music: <track>" mark in the status bar shows it again.
+- `music-settings.json` keeps the visualizer, collapse, hide and pop-out for each profile. A close of the pop-out
+  window by the user clears the pop-out value. A close at Leave room or at Quit keeps it. The window then opens again
+  at the next join of voice.
+
+Results:
+- New tests: `test/music-viz.test.mjs` has 14 tests. They check the band mapping, the peak caps, the LED colors, the
+  VU level, the frame and the draw loop. They also check the room bar and the pop-out window in the fake DOM. `test/music-popout.test.mjs`
+  has 3 tests: the window rules, the bridge and the settings. On the base `d664ef8` they fail (the modules and the
+  settings fields are not there). Two tests had a fixed list of the settings fields:
+  `test/music-media.test.mjs` and `test/music-source.test.mjs` now include the new fields.
+- `npm test` (127.0.0.1): 1167 tests, 1149 pass, 0 fail, 18 skipped.
+- **this PC, 127.0.0.1**, two copies of `electron .` with `--profile`, a fake APPDATA and outputs on the Steam
+  Streaming Speakers. A is the DJ with a local test file, B is a listener:
+  - The bars move on both copies (16 bands, values of the analysers and lit pixels of the canvas). At a volume of 0 %
+    the bars of B still move.
+  - Collapse: the strip with the VU meter, saved in the settings. Pop out: one window with the large spectrum, the
+    bar is a strip, Pause and Play from the window work. With the room window minimized, the room loop stops and the
+    pop-out window still moves. Pop in closes the window and clears the setting. View > Music player hides the bar,
+    the mark shows the track, and a click on the mark shows the bar again. After Stop, the loops of A and B stop.
+  - CPU (all processes of one copy, % of one core, 10 s each): in voice with no music 4.1 (A) and 5.1 (B). Music
+    with Spectrum in the bar 13.3 (A) and 12.4 (B). Music with Off 7.8 (A) and 6.1 (B). Thus the bar visualizer
+    costs about 6 % of one core (about 3 % renderer and 3 % GPU). Values of B: the collapsed VU 12.7, the pop-out
+    window open 19.5, the bar hidden 6.3. The room window minimized with the pop-out window open: 13.2.
+  - The check starts the copies with `--disable-features=CalculateNativeWinOcclusion`: other windows of this PC can
+    cover the test windows, and Chromium then stops the loop. A first run without this option showed that stop.
+  - Console and terminal: no error line.
+  - The Start menu shortcut and the toast registration of the installed copy on this PC had the same values before
+    and after the runs.
+- No LAN test occurred.
+
 ## 1.0.4 (2026-11-23): room music, a full-screen share with no border, automatic Away and the history thumbnails
 
 Release 1.0.4 is the fourth update of 1.0.0. A 1.0.0, 1.0.1, 1.0.2 or 1.0.3 app gets it with the signed update (View,

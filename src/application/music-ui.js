@@ -5,6 +5,10 @@
 // DJ's own computer). The chat commands /play <link>, /skip, /queue and /pause (renderer.js calls command()).
 // Each title is peer text: textContent only.
 // Reads the globals of renderer.js: ownName and peerNames.
+// The layout of this PC (music-settings.json): the bar folds to a thin strip (Collapse), the player opens in its own
+// window (Pop out; the bar is then a strip), View > Music player hides the bar (a mark in the status bar shows it
+// again). Order: hidden, then the pop-out window, then collapsed. The pop-out window (music-window.html) runs this file
+// too: data-mode="window" on the bar, no layout buttons, the names come with the view (view.names).
 (function () {
     const api = window.asscrack;
     const core = window.musicCore;
@@ -29,13 +33,23 @@
     const folderList = byId('music-folder-list');
     const list = byId('music-queue');
     const status = byId('music-status');
+    const collapseButton = byId('music-collapse');
+    const popoutButton = byId('music-popout');
+    const visualizer = byId('music-visualizer');
+    const mark = byId('music-mark');
+    const viewItem = byId('view-music');
+    const windowMode = bar.dataset.mode === 'window';
 
     let view = null;
     let statusTimer = null;
+    let popoutOpen = false;
+    // The remembered pop-out window opens one time in each voice session.
+    let reopenTried = false;
+    const settings = () => window.music.settings?.() ?? {};
 
     function nameOf(peerId) {
         if (peerId && peerId === view?.self) return (typeof ownName === 'string' && ownName) || 'You';
-        const name = typeof peerNames !== 'undefined' ? peerNames.get(peerId) : '';
+        const name = typeof peerNames !== 'undefined' ? peerNames.get(peerId) : view?.names?.[peerId];
         return name || String(peerId ?? '').slice(-8);
     }
 
@@ -60,10 +74,58 @@
         return el;
     }
 
+    // The layout of the room window. Gives true when the bar shows.
+    function layout(inVoice) {
+        const s = settings();
+        if (windowMode) {
+            bar.hidden = false;
+            return true;
+        }
+        const hidden = s.hidden === true;
+        bar.hidden = !inVoice || hidden;
+        const collapsed = !bar.hidden && (s.collapsed === true || popoutOpen);
+        bar.classList.toggle('collapsed', collapsed);
+        if (collapseButton) {
+            collapseButton.hidden = popoutOpen;
+            collapseButton.textContent = collapsed ? '▸' : '▾';
+            collapseButton.setAttribute('aria-expanded', String(!collapsed));
+            collapseButton.setAttribute('aria-label', collapsed ? 'Expand' : 'Collapse');
+            collapseButton.title = collapsed ? 'Expand' : 'Collapse';
+        }
+        if (popoutButton) {
+            popoutButton.setAttribute('aria-pressed', String(popoutOpen));
+            popoutButton.setAttribute('aria-label', popoutOpen ? 'Pop in' : 'Pop out');
+            popoutButton.title = popoutOpen ? 'Pop in' : 'Pop out';
+        }
+        if (mark) {
+            mark.hidden = !inVoice || !hidden;
+            mark.textContent = view?.now ? `Music: ${view.now.title}` : 'Music';
+        }
+        viewItem?.setAttribute('aria-checked', String(!hidden));
+        if (!inVoice) reopenTried = false;
+        else if (s.popout === true && !popoutOpen && !reopenTried) {
+            reopenTried = true;
+            void run(() => api.musicPopout?.(true));
+        }
+        return !bar.hidden;
+    }
+
     function render() {
         const inVoice = view?.inVoice === true;
-        bar.hidden = !inVoice;
-        if (!inVoice) return;
+        const shown = layout(inVoice);
+        if (visualizer) visualizer.value = settings().visualizer ?? 'spectrum';
+        bar.dispatchEvent(new Event('musiclayout'));
+        if (!shown) return;
+        if (!inVoice) {
+            // The pop-out window out of voice.
+            bar.classList.remove('active');
+            title.textContent = 'Not in voice';
+            meta.textContent = '';
+            for (const button of [pauseButton, skipButton, stopButton]) button.hidden = true;
+            count.textContent = '';
+            list.replaceChildren();
+            return;
+        }
         const active = Boolean(view.dj);
         const mine = view.mine === true;
         bar.classList.toggle('active', active && Boolean(view.now));
@@ -157,6 +219,12 @@
         const result = await run(() => api.musicAddFiles());
         if (result?.ok && result.count) setStatus(result.count > 1 ? `Added ${result.count} files.` : 'Added.');
     });
+    collapseButton?.addEventListener('click', () => { void window.music.setSettings({ collapsed: !(settings().collapsed === true) }); });
+    popoutButton?.addEventListener('click', () => { void run(() => api.musicPopout?.(!popoutOpen)); });
+    visualizer?.addEventListener('change', () => { void window.music.setSettings({ visualizer: visualizer.value }); });
+    mark?.addEventListener('click', () => { void window.music.setSettings({ hidden: false }); });
+    // View > Music player (layout.js).
+    function toggleHidden() { return window.music.setSettings({ hidden: !(settings().hidden === true) }); }
     queueToggle.addEventListener('click', () => {
         queuePanel.hidden = !queuePanel.hidden;
         queueToggle.setAttribute('aria-expanded', String(!queuePanel.hidden));
@@ -212,11 +280,28 @@
 
     volume.addEventListener('input', () => { void window.music.setSettings({ volume: Number(volume.value) }); });
     ducking.addEventListener('change', () => { void window.music.setSettings({ ducking: ducking.checked }); });
-    Promise.resolve(api.getMusicSettings?.()).then(value => {
+    function showSettings(value) {
         if (!value) return;
         volume.value = String(value.volume);
         ducking.checked = value.ducking === true;
-    }).catch(() => {});
+        render();
+    }
+    Promise.resolve(api.getMusicSettings?.()).then(showSettings).catch(() => {});
+    // A change of the other window (the pop-out window or the room window), or of the main process (popout).
+    let shownSettings = '';
+    window.music.onChange?.(() => {
+        const value = settings();
+        const key = JSON.stringify(value);
+        if (key === shownSettings) return;
+        shownSettings = key;
+        if (document.activeElement !== volume && Number.isFinite(value.volume)) volume.value = String(value.volume);
+        if (typeof value.ducking === 'boolean') ducking.checked = value.ducking;
+        render();
+    });
+    api.onMusicPopout?.(state => {
+        popoutOpen = state?.open === true;
+        render();
+    });
 
     api.onMusic(apply);
     api.onMusicNotice?.(notice => {
@@ -249,5 +334,6 @@
         })();
     }
 
-    window.musicUi = { command, isCommand: core.isCommand, view: () => view, reset: () => apply(null) };
+    window.musicUi = { command, isCommand: core.isCommand, view: () => view, reset: () => apply(null), toggleHidden,
+        hidden: () => settings().hidden === true, popoutOpen: () => popoutOpen };
 })();

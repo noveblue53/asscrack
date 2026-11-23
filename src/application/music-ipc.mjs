@@ -14,12 +14,13 @@ import * as musicSettings from './music-settings.mjs';
 const MAX_LOCALS = 1000;
 const KINDS = ['refused', 'unavailable', 'error'];
 
-// handle(channel, fn) and on(channel, fn): the room IPC of main.js. getNode(): the live node or null. getWindow(): the
-// room window. dialog: of Electron. chosenFile(path): the L8 check (throws). settingsFile(): the path of
+// handle(channel, fn) and on(channel, fn): the room IPC of main.js. getNode(): the live node or null. getWindow(event):
+// the window of the call (the parent of a file dialog). dialog: of Electron. chosenFile(path): the L8 check (throws). settingsFile(): the path of
 // music-settings.json. journal(type, fields), log(level, text). pick: the files of --music-pick, or null.
 // evaluate(code): the sandbox of the YouTube player script (music-eval.mjs). idle(): true while Idle Peer.
+// onSettings(view): the settings changed (the view of musicSettings.windowView); main.js sends them to each window.
 export function attachMusic({ handle, on, getNode, getWindow = () => null, dialog, chosenFile, settingsFile, journal = () => {},
-    log = () => {}, pick = null, evaluate, idle = () => false, fetch = globalThis.fetch, loadYouTube } = {}) {
+    log = () => {}, pick = null, evaluate, idle = () => false, fetch = globalThis.fetch, loadYouTube, onSettings = () => {} } = {}) {
     let streamError = null;
     const media = createMusicMedia({ fetch, onError: (kind, detail) => {
         streamError = kind;
@@ -33,6 +34,10 @@ export function attachMusic({ handle, on, getNode, getWindow = () => null, dialo
     let settings = null;
     let openedAt = 0;
     let current = null;
+
+    // The calls of the music player: the room window and the pop-out window (music-popout.mjs) use the same functions.
+    const controls = new Map();
+    const control = (channel, fn) => { controls.set(channel, fn); handle(channel, fn); };
 
     const node = () => {
         const n = getNode();
@@ -70,9 +75,9 @@ export function attachMusic({ handle, on, getNode, getWindow = () => null, dialo
         return node().addLocal(items);
     }
 
-    handle('asscrack:music-state', () => getNode()?.music?.state() ?? null);
+    control('asscrack:music-state', () => getNode()?.music?.state() ?? null);
 
-    handle('asscrack:music-add', async (_event, text) => {
+    control('asscrack:music-add', async (_event, text) => {
         const parsed = parseYouTubeLink(String(text ?? ''));
         if (parsed.error) return { ok: false, kind: parsed.error };
         const result = await node().add(parsed);
@@ -80,11 +85,11 @@ export function attachMusic({ handle, on, getNode, getWindow = () => null, dialo
         return result;
     });
 
-    handle('asscrack:music-add-files', async () => {
+    control('asscrack:music-add-files', async event => {
         node();
         let files = pick;
         if (!files) {
-            const win = getWindow();
+            const win = getWindow(event);
             const options = { title: 'Add music', properties: ['openFile', 'multiSelections'],
                 filters: [{ name: 'Audio', extensions: Object.keys(AUDIO_TYPES).map(ext => ext.slice(1)) }] };
             const result = win && !win.isDestroyed() ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
@@ -104,28 +109,29 @@ export function attachMusic({ handle, on, getNode, getWindow = () => null, dialo
         return { folder: path.basename(folder) || folder, files: [...folderFiles].map(([id, file]) => ({ id, name: names.get(file) })) };
     }
 
-    handle('asscrack:music-folder', () => folderView());
+    control('asscrack:music-folder', () => folderView());
 
-    handle('asscrack:music-choose-folder', async () => {
-        const win = getWindow();
+    control('asscrack:music-choose-folder', async event => {
+        const win = getWindow(event);
         const options = { title: 'Music folder', properties: ['openDirectory'] };
         const result = win && !win.isDestroyed() ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
         if (result.canceled || !result.filePaths?.[0]) return folderView();
         settings = musicSettings.save(settingsFile(), { ...currentSettings(), folder: result.filePaths[0] });
+        onSettings(musicSettings.windowView(settings));
         return folderView();
     });
 
-    handle('asscrack:music-add-folder-file', (_event, id) => {
+    control('asscrack:music-add-folder-file', (_event, id) => {
         const file = folderFiles.get(String(id));
         if (!file) throw new Error('This file is not in the music folder.');
         return addLocal([file]);
     });
 
-    handle('asscrack:music-skip', () => node().skip());
-    handle('asscrack:music-pause', (_event, paused) => node().pause(paused === true));
-    handle('asscrack:music-remove', (_event, id) => node().remove(String(id)));
-    handle('asscrack:music-move', (_event, id, to) => node().move(String(id), Number(to)));
-    handle('asscrack:music-stop', () => {
+    control('asscrack:music-skip', () => node().skip());
+    control('asscrack:music-pause', (_event, paused) => node().pause(paused === true));
+    control('asscrack:music-remove', (_event, id) => node().remove(String(id)));
+    control('asscrack:music-move', (_event, id, to) => node().move(String(id), Number(to)));
+    control('asscrack:music-stop', () => {
         const view = node().stop();
         media.clear();
         return view;
@@ -180,14 +186,16 @@ export function attachMusic({ handle, on, getNode, getWindow = () => null, dialo
         try { n.sendMusicFrame(bytes); } catch (err) { log('WARN', `Music frame send failed: ${err?.message ?? err}`); }
     });
 
-    handle('asscrack:music-settings', () => {
-        const { volume, ducking } = currentSettings();
-        return { volume, ducking };
-    });
-    handle('asscrack:set-music-settings', (_event, patch) => {
-        settings = musicSettings.save(settingsFile(), musicSettings.merge(currentSettings(), patch));
-        return { volume: settings.volume, ducking: settings.ducking };
-    });
+    control('asscrack:music-settings', () => musicSettings.windowView(currentSettings()));
+    control('asscrack:set-music-settings', (_event, patch) => change(patch));
+
+    // A change from a window (the fields of musicSettings.WINDOW_CHANGES), or from the main process (fields).
+    function change(patch, fields) {
+        settings = musicSettings.save(settingsFile(), musicSettings.merge(currentSettings(), patch, fields));
+        const view = musicSettings.windowView(settings);
+        onSettings(view);
+        return view;
+    }
 
     // The node event 'music-track' of the DJ: the end, a skip (also by a member) and the Stop of a track. An error has
     // its kind at music-open or music-failed.
@@ -203,5 +211,8 @@ export function attachMusic({ handle, on, getNode, getWindow = () => null, dialo
         current = null;
     }
 
-    return { reset, trackDone, serve: request => media.serve(request), resolve: request => youtube.describe(request), current: () => current };
+    return { reset, trackDone, serve: request => media.serve(request), resolve: request => youtube.describe(request), current: () => current,
+        controls, settings: () => musicSettings.windowView(currentSettings()),
+        // The main process remembers the pop-out window (music-popout.mjs).
+        setPopout: on => change({ popout: on === true }, ['popout']) };
 }
