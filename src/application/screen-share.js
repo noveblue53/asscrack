@@ -64,7 +64,10 @@
     let starting = false;
     let encoderGen = 0;
     let lastTrack = null; // for stats(): the track state after a stop (W4 check 6)
-    const totals = { captured: 0, encoded: 0, sent: 0, sentBytes: 0, skipped: 0, dropped: 0, keyframes: 0, reports: 0 };
+    // 1.0.4: the guard of a window share that uses the screen (share-guard.mjs). The last state from the main process.
+    let guardView = { active: false, paused: true, reason: 'off' };
+    const totals = { captured: 0, encoded: 0, sent: 0, sentBytes: 0, skipped: 0, dropped: 0, keyframes: 0, reports: 0,
+        pauses: 0, pausedCaptured: 0, pauseEncoded: 0, pauseSent: 0 };
 
     function nameOf(peerId) {
         const name = typeof peerNames !== 'undefined' ? peerNames.get(peerId) : '';
@@ -116,7 +119,7 @@
         name.textContent = source.name || (source.kind === 'screen' ? 'Screen' : 'Window');
         choice.append(canvas, name);
         choice.addEventListener('click', () => select(source.id));
-        choice.addEventListener('dblclick', () => { select(source.id); startFromPicker(); });
+        choice.addEventListener('dblclick', () => { select(source.id); startFromPicker(false); });
         item.append(choice);
         drawThumbnail(canvas, source.thumbnail);
         return item;
@@ -141,12 +144,13 @@
         updateBorderHint();
     }
     // Windows 10 draws a yellow border around a shared window, not around a shared screen. The main process marks a
-    // window that fills a screen (screen-sources.mjs). The switch selects that screen and starts the share.
+    // window that can fill a screen (screen-sources.mjs). Share then uses that screen, with no border, and the viewers
+    // see "Paused" while the window is not in front. The switch shares the window itself, with the border.
     function updateBorderHint() {
         const source = listedSources.get(selectedId);
-        const screenId = source?.kind === 'window' && listedSources.has(source.screenId) ? source.screenId : null;
-        if (borderHint) borderHint.hidden = !(source?.kind === 'window' && source.fillsScreen === true);
-        if (borderSwitch) borderSwitch.hidden = !screenId;
+        const fills = source?.kind === 'window' && source.fillsScreen === true;
+        if (borderHint) borderHint.hidden = !fills;
+        if (borderSwitch) borderSwitch.hidden = !fills;
     }
 
     async function openPicker() {
@@ -197,7 +201,8 @@
         if (picker.open) picker.close();
     }
 
-    async function startFromPicker() {
+    // border: share the window itself, also when it fills a screen.
+    async function startFromPicker(border = false) {
         if (!selectedId || starting || share || idle) return;
         starting = true;
         goButton.textContent = 'Starting…';
@@ -206,7 +211,7 @@
         const quality = qualitySelect.value || 'auto';
         let stream = null;
         try {
-            const info = await api.pickScreenSource(selectedId, quality);
+            const info = await api.pickScreenSource(selectedId, quality, { border: border === true });
             // Section 2.1, item 6: the constraints of the preset (Auto: the capture preset of rule A1, at first Max).
             stream = await navigator.mediaDevices.getDisplayMedia({
                 video: { width: { max: info.width }, height: { max: info.height }, frameRate: { max: info.frameRate } },
@@ -216,7 +221,7 @@
             if (!track) throw Object.assign(new Error('no video track'), { name: 'NotFoundError' });
             const settings = track.getSettings?.() ?? {};
             const result = await api.startScreenShare({ preset: quality, width: settings.width, height: settings.height });
-            begin(track, info.name, quality, result?.shareId ?? null, settings);
+            begin(track, info.name, quality, result?.shareId ?? null, settings, Boolean(info?.guard));
             starting = false;
             closePicker();
         } catch (err) {
@@ -233,12 +238,15 @@
 
     // ---- The share and the encoder loop ----
 
-    function begin(track, name, quality, shareId, settings) {
+    function begin(track, name, quality, shareId, settings, guarded = false) {
         const startAt = clock();
         lastTrack = track;
         share = { track, name: String(name ?? ''), quality, shareId, startAt, tiers: new Map(), kept: null, lastReportAt: startAt,
-            capture: { width: settings.width ?? null, height: settings.height ?? null, fps: settings.frameRate ?? null }, reader: null };
+            capture: { width: settings.width ?? null, height: settings.height ?? null, fps: settings.frameRate ?? null }, reader: null,
+            guarded, paused: false, frameSize: null };
         const current = share;
+        // A guarded share starts paused until the guard says that the window is in front.
+        if (guarded) setPaused(guardView.active ? guardView.paused : true);
         track.addEventListener?.('ended', () => { if (share === current) stop('source'); });
         try {
             const processor = new MediaStreamTrackProcessor({ track });
@@ -359,11 +367,73 @@
         tier.lastTokenAt = t;
     }
 
+    // ---- 1.0.4: the pause of a guarded share ----
+
+    // The "Paused" picture with the size of the captured frames, so that the encoders keep their size (E7).
+    function pausePicture(current) {
+        const size = current.frameSize ?? { width: current.capture.width, height: current.capture.height };
+        const width = Math.max(16, 2 * Math.round((size.width || 1280) / 2));
+        const height = Math.max(16, 2 * Math.round((size.height || 720) / 2));
+        let canvas;
+        if (typeof OffscreenCanvas === 'function') canvas = new OffscreenCanvas(width, height);
+        else {
+            canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+        }
+        try {
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#1e1f22';
+            ctx.fillRect(0, 0, width, height);
+            ctx.fillStyle = '#e3e5e8';
+            ctx.font = `600 ${Math.round(height / 12)}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('Paused', width / 2, height / 2);
+        } catch { /* a plain picture */ }
+        return new VideoFrame(canvas, { timestamp: Math.round((clock() - current.startAt) * 1000) });
+    }
+    // Paused: the captured frames do not go out. The kept frame (E5: keyframe requests, refresh ticks) is the "Paused"
+    // picture, and each tier sends it now as a keyframe. Resumed: the next captured frame is a keyframe.
+    function setPaused(paused) {
+        const current = share;
+        if (!current?.guarded || current.paused === paused) return;
+        current.paused = paused;
+        try { current.kept?.frame.close(); } catch { /* closed */ }
+        current.kept = null;
+        if (paused) {
+            totals.pauses++;
+            try {
+                current.kept = { frame: pausePicture(current), at: clock() };
+            } catch (err) {
+                fail(err);
+                return;
+            }
+            for (const tier of current.tiers.values()) encodeKept(tier, true);
+        } else {
+            for (const tier of current.tiers.values()) tier.keyWanted = true;
+        }
+        render();
+    }
+    function onGuard(view) {
+        guardView = { active: view?.active === true, paused: view?.paused !== false, reason: String(view?.reason ?? '') };
+        if (share?.guarded) setPaused(guardView.active ? guardView.paused : true);
+    }
+
     // One captured frame. Rule E10: each tier takes it only in a new frame slot of its preset.
     function onCaptured(frame) {
         const current = share;
         const t = clock();
         totals.captured++;
+        current.frameSize = { width: frame.displayWidth || frame.codedWidth, height: frame.displayHeight || frame.codedHeight };
+        // 1.0.4: a paused share drops the captured frame. A tier that wants a keyframe gets the "Paused" picture.
+        if (current.paused) {
+            totals.pausedCaptured++;
+            frame.close();
+            for (const tier of current.tiers.values()) if (tier.keyWanted) encodeKept(tier, true);
+            maybeReport(t);
+            return;
+        }
         // E5: keep a clone of the last captured frame.
         try {
             current.kept?.frame.close();
@@ -397,6 +467,12 @@
         let again = null;
         try {
             again = new VideoFrame(current.kept.frame, { timestamp: Math.round((t - current.startAt) * 1000) });
+            if (current.paused) {
+                totals.pauseEncoded++;
+                current.pauseStamps ??= new Set();
+                if (current.pauseStamps.size > 64) current.pauseStamps.clear();
+                current.pauseStamps.add(again.timestamp);
+            }
             encode(tier, again, t, { key, refresh: !key });
         } catch (err) {
             fail(err);
@@ -445,6 +521,7 @@
             tier.encodeTimes.push(t - start);
         }
         totals.encoded++;
+        if (current.pauseStamps?.delete(chunk.timestamp)) totals.pauseSent++;
         const key = chunk.type === 'key';
         if (key) totals.keyframes++;
         api.sendScreenFrame({ tier: tier.id, key, timestampMs: Math.floor(chunk.timestamp / 1000), data });
@@ -610,6 +687,7 @@
                 }
                 if (notes) {
                     const texts = [];
+                    if (current.guarded && current.paused) texts.push('Paused');
                     for (const r of Array.isArray(lastViewers.relayed) ? lastViewers.relayed : []) {
                         texts.push(`${nameOf(r.peerId)}: relayed, ${Math.round((r.bitrate ?? 0) / 1000)} kbit/s`);
                     }
@@ -635,12 +713,10 @@
     // ---- Events ----
 
     button.addEventListener('click', openPicker);
-    goButton.addEventListener('click', startFromPicker);
+    goButton.addEventListener('click', () => startFromPicker(false));
     borderSwitch?.addEventListener('click', () => {
-        const screenId = listedSources.get(selectedId)?.screenId;
-        if (!screenId || !listedSources.has(screenId)) return;
-        select(screenId);
-        startFromPicker();
+        if (listedSources.get(selectedId)?.kind !== 'window') return;
+        startFromPicker(true);
     });
     cancelButton?.addEventListener('click', closePicker);
     // Escape closes the dialog (the native cancel). The close ends a pending list.
@@ -655,6 +731,7 @@
     fillQualities();
 
     api.onScreenEncoder?.(view => onEncoder(view));
+    api.onScreenGuard?.(view => onGuard(view));
     api.onScreenViewers?.(view => {
         lastViewers = view ?? lastViewers;
         if (share) render();
@@ -700,6 +777,7 @@
         stop,
         stats: () => ({
             sharing: share !== null, trackState: lastTrack?.readyState ?? null, ...totals,
+            guarded: share?.guarded === true, paused: share?.paused === true,
             tiers: share ? [...share.tiers.values()].map(t => ({ tier: t.id, preset: t.preset, fps: t.fps, bitrate: t.bitrate,
                 width: t.size?.width ?? null, height: t.size?.height ?? null, encoder: Boolean(t.encoder) })) : [],
             capture: share?.capture ?? null,

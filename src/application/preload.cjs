@@ -290,7 +290,8 @@ contextBridge.exposeInMainWorld('asscrack', {
     // P8b, screenshare (design section 4, IPC). The window sends only IDs, a quality name, numbers and frame bytes.
     // A tier ID is a number (screen-rate.mjs).
     getScreenSources: () => ipcRenderer.invoke('asscrack:screen-sources'),
-    pickScreenSource: (id, quality) => ipcRenderer.invoke('asscrack:screen-pick', String(id ?? ''), String(quality ?? '')),
+    pickScreenSource: (id, quality, options) => ipcRenderer.invoke('asscrack:screen-pick', String(id ?? ''), String(quality ?? ''),
+        { border: options?.border === true }),
     getScreenQuality: () => ipcRenderer.invoke('asscrack:screen-last-quality'),
     startScreenShare: ({ preset, width, height } = {}) => ipcRenderer.invoke('asscrack:screen-start',
         { preset: String(preset ?? 'auto'), width: Number(width), height: Number(height) }),
@@ -305,6 +306,8 @@ contextBridge.exposeInMainWorld('asscrack', {
     requestScreenKey: () => ipcRenderer.send('asscrack:screen-keyreq'),
     getScreenState: () => ipcRenderer.invoke('asscrack:screen-state'),
     onScreenState: listen('asscrack:screen-state'),
+    // 1.0.4: { active, paused, reason } of the guard of a window share that uses the screen.
+    onScreenGuard: listen('asscrack:screen-guard'),
     onScreenViewers: listen('asscrack:screen-viewers'),
     onScreenEncoder: listen('asscrack:screen-encoder'),
     onScreenConfig: listen('asscrack:screen-config'),
@@ -313,5 +316,10 @@ contextBridge.exposeInMainWorld('asscrack', {
     // Manual status (milestone 3). presence: { state, note }.
     setPresence: ({ state, note } = {}) => ipcRenderer.invoke('asscrack:set-presence', { state, note }),
     getPresence: () => ipcRenderer.invoke('asscrack:presence'),
-    onPresence: listen('asscrack:presence')
+    onPresence: listen('asscrack:presence'),
+    // 1.0.4: the automatic status. The own state after an automatic change, and the settings.
+    onOwnPresence: listen('asscrack:own-presence'),
+    getAutoStatus: () => ipcRenderer.invoke('asscrack:auto-status'),
+    setAutoStatus: patch => ipcRenderer.invoke('asscrack:set-auto-status', {
+        awayMinutes: patch?.awayMinutes, dndFullscreen: patch?.dndFullscreen })
 });

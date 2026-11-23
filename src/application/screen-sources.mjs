@@ -2,6 +2,8 @@
 // The preset table of the picker, the source list, the pending selection and the display media handler.
 // Electron is not imported: main.js gives desktopCapturer and the frame check, so that a test can use fakes.
 import { MAX_SCREEN_FRAME_BYTES, SCREEN_PRESETS } from '../network/screen-rate.mjs';
+import { covers, sameRect } from './share-guard.mjs';
+import { hwndOf } from './win-helper.mjs';
 
 // Section 5.
 export const SELECTION_MS = 10000;
@@ -35,6 +37,20 @@ const thumbnailSize = thumbnail => {
     } catch { return null; }
 };
 
+// 1.0.4: the screen of a window that fills it. state: the first state of the window guard (share-guard.mjs), in
+// physical pixels. displays: [{ id, rect }] with the physical rectangle of each display. screens: the listed screen
+// sources [{ id, displayId, source }]. Gives the one screen source of the monitor that the window covers, or null.
+// A thumbnail size gives only the aspect ratio: a 1280 x 720 window has the thumbnail of a 2560 x 1440 screen.
+export function screenForWindow(state, displays, screens) {
+    if (!state?.alive || !state.monitor || !covers(state.rect, state.monitor)) return null;
+    const matches = (Array.isArray(displays) ? displays : []).filter(d => sameRect(d?.rect, state.monitor));
+    if (matches.length !== 1) return null;
+    const displayId = String(matches[0].id ?? '');
+    if (!displayId) return null;
+    const found = (Array.isArray(screens) ? screens : []).filter(s => String(s?.displayId ?? '') === displayId);
+    return found.length === 1 ? found[0] : null;
+}
+
 export const kindOfSource = id => typeof id !== 'string' ? null : id.startsWith('screen:') ? 'screen' : id.startsWith('window:') ? 'window' : null;
 
 // Section 2.9, limits at the main process: the frame IPC from the window.
@@ -47,9 +63,15 @@ export function acceptScreenFrame(frame, shareActive) {
 // desktopCapturer: { getSources(options) }. isRoomFrame(frame): the frame is the main frame of the room window.
 // isIdle(): the app is in Idle Peer. now(): the clock in ms. log(level, text): one line, never with a source name.
 // windowBorder: a window share has the yellow border (windowShareHasBorder).
-export function createScreenSources({ desktopCapturer, isRoomFrame, isIdle, now = Date.now, log = () => {}, windowBorder = false }) {
+// 1.0.4: guard (share-guard.mjs) and displays() ([{ id, rect }], physical pixels): a window that fills a screen is
+// shared as that screen, with the guard. With no guard, a window share stays a window share.
+export function createScreenSources({ desktopCapturer, isRoomFrame, isIdle, now = Date.now, log = () => {}, windowBorder = false,
+    guard = null, displays = () => [] }) {
     let listed = new Map(); // id -> DesktopCapturerSource of the last list
-    let pending = null; // { id, kind, source, expires }
+    let fillCandidates = new Set(); // the window IDs with the thumbnail size of a screen
+    let pending = null; // { id, kind, from, source, expires }
+    let pickSeq = 0;
+    const seqNow = () => pickSeq;
     let lastQuality = 'auto'; // only in memory: a restart gives Auto again (section 2.7)
 
     async function list() {
@@ -73,24 +95,64 @@ export function createScreenSources({ desktopCapturer, isRoomFrame, isIdle, now 
         // the thumbnail of a screen. The window gets the screen ID only when one screen has this size.
         const screensBySize = new Map();
         for (const e of ordered) if (e.kind === 'screen' && e.size) screensBySize.set(e.size, [...(screensBySize.get(e.size) ?? []), e.id]);
+        fillCandidates = new Set();
         return ordered.map(({ id, kind, name, thumbnail, size }) => {
             if (kind !== 'window') return { id, kind, name, thumbnail };
             const screens = windowBorder && size ? screensBySize.get(size) ?? [] : [];
+            if (screens.length > 0) fillCandidates.add(id);
             return { id, kind, name, thumbnail, fillsScreen: screens.length > 0, screenId: screens.length === 1 ? screens[0] : null };
         });
     }
 
+    // 1.0.4: the screen for a window that fills it, with the guard armed; or null (the window share, with its border).
+    async function screenInstead(id, seq) {
+        const hwnd = hwndOf(id);
+        if (!guard || !windowBorder || hwnd === null || !fillCandidates.has(id)) return null;
+        let state;
+        try {
+            state = await guard.open(hwnd);
+        } catch (err) {
+            // The guard stopped its helper. A newer pick can have its own run now: no close here.
+            log('WARN', `screen guard not started: ${String(err?.message ?? err).slice(0, 80)}`);
+            return null;
+        }
+        if (seqNow() !== seq) return null;
+        const screens = [...listed].filter(([sid]) => kindOfSource(sid) === 'screen')
+            .map(([sid, source]) => ({ id: sid, displayId: source?.display_id, source }));
+        let found = null;
+        try { found = screenForWindow(state, displays(), screens); } catch { found = null; }
+        if (!found) {
+            guard.close('no-fill');
+            log('EVENT', 'screen share of a window: the window does not fill one screen');
+            return null;
+        }
+        guard.arm(state.monitor);
+        return found;
+    }
+
     // The window sends the ID of the selected source and the quality. The selection is valid for one request in 10 s.
-    function pick(id, quality) {
+    // options.border: share the window itself, also when it fills a screen (the window then has the border).
+    async function pick(id, quality, options = {}) {
         if (isIdle()) throw new Error('Screen sharing is not available in Idle Peer.');
         const preset = PICKER_QUALITIES.find(q => q.id === quality);
         if (!preset) throw new TypeError('Unknown screen quality.');
         const source = typeof id === 'string' ? listed.get(id) : undefined;
         if (!source) throw new Error('This source is not in the list.');
-        pending = { id, kind: kindOfSource(id), source, expires: now() + SELECTION_MS };
+        const seq = ++pickSeq;
+        pending = null;
+        guard?.close('repick');
+        // No await for a source with no guard step: the selection is set before pick returns its promise.
+        const screen = options?.border === true || !fillCandidates.has(id) || !guard || !windowBorder ? null : await screenInstead(id, seq);
+        if (seq !== pickSeq || isIdle() || !listed.has(id)) {
+            if (screen && seq === pickSeq) guard.close('repick');
+            throw new Error('The selection changed.');
+        }
+        pending = screen ? { id: screen.id, kind: 'screen', from: 'window', source: screen.source, expires: now() + SELECTION_MS }
+            : { id, kind: kindOfSource(id), from: null, source, expires: now() + SELECTION_MS };
         lastQuality = preset.id;
+        const guarded = screen ? guard.state() : null;
         return { name: String(source.name ?? '').slice(0, MAX_SOURCE_NAME), width: preset.width, height: preset.height,
-            frameRate: preset.fps, bitrate: preset.bitrate };
+            frameRate: preset.fps, bitrate: preset.bitrate, ...(guarded ? { guard: { paused: guarded.paused, reason: guarded.reason } } : {}) };
     }
 
     function hasPending() {
@@ -111,13 +173,16 @@ export function createScreenSources({ desktopCapturer, isRoomFrame, isIdle, now 
         if (isIdle()) return refuse('idle');
         if (!selection) return refuse('no-selection');
         pending = null;
-        log('EVENT', `screen capture request granted kind=${selection.kind}`);
+        log('EVENT', `screen capture request granted kind=${selection.kind}${selection.from ? ` from=${selection.from}` : ''}`);
         callback({ video: selection.source });
     }
 
     function clear() {
+        pickSeq++;
         pending = null;
         listed = new Map();
+        fillCandidates = new Set();
+        guard?.close('clear');
     }
 
     return { list, pick, hasPending, handleDisplayMedia, clear, lastQuality: () => lastQuality };

@@ -816,6 +816,22 @@ body.layout-map-docked.layout-buddy-off #chat-body {
   font: 13px var(--font-ui);
 }
 
+/* 1.0.4: the automatic status, below the state and the note. */
+#auto-status {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+}
+#auto-status[hidden] { display: none; }
+#auto-status .auto-dnd { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; }
+#auto-status .auto-status-error { grid-column: 1 / -1; margin: 0; color: var(--danger, #b3261e); }
+#auto-status .auto-status-error[hidden] { display: none; }
+
 /* Name colors: the same class gives the buddy icon color and the name color in the chat. */
 .nc0 { --nc: #c2185b; }
 .nc1 { --nc: #1565c0; }

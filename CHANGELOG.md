@@ -7,6 +7,101 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased
+
+### Share of a full-screen window with no yellow border (1.0.4)
+
+- Request (operator, 2026-11-23): the yellow capture border of Windows 10 on the share of a World of Warcraft window is
+  "too much". Electron 45 captures a window of another program with Windows Graphics Capture. On Windows 10 that border
+  cannot be turned off. A screen share uses DXGI and has no border (1.0.3 entry).
+- Change: on Windows before build 20348, Share of a window that fills a screen now shares that screen. There is no
+  extra click. The share bar shows the window name. The viewers see the same text as before ("<name>'s screen").
+- The main process makes the decision. The thumbnail size gives only the aspect ratio: a 1280 x 720 window has the
+  thumbnail of a 2560 x 1440 screen. Thus a helper process (below) gives the rectangle of the window and of its
+  monitor in physical pixels. The share uses the screen only when the window covers all of one monitor, and the
+  `display_id` of exactly one screen source agrees. Else the share is the window share, with the border.
+- Guard: the viewers get a "Paused" picture, never the screen, in each of these conditions:
+  - The chosen window is not in front.
+  - The user minimized or closed the window, or the window is not visible.
+  - The window moved to another monitor, or it does not cover its monitor.
+  - The helper sent no state for 1.5 s, the helper ended, or the helper cannot start.
+- The share starts paused. A pause starts at once. The screen shows again only after the window stays in front for
+  300 milliseconds. The captured frames of a paused share do not go to the encoder. The kept frame of rule E5 is the "Paused"
+  picture. Thus a keyframe request and a refresh tick also send "Paused".
+- Helper: one `powershell.exe` (`-EncodedCommand`, no window), started only for such a share and stopped at its end.
+  It compiles a few lines of C# with `Add-Type` and runs a loop in that code. A WinEvent hook starts the loop at each
+  foreground change and at each minimize. A poll each 250 ms reads the other states (`GetForegroundWindow`,
+  `IsIconic`, `IsWindowVisible`, DWM cloak, `GetWindowRect`, `GetMonitorInfo`). It ends by itself when the app process ends.
+  No new dependency. The log has no window name and no window handle.
+- The picker shows "No border. Paused when not in front." and a "Share with border" link. The link shares the window
+  itself, with the border and with no guard.
+- Known effect: with two monitors, a click in the app on the other monitor makes the app the foreground window. The
+  viewers then see "Paused" until the shared window is in front again.
+- Files: `src/application/win-helper.mjs` and `share-guard.mjs` (new), `screen-sources.mjs`, `screen-share.js`,
+  `main.js`, `preload.cjs`, `index.html`, `screen.css`.
+- **127.0.0.1**: `test/share-guard.test.mjs` has 11 new tests: the window to screen mapping, the pause rule, the
+  guard lifecycle, the helper process and its end with the parent. `test/screen-sources.test.mjs` has 2 new tests.
+  `test/screen-ui.test.mjs` has 3 new tests:
+  - Share of the window gives the screen.
+  - "Paused" goes out at the start and at each pause, as a keyframe.
+  - No captured frame goes out while paused.
+- These tests fail on 1.0.3. The tests of `pick` now use `await`, because
+  `pick` is async (it waits for the helper). The test of the 1.0.3 "Share screen" button now checks the new behavior.
+  The preload test checks the new third argument of `pickScreenSource`.
+- **this PC** (two app copies with `--profile` and a fake `APPDATA`, a LAN room on this PC). The test window was a
+  WebGL window of 2560 x 1440 of a separate test program. Share of the test window gave the log line
+  `screen capture request granted kind=screen from=window` in 0.5 to 1.2 s. The viewer got frames. The test window
+  could not become the foreground window: Windows refused the focus of the test program, because another program was
+  in front. Thus the guard kept the share paused for the full run (reason `background`), and the "resume" part did not
+  occur. The viewer got only the "Paused" picture: 96 of 96 sent frames were "Paused", and 0 of about 5 290 captured
+  frames left the sharer. The capture ran at 58 frames/s. "Paused" went out at about 1 frame/s (the refresh
+  ticks). The helper used 16 ms of CPU in 60 s (0.03 % of one core) and 70 MB of memory. It ended at the stop of the
+  share. "Share with border" gave `kind=window` with no helper.
+- **this PC**, the helper alone on the own small test window. A minimize was in the helper output after 2 to 4 ms
+  (the hook, 10 of 10). A hide was in the output after 205 to 223 ms (the poll, 10 of 10). The foreground change
+  uses the same kind of hook as the minimize. This check has no end-to-end pause time (see above).
+
+### Automatic status (1.0.4)
+
+- Request (operator, 2026-11-23): "detect desktop activity to set automatic status", non-invasive.
+- Change: Away after no keyboard or mouse input for 5, 10 or 15 minutes (default 10), or Off. The app reads only
+  `powerMonitor.getSystemIdleTime()`, each 20 s. While the automatic Away is on, it reads it each 2 s. Thus Available
+  comes back soon after the next input. Away also on the lock screen and in sleep. Available again at unlock, or at the
+  next input after a resume.
+- No automatic Away in voice. A join of voice ends the automatic Away. Off also stops the Away on lock and sleep.
+- The rule changes only Available to its own Away (or Do not disturb, below) and back. A status that the user sets
+  (Away, Do not disturb, Idle Peer, or a new choice while the automatic status is on) stays. The status note stays.
+  The automatic change goes the same way as a choice of the user: the room, the friends, and the status menu.
+- Option, off by default: Do not disturb while a full-screen game or a presentation runs
+  (`SHQueryUserNotificationState`: `QUNS_BUSY`, `QUNS_RUNNING_D3D_FULL_SCREEN`, `QUNS_PRESENTATION_MODE`). A helper
+  process of the same kind polls each 2 s at below normal priority, only while the option is on.
+- The settings are in the dialog "Your availability" and in `auto-status.json` of the profile. The journal gets one
+  line of type `status` for each change: `auto-away`, `auto-dnd` or `auto-back`, with a reason code only (no input
+  data, no time). A dev start can use `--auto-away-ms <ms>` for a check (not in a packaged build).
+- Files: `src/application/auto-status.mjs` and `auto-status-ui.js` (new), `main.js`, `preload.cjs`, `renderer.js`,
+  `journal.mjs`, `index.html`, `styles.css`.
+- **127.0.0.1**: `test/auto-status.test.mjs` has 8 new tests:
+  - the idle rule at 5, 10 and 15 min and Off
+  - a status of the user wins, and voice stops Away
+  - lock and unlock, sleep and resume
+  - the full-screen option and its helper, and the journal line.
+- `test/auto-status-ui.test.mjs` has 2 new tests. `test/presence-ui.test.mjs` and
+  `test/preload-bridge.test.mjs` have 1 new test each. These tests fail on 1.0.3.
+- **this PC** (one app copy with `--profile`, a fake `APPDATA` and `--auto-away-ms 15000`, a LAN room on this PC).
+  The own status went to Away 1.8 s after login (the PC had no input for more than 15 s). The journal had one line
+  `{"type":"status","event":"auto-away","reason":"idle"}`. The check sent no input, thus the return to Available was
+  not checked on this PC (unit tests only). Lock, unlock, sleep and resume: unit tests only. The full-screen option
+  started its helper (16 ms of CPU in 30 s, 0.05 % of one core). The helper ended when the option went off. A
+  manual Do not disturb stayed.
+
+Results of this branch:
+- `npm test`: 1112 tests, 1094 pass, 0 fail, 18 skipped (127.0.0.1). 1.0.3 in the same worktree: 1085 tests, 1067
+  pass, 0 fail, 18 skipped.
+- One start of each test copy: no error line in the terminal and no error in the developer console.
+- Before and after each run, the Start menu shortcut `ASSCRACK.lnk` and the toast registration of the installed copy
+  on this PC had the same values.
+- No LAN test and no internet test.
+
 ## 1.0.3 (2026-11-22): message alerts, the image menu and three members that see each other
 
 Release 1.0.3 is the third update of 1.0.0. A 1.0.0, 1.0.1 or 1.0.2 app gets it with the signed update (View, About

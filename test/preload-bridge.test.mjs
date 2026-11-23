@@ -335,13 +335,18 @@ test('the P8b screen calls send the channel and the arguments that the main proc
     const b = loadBridge();
     b.api.getScreenSources();
     b.api.pickScreenSource(7, 'auto');
+    // 1.0.4: the third argument asks for the window itself (the border switch); only a strict true is true.
+    b.api.pickScreenSource('window:5:0', 'max', { border: true, other: 1 });
+    b.api.pickScreenSource('window:5:0', 'max', { border: 'yes' });
     b.api.startScreenShare({ preset: 'max', width: '2560', height: 1440 });
     b.api.watchScreen(42);
     b.api.getScreenState();
     b.api.getScreenQuality();
     assert.deepEqual(JSON.parse(JSON.stringify(b.invoked)), [
         ['asscrack:screen-sources'],
-        ['asscrack:screen-pick', '7', 'auto'],
+        ['asscrack:screen-pick', '7', 'auto', { border: false }],
+        ['asscrack:screen-pick', 'window:5:0', 'max', { border: true }],
+        ['asscrack:screen-pick', 'window:5:0', 'max', { border: false }],
         ['asscrack:screen-start', { preset: 'max', width: 2560, height: 1440 }],
         ['asscrack:screen-watch', '42'],
         ['asscrack:screen-state'],
@@ -362,7 +367,7 @@ test('the P8b screen calls send the channel and the arguments that the main proc
     assert.equal(b.sent[1][1], 'stopped');
     for (const [name, channel] of [['onScreenState', 'asscrack:screen-state'], ['onScreenViewers', 'asscrack:screen-viewers'],
         ['onScreenEncoder', 'asscrack:screen-encoder'], ['onScreenConfig', 'asscrack:screen-config'],
-        ['onScreenFrame', 'asscrack:screen-frame'], ['onScreenEnded', 'asscrack:screen-ended']]) {
+        ['onScreenFrame', 'asscrack:screen-frame'], ['onScreenEnded', 'asscrack:screen-ended'], ['onScreenGuard', 'asscrack:screen-guard']]) {
         const got = [];
         b.api[name](value => got.push(value));
         b.emit(channel, { marker: name });
@@ -372,4 +377,21 @@ test('the P8b screen calls send the channel and the arguments that the main proc
     b.worlds.roomVoiceMonitor.onStopShare(value => stops.push(value));
     b.emit('asscrack:voice-monitor-stop-share', true);
     assert.deepEqual(stops, [true]);
+});
+
+// 1.0.4: the automatic status: the own state after an automatic change, and the two settings (no other field).
+test('the automatic status calls send the channel and only the two settings', async () => {
+    const b = loadBridge();
+    b.api.getAutoStatus();
+    b.api.setAutoStatus({ awayMinutes: 5, dndFullscreen: true, idleMs: 1 });
+    b.api.setAutoStatus({ awayMinutes: 0 });
+    assert.deepEqual(JSON.parse(JSON.stringify(b.invoked)), [
+        ['asscrack:auto-status'],
+        ['asscrack:set-auto-status', { awayMinutes: 5, dndFullscreen: true }],
+        ['asscrack:set-auto-status', { awayMinutes: 0 }]
+    ]);
+    const got = [];
+    b.api.onOwnPresence(value => got.push(value));
+    b.emit('asscrack:own-presence', { state: 'away', note: '' });
+    assert.deepEqual(got, [{ state: 'away', note: '' }]);
 });
