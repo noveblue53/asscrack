@@ -7,6 +7,36 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased: message alerts (2026-11-22)
+
+- Fault: a plain room line gave no cue and no desktop notification. Only a mention, a whisper or a friend line did.
+  Desktop notifications were off by default, and a file of 1.0.x kept them off. The title of a notification was the
+  product name, with no sender and no channel.
+- Sound & notifications has a grid now. The rows are "All messages", "Mentions", "Whispers", "Friend messages" and
+  "People joining or leaving voice". The columns are Sound and Notification. All boxes are on, but the notification
+  for voice join and leave is off. "Show message text" is on. "Only when in the background" is on. When it is off,
+  a line in view also gives a cue and a notification (not an own line). "Message sound" has 3 built-in tones (Soft,
+  Chime, Pop).
+- A remote room line in any channel plays the message cue when its conversation is not in view. Examples are no
+  focus, a minimized window, the tray, or a different channel. No cue for own lines, in Idle Peer, in Do not disturb
+  or for history (a replay or the lines after a reconnect). At most one message cue each 2 s.
+- The row "All messages" sends a notification only in a room of 10 people or less (me included). A mention uses its
+  own row in each room. The title tells who and where: "<name> in #<channel>", "<name> (whisper)" or "<name>" (friend,
+  voice). The body is the text when previews are on. A whisper and a friend line never show their text. Each
+  conversation has one toast. The new toast replaces the old one, also in the Action Center (the same Windows tag).
+  A click opens the conversation.
+- Mute: a right-click on the channel list or on the room name mutes a channel or the room. The Room menu has the same
+  commands. The times are 1 hour, until tomorrow (08:00) and until I unmute. "Mentions still notify" is on by
+  default. A muted channel or room has the mark "· muted".
+- Settings version 2: the first start with a file of 1.0.x turns on the new defaults one time. These are the
+  notifications, the previews and the cue of every message. The real choices of the file stay, and later choices stay.
+- **127.0.0.1**: node tests of the rules. They test the cue, the 2 s gap, history, the room size, the titles, the
+  replace rule, the mutes with their end and the migration. They fail on the code before the change and pass after it.
+  `npm test`: 1067 tests, 1049 pass, 18 skipped, 0 fail.
+- **this PC**: two copies on 127.0.0.1 (A: the built portable .exe, B: `electron .`). With A minimized, B sent 3 lines.
+  A played one cue, and Windows fired one show event. The toast "<name> in #general" was in the notification history
+  of `com.asscrack.app`. A later line replaced that toast in the history. With A in view: no cue, no notification.
+
 ## Unreleased: sessions between members after the first admission (2026-11-22)
 
 - Fault: in a protected room with an owner and two members, the second member often had no session with the first
