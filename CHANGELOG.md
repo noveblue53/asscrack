@@ -101,6 +101,49 @@ Operator request (2026-11-23): the users can read the release notes in the app.
   No error line in the terminal or in the developer console. The shortcut `ASSCRACK.lnk` and the `LocalServer32`
   value of the installed app did not change.
 
+### The View menu is now the Settings menu
+
+Operator request of 2026-11-23: the View menu was a settings menu now. The changes are in `src/application/` only.
+There is no change in `src/network/` and no new network traffic. The dialogs do not change.
+
+- The title bar button is "Settings" with a gear icon. Ctrl+, opens and closes the menu (not while a dialog is open).
+  The Keyboard shortcuts list has the new key.
+- The menu contains groups with headings:
+  - Appearance: Theme, Compact mode.
+  - Layout: Buddies, Pin Transfers, Network map, Music player, Reset layout.
+  - Chat: image thumbnails.
+  - Status: Availability, Show when I'm typing.
+  - Sound & voice: Sound & notifications, Voice settings, Voice controls, Detach voice panel.
+  - System: Start at sign-in, Close to tray, Native title bar, Check for updates.
+  - Help: Keyboard shortcuts, Save diagnostics, About.
+
+  Minimize to tray and Quit are the last lines. A group with no visible line is hidden (for example Layout on the
+  login screen).
+- New lines open the existing dialogs. Availability… was only in the menu of the own Buddies line. Voice settings…
+  was only a button in the voice controls. Check for updates… and Save diagnostics… open About at that control.
+- Each line of the 1.0.5 View menu is still in the menu, with the same element ID. No line moved to the Room menu: the
+  room-only lines are preferences of the layout and of the chat, not actions on the room.
+- Screen readers: each group is `role="group"` with the heading as its name. The arrow keys, Home, End, Enter, Space,
+  Escape and Tab work as before. The arrow keys skip the lines of a hidden group.
+- The menu in a room is about 800 px high. In the default window (800 x 600) the menu box is 554 px high and scrolls.
+  A key that moves the focus now scrolls the menu to the focused line (and to the heading of its group). At 1.0.5 the
+  menu was 5 px too high for the box, and End put the focus on Quit below the visible part (this PC).
+
+Results:
+- New tests: `test/settings-menu.test.mjs` has 7 tests. They check the name, the gear and the key, the groups and the
+  1.0.5 lines, and Ctrl+, (also with an open dialog). They also check the new lines, and that Check for updates shows
+  only with the update part of About. The last test checks the scroll to the focused line.
+- `test/login-menu.test.mjs` reads the nested menu with the new helper `test/helpers/settings-menu.mjs` and has the
+  new login lines. `test/app-shell.test.mjs` has the new row of the shortcuts list.
+- On 1.0.5 (05fa933), 7 of the 9 menu tests fail. After the change, all pass (127.0.0.1).
+- `npm test`: 1201 tests, 1183 pass, 0 fail, 18 skipped (127.0.0.1).
+- One app start with a fresh profile and a fake APPDATA, in a LAN room with this PC only: 35 checks pass. Each line
+  opens its dialog, or changes its setting and then changes it back. Ctrl+, , the arrow keys and Escape work. No
+  error line in the terminal or in the developer console (this PC).
+- Keyboard check in the app, in the default theme and in Aero Midnight: End, then ArrowUp through all lines, then
+  Home. Each focused line is in the visible box of the menu. The transcript and the page do not scroll (this PC). At
+  the minimum window width (560 px) the Settings button does not touch the window buttons (this PC).
+
 ## 1.0.5 (2026-11-23): times for the join and leave lines, the music visualizer and the installs badge
 
 Release 1.0.5 is the fifth update of 1.0.0. A 1.0.0, 1.0.1, 1.0.2, 1.0.3 or 1.0.4 app gets it with the signed update

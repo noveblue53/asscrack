@@ -180,6 +180,7 @@ button.btn-cancel {
 #attach-file::before { content: ''; background-image: url('img/icon-file.svg'); }
 #send::before { content: ''; background-image: url('img/icon-send.svg'); }
 #map-toggle::before { content: ''; background-image: url('img/icon-map.svg'); }
+#view-toggle::before { content: ''; background-image: url('img/icon-gear.svg'); }
 
 input[type="text"] {
   height: 32px;
@@ -1923,7 +1924,7 @@ body.map-open #node-map:not([data-paused]) .nm-node.speaking .nm-pulse {
   background: var(--go-dark);
 }
 
-/* ---- Room layout (layout.js): View menu, separators, Buddies drawer ---- */
+/* ---- Room layout (layout.js): Settings menu, separators, Buddies drawer ---- */
 
 #titlebar > button {
   flex: none;
@@ -1943,7 +1944,7 @@ body.map-open #node-map:not([data-paused]) .nm-node.speaking .nm-pulse {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.62) 0%, rgba(255, 255, 255, 0.34) 48%, rgba(255, 255, 255, 0.2) 52%, rgba(255, 255, 255, 0.4) 100%);
 }
 
-/* The View menu: a small glass card below the View button. */
+/* The Settings menu: a small glass card below the Settings button. */
 #view-menu {
   position: absolute;
   top: 34px;
@@ -2026,6 +2027,30 @@ body.map-open #node-map:not([data-paused]) .nm-node.speaking .nm-pulse {
   height: 1px;
   margin: 4px 6px;
   background: var(--line-soft);
+}
+
+/* The groups of the Settings menu: a small heading, then the lines. A rule goes above each group but the first. */
+#view-menu ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+#view-menu .view-group + .view-group {
+  margin-top: 3px;
+  padding-top: 2px;
+  border-top: 1px solid var(--line-soft);
+}
+
+#view-menu .view-head {
+  display: block;
+  padding: 3px 10px 1px;
+  font: 700 10px/14px var(--font-small);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  cursor: default;
+  user-select: none;
 }
 
 @keyframes view-menu-in {

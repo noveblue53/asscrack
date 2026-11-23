@@ -20,6 +20,7 @@
         ['Ctrl+Shift+D', 'Deafen / undeafen'],
         ['Shift+F10 and the Menu key', 'Open context menu'],
         ['Arrow keys', 'Move in lists and menus'],
+        ['Ctrl+,', 'Settings menu'],
         ['F1', 'Keyboard shortcuts']
     ]);
     const PUSH_TO_TALK = 'Push to talk (voice settings)';

@@ -293,7 +293,8 @@ test('About shows the version values of the main process; the shortcuts list has
     await f.window.appShell.openShortcuts();
     const rows = f.el('shortcuts-list').children.map(tr => tr.children.map(cell => cell.textContent));
     assert.deepEqual(rows.map(([key]) => key), ['Enter', 'Shift+Enter', 'Ctrl+F', 'F3 and Shift+F3', 'Escape', 'Alt+J',
-        'Up and Down', 'Tab', 'Ctrl+Shift+M', 'Ctrl+Shift+D', 'Shift+F10 and the Menu key', 'Arrow keys', 'F1', 'Not set']);
+        'Up and Down', 'Tab', 'Ctrl+Shift+M', 'Ctrl+Shift+D', 'Shift+F10 and the Menu key', 'Arrow keys', 'Ctrl+,', 'F1',
+        'Not set']);
     // F1 opens the dialog.
     f.el('shortcuts-dialog').close();
     f.key(f.document, 'F1');
