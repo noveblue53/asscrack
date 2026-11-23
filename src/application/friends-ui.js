@@ -123,6 +123,15 @@
             state.className = 'friend-state';
             state.textContent = stateText(friend);
             row.append(name, state);
+            // 1.0.6: the profile picture of the friend (avatars.mjs). An image that does not load goes away.
+            if (typeof friend.avatar === 'string' && /^[0-9a-f]{64}$/.test(friend.avatar)) {
+                const pic = document.createElement('img');
+                pic.className = 'friend-pic avatar-pic';
+                pic.alt = '';
+                pic.addEventListener('error', () => pic.remove());
+                pic.src = `avatar/${friend.avatar}`;
+                row.prepend(pic);
+            }
             // easy-join part 3: Join, or "Ask <name> for an invite" when the friend cannot forward a knock.
             if (friend.join && friend.join.ask) {
                 const ask = document.createElement('span');

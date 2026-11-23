@@ -52,6 +52,7 @@ import { createShareGuard } from './share-guard.mjs';
 import { guardScript, qunsScript, startHelper } from './win-helper.mjs';
 import { createAutoStatus, readSettings as readAutoStatus } from './auto-status.mjs';
 import { createFriendLinks } from './friend-links.mjs';
+import { createAvatars } from './avatars.mjs';
 import { withDeviceMarks } from './peer-marks.mjs';
 import { attachFriendWindows, registerFriendIpc } from './friend-windows.mjs';
 import { attachFriendsPopout } from './friends-popout.mjs';
@@ -292,6 +293,14 @@ if (saveToIndex !== -1 && process.argv[saveToIndex + 1] && !process.argv[saveToI
     saveTo = path.resolve(process.argv[saveToIndex + 1]);
 }
 
+// Test option: --avatar-pick <file>. "Choose…" of the profile picture dialog takes this file with no Open dialog (the
+// app check of the profile pictures needs it). The checks of the file stay the same.
+let avatarPick = null;
+const avatarPickIndex = process.argv.indexOf('--avatar-pick');
+if (avatarPickIndex !== -1 && process.argv[avatarPickIndex + 1] && !process.argv[avatarPickIndex + 1].startsWith('--')) {
+    avatarPick = path.resolve(process.argv[avatarPickIndex + 1]);
+}
+
 // Test option: --music-pick <file>. Add files of the music bar adds this file with no Open dialog (the music check
 // needs it). The path checks stay the same.
 let musicPick = null;
@@ -352,6 +361,37 @@ const DECODER_PAGE = appPage('image-decoder.html');
 const imageDecoder = createImageDecoder({ BrowserWindow, ipc: ipcMain, page: DECODER_PAGE,
     preload: path.join(__dirname, 'image-decoder-preload.cjs'), lock: lockDesktopNavigation,
     isFrame: (win, event) => isDesktopFrame(win, event.sender, event.senderFrame, DECODER_PAGE) });
+// 1.0.6: profile pictures (avatars.mjs) in <data folder>/avatars. The decoder window above makes and checks each picture.
+let avatarTimer = null;
+const avatars = createAvatars({ dir: path.join(app.getPath('userData'), 'avatars'), journal: (type, fields) => journal(type, fields),
+    decode: (info, limit, job) => imageDecoder.decode(info, limit, job), log: (level, text) => writeLog(level, text),
+    changed: () => {
+        if (avatarTimer) return;
+        avatarTimer = setTimeout(() => {
+            avatarTimer = null;
+            sendToWindow('asscrack:avatars', avatars.view());
+            friendLinks.avatarsChanged();
+        }, 100);
+    } });
+queryRoomIpc('asscrack:avatars', () => avatars.view());
+// The pick dialog of the main process: the window gets only a token and the size of the preview.
+handleRoomIpc('asscrack:avatar-pick', async () => {
+    if (avatarPick) return avatars.choose(avatarPick);
+    const options = { title: 'Profile picture', properties: ['openFile'],
+        filters: [{ name: 'Pictures', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }] };
+    const result = mainWindow && !mainWindow.isDestroyed() ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
+    if (result.canceled || !result.filePaths?.[0]) return null;
+    return avatars.choose(result.filePaths[0]);
+});
+handleRoomIpc('asscrack:avatar-set', (_event, token, crop) => avatars.setOwn(String(token ?? ''), crop));
+handleRoomIpc('asscrack:avatar-remove', () => avatars.removeOwn());
+// The node gets the picture hub; its picture events go to avatars.mjs until the node stops.
+function withAvatars(created) {
+    const detach = avatars.attach(created);
+    const stop = created.stop;
+    created.stop = (...args) => { detach(); return stop.apply(created, args); };
+    return created;
+}
 // Room music (MU-6): the YouTube player script runs in a hidden sandboxed window with no network, not here. The window
 // has its own in-memory session: no shared renderer process with the room window (see app ready for its handlers).
 const MUSIC_EVAL_PAGE = appPage('music-eval.html');
@@ -519,7 +559,11 @@ const attention = createAttention({
         writeLog('EVENT', 'notification requested');
         // The test kind (R103-1): no presenter, thus no notification. attention.mjs catches the error.
         if (!winToasts) throw new Error('No desktop notifications in this kind of start.');
-        const notice = new Notification(options);
+        // 1.0.6: the profile picture as the icon. The pixels come from the decoder window (no decode here).
+        const { avatarHash, ...rest } = options;
+        const pixels = avatarHash ? avatars.pixels(avatarHash) : null;
+        if (pixels) rest.icon = nativeImage.createFromBitmap(pixels, { width: 128, height: 128 });
+        const notice = new Notification(rest);
         notice.once('show', () => writeLog('EVENT', 'notification shown'));
         notice.once('failed', () => writeLog('WARN', 'notification failed'));
         return notice;
@@ -531,6 +575,9 @@ const attention = createAttention({
         if (target.kind !== 'voice') sendToWindow('asscrack:attention-open', target);
     },
     friendName: friendId => friendLinks.friend(friendId)?.name ?? '',
+    // 1.0.6: the picture hash of a friend or a peer of the room (the notification icon), or null.
+    avatarOf: target => (target.kind === 'friend' ? friendLinks.friend(target.friendId)?.avatar
+        : target.peerId ? avatars.view().peers[target.peerId] : null) ?? null,
     // Message alerts: the title tells who and where. The names come from the node, not from the window (a room line
     // brings the name that its row shows).
     peerName: peerId => node?.peerNames()?.[peerId] ?? '',
@@ -1140,6 +1187,7 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
         const fromSavedUpnpPort = options.savedUpnpPort === true;
         delete options.savedUpnpPort;
         options.updates = updates.hub;
+        options.avatars = avatars.hub;
         // easy-join part 2: the owner answers knocks; a relay lets a knock circuit reach the owner.
         // Part 3: isFriend for "Always allow my friends" (a friend that is not blocked).
         options.knock = { isFriend: deviceId => friendLinks.isFriend(deviceId) };
@@ -1155,6 +1203,7 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
             options.port = 0;
             node = await createAsscrackNode(options);
         }
+        withAvatars(node);
         // Gap A7: each listener of this room acts only while its node is the live node. After Leave room, a late
         // event of the old node (for example in a stop that took more than 3 s) does nothing.
         const live = node;
@@ -1450,7 +1499,11 @@ async function knockForInvite(text, name) {
 
 // easy-join part 2: the prompts for the window: [{ id, name, mark }].
 function knockView(pending) {
-    return (pending ?? []).map(({ id, name, mark }) => ({ id, name, mark }));
+    // 1.0.6: a friend that knocks shows its cached picture (no fetch from a device that is not admitted).
+    return (pending ?? []).map(({ id, name, mark, deviceId }) => {
+        const avatar = friendLinks.isFriend(deviceId) ? avatars.deviceHash(deviceId) : null;
+        return avatar ? { id, name, mark, avatar } : { id, name, mark };
+    });
 }
 queryRoomIpc('asscrack:knocks', () => knockView(node?.knocks()));
 handleRoomIpc('asscrack:knock-answer', (_event, id, allow) => {
@@ -1496,7 +1549,8 @@ handleRoomIpc('asscrack:unlock-archive', async () => {
 // G7a: the friend links start after the archive opens (also on the login screen) and stop at Quit. Leave room, a new
 // login and Idle Peer do not stop them. Only the test flags allowPrivateFullNode and fullNode go to the friend nodes.
 const friendLinks = createFriendLinks({
-    createNode: options => createAsscrackNode({ ...options, updates: updates.hub }), hintFiles: (room, roomKey) => roomHintFiles(room, roomKey), log: writeLog,
+    createNode: async options => withAvatars(await createAsscrackNode({ ...options, updates: updates.hub, avatars: avatars.hub })),
+    avatarOf: deviceId => avatars.deviceHash(deviceId), hintFiles: (room, roomKey) => roomHintFiles(room, roomKey), log: writeLog,
     nodeOptions: Object.fromEntries(Object.entries(nodeFlags).filter(([name]) => name === 'allowPrivateFullNode' || name === 'fullNode'))
 });
 friendLinks.events.on('changed', view => { sendToWindow('asscrack:friends', view); if (tray && !roomName) updateTray(); });
@@ -2575,8 +2629,10 @@ app.whenReady().then(async () => {
     musicEvalSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     musicEvalSession.setPermissionCheckHandler(() => false);
     musicEvalSession.on('will-download', event => event.preventDefault());
-    protocol.handle(APP_SCHEME, createAppHandler({ root: __dirname,
-        extra: { [RNNOISE_WORKLET]: require.resolve('@sapphi-red/web-noise-suppressor/rnnoiseWorklet.js') } }));
+    const appHandler = createAppHandler({ root: __dirname,
+        extra: { [RNNOISE_WORKLET]: require.resolve('@sapphi-red/web-noise-suppressor/rnnoiseWorklet.js') } });
+    // 1.0.6: /avatar/<hash> and /avatar-pick/<token> (avatars.mjs), else the files of the app.
+    protocol.handle(APP_SCHEME, request => avatars.serve(request) ?? appHandler(request));
     installRoomPermissions(session.defaultSession, () => mainWindow, ROOM_PAGE, () => idlePeer, () => screenSources.hasPending());
     // P8b: getDisplayMedia of the room window gets only the source of the pending selection (design section 2.1).
     session.defaultSession.setDisplayMediaRequestHandler((request, callback) => screenSources.handleDisplayMedia(request, callback));

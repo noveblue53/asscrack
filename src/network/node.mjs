@@ -8,6 +8,7 @@ import { createWhispers } from './whispers.mjs'
 import { createTyping } from './typing.mjs'
 import { createReadyCheck } from './ready-check.mjs'
 import { createUpdateSpread } from './update-spread.mjs'
+import { createAvatarLines } from './avatar.mjs'
 import { peerFailureLimit, roomRateLimit } from './room-rate-limit.mjs'
 import { mdns } from '@libp2p/mdns'
 import { yamux } from '@chainsafe/libp2p-yamux'
@@ -182,7 +183,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     // (the host forwards all music frames).
     musicResolve = undefined, musicDirect = true,
     // P9C: the update hub of the app (update-spread.mjs), or null: no update lines.
-    updates = null } = {}) {
+    updates = null,
+    // Profile pictures (avatar.mjs): the picture hub of the app { own(), subscribe(fn) }, or null: no picture lines.
+    avatars = null, avatarLimits = {} } = {}) {
     if (typeof room !== 'string') throw new TypeError('room must be a string')
     const key = parseRoomKey(roomKey)
     if (membership && !key) throw new TypeError('Protected rooms require a room key')
@@ -287,6 +290,11 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         changed: view => events.emit('ready', view)
     })
     events.on('peer-left', ({ peerId, left }) => ready.left(peerId, left))
+    // Profile pictures: the same trust as a name (memberAllowed).
+    const avatarLines = createAvatarLines({ hub: avatars, sessionFor: peerId => sessions.get(peerId),
+        sessions: () => [...sessions], allowed: memberAllowed, emit: (type, data) => events.emit(type, data), limits: avatarLimits })
+    const stopAvatarShare = avatars?.subscribe?.(() => avatarLines.share()) ?? (() => {})
+    events.on('peer-left', ({ peerId }) => avatarLines.closed(peerId))
     const memberMessageId = (peerId, id) => !membership || id.startsWith(`${memberPeers.get(peerId).deviceId}.`)
     // L6 (P10a): a live line shows the name of the session (the hello or member-proof line), also in a legacy room.
     // The from field of the line is not used.
@@ -1146,6 +1154,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                     }
                     else if (control.type === 'diag') diag.handle(peerId, session, control)
                     else if (control.type === 'clock' && sessions.get(peerId) === session) handleClock(peerId, session, control)
+                    else if ((control.type === 'avatar' || control.type === 'avatar-get' || control.type === 'avatar-data') &&
+                        sessions.get(peerId) === session) avatarLines.handle(peerId, control)
                     else if (control.type === 'hello') {
                         noteHello(peerId, session, control)
                         const peerName = typeof control.name === 'string' ? control.name.trim().slice(0, 64) : ''
@@ -1308,6 +1318,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         session.send(nodeLine())
         // Always send the own presence, also when it is 'available'.
         session.send(presenceLine())
+        avatarLines.opened(peerId)
         updateSpread.opened(peerId, session)
         // A replacement session gets no second peer-joined: the peer did not leave.
         if (!replaced) events.emit('peer-joined', { peerId })
@@ -2521,6 +2532,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             return { ...ownPresence }
         },
         presence: () => ({ ...ownPresence }),
+        // Profile pictures (avatar.mjs): ask a peer for the picture of its last announce; the announce of each peer.
+        requestAvatar: (peerId, hash) => avatarLines.request(peerId, hash),
+        peerAvatars: () => avatarLines.peers(),
         // The presence of each peer with an open session and a known state.
         peerPresence: () => Object.fromEntries([...peerPresence]
             .filter(([peerId]) => sessions.has(peerId))
@@ -2571,6 +2585,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             for (const timer of knockCircuits.values()) clearTimeout(timer)
             membership?.onChanged(null)
             stopUpdateShare()
+            stopAvatarShare()
+            avatarLines.stop()
             whispers.stop()
             typing.stop()
             ready.stop()

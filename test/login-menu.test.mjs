@@ -39,7 +39,7 @@ test('in a room the Settings menu shows the room lines again', () => {
     const lines = r.visible();
     for (const text of LOGIN_LINES) assert.ok(lines.includes(text), text);
     for (const text of ['Buddies', 'Pin Transfers', 'Voice controls', 'Compact mode', 'Reset layout', 'Minimize to tray',
-        'Close to tray', 'Availability…', 'Voice settings…']) assert.ok(lines.includes(text), text);
+        'Close to tray', 'Availability…', 'Voice settings…', 'Profile picture…']) assert.ok(lines.includes(text), text);
     assert.ok(!lines.includes('Open Buddies'), 'the drawer line shows only in the drawer mode');
     // Back on the login screen (after Leave room the window reloads; this checks the same rule).
     r.toggle.click();

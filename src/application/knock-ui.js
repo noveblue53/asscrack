@@ -36,6 +36,14 @@
         const next = list[0];
         bar.hidden = !next;
         text.textContent = next ? barText(next) : '';
+        // 1.0.6: the cached profile picture of a friend that knocks (main.js knockView).
+        const pic = document.getElementById('knock-pic');
+        const hash = typeof next?.avatar === 'string' && /^[0-9a-f]{64}$/.test(next.avatar) ? next.avatar : null;
+        if (pic) {
+            pic.onerror = () => { pic.hidden = true; };
+            if (hash && pic.dataset.hash !== hash) { pic.dataset.hash = hash; pic.src = `avatar/${hash}`; }
+            pic.hidden = !hash;
+        }
         if (moreTag) {
             const more = next ? list.length - 1 : 0;
             moreTag.textContent = moreText(more);

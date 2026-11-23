@@ -20,7 +20,7 @@ const GROUPS = [
     ['Appearance', ['view-theme', 'view-compact']],
     ['Layout', ['view-buddies', 'view-buddy-drawer', 'view-side', 'view-transfers', 'view-map', 'view-music', 'view-reset']],
     ['Chat', ['view-previews', 'view-clear-previews']],
-    ['Status', ['view-availability', 'view-typing']],
+    ['Status', ['view-availability', 'view-avatar', 'view-typing']],
     ['Sound & voice', ['view-attention', 'view-voice-settings', 'view-voice', 'detach-voice']],
     ['System', ['view-startup', 'view-close-idle', 'view-system-buttons', 'view-updates']],
     ['Help', ['view-shortcuts', 'view-diag', 'view-whats-new', 'view-about']]

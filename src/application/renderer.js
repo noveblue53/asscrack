@@ -328,6 +328,7 @@ function makePeerLine(name, title, colorName = name, self = false) {
     avatar.type = 'button';
     avatar.className = 'avatar';
     if (self) {
+        item.dataset.self = 'true';
         avatar.setAttribute('aria-label', 'Set status');
         avatar.setAttribute('aria-haspopup', 'dialog');
         avatar.addEventListener('click', editAvailability);
