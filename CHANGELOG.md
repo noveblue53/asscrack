@@ -347,6 +347,12 @@ Checks (127.0.0.1 and this PC only):
   account or PC" for each lock. Since the archive-lock change above, this lock also comes from a kill of 1.0.5 or
   older in the first seconds of a new data folder. The text is now "Saved rooms are locked. Can't open their key." The
   "Try again" button stays. Test: `test/saved-rooms-window.test.mjs` (fails on `0ce3f8e`).
+- Release notes: `src/application/release-notes.json` has the 1.0.6 entry (7 lines, 1030 characters), before the
+  version change. A new test in `test/release-notes.test.mjs` checks the newest entry for its own version: the release
+  check, the text of the sign script, and a signed manifest with this text that the check of the 1.0.0 to 1.0.5
+  updaters accepts (127.0.0.1). The test fails on `369054a` (no 1.0.6 entry). Until the version commit, the release
+  check test fails with "The newest entry is 1.0.6, not 1.0.5." on purpose: the build must not have a version that is
+  older than the newest notes.
 
 ## 1.0.5 (2026-11-23): times for the join and leave lines, the music visualizer and the installs badge
 

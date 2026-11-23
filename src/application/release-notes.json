@@ -1,5 +1,18 @@
 [
   {
+    "version": "1.0.6",
+    "date": "2026-11-23",
+    "notes": [
+      "- Profile pictures: set yours in Settings > Profile picture… and crop it to fit. People in your rooms and your friends see it next to your name, in chat, in voice and in the Friends list. Older versions still show the letter.",
+      "- Up to three people can share a screen at the same time. Click the Live badge next to a name to watch, and switch between shares at the top of the screen view.",
+      "- Friends list: each friend now shows Connecting…, Online, Can't reach or Offline. When a friend's address changes, your other friends help find them, so you no longer need a shared room to reconnect.",
+      "- The View menu is now Settings, with a gear button and grouped options. Ctrl+, opens it.",
+      "- What's new: read the notes of every version in Settings > What's new or in About. After an update, a small card shows what changed.",
+      "- Fixed: closing the app by force in the first seconds after its very first start could lock your saved rooms and friends for good.",
+      "- Fixed: the Queue button of the music bar showed a dark box when the queue was empty."
+    ]
+  },
+  {
     "version": "1.0.5",
     "date": "2026-11-23",
     "notes": [

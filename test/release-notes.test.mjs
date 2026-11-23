@@ -7,15 +7,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { generateKeyPairSync } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
-import { compareVersions, MAX_NOTES } from '../src/application/update-manifest.mjs';
+import { compareVersions, fileName, MAX_MANIFEST_BYTES, MAX_NOTES, updateFileName, verifyManifest } from '../src/application/update-manifest.mjs';
 import { entryFor, FIRST_NOTES_VERSION, hadOldProfile, notesText, readLastSeen, readReleaseNotes, releaseNotesGaps,
     releaseNotesProblems, WHATS_NEW_FILE, whatsNewStart, writeLastSeen } from '../src/application/release-notes.mjs';
-import { releaseNotesFor } from '../tools/sign-update.mjs';
+import { manifestBytes, releaseNotesFor, signBytes } from '../tools/sign-update.mjs';
 import { createDom } from './helpers/fake-dom.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -44,6 +45,35 @@ test('release check: the notes file has an entry for the package.json version, f
     assert.equal(list[0].version, PACKAGE_VERSION);
     assert.equal(list.at(-1).version, FIRST_NOTES_VERSION);
     for (const version of ['1.0.0', '1.0.1', '1.0.2', '1.0.3', '1.0.4', '1.0.5']) assert.ok(entryFor(list, version), version);
+});
+
+// 1.0.6 (integration): the notes of the next release go into the file before the version commit. Then the newest entry
+// is newer than package.json, and the release check above fails until the version commit. This test checks the newest
+// entry for itself: the release check of its own version, the text of the sign script, and a signed manifest with this
+// text that the updaters of 1.0.0 to 1.0.5 accept (the same checkFields and MAX_NOTES 2000 since 1.0.0).
+test('the newest notes entry (1.0.6) is valid for its own release and its manifest passes the 1.0.0 to 1.0.5 updaters', () => {
+    assert.ok(entryFor(list, '1.0.6'), 'the notes file has the 1.0.6 entry');
+    const newest = list[0];
+    assert.ok(compareVersions(newest.version, '1.0.6') >= 0);
+    assert.deepEqual(releaseNotesGaps(list, newest.version), []);
+    assert.ok(newest.date >= entryFor(list, '1.0.5').date);
+    const own = releaseNotesFor({ version: newest.version });
+    assert.deepEqual(own, { notes: notesText(newest), date: newest.date });
+    assert.ok(own.notes.length <= MAX_NOTES, `${own.notes.length} characters`);
+    const hash = 'a'.repeat(64);
+    const files = {
+        setup: { name: fileName(newest.version, 'setup'), size: 141335454, sha256: hash, download: updateFileName(newest.version, 'setup') },
+        portable: { name: fileName(newest.version, 'portable'), size: 124907579, sha256: hash, download: updateFileName(newest.version, 'portable') }
+    };
+    const bytes = manifestBytes({ version: newest.version, date: newest.date, notes: own.notes, files });
+    assert.ok(bytes.length <= MAX_MANIFEST_BYTES, `${bytes.length} bytes`);
+    const keys = generateKeyPairSync('ed25519');
+    const signature = signBytes(bytes, keys.privateKey);
+    for (const currentVersion of ['1.0.0', '1.0.1', '1.0.2', '1.0.3', '1.0.4', '1.0.5']) {
+        const result = verifyManifest(bytes, signature, { publicKey: keys.publicKey, currentVersion });
+        assert.equal(result.ok, true, `${currentVersion}: ${result.reason}`);
+        assert.equal(result.manifest.notes, own.notes);
+    }
 });
 
 test('the release check finds a missing version, a wrong order, a bad date and a long text', () => {
