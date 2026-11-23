@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, sign } from 'node:crypto';
-import { compareVersions, fileMatches, fileName, MAX_MANIFEST_BYTES, parseVersion, verifyManifest } from '../src/application/update-manifest.mjs';
+import { compareVersions, downloadName, fileMatches, fileName, MAX_MANIFEST_BYTES, parseVersion, updateFileName, verifyManifest } from '../src/application/update-manifest.mjs';
 import { UPDATE_PUBLIC_KEY } from '../src/application/update-key.mjs';
 
 const keys = generateKeyPairSync('ed25519');
@@ -104,6 +104,37 @@ test('a signed manifest with a wrong field is refused (product, file name, size,
     assert.deepEqual(check(notJson, signText(notJson)), { ok: false, reason: 'not JSON' });
     const bom = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), bytesOf(manifest())]);
     assert.equal(check(bom, signText(bom)).ok, false);
+});
+
+test('the download name of a manifest entry is the update copy when it is there, else the file name', () => {
+    assert.equal(updateFileName('1.0.5', 'setup'), 'ASSCRACK-1.0.5-update.exe');
+    assert.equal(updateFileName('1.0.5', 'portable'), 'ASSCRACK-1.0.5-portable-update.exe');
+    assert.throws(() => updateFileName('1.0.5', 'other'), TypeError);
+    assert.throws(() => updateFileName('1.0', 'setup'), TypeError);
+    // The download copies do not have the end of the names that the installs badge counts.
+    for (const kind of ['setup', 'portable']) assert.doesNotMatch(updateFileName('1.0.5', kind), /-(setup|portable)\.exe$/);
+    assert.equal(downloadName({ name: 'ASSCRACK-1.0.5-setup.exe' }), 'ASSCRACK-1.0.5-setup.exe');
+    assert.equal(downloadName({ name: 'ASSCRACK-1.0.5-setup.exe', download: 'ASSCRACK-1.0.5-update.exe' }), 'ASSCRACK-1.0.5-update.exe');
+});
+
+test('a signed manifest with the download names is accepted; a wrong download name is refused', () => {
+    const files = {
+        setup: { name: 'ASSCRACK-1.0.1-setup.exe', size: 1000, sha256: hash, download: 'ASSCRACK-1.0.1-update.exe' },
+        portable: { name: 'ASSCRACK-1.0.1-portable.exe', size: 2000, sha256: hash, download: 'ASSCRACK-1.0.1-portable-update.exe' }
+    };
+    const good = bytesOf(manifest('1.0.1', { files }));
+    const r = check(good, signText(good));
+    assert.equal(r.ok, true, r.reason);
+    assert.equal(downloadName(r.manifest.files.setup), 'ASSCRACK-1.0.1-update.exe');
+    assert.equal(downloadName(r.manifest.files.portable), 'ASSCRACK-1.0.1-portable-update.exe');
+    // A manifest with no download names (1.0.1 to 1.0.4, and from a peer) is still good.
+    const old = bytesOf(manifest('1.0.1'));
+    assert.equal(check(old, signText(old)).ok, true);
+    for (const download of ['ASSCRACK-1.0.1-setup.exe', 'ASSCRACK-1.0.1-portable-update.exe', 'ASSCRACK-1.0.2-update.exe',
+        '..\\..\\evil.exe', '', null, 5]) {
+        const bytes = bytesOf(manifest('1.0.1', { files: { ...files, setup: { ...files.setup, download } } }));
+        assert.deepEqual(check(bytes, signText(bytes)), { ok: false, reason: 'bad download name' }, String(download));
+    }
 });
 
 test('a file is good only when the size and the SHA-256 agree with the signed entry', () => {

@@ -10,12 +10,14 @@
 //   peers: an older peer gets it one time for each session (src/network/update-spread.mjs).
 // - The file comes only from the GitHub release of the tag v<version>. It is good only when its size and SHA-256
 //   agree with the signed manifest. The download goes to a .part file; a rename follows the check.
+//   The file name of the download is "download" of the manifest entry when it is there (the copy that the release page
+//   does not count as an install), else "name". The local file always has the name "name".
 // - A failed check is quiet: a log line and a note in About.
 import { createHash, randomBytes } from 'node:crypto';
 import { closeSync, createReadStream, existsSync, openSync, readdirSync, readSync, renameSync, rmSync, statSync,
     unlinkSync, writeSync } from 'node:fs';
 import path from 'node:path';
-import { compareVersions, fileMatches, MAX_MANIFEST_BYTES, MAX_SIGNATURE_TEXT, parseVersion, verifyManifest } from './update-manifest.mjs';
+import { compareVersions, downloadName, fileMatches, MAX_MANIFEST_BYTES, MAX_SIGNATURE_TEXT, parseVersion, verifyManifest } from './update-manifest.mjs';
 
 export const REPOSITORY = 'noveblue53/asscrack';
 export const USER_AGENT = 'ASSCRACK-updater';
@@ -338,7 +340,7 @@ export function createUpdater({ currentVersion, kind = null, publicKey, source, 
                     if (!fileMatches(entry, have.size, have.sha256)) throw new Error(`an other file has the name ${entry.name}`);
                 } else {
                     part = `${target}.part`;
-                    await downloadTo(source.file(`v${version}`, entry.name), part, entry, controller.signal);
+                    await downloadTo(source.file(`v${version}`, downloadName(entry)), part, entry, controller.signal);
                     renameSync(part, target);
                     part = null;
                 }

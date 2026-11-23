@@ -7,7 +7,8 @@ with one click. There is no server of our own: the channel is the GitHub Release
 
 - The app trusts only the Ed25519 signature of the operator. It does not trust GitHub, TLS or a peer for the content.
 - `update.json` has the version, the release date, the note text, and the file name, byte size and SHA-256 of each
-  executable. `update.json.sig` is the signature of the exact bytes of `update.json`.
+  executable. From 1.0.5 on, each entry also has the name of the download copy (`download`, see below).
+  `update.json.sig` is the signature of the exact bytes of `update.json`.
 - The public key is in `src/application/update-key.mjs`. The private key is only on the operator's PC.
 - The app accepts a manifest only when the signature is good and the version is higher than its own (no downgrade).
   It accepts a file only when the size and the SHA-256 agree with the signed manifest.
@@ -38,13 +39,34 @@ Do this one time, before the 1.0.0 build. With a lost key, the 1.0 clients canno
    `ASSCRACK-<v>-portable.exe` and `ASSCRACK-<v>-setup.exe`.
 3. Sign: `node tools/sign-update.mjs dist --notes-file <notes.txt>` (or `--notes "<text>"`, at most 2000 characters,
    plain text). The script refuses the test key, a pre-release version and a missing file. It checks its signature
-   with the public key of the source: a different key stops it. It writes `dist/update.json` and
-   `dist/update.json.sig`.
+   with the public key of the source: a different key stops it. It writes `dist/update.json`,
+   `dist/update.json.sig` and the two download copies `dist/ASSCRACK-<v>-update.exe` (the same bytes as the
+   `-setup.exe` file) and `dist/ASSCRACK-<v>-portable-update.exe` (the same bytes as the `-portable.exe` file).
 4. On GitHub, make a release with the tag `v<v>` (for example `v1.0.1`). The tag must be `v` and the version of
    `update.json`: the clients download from `releases/download/v<v>/`. Do not mark it as a pre-release or a draft
    (the clients read `releases/latest`).
-5. Upload the four files: `ASSCRACK-<v>-setup.exe`, `ASSCRACK-<v>-portable.exe`, `update.json`, `update.json.sig`.
-   Upload the files that you signed. A rebuilt file has a different SHA-256, and the clients refuse it.
+5. Upload the six files: `ASSCRACK-<v>-setup.exe`, `ASSCRACK-<v>-portable.exe`, `ASSCRACK-<v>-update.exe`,
+   `ASSCRACK-<v>-portable-update.exe`, `update.json`, `update.json.sig`. Upload the files that you signed. A rebuilt
+   file has a different SHA-256, and the clients refuse it. A missing download copy stops the update of each client
+   from 1.0.5 on.
+
+## The download copies and the installs badge
+
+The README badge "installs" counts only the downloads of the `-setup.exe` and `-portable.exe` files of all releases
+that are not drafts (the workflow `.github/workflows/installs-badge.yml` writes `installs.json` on the branch
+`badges` each day and after each release). The update checks (`update.json`, `update.json.sig`) and the update
+downloads do not go into that number:
+
+- The signed manifest gives the name of the download copy in each file entry (`download`). An updater from 1.0.5 on
+  downloads that copy (`-update.exe` or `-portable-update.exe`) and keeps it with the normal name (`name`). The
+  portable build thus keeps the name `ASSCRACK-<v>-portable.exe`, and the next update can delete the old file.
+- The 1.0.1 to 1.0.4 clients accept the manifest: they ignore `download`. They download `name` (the `-setup.exe` or
+  `-portable.exe` file). Do not put an other name in `name`: these clients refuse a manifest with an other `name`
+  ("bad file name"), and then they get no update.
+- Thus the first update of a 1.0.1 to 1.0.4 client still counts as an install. From the next release on, that client
+  downloads the copy.
+- A download from the release page by a person is an install, or a second download by the same person. The number is
+  near the real installs, not exact.
 
 ## Check from a client
 
@@ -66,6 +88,7 @@ Only a test version (a pre-release part `test`, for example `1.0.0-test`) accept
    `src/application/update-key.mjs` of the worktree, and do not commit that change.
 2. Build version `1.0.0-test` (the client) and `1.0.1-test` (the update). Put the `1.0.1-test` files in a release
    folder and sign them: `node tools/sign-update.mjs <folder> --test --notes "Test" --key <scratch>\update-key.pem`.
+   The script also writes the download copies in that folder. The test server gives each file of the folder.
 3. `node tools/update-test-server.mjs <folder> --port 8765`.
 4. Start the client with `--profile <test profile> --update-server 127.0.0.1:8765`. Never use the default
    profile for a test.

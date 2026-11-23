@@ -1,0 +1,83 @@
+# The installs badge of README.md. Each day and after each published release, the job "count" adds the downloads of
+# the -setup.exe and -portable.exe files of all releases that are not drafts (tools/installs-count.mjs). The job
+# "publish" writes installs.json (shields.io endpoint JSON) on the branch "badges". The branch has only that file. The
+# job makes the branch when it is missing. Update checks and update downloads are not in the number
+# (docs/RELEASE_UPDATES.md).
+name: Installs badge
+
+on:
+  schedule:
+    - cron: '23 4 * * *'
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: installs-badge
+  cancel-in-progress: false
+
+jobs:
+  count:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      json: ${{ steps.count.outputs.json }}
+    steps:
+      # A release event gives the tag as the ref. The script is on the default branch.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - id: count
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          json="$(node tools/installs-count.mjs --json)"
+          echo "$json"
+          echo "json=$json" >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: count
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          BADGE_JSON: ${{ needs.count.outputs.json }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$BADGE_JSON" | grep -Eqx '\{"schemaVersion":1,"label":"installs","message":"[0-9]+","color":"[0-9a-z]+"\}'
+          dir="$RUNNER_TEMP/badges"
+          git init -q "$dir"
+          cd "$dir"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          echo "::add-mask::$auth"
+          git config "http.https://github.com/.extraheader" "AUTHORIZATION: basic $auth"
+          git remote add origin "https://github.com/$GITHUB_REPOSITORY.git"
+          # ls-remote --exit-code: 0 the branch is there, 2 it is not there, other: an error (stop).
+          found=0
+          git ls-remote --exit-code --heads origin badges > /dev/null || found=$?
+          if [ "$found" = 0 ]; then
+            git fetch -q --depth 1 origin badges
+            git checkout -q -B badges FETCH_HEAD
+          elif [ "$found" = 2 ]; then
+            git symbolic-ref HEAD refs/heads/badges
+          else
+            exit "$found"
+          fi
+          printf '%s\n' "$BADGE_JSON" > installs.json
+          git add installs.json
+          if git diff --cached --quiet; then
+            echo "installs.json did not change."
+            exit 0
+          fi
+          count="$(printf '%s' "$BADGE_JSON" | sed -E 's/.*"message":"([0-9]+)".*/\1/')"
+          git commit -q -m "Set the installs count to $count"
+          git push -q origin HEAD:refs/heads/badges

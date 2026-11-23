@@ -7,6 +7,27 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased: the installs badge counts installs, not update checks
+
+The download badge of README.md counted each file of each release. Of 62 downloads on 2026-11-23, 46 were
+`update.json` and `update.json.sig` (2 for each update check of a running app), and some were installer downloads of
+the updater. The new badge "installs" counts only the `-setup.exe` and `-portable.exe` files.
+
+- New workflow `.github/workflows/installs-badge.yml`: each day and after each published release, it adds the
+  downloads of the `-setup.exe` and `-portable.exe` files of all releases that are not drafts
+  (`tools/installs-count.mjs`). It writes `installs.json` (shields.io endpoint JSON) on the branch `badges`. The branch
+  has only that file. The count job can only read. Only the publish job can write.
+- `tools/sign-update.mjs` writes a download copy of each file: `ASSCRACK-<v>-update.exe` and
+  `ASSCRACK-<v>-portable-update.exe` (the same bytes). The signed manifest gives the copy name in `download`. The
+  updater downloads the copy and keeps the file with its normal name. A release has six files now
+  (`docs/RELEASE_UPDATES.md`).
+- The 1.0.1 to 1.0.4 clients ignore `download` and download the `-setup.exe` or `-portable.exe` file. Thus their
+  first update still counts as an install. A change of `name` in the manifest is not possible: these clients refuse
+  a manifest with an other `name`.
+- **127.0.0.1**: the count of the real API on 2026-11-23 is 16 (12 installer, 4 portable). The released
+  `update-manifest.mjs` of v1.0.1 and v1.0.4 accepts a manifest with `download` and gives the `-setup.exe` name.
+  `npm test` on this PC: 1160 tests, 1142 pass, 0 fail, 18 skipped. No LAN or internet test.
+
 ## 1.0.4 (2026-11-23): room music, a full-screen share with no border, automatic Away and the history thumbnails
 
 Release 1.0.4 is the fourth update of 1.0.0. A 1.0.0, 1.0.1, 1.0.2 or 1.0.3 app gets it with the signed update (View,

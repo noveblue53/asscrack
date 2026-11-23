@@ -1,0 +1,343 @@
+[
+  {
+    "url": "https://api.github.com/repos/noveblue53/asscrack/releases/453396616",
+    "id": 453396616,
+    "tag_name": "v0.7.0-hardening-rc2",
+    "draft": true,
+    "prerelease": false,
+    "created_at": "2026-11-21T02:55:30Z",
+    "published_at": null,
+    "assets": [
+      {
+        "url": "https://api.github.com/repos/noveblue53/asscrack/releases/assets/774428360",
+        "id": 774428360,
+        "name": "ASSCRACK-0.7.0-hardening-rc2-344a8b23-native-win-x64-private-unsigned.exe",
+        "label": "",
+        "content_type": "application/octet-stream",
+        "state": "uploaded",
+        "size": 123392687,
+        "download_count": 3,
+        "created_at": "2026-11-21T04:36:18Z"
+      },
+      {
+        "url": "https://api.github.com/repos/noveblue53/asscrack/releases/assets/774428537",
+        "id": 774428537,
+        "name": "ASSCRACK-hardening-rc2-344a8b23-native-verification.json",
+        "label": "",
+        "content_type": "application/json",
+        "state": "uploaded",
+        "size": 2344,
+        "download_count": 2,
+        "created_at": "2026-11-21T04:36:23Z"
+      }
+    ]
+  },
+  {
+    "url": "https://api.github.com/repos/noveblue53/asscrack/releases/452480055",
+    "id": 452480055,
+    "tag_name": "v0.7.0-friend-pilot-rc1",
+    "draft": true,
+    "prerelease": true,
+    "created_at": "2026-11-20T09:15:43Z",
+    "published_at": null,
+    "assets": [
+      {
+        "url": "https://api.github.com/repos/noveblue53/asscrack/releases/assets/771213630",
+        "id": 771213630,
+        "name": "ASSCRACK-0.7.0-friend-pilot-rc1-42cf3c6-windows-runner-x64.exe",
+        "label": "",
+        "content_type": "application/x-msdownload",
+        "state": "uploaded",
+        "size": 109230103,
+        "download_count": 10,
+        "created_at": "2026-11-20T09:27:50Z"
+      },
+      {
+        "url": "https://api.github.com/repos/noveblue53/asscrack/releases/assets/771213623",
+        "id": 771213623,
+        "name": "ASSCRACK-0.7.0-friend-pilot-rc1-42cf3c6-windows-runner-x64.exe.sha256",
+        "label": "",
+        "content_type": "application/octet-stream",
+        "state": "uploaded",
+        "size": 130,
+        "download_count": 1,
+        "created_at": "2026-11-20T09:27:50Z"
+      },
+      {
+        "url": "https://api.github.com/repos/noveblue53/asscrack/releases/assets/771213625",
+        "id": 771213625,
+        "name": "ASSCRACK-Aero-Classic-Solo-800x600.png",
+        "label": "",
+        "content_type": "image/png",
+        "state": "uploaded",
+        "size": 85510,
+        "download_count": 1,
+        "created_at": "2026-11-20T09:27:50Z"
+      },
+      {
+        "url": "https://api.github.com/repos/noveblue53/asscrack/releases/assets/771213632",
+        "id": 771213632,
+        "name": "ASSCRACK-Aero-Classic-Three-Peers-800x600.png",
+        "label": "",
+        "content_type": "image/png",
+        "state": "uploaded",
+        "size": 134051,
+        "download_count": 1,
+        "created_at": "2026-11-20T09:27:50Z"
+      },
+      {
+        "url": "https://api.github.com/repos/noveblue53/asscrack/releases/assets/771213633",
+        "id": 771213633,
+        "name": "ASSCRACK-Aero-Classic-Three-Peers.png",
+        "label": "",
+        "content_type": "image/png",
+        "state": "uploaded",
+        "size": 206370,
+        "download_count": 1,
+        "created_at": "2026-11-20T09:27:50Z"
+      },
+      {
+        "url": "https://api.github.com/repos/noveblue53/asscrack/releases/assets/771213649",
+        "id": 771213649,
+        "name": "ASSCRACK-Friend-Pilot-Field-Card.md",
+        "label": "",
+        "content_type": "application/octet-stream",
+        "state": "uploaded",
+        "size": 3119,
+        "download_count": 1,
+        "created_at": "2026-11-20T09:27:50Z"
+      },
+      {
+        "url": "https://api.github.com/repos/noveblue53/asscrack/releases/assets/771213656",
+        "id": 771213656,
+        "name": "windows-launch.json",
+        "label": "",
+        "content_type": "application/json",
+        "state": "uploaded",
+        "size": 1414,
+        "download_count": 1,
+        "created_at": "2026-11-20T09:27:50Z"
+      }
+    ]
+  },
+  {
+    "url": "https://api.github.com/repos/noveblue53/asscrack/releases/455141897",
+    "id": 455141897,
+    "tag_name": "v1.0.4",
+    "draft": false,
+    "prerelease": false,
+    "created_at": "2026-11-23T07:59:10Z",
+    "published_at": "2026-11-23T08:17:42Z",
+    "assets": [
+      {
+        "url": "https://api.github.com/repos/noveblue53/asscrack/releases/assets/782111954",
+        "id": 782111954,
+        "name": "ASSCRACK-1.0.4-portable.exe",
+        "label": "",
+        "content_type": "application/x-msdownload",
+        "state": "uploaded",
+        "size": 124896240,
+        "download_count": 1,
+        "created_at": "2026-11-23T08:15:29Z"
+      },
+      {
+        "url": "https://api.github.com/repos/noveblue53/asscrack/releases/assets/782111956",
+        "id": 782111956,
+        "name": "ASSCRACK-1.0.4-setup.exe",
+        "label": "",
+        "content_type": "application/x-msdownload",
+        "state": "uploaded",
+        "size": 141321703,
+        "download_count": 3,
+        "created_at": "2026-11-23T08:15:29Z"
+      },
+      {
+        "url": "https://api.github.com/repos/noveblue53/asscrack/releases/assets/782111955",
+        "id": 782111955,
+        "name": "update.json",
+        "label": "",
+        "content_type": "application/json",
+        "state": "uploaded",
+        "size": 1315,
+        "download_count": 5,
+        "created_at": "2026-11-23T08:15:29Z"
+      },
+      {
+        "url": "https://api.github.com/repos/noveblue53/asscrack/releases/assets/782111957",
+        "id": 782111957,
+        "name": "update.json.sig",
+        "label": "",
+        "content_type": "application/octet-stream",
+        "state": "uploaded",
+        "size": 89,
+        "download_count": 5,
+        "created_at": "2026-11-23T08:15:29Z"
+      }
+    ]
+  },
+  {
+    "url": "https://api.github.com/repos/noveblue53/asscrack/releases/454985766",
+    "id": 454985766,
+    "tag_name": "v1.0.3",
+    "draft": false,
+    "prerelease": false,
+    "created_at": "2026-11-23T04:14:58Z",
+    "published_at": "2026-11-23T04:30:06Z",
+    "assets": [
+      {
+        "url": "https://api.github.com/repos/noveblue53/asscrack/releases/assets/781517209",
+        "id": 781517209,
+        "name": "ASSCRACK-1.0.3-portable.exe",
+        "label": "",
+        "content_type": "application/x-msdownload",
+        "state": "uploaded",
+        "size": 123858176,
+        "download_count": 1,
+        "created_at": "2026-11-23T04:28:16Z"
+      },
+      {
+        "url": "https://api.github.com/repos/noveblue53/asscrack/releases/assets/781517211",
+        "id": 781517211,
+        "name": "ASSCRACK-1.0.3-setup.exe",
+        "label": "",
+        "content_type": "application/x-msdownload",
+        "state": "uploaded",
+        "size": 139143958,
+        "download_count": 3,
+        "created_at": "2026-11-23T04:28:16Z"
+      },
+      {
+        "url": "https://api.github.com/repos/noveblue53/asscrack/releases/assets/781517210",
+        "id": 781517210,
+        "name": "update.json",
+        "label": "",
+        "content_type": "application/json",
+        "state": "uploaded",
+        "size": 1237,
+        "download_count": 8,
+        "created_at": "2026-11-23T04:28:16Z"
+      },
+      {
+        "url": "https://api.github.com/repos/noveblue53/asscrack/releases/assets/781517213",
+        "id": 781517213,
+        "name": "update.json.sig",
+        "label": "",
+        "content_type": "application/octet-stream",
+        "state": "uploaded",
+        "size": 89,
+        "download_count": 8,
+        "created_at": "2026-11-23T04:28:16Z"
+      }
+    ]
+  },
+  {
+    "url": "https://api.github.com/repos/noveblue53/asscrack/releases/454800440",
+    "id": 454800440,
+    "tag_name": "v1.0.2",
+    "draft": false,
+    "prerelease": false,
+    "created_at": "2026-11-22T22:23:31Z",
+    "published_at": "2026-11-22T22:37:22Z",
+    "assets": [
+      {
+        "url": "https://api.github.com/repos/noveblue53/asscrack/releases/assets/780687548",
+        "id": 780687548,
+        "name": "ASSCRACK-1.0.2-portable.exe",
+        "label": "",
+        "content_type": "application/x-msdownload",
+        "state": "uploaded",
+        "size": 123841776,
+        "download_count": 1,
+        "created_at": "2026-11-22T22:35:46Z"
+      },
+      {
+        "url": "https://api.github.com/repos/noveblue53/asscrack/releases/assets/780687552",
+        "id": 780687552,
+        "name": "ASSCRACK-1.0.2-setup.exe",
+        "label": "",
+        "content_type": "application/x-msdownload",
+        "state": "uploaded",
+        "size": 139129970,
+        "download_count": 5,
+        "created_at": "2026-11-22T22:35:46Z"
+      },
+      {
+        "url": "https://api.github.com/repos/noveblue53/asscrack/releases/assets/780687557",
+        "id": 780687557,
+        "name": "update.json",
+        "label": "",
+        "content_type": "application/json",
+        "state": "uploaded",
+        "size": 1108,
+        "download_count": 8,
+        "created_at": "2026-11-22T22:35:46Z"
+      },
+      {
+        "url": "https://api.github.com/repos/noveblue53/asscrack/releases/assets/780687550",
+        "id": 780687550,
+        "name": "update.json.sig",
+        "label": "",
+        "content_type": "application/octet-stream",
+        "state": "uploaded",
+        "size": 89,
+        "download_count": 8,
+        "created_at": "2026-11-22T22:35:46Z"
+      }
+    ]
+  },
+  {
+    "url": "https://api.github.com/repos/noveblue53/asscrack/releases/454726153",
+    "id": 454726153,
+    "tag_name": "v1.0.1",
+    "draft": false,
+    "prerelease": false,
+    "created_at": "2026-11-22T20:12:52Z",
+    "published_at": "2026-11-22T20:25:46Z",
+    "assets": [
+      {
+        "url": "https://api.github.com/repos/noveblue53/asscrack/releases/assets/780350951",
+        "id": 780350951,
+        "name": "ASSCRACK-1.0.1-portable.exe",
+        "label": "",
+        "content_type": "application/x-msdownload",
+        "state": "uploaded",
+        "size": 123837055,
+        "download_count": 1,
+        "created_at": "2026-11-22T20:24:10Z"
+      },
+      {
+        "url": "https://api.github.com/repos/noveblue53/asscrack/releases/assets/780350950",
+        "id": 780350950,
+        "name": "ASSCRACK-1.0.1-setup.exe",
+        "label": "",
+        "content_type": "application/x-msdownload",
+        "state": "uploaded",
+        "size": 139128752,
+        "download_count": 1,
+        "created_at": "2026-11-22T20:24:10Z"
+      },
+      {
+        "url": "https://api.github.com/repos/noveblue53/asscrack/releases/assets/780350949",
+        "id": 780350949,
+        "name": "update.json",
+        "label": "",
+        "content_type": "application/json",
+        "state": "uploaded",
+        "size": 1639,
+        "download_count": 2,
+        "created_at": "2026-11-22T20:24:10Z"
+      },
+      {
+        "url": "https://api.github.com/repos/noveblue53/asscrack/releases/assets/780350948",
+        "id": 780350948,
+        "name": "update.json.sig",
+        "label": "",
+        "content_type": "application/octet-stream",
+        "state": "uploaded",
+        "size": 89,
+        "download_count": 2,
+        "created_at": "2026-11-22T20:24:10Z"
+      }
+    ]
+  }
+]
