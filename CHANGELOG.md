@@ -336,6 +336,14 @@ Checks (127.0.0.1 and this PC only):
   the same values.
 - No LAN test and no internet test occurred.
 
+### Small fixes of the 1.0.6 integration
+
+- Music bar: with an empty queue, the Queue button had a dark box at its right side (operator screenshot, 1.0.5).
+  The box was the empty count badge `#music-count`: `.count` has a minimum width, a height and a background
+  (this PC, CDP: 18 x 16 px with the theme gradient). The badge is now hidden while the queue is empty, in the room
+  window and in the pop-out window. Test: `test/music-viz.test.mjs` (fails on the merge commit `a2404ba`). After the
+  fix, the CDP probe gives `display: none` and the button is 69 px wide, not 93 px (this PC).
+
 ## 1.0.5 (2026-11-23): times for the join and leave lines, the music visualizer and the installs badge
 
 Release 1.0.5 is the fifth update of 1.0.0. A 1.0.0, 1.0.1, 1.0.2, 1.0.3 or 1.0.4 app gets it with the signed update

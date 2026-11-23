@@ -123,6 +123,7 @@
             meta.textContent = '';
             for (const button of [pauseButton, skipButton, stopButton]) button.hidden = true;
             count.textContent = '';
+            count.hidden = true;
             list.replaceChildren();
             return;
         }
@@ -142,6 +143,8 @@
         skipButton.hidden = !view.now;
         stopButton.hidden = !mine;
         count.textContent = view.queue.length ? String(view.queue.length) : '';
+        // 1.0.6: an empty badge (.count has a min-width and a background) drew a dark box at the right of Queue.
+        count.hidden = !view.queue.length;
         // Only the DJ (or a member while no DJ plays) adds files: they are on this computer.
         const filesAllowed = !active || mine;
         filesButton.disabled = !filesAllowed;

@@ -271,6 +271,29 @@ test('room window: the spectrum in the bar while music plays; the loop stops whe
     assert.equal(room.viz().running, false);
 });
 
+// 1.0.6 (operator screenshot of 1.0.5): with an empty queue the Queue button had a dark box at its right side. The box
+// was the empty count badge: .count has a min-width, a height and a background (this PC, CDP: 18 x 16 px).
+test('room window: the Queue button shows the count badge only while the queue has items', async () => {
+    const room = load();
+    await settle();
+    const count = room.el('music-count');
+    assert.equal(count.textContent, '');
+    assert.equal(count.hidden, true, 'no empty badge');
+    const playing = { inVoice: true, dj: 'p1', self: 'p2', mine: false, now: { id: 'a', title: 'Song A' }, paused: false };
+    room.setView({ ...playing, queue: [{ id: 'b', title: 'Song B', by: 'p1' }, { id: 'c', title: 'Song C', by: 'p2' }] });
+    assert.equal(count.textContent, '2');
+    assert.equal(count.hidden, false);
+    room.setView({ ...playing, queue: [] });
+    assert.equal(count.textContent, '');
+    assert.equal(count.hidden, true);
+    room.setView({ ...playing, queue: [{ id: 'b', title: 'Song B', by: 'p1' }] });
+    assert.equal(count.hidden, false);
+    // The pop-out window out of voice: no badge.
+    const popout = load({ windowMode: true, view: { inVoice: false } });
+    await settle();
+    assert.equal(popout.el('music-count').hidden, true);
+});
+
 test('room window: Off hides the visualizer and stops the loop; VU shows the meter', async () => {
     const room = load();
     await settle();
