@@ -14,7 +14,7 @@ import { createClipboardStaging } from './clipboard-image.mjs';
 import { createDownloadScratch } from './download-scratch.mjs';
 import { clearLegacyDebugLogs } from './local-debug.mjs';
 import { createDiagnostics, interfaceSummary, logDeduper, logText } from './diagnostics.mjs';
-import { journalNodeEvents, loginErrorCode, RENDERER_TYPES } from './diag-events.mjs';
+import { journalNodeEvents, loginErrorCode, projectFriendEvent, RENDERER_TYPES } from './diag-events.mjs';
 import { buildBundle, hashFile } from './diag-bundle.mjs';
 import { deviceClass, EVENT_FIELDS, JOURNAL_DIR } from './journal.mjs';
 import { fileURLToPath } from 'url';
@@ -51,7 +51,8 @@ import { acceptScreenFrame, createScreenSources, windowShareHasBorder } from './
 import { createShareGuard } from './share-guard.mjs';
 import { guardScript, qunsScript, startHelper } from './win-helper.mjs';
 import { createAutoStatus, readSettings as readAutoStatus } from './auto-status.mjs';
-import { createFriendLinks } from './friend-links.mjs';
+import { createFriendLinks, friendTestOptions } from './friend-links.mjs';
+import { createNetworkWatch } from './network-watch.mjs';
 import { withDeviceMarks } from './peer-marks.mjs';
 import { attachFriendWindows, registerFriendIpc } from './friend-windows.mjs';
 import { attachFriendsPopout } from './friends-popout.mjs';
@@ -1462,10 +1463,23 @@ handleRoomIpc('asscrack:unlock-archive', async () => {
 
 // G7a: the friend links start after the archive opens (also on the login screen) and stop at Quit. Leave room, a new
 // login and Idle Peer do not stop them. Only the test flags allowPrivateFullNode and fullNode go to the friend nodes.
+// 1.0.6: the test flag --friend-test (only in a dev start; friend-links.mjs friendTestOptions): other friend ports, no
+// inbound address, no mDNS or no address refresh on the friend nodes. The check scripts use it on this PC.
+const friendTestIndex = process.argv.indexOf('--friend-test');
+const { listen: friendListen, ...friendTest } = !app.isPackaged && friendTestIndex !== -1 ? friendTestOptions(process.argv[friendTestIndex + 1]) : {};
 const friendLinks = createFriendLinks({
     createNode: options => createAsscrackNode({ ...options, updates: updates.hub }), hintFiles: (room, roomKey) => roomHintFiles(room, roomKey), log: writeLog,
-    nodeOptions: Object.fromEntries(Object.entries(nodeFlags).filter(([name]) => name === 'allowPrivateFullNode' || name === 'fullNode'))
+    nodeOptions: { ...Object.fromEntries(Object.entries(nodeFlags).filter(([name]) => name === 'allowPrivateFullNode' || name === 'fullNode')),
+        ...(friendListen ? { listen: friendListen } : {}) },
+    ...friendTest
 });
+// 1.0.6: the friend link events of the journal (diag-events.mjs projectFriendEvent: a device tag, no device ID, no name).
+friendLinks.events.on('journal', data => {
+    const projected = projectFriendEvent(data, diag?.tagKey());
+    if (projected) journal(projected[0], projected[1]);
+});
+// 1.0.6: a network change of this PC gives new friend tries at once (network-watch.mjs; resume is in app.whenReady).
+const networkWatch = createNetworkWatch({ onChange: cause => friendLinks.networkChanged(cause) });
 friendLinks.events.on('changed', view => { sendToWindow('asscrack:friends', view); if (tray && !roomName) updateTray(); });
 // G7b: the attention of a friend line (live lines one by one, away lines as one batch). The window decides by the
 // attention rules (attention.js wanted()); it gets no name and no text.
@@ -2531,7 +2545,9 @@ app.whenReady().then(async () => {
         interfaceCache.clear();
         node?.refreshRoutes();
         startRunner?.wake();
+        friendLinks.networkChanged('resume');
     });
+    networkWatch.start();
     for (const event of ['lock-screen', 'unlock-screen', 'suspend', 'resume']) powerMonitor.on(event, () => autoStatus.power(event));
     autoStatus.start();
     protocol.handle('room-media', request => roomMedia.serve(request));

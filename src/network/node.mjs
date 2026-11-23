@@ -68,6 +68,23 @@ export function dialReason(err) {
     return 'other'
 }
 
+// 1.0.6 (diagnostics of the friend links): the first error code (ECONNREFUSED) or error name (AbortError) of an error
+// and of its causes, or undefined. No message text.
+export function dialErrorCode(err) {
+    const seen = new Set()
+    const names = []
+    const walk = e => {
+        if (!e || typeof e !== 'object' || seen.has(e) || seen.size > 50) return
+        seen.add(e)
+        if (typeof e.code === 'string' && /^[A-Z][A-Z0-9_]{1,63}$/.test(e.code)) names.unshift(e.code)
+        else if (typeof e.name === 'string' && /^[A-Za-z]{1,64}$/.test(e.name) && e.name !== 'Error' && e.name !== 'AggregateError') names.push(e.name)
+        if (Array.isArray(e.errors)) for (const x of e.errors) walk(x)
+        if (e.cause) walk(e.cause)
+    }
+    walk(err)
+    return names[0]
+}
+
 // One log line: a fixed tag, then key=value fields. A value with a space or a quote is in JSON quotes.
 function connText(tag, fields) {
     const parts = [tag]
@@ -1740,6 +1757,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             peer: peer ? String(peer) : '?', via, reason: reason ?? dialReason(err), addr: addr ? String(addr) : '?',
             error: String(err?.message ?? err).slice(0, 200)
         }
+        const code = dialErrorCode(err)
+        if (code) data.code = code
         if (Number.isFinite(started)) data.ms = Date.now() - started
         const k = `${data.via} ${data.peer} ${data.addr} ${data.reason}`
         const now = Date.now()

@@ -136,6 +136,9 @@ const oneOf = (...values) => v => (values.includes(v) ? v : undefined);
 const ADDR = oneOf('lan', 'public', 'cgnat', 'loopback', 'link-local', 'relay', 'dns', 'other', 'unknown');
 const TRANSPORT = oneOf('tcp', 'udp', 'ws', 'wss', 'quic-v1', 'webtransport');
 const where = { addr: ADDR, transport: TRANSPORT, port: kinds.int };
+// 1.0.6: the name or the code of an error object (ECONNREFUSED, AbortError), not its text.
+const ERROR_CODE = v => (typeof v === 'string' && /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(v) ? v : undefined);
+const FRIEND_STATUS = oneOf('connecting', 'online', 'unreachable', 'offline');
 
 // type -> { field: check }. A check gives the value to write, or undefined (the field is dropped).
 export const EVENT_FIELDS = Object.freeze({
@@ -218,13 +221,22 @@ export const EVENT_FIELDS = Object.freeze({
     // 1.0.4: the automatic status. The event and its cause only: no input data, no idle time, no window.
     status: { event: oneOf('auto-away', 'auto-dnd', 'auto-back'), reason: oneOf('idle', 'lock', 'sleep', 'fullscreen', 'input',
         'unlock', 'resume', 'voice', 'off', 'fullscreen-end') },
+    // 1.0.6: the friend links (friend-links.mjs 'journal' events, diag-events.mjs projectFriendEvent). The friend is a
+    // peer ID (its friend node) and a device tag (an HMAC of the device ID with the tag key). No name, no device ID, no
+    // room, no address (addr is a class).
+    friend: { event: oneOf('start', 'stop', 'try', 'session', 'state', 'addrs', 'ask', 'answer', 'network'), peer: kinds.peer,
+        node: kinds.peer, tag: kinds.id, via: kinds.code, result: kinds.code, reason: kinds.code, error: ERROR_CODE, ...where,
+        state: oneOf('open', 'closed', 'refused'), route: oneOf('direct', 'relay', 'unknown'), dir: oneOf('in', 'out', '?'),
+        secs: kinds.num, from: FRIEND_STATUS, to: FRIEND_STATUS, cause: kinds.code, ms: kinds.int,
+        source: oneOf('saved', 'grant', 'done', 'room', 'ask', 'full-node'), count: kinds.int, friends: kinds.int,
+        members: kinds.int, role: oneOf('asker', 'helper', 'friend') },
     'writer-error': { code: kinds.code }
 });
 
 // The budget of a type: a burst and a refill each second. A line over the budget is not written; the writer gives one
 // "suppressed" line for each type and window.
 const BUDGETS = { default: [60, 1], log: [200, 4], dial: [60, 0.5], 'voice-summary': [120, 2], error: [30, 0.2],
-    file: [200, 4], session: [120, 2], 'session-refused': [30, 0.5], knock: [60, 0.5], screen: [120, 2] };
+    file: [200, 4], session: [120, 2], 'session-refused': [30, 0.5], knock: [60, 0.5], screen: [120, 2], friend: [200, 2] };
 
 // Gives { type, ...fields } with only the allowed fields, or null for an unknown type.
 export function redact(type, fields = {}) {

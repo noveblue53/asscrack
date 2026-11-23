@@ -7,6 +7,65 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased
+
+### Friend link status, friend link diagnostics and the address refresh
+
+- Operator report (2026-11-23): a friend showed "Offline" until the operator joined a saved room that they share.
+  Then the friend showed "Online". The journal of the operator had no friend link line, only "Friend links: 1
+  friends" at the start. The saved addresses of a friend can be old after a change of the public IP. Before this
+  change, only a common room gave new addresses.
+- The Friends list (the drawer and the Friends window) and the friend chat show the status of each friend link:
+  - "Connecting…": the first tries after the start, after a lost session, and after a network change of this PC. It
+    stops at a session, or after 60 s. In 60 s, the start dial, one redial round (30 s) and one mDNS round (60 s) ran.
+  - "Online": the friend link has a session.
+  - "Can't reach": the tries keep failing. The tooltip says what to try: "Turn on Open port (UPnP), or join a room
+    you share". When Open port is on: "Join a room you share, or ask them to turn on Open port (UPnP)".
+  - "Offline": the friend quit (a bye line on the session), or "Can't reach" continued for 5 minutes with no sign of
+    the friend. An answer of the friend to an address refresh gives "Can't reach" again, and its time starts again.
+- The journal has the new type `friend` (see `docs/DIAGNOSTICS.md`). It has these lines:
+  - each try: `via`, `result`, `reason`, the error code and the address class
+  - each session open, close (`bye` or `lost`) or refuse
+  - each status change with its cause and time
+  - the source of new addresses: `room`, `done`, `full-node` or `ask`
+  - the refresh asks and answers, and the network changes
+- A friend is a peer ID and a device tag in the journal. The tag is an HMAC of the device ID with the random tag key
+  of the data folder. No name, no device ID, no friend room and no address goes into the journal.
+- Address refresh: when the tries to a friend fail, the app asks its other friends that have a session. It also asks
+  the proved members of the current protected room. The ask has a tag for each friend, not the device ID. The tag is
+  a hash of a new nonce and the device ID.
+  - A helper forwards the ask only when it has a session with that friend (a friend link, or the same room).
+  - The friend answers only an asker that is its own friend. It also dials the addresses of the asker.
+  - The asker dials the addresses of the answer. Each address must pass the L1 rules (public or LAN). The app saves
+    an address only after a session opened on it.
+  - Limits: one ask to each helper in 60 s, and a new round each 2 minutes while a friend has no session. A helper
+    accepts 3 asks of one device each minute, and one forward for each pair in 30 s. The friend accepts 10 forwarded
+    asks of one helper each minute.
+  - An older app ignores the new lines.
+- A network change of this PC gives new tries at once. A change is a resume from sleep, or a new set of addresses of
+  the network interfaces (one read each 5 s). Each friend with no session goes back to "Connecting…". Its node dials
+  the known addresses, and a refresh round starts.
+- A dev start can use the test flag `--friend-test` (other friend ports, no inbound address, no mDNS, no refresh).
+  A packaged app ignores it.
+
+Results:
+- New tests: `test/friend-presence.test.mjs` (9), `test/friend-journal.test.mjs` (2) and
+  `test/friend-refresh.test.mjs` (6). On 1.0.5 (`05fa933`), the files do not load (the modules and exports are new).
+  With only the new pure modules on 1.0.5, the tests of the behavior in `friend-links.mjs` fail.
+- `npm test`: 1210 tests, 1192 pass, 0 fail, 18 skipped (127.0.0.1).
+- **127.0.0.1**, real friend nodes: A has no inbound address and B starts again on new ports. A finds B through the
+  friend C in 1.6 s (short test limits). The same test with no refresh gives no session in 20 s. The room path (C
+  only in the room of A) and the friend path (B asks, A dials) also work.
+- **this PC**, not a LAN result: three copies of `electron .` with `--profile`, a fake `APPDATA` and `--friend-test`.
+  The LAN room used the LAN address of this PC.
+  - A has no inbound address. B stops with no bye, then starts again on new ports 75 s later.
+  - A shows "Connecting…" at 0.2 s and "Can't reach" at 60 s.
+  - With the refresh, A shows "Online" 2.8 s after the start of B. B asked C, C forwarded to A in the room, and A
+    dialed B.
+  - With no refresh, A does not find B in 182 s.
+  - A Quit of B gives "Offline" on A in 0.5 s.
+  - No copy had an error line in the developer console. One start with a fresh profile had no console error.
+
 ## 1.0.5 (2026-11-23): times for the join and leave lines, the music visualizer and the installs badge
 
 Release 1.0.5 is the fifth update of 1.0.0. A 1.0.0, 1.0.1, 1.0.2, 1.0.3 or 1.0.4 app gets it with the signed update

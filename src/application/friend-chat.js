@@ -20,6 +20,9 @@
         }
         if (state.state === 'room') return `Online · in ${state.roomName}`;
         if (state.state === 'removed-you') return `${state.name} removed you as a friend.`;
+        // 1.0.6: the status of the friend link (friend-presence.mjs).
+        if (state.status === 'connecting') return 'Connecting…';
+        if (state.status === 'unreachable') return 'Can\'t reach. Messages send when you connect.';
         return 'Offline. Messages send when you\'re both online.';
     }
     const awayNoteText = (name, count) => count === 1 ? `${name} sent a message while you were away.`
