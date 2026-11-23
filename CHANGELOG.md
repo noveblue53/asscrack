@@ -14,55 +14,60 @@ Each result has one of these labels:
 Each person can set a profile picture. Other people see it in place of the letter circle.
 
 - Set: View, Profile picture…, or the button in the availability dialog (select the own buddy icon). Choose… opens a
-  PNG, JPEG, WebP or GIF (the first frame). The dialog has a square crop with drag, zoom (slider, wheel) and the arrow
-  keys. Save and Remove. At most 6 changes in one minute.
-- The hidden sandboxed decoder window of audit L7 (`image-decoder.js`) makes the picture: 128 x 128, WebP (PNG when
-  WebP is not available), at most 32 KB. The main process reads only the headers of a file and never decodes picture
-  bytes. The notification icon uses the bitmap pixels from the decoder window (`nativeImage.createFromBitmap`).
+  PNG, JPEG, WebP or GIF (the first frame). The dialog has a square crop. Drag, the zoom slider, the wheel and the
+  arrow keys move the crop. Save and Remove. At most 6 changes in one minute.
+- The hidden sandboxed decoder window of audit L7 (`image-decoder.js`) makes the picture. The picture is 128 x 128,
+  WebP (PNG when WebP is not available), at most 32 KB. The main process reads only the headers of a file. It never
+  decodes picture bytes. The notification icon uses the bitmap pixels from the decoder window
+  (`nativeImage.createFromBitmap`).
 - Storage: the profile folder (the data folder), not the encrypted archive. `<data>/avatars/own.img` is the own
   picture. `<data>/avatars/cache/<SHA-256>` has the pictures of other people. `<data>/avatars/index.json` keeps the
   hash of each device and the size and last use of each file. The cache keeps at most 200 files and 4 MB. The least
   recently used file goes first. A device keeps its picture after a restart and with a new peer ID.
-- New session lines (`src/network/avatar.mjs`): `avatar` (the SHA-256 of the picture, or null) on each new session
-  and after each change, `avatar-get` from a peer that does not have the hash in its cache, and `avatar-data` (base64)
-  as the answer. Limits for each peer in one minute: 10 announce lines, 4 requests, 4 answers. A request waits 15 s
-  for its answer. The receiver accepts data only for a hash that it asked for, and only when the SHA-256 is correct.
-  It checks the header (128 x 128 PNG or WebP, at most 32 KB) and then decodes only in the decoder window. A bad
-  picture goes on a bad list (no new request), and the window keeps the letter circle.
+- New session lines (`src/network/avatar.mjs`):
+  - `avatar`: the SHA-256 of the picture, or null. A node sends it on each new session and after each change.
+  - `avatar-get`: a peer that does not have the hash in its cache asks for the picture.
+  - `avatar-data`: the answer, in base64.
+- Limits for each peer in one minute: 10 announce lines, 4 requests, 4 answers. A request waits 15 s for its answer.
+  The receiver accepts data only for a hash that it asked for. The SHA-256 must be correct. Then the receiver checks
+  the header (128 x 128 PNG or WebP, at most 32 KB). Only the decoder window decodes the picture. A bad picture goes
+  on a bad list (no new request), and the window keeps the letter circle.
 - Trust: the same as a name. A protected room sends the lines only to proved members (`memberAllowed`). A friend link
   is a protected 2-person room, thus friends get the picture too. The knock bar shows only the cached picture of a
   friend. It does not ask a device that is not admitted.
-- Shown in: the buddy lines, the chat lines (a small picture before the name; also history lines after a restart,
-  by the device ID of the message ID), the voice list, the Friends panel and the Friends window, the knock bar, and
-  the notification icon of a friend, a whisper or a voice event.
-- 1.0.1 to 1.0.5 clients ignore the new lines with no warning (the line handler of `node.mjs` ignores an unknown
-  type). They show the letter circle. The terminal demo gives no picture hub to its node: it sends no picture line
-  and ignores them.
-- The diagnostics journal has the new type `avatar`: set, removed and fetch with its result, the byte count and the
+- Shown in: the buddy lines and the chat lines (a small picture before the name). History lines after a restart get
+  the picture by the device ID of the message ID. Also in: the voice list, the Friends panel and the Friends window,
+  and the knock bar. The notification of a friend, a whisper or a voice event uses it as the icon.
+- 1.0.1 to 1.0.5 clients ignore the new lines with no warning. The line handler of `node.mjs` ignores an unknown
+  type. These clients show the letter circle. The terminal demo gives no picture hub to its node. Thus it sends no
+  picture line and ignores the picture lines.
+- The diagnostics journal has the new type `avatar`: `set`, `removed` and `fetch` with its result, the byte count and the
   peer ID. No picture data and no hash.
 - Test option `--avatar-pick <file>`: Choose… takes this file with no Open dialog (the app check needs it).
 - No new dependency.
 
 Results:
-- New tests: `test/avatar-lines.test.mjs` (9 tests; 3 start real nodes on 127.0.0.1), `test/avatars.test.mjs`
-  (9 tests), and 1 test in `test/friends-ui.test.mjs`. On the base `05fa933` all new test files fail (the modules
-  are not there). With only the two new modules `avatars.mjs` and `avatar.mjs` copied to the base, 8 of the 25 tests
-  of the three files still fail: the 3 real-node tests (the base node does not send or handle the lines), the 3 tests
-  of the journal type `avatar` (the fetch on a miss, the fallback of a bad picture, and the own picture), the crop
-  test (no `avatars-ui.js`), and the Friends panel test.
+- New tests: `test/avatar-lines.test.mjs` (9 tests, 3 of them start real nodes on 127.0.0.1),
+  `test/avatars.test.mjs` (9 tests), and 1 test in `test/friends-ui.test.mjs`.
+- On the base `05fa933`, all new test files fail, because the modules are not there. With only the two new modules
+  `avatars.mjs` and `avatar.mjs` copied to the base, 8 of the 25 tests of the three files still fail:
+  - the 3 real-node tests (the base node does not send or handle the lines)
+  - the 3 tests of the journal type `avatar` (the request on a miss, the fallback of a bad picture, the own picture)
+  - the crop test (no `avatars-ui.js`) and the Friends panel test.
 - `npm test`: 1212 tests, 1194 pass, 0 fail, 18 skipped (127.0.0.1).
 - **this PC** (copies of `electron .` with `--profile` and a fake APPDATA, a protected LAN room on 127.0.0.1 and the
   LAN address of this PC):
   - One start with a fresh profile: no error line in the terminal or the developer console.
-  - A set a generated test picture. B showed it on the buddy line and in the chat line of A. After a quit and a
-  reopen of both, B showed it in the history line before A was back (cache by device), then on the buddy line, with
-  no new request (journal). A changed the picture: B got the new one. A removed it: B showed the letter circle.
+  - A set a generated test picture. B showed it on the buddy line and in the chat line of A.
+  - Both copies quit and started again. B showed the picture in the history line before A was back (cache by
+    device). Then B showed it on the buddy line, with no new request (journal).
+  - A changed the picture: B got the new one. A removed it: B showed the letter circle.
   - A 1.0.5 copy (`D:/wt/f105-build`) joined the room of A with a picture. It showed the letter circle and had no
-  error line. Chat worked in both directions.
+    error line. Chat worked in both directions.
   - Before and after the runs, the Start menu shortcut and the toast registration of the installed copy had the same
     values.
-- Not checked in the app: the voice list, the Friends panel and window, the knock bar and the notification icon
-  (tests and code only).
+- Not checked in the app: the voice list, the Friends panel and window, the knock bar and the notification icon.
+  The Friends panel has a test. The voice list, the knock bar and the notification icon have code only.
 - No LAN test and no internet test occurred.
 
 ## 1.0.5 (2026-11-23): times for the join and leave lines, the music visualizer and the installs badge
