@@ -46,7 +46,7 @@ async function friendsThenBQuits(t, optsA = {}, optsB = {}) {
     return { A, B, a, b, linksA, friendA, friendB };
 }
 
-describe('friends offline', { concurrency: 4 }, () => {
+describe('friends offline', { concurrency: 2 }, () => {
 
 test('127.0.0.1 outbox: 3 lines with no session arrive once, in order, with away true, and the queue is empty', async t => {
     const { A, B, b, linksA, friendA, friendB } = await friendsThenBQuits(t, { now: pastClock() });
