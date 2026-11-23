@@ -24,7 +24,10 @@
         own: Object.freeze({ setting: 'voiceCues', idle: false, dnd: true, inView: true, gap: 0 }),
         // The caller (renderer.js) sends these cues only while I am in voice.
         'voice-other': Object.freeze({ setting: 'voiceSound', idle: false, dnd: false, inView: true, gap: 500 }),
-        message: Object.freeze({ setting: soundKey, idle: false, dnd: false, inView: false, gap: 2000 })
+        message: Object.freeze({ setting: soundKey, idle: false, dnd: false, inView: false, gap: 2000 }),
+        // Every other room line (message alerts, 2026-11-22). after: a cue of that class in the gap also drops this
+        // cue, so a busy chat gives at most one message cue each 2 s. A chat cue does not drop a mention cue.
+        chat: Object.freeze({ setting: 'chatSound', idle: false, dnd: false, inView: false, gap: 2000, after: 'message' })
     });
     // The rows of the settings grid (attention.mjs SOUND_KEYS and ALERT_KEYS).
     const SOUND = { chat: 'chatSound', mention: 'mentionSound', whisper: 'whisperSound', friend: 'friendSound', voice: 'voiceSound' };
@@ -42,6 +45,27 @@
         return typeof rule.setting === 'function' ? rule.setting(kind, target) : rule.setting;
     }
     const lastCue = new Map(); // class -> Date.now() of the last accepted cue
+    // The tone of a plain room line: one soft, short tone, so it is not the mention (up) or the whisper (2 tones).
+    const CHAT_TONE = Object.freeze({ pitches: [784], wave: 'sine', length: 0.09 });
+
+    function playChat(context, volume) {
+        const time = context.currentTime;
+        for (const [i, hz] of CHAT_TONE.pitches.entries()) {
+            const start = time + i * 0.085;
+            const tone = context.createOscillator();
+            const envelope = context.createGain();
+            tone.type = CHAT_TONE.wave;
+            tone.frequency.value = hz;
+            envelope.gain.setValueAtTime(0, start);
+            envelope.gain.linearRampToValueAtTime(Math.min(100, volume) / 100 * 0.1, start + 0.008);
+            envelope.gain.linearRampToValueAtTime(0, start + CHAT_TONE.length);
+            tone.connect(envelope).connect(context.destination);
+            tone.onended = () => { tone.disconnect(); envelope.disconnect(); };
+            tone.start(start);
+            tone.stop(start + CHAT_TONE.length + 0.001);
+        }
+        return true;
+    }
 
     function idle() {
         return !!window.idlePeer?.isIdle();
@@ -127,16 +151,20 @@
         }
     }
 
-    // renderer.js: a new, remote live line. First the match, then the cue, then the Notification column: the mention
-    // cue plays also when its notification is off.
+    // renderer.js: a new, remote live line (not history: a replay or the lines after a reconnect have no attention
+    // path). First the match, then the cue, then the Notification column: the cue plays also when the notification
+    // is off. A line with no match is a chat line: the row "All messages". A mention with its Sound box off uses that
+    // row too.
     function mention(data) {
-        if (!data?.peerId || data.peerId === (selfId ?? topologySelf) || !window.chatHighlights?.matches(data.text)) return;
-        const target = { kind: 'mention', channelId: data.channelId || 'general', id: data.id, from: data.peerId };
+        if (!data?.peerId || data.peerId === (selfId ?? topologySelf)) return;
+        const matched = !!window.chatHighlights?.matches(data.text);
+        const target = { kind: matched ? 'mention' : 'chat', channelId: data.channelId || 'general', id: data.id, from: data.peerId };
         if (wanted(target)) {
-            cue('mention', 'message', target);
-            flash();
+            if (matched) flash();
+            if (matched && prefs?.mentionSound) cue('mention', 'message', target);
+            else cue('chat', 'chat', target);
         }
-        if (!alertOn(target)) return;
+        if (!matched || !alertOn(target)) return;
         const quote = prefs.previews && window.quoteCore.split(data.text);
         notify({ ...target, preview: prefs.previews ? (quote ? quote.rest : data.text).slice(0, 160) : '' });
     }
@@ -197,6 +225,7 @@
             // The time stamp is set before the first await: a burst of calls gives one cue.
             const now = Date.now();
             if (now - (lastCue.get(cls) ?? -Infinity) < rule.gap) return false;
+            if (rule.after && now - (lastCue.get(rule.after) ?? -Infinity) < rule.gap) return false;
             lastCue.set(cls, now);
         }
         try {
@@ -206,7 +235,7 @@
             if (wanted !== null) await useOutputDevice(wanted);
             if (audio.state === 'suspended') await audio.resume();
             if (!cueAllowed(rule, kind, target)) return false;
-            return window.voiceCues.play(audio, kind, prefs.volume);
+            return kind === 'chat' ? playChat(audio, prefs.volume) : window.voiceCues.play(audio, kind, prefs.volume);
         } catch { return false; }
     }
 
@@ -215,7 +244,8 @@
     for (const [row, key] of Object.entries(SOUND)) fields[key] = row + '-sound';
     for (const [row, key] of Object.entries(ALERT)) fields[key] = row + '-alert';
     // The class of each cue in the preview list.
-    const toneClass = { 'other-join': 'voice-other', 'other-leave': 'voice-other', mention: 'message', whisper: 'message' };
+    const toneClass = { 'other-join': 'voice-other', 'other-leave': 'voice-other', mention: 'message', whisper: 'message',
+        chat: 'chat' };
     const previewClass = () => toneClass[byId('attention-tone').value] ?? 'own';
     function render() {
         if (!prefs) return;
