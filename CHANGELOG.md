@@ -43,18 +43,22 @@ Results:
   - Three copies with a fake APPDATA. Priya became a friend of Mira. Then Priya knocked over the friend link, and
     Mira selected Allow. Jonas joined with a device invite. Each copy showed 3 people and got each of the 6 chat
     lines.
-  - The join and leave lines: the copy of Mira showed 4 lines with their times. The lines were "Jonas joined the
-    room.", "Jonas left the room.", "Jonas reconnected." and "Priya left the room.". Then Mira and Jonas did a quit
-    and a reopen. Each copy showed its saved lines in the same order with the chat lines. No copy showed "Connection
-    lost.".
-  - Known limit, also in 1.0.4: a member that comes in after a knock over the friend link gives no "joined the room."
-    line.
+  - The join and leave lines: the copy of Mira showed 5 lines with their times. The lines were "Jonas joined the
+    room.", "Priya joined the room.", "Jonas left the room.", "Jonas reconnected." and "Priya left the room.". Then
+    Mira and Jonas did a quit and a reopen. Each copy showed its saved lines in the same order with the chat lines.
+    No copy showed "Connection lost.".
+  - The window shows no join line in the 3 s after the first join of a session (`QUIET_MS` of G2, also in 1.0.4). In
+    the first runs of the check, Priya came in 0.5 s after Jonas and got no join line. With 5 s between the two
+    joins, the line came.
   - Room music with a local test file (no YouTube): the visualizer of the listener moved in the bar. It also moved as
     a VU meter in the collapsed strip, and in the pop-out window. Pop in closed the window.
   - The update path: a key of the check, two files of random bytes and `tools/update-test-server.mjs`. The updaters
     of 1.0.0 to 1.0.4 accepted the manifest with `download`. They downloaded the `-setup.exe` or `-portable.exe`
     file. The updater of 1.0.5 downloaded the `-update.exe` or `-portable-update.exe` copy. It kept the file with its
     normal name. Each file had the size and the SHA-256 of the manifest.
+  - The built `ASSCRACK-1.0.5-portable.exe` (source `830bc60`) as the copy of Jonas: the same results as above.
+  - The signed files of the release on the test server: the updater of 1.0.4 downloaded the `-setup.exe` or
+    `-portable.exe` file. The updater of 1.0.5 downloaded the `-update.exe` or `-portable-update.exe` copy.
   - Before and after each run, the Start menu shortcut and the toast registration of the installed copy on this PC
     had the same values.
 - No LAN test and no internet test occurred.
