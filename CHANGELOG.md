@@ -7,6 +7,25 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased: a hint against the yellow border of a window share (2026-11-22)
+
+- Fault (operator, 2026-11-22): a window share of a game in full screen has a thin yellow border. The app does not
+  draw it. Windows draws it when a program captures a window with Windows Graphics Capture (WGC).
+- Cause: Chromium always captures a window with WGC. No switch and no feature changes this. The source is Chromium
+  156.0.8078.100 of Electron 45.4.1 (`content/browser/media/capture/desktop_capture_device.cc`, WebRTC
+  `wgc_capture_session.cc`). Chromium asks WGC for no border (`IsBorderRequired(false)`), but only Windows 10.0.20348 and later have this
+  function. Before Windows 11 24H2, Chromium captures a screen with DXGI duplication, which has no border. Thus the
+  border shows only on a window share on Windows 10. On Windows 11 there is no border.
+- Change: the selected window can fill a screen, that is, the thumbnails of the window and of one screen have the same
+  size. Then the picker shows "Screen share has no border" and a "Share screen" button. The button shares that screen.
+  The hint shows only on Windows before build 20348.
+- **this PC** (Windows 10 19045, a WebGL test window of 2560 x 1440, no game): a window share with WGC gave 58 to 60
+  frames/s. It used 2 to 6 % of one CPU core in the main process. A screen share with DXGI gave 14 to 28 frames/s at 45 to
+  53 % of one core. Both gave a picture, not black. Thus a screen share can have a lower frame rate.
+- **127.0.0.1**: `test/screen-sources.test.mjs` and `test/screen-ui.test.mjs` have 3 new tests. They fail before the
+  change and pass after the change. Two app copies did three shares: a screen, the test window (the hint shows), and
+  the "Share screen" button (the share is of the screen). The viewer got frames each time.
+
 ## Unreleased: sessions between members after the first admission (2026-11-22)
 
 - Fault: in a protected room with an owner and two members, the second member often had no session with the first

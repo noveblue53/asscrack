@@ -39,7 +39,7 @@ import { isAddressInUse, knockResultText, loginErrorText } from './login-errors.
 import { createLinkPolicy } from './link-policy.mjs';
 import { fitWindowBounds, MIN_WINDOW, readWindowBounds, saveWindowBounds } from './window-bounds.mjs';
 import { createTaskbarFlash } from './taskbar-flash.mjs';
-import { acceptScreenFrame, createScreenSources } from './screen-sources.mjs';
+import { acceptScreenFrame, createScreenSources, windowShareHasBorder } from './screen-sources.mjs';
 import { createFriendLinks } from './friend-links.mjs';
 import { withDeviceMarks } from './peer-marks.mjs';
 import { attachFriendWindows, registerFriendIpc } from './friend-windows.mjs';
@@ -1634,7 +1634,8 @@ const screenSources = createScreenSources({
     desktopCapturer,
     isRoomFrame: frame => !!mainWindow && !mainWindow.isDestroyed() && isDesktopFrame(mainWindow, mainWindow.webContents, frame, ROOM_PAGE),
     isIdle: () => idlePeer || quitting || !node,
-    log: writeLog
+    log: writeLog,
+    windowBorder: windowShareHasBorder(process.platform, os.release())
 });
 let screenOwn = false;
 const SCREEN_STOP_REASONS = new Set(['stopped', 'source', 'error']);

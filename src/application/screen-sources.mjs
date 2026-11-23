@@ -18,6 +18,23 @@ export const PICKER_QUALITIES = Object.freeze([
     ...SCREEN_PRESETS.map(p => Object.freeze({ id: p.id, label: p.label, width: p.width, height: p.height, fps: p.fps, bitrate: p.bitrate }))
 ]);
 
+// Windows 10 draws a yellow border around a window that Windows Graphics Capture captures. Chromium always captures a
+// window with WGC and asks for no border, but only Windows 10.0.20348 and later can turn the border off. Chromium
+// captures a screen with DXGI duplication before Windows 11 24H2, and with WGC with no border after. Thus on Windows
+// before build 20348 only a window share has the border.
+export function windowShareHasBorder(platform, release) {
+    if (platform !== 'win32') return false;
+    const build = Number(String(release ?? '').split('.')[2]);
+    return Number.isInteger(build) && build > 0 && build < 20348;
+}
+
+const thumbnailSize = thumbnail => {
+    try {
+        const size = thumbnail?.getSize?.();
+        return size && size.width > 0 && size.height > 0 ? `${size.width}x${size.height}` : null;
+    } catch { return null; }
+};
+
 export const kindOfSource = id => typeof id !== 'string' ? null : id.startsWith('screen:') ? 'screen' : id.startsWith('window:') ? 'window' : null;
 
 // Section 2.9, limits at the main process: the frame IPC from the window.
@@ -29,7 +46,8 @@ export function acceptScreenFrame(frame, shareActive) {
 
 // desktopCapturer: { getSources(options) }. isRoomFrame(frame): the frame is the main frame of the room window.
 // isIdle(): the app is in Idle Peer. now(): the clock in ms. log(level, text): one line, never with a source name.
-export function createScreenSources({ desktopCapturer, isRoomFrame, isIdle, now = Date.now, log = () => {} }) {
+// windowBorder: a window share has the yellow border (windowShareHasBorder).
+export function createScreenSources({ desktopCapturer, isRoomFrame, isIdle, now = Date.now, log = () => {}, windowBorder = false }) {
     let listed = new Map(); // id -> DesktopCapturerSource of the last list
     let pending = null; // { id, kind, source, expires }
     let lastQuality = 'auto'; // only in memory: a restart gives Auto again (section 2.7)
@@ -45,12 +63,21 @@ export function createScreenSources({ desktopCapturer, isRoomFrame, isIdle, now 
                 const png = source.thumbnail && !source.thumbnail.isEmpty?.() ? source.thumbnail.toPNG() : null;
                 if (png && png.length > 0 && png.length <= MAX_THUMBNAIL_BYTES) thumbnail = new Uint8Array(png);
             } catch { thumbnail = null; }
-            entries.push({ id: source.id, kind, name: String(source.name ?? '').slice(0, MAX_SOURCE_NAME), thumbnail, source });
+            entries.push({ id: source.id, kind, name: String(source.name ?? '').slice(0, MAX_SOURCE_NAME), thumbnail, source,
+                size: thumbnailSize(source.thumbnail) });
         }
         // Screens first, then windows. The sort keeps the order of the system in each kind.
         const ordered = [...entries.filter(e => e.kind === 'screen'), ...entries.filter(e => e.kind === 'window')].slice(0, MAX_SOURCES);
         listed = new Map(ordered.map(e => [e.id, e.source]));
-        return ordered.map(({ id, kind, name, thumbnail }) => ({ id, kind, name, thumbnail }));
+        // A window that fills a screen (a game in borderless full screen): the thumbnail of the window has the size of
+        // the thumbnail of a screen. The window gets the screen ID only when one screen has this size.
+        const screensBySize = new Map();
+        for (const e of ordered) if (e.kind === 'screen' && e.size) screensBySize.set(e.size, [...(screensBySize.get(e.size) ?? []), e.id]);
+        return ordered.map(({ id, kind, name, thumbnail, size }) => {
+            if (kind !== 'window') return { id, kind, name, thumbnail };
+            const screens = windowBorder && size ? screensBySize.get(size) ?? [] : [];
+            return { id, kind, name, thumbnail, fillsScreen: screens.length > 0, screenId: screens.length === 1 ? screens[0] : null };
+        });
     }
 
     // The window sends the ID of the selected source and the quality. The selection is valid for one request in 10 s.

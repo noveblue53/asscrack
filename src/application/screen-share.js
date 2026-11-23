@@ -39,6 +39,8 @@
     const windowsList = byId('screen-list-windows');
     const qualitySelect = byId('screen-quality');
     const goButton = byId('screen-share-go');
+    const borderHint = byId('screen-border-hint');
+    const borderSwitch = byId('screen-border-switch');
     const cancelButton = byId('screen-cancel');
 
     const clock = () => performance.now();
@@ -48,6 +50,7 @@
     let lastEncoder = { tiers: [] };
     let lastViewers = { viewers: [], tiers: [], cap: null, relayed: [], cpu: null };
     let selectedId = null;
+    let listedSources = new Map(); // id -> { kind, fillsScreen, screenId } of the open picker
     let pickerToken = 0;
     let starting = false;
     let encoderGen = 0;
@@ -126,6 +129,15 @@
             for (const choice of list?.querySelectorAll('.screen-source') ?? []) choice.setAttribute('aria-pressed', String(choice.dataset.id === id));
         }
         goButton.disabled = starting || !selectedId;
+        updateBorderHint();
+    }
+    // Windows 10 draws a yellow border around a shared window, not around a shared screen. The main process marks a
+    // window that fills a screen (screen-sources.mjs). The switch selects that screen and starts the share.
+    function updateBorderHint() {
+        const source = listedSources.get(selectedId);
+        const screenId = source?.kind === 'window' && listedSources.has(source.screenId) ? source.screenId : null;
+        if (borderHint) borderHint.hidden = !(source?.kind === 'window' && source.fillsScreen === true);
+        if (borderSwitch) borderSwitch.hidden = !screenId;
     }
 
     async function openPicker() {
@@ -133,6 +145,8 @@
         if (idle || others.size > 0 || starting) return;
         const token = ++pickerToken;
         selectedId = null;
+        listedSources = new Map();
+        updateBorderHint();
         screensList?.replaceChildren();
         windowsList?.replaceChildren();
         pickStatus.textContent = 'Loading sources…';
@@ -148,6 +162,8 @@
             const sources = await api.getScreenSources();
             if (token !== pickerToken || !picker.open) return;
             const list = Array.isArray(sources) ? sources : [];
+            listedSources = new Map(list.map(s => [s?.id, { kind: s?.kind, fillsScreen: s?.fillsScreen === true,
+                screenId: typeof s?.screenId === 'string' ? s.screenId : null }]));
             for (const source of list) (source.kind === 'screen' ? screensList : windowsList)?.append(sourceEntry(source));
             pickStatus.textContent = list.length ? '' : 'No screen or window to share.';
             pickStatus.hidden = list.length > 0;
@@ -581,6 +597,12 @@
 
     button.addEventListener('click', openPicker);
     goButton.addEventListener('click', startFromPicker);
+    borderSwitch?.addEventListener('click', () => {
+        const screenId = listedSources.get(selectedId)?.screenId;
+        if (!screenId || !listedSources.has(screenId)) return;
+        select(screenId);
+        startFromPicker();
+    });
     cancelButton?.addEventListener('click', closePicker);
     // Escape closes the dialog (the native cancel). The close ends a pending list.
     picker.addEventListener('close', () => { pickerToken++; });
