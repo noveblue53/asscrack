@@ -172,11 +172,15 @@ test('a plain line and a mention of one channel replace one notification; each r
     assert.equal(notices.length, 2);
     assert.equal(notices[0].closed, true, 'the new notification replaces the old one of the same channel');
     assert.deepEqual([notices[1].title, notices[1].body], ['Kim in #games', 'last']);
+    // The same Windows tag replaces the old toast also in the Action Center.
+    assert.match(notices[0].id, /^[0-9a-f]{16}$/);
+    assert.equal(notices[1].id, notices[0].id);
     // The voice row is off by default; a whisper title has the name from the node.
     attention.add({ kind: 'voice', peerId: 'p1', id: 'v1', joined: true });
     attention.add({ kind: 'whisper', peerId: 'p1', id: 'w1', preview: 'secret' });
     advance();
     assert.deepEqual(notices.slice(2).map(n => [n.title, n.body]), [['Alex (whisper)', 'New message']]);
+    assert.notEqual(notices[2].id, notices[0].id, 'a different conversation has a different tag');
     prefs.voiceAlert = true;
     attention.add({ kind: 'voice', peerId: 'p1', id: 'v2', joined: true });
     advance();

@@ -1,5 +1,6 @@
 // Native notifications belong to the current room session. Only the most recent target
 // in each conversation survives a burst. Nothing from this queue goes to disk or logs.
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -167,6 +168,11 @@ export function alertOn(prefs, target) {
     return prefs[ALERT_KEYS[target.kind]] === true;
 }
 
+// The tag of the toasts of one conversation: 16 hex characters (the tag of Windows 10 1607 has at most 16).
+export function toastTag(key) {
+    return createHash('sha256').update('asscrack-toast/' + key).digest('hex').slice(0, 16);
+}
+
 // friendName(friendId): G7b, the nickname of a friend for the text. A friend notification does not belong to the room
 // session: the friend links run on the login screen too.
 // peerName(peerId) and channelName(channelId): message alerts, the names of the title (from the node).
@@ -210,7 +216,9 @@ export function createAttention({ settings, room, quiet, allowed, notify, naviga
         group.notice = null;
         previous?.close();
         try {
-            const notice = notify({ title, body, silent: !prefs.sound });
+            // id: the Windows tag of the toast. A toast with the same tag replaces the old one also in the Action
+            // Center (close() removes only a toast that is on the screen). A hash: no channel or peer ID in the tag.
+            const notice = notify({ title, body, silent: !prefs.sound, id: toastTag(key) });
             group.notice = notice;
             notice.once('click', () => {
                 if (groups.get(key) !== group || group.notice !== notice || !eligible(shown)) return;

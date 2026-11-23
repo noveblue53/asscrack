@@ -409,7 +409,14 @@ const attention = createAttention({
         : target.kind === 'voice' ? !!node
         : target.channelId === 'general' || node?.channels().channels.some(channel => channel.id === target.channelId),
     // G7b: one log line for each notification (no name, no text).
-    notify: options => { writeLog('EVENT', 'notification requested'); return new Notification(options); },
+    // Message alerts: the show and failed events of Windows go to the log too (a check that the toast came).
+    notify: options => {
+        writeLog('EVENT', 'notification requested');
+        const notice = new Notification(options);
+        notice.once('show', () => writeLog('EVENT', 'notification shown'));
+        notice.once('failed', () => writeLog('WARN', 'notification failed'));
+        return notice;
+    },
     // G7b: a friend notification opens the chat window of that friend (the main window stays as it is).
     navigate: target => {
         if (target.kind === 'friend') { friendWindows.open(target.friendId); return; }
