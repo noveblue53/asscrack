@@ -7,7 +7,55 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
-## Unreleased
+## 1.0.4 (2026-11-23): room music, a full-screen share with no border, automatic Away and the history thumbnails
+
+Release 1.0.4 is the fourth update of 1.0.0. A 1.0.0, 1.0.1, 1.0.2 or 1.0.3 app gets it with the signed update (View,
+About ASSCRACK, Check now). The entries below this heading, down to the 1.0.3 entry, were "Unreleased" entries. Each
+entry gives its changes and its checks. Since 1.0.3, the app has these new items:
+
+- Room music: the DJ of a voice channel plays YouTube links and local files to the members of the channel. Each
+  listener sets a music volume, and the music goes lower while someone talks.
+- On Windows 10, the share of a window that fills a screen now shares the screen, with no yellow border. The viewers
+  see "Paused" while that window is not in front.
+- Automatic status: Away after 5, 10 or 15 minutes with no input, and an option for Do not disturb during a
+  full-screen game.
+- A fix: the history of a saved room shows its thumbnails again after a reopen.
+
+Build:
+- `npm run dist` makes `ASSCRACK-1.0.4-portable.exe` (product name "ASSCRACK Portable"). `npm run dist:installer`
+  makes `ASSCRACK-1.0.4-setup.exe` (product name "ASSCRACK").
+- The source of the two files is the commit of this entry. The signed `update.json` of the release gives the byte size
+  and the SHA-256 of each file. The files have no code signature.
+- New dependency: `youtubei.js` 18.3.0 (MIT).
+
+Results:
+- **127.0.0.1 and this PC only.** Each entry below gives its results with their labels.
+- The integrated source (`npm test` in a fresh worktree after `npm run install:clean`): 1150 tests, 1132 pass, 0
+  fail, 18 skipped (127.0.0.1).
+- **this PC** (copies of `electron .` with `--profile` and a fake APPDATA, rooms on 127.0.0.1 and the LAN address of
+  this PC):
+  - One start with no error line.
+  - The voice regression: 16 of 16 tests, and `voice-check.mjs` with the expected byte counts.
+  - Three copies: knock and Allow two times, each copy shows 3 people and gets each of 6 chat lines.
+  - Room music with three copies: a local file and one YouTube video (Big Buck Bunny, CC BY). Each listener got 128
+    kbit/s. Voice from a listener came to the two other copies while the music played. Pause, Play, Skip and the
+    chat commands worked.
+  - The history thumbnails: after a quit and a reopen of the two copies, each copy showed the 3 thumbnails. While the
+    sender was offline, its card said "Sender offline. Try again". When the sender came back, the card showed the
+    thumbnail with no click.
+  - The share of the full-screen test window started as a screen share and stayed paused. Windows did not give the
+    foreground to the test window, thus the guard did not show the screen. The viewer got only the "Paused"
+    picture. The return of the picture after a pause was not checked on this PC.
+  - The automatic Away came 1.8 s after login with `--auto-away-ms 15000`.
+  - Before and after each run, the Start menu shortcut and the toast registration of the installed copy on this PC
+    had the same values.
+- Changes in `src/network/`: `attachment.mjs` and `node.mjs` (the stored thumbnails; a thumbnail request has no
+  30-minute limit), `music.mjs` (new), `node.mjs` and `voice-relay.mjs` (the music streams). New items on the
+  network: the music line, the protocols `/asscrack/music/1.0.0` and `/asscrack/music-direct/1.0.0`, and the field
+  `musicDirect` of the voice line.
+- Known failures: the same as 1.0.3 (check 19 of P8b, check 18 of P8a, the timed screen check 16 of
+  `test/screen-auto.test.mjs`). The runs of `npm test` for this release had 0 failures.
+- No LAN test and no internet test of 1.0.4 occurred.
 
 ### Thumbnails of the history after a room reopen (1.0.4)
 
