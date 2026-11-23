@@ -1,4 +1,4 @@
-import test from 'node:test'
+import test, { describe } from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash, randomBytes } from 'node:crypto'
 import { createReadStream } from 'node:fs'
@@ -141,6 +141,8 @@ async function sendAndPause(a, b, size, name = 'large.bin') {
     await waitUntil(() => b.log.paused.length === 1 && a.log.paused.length === 1, 15000, 'paused on both ends')
     return { file, offer, streams, partial: b.log.paused[0] }
 }
+
+describe('transfer resume', { concurrency: 3 }, () => {
 
 test('Pause keeps the partial and Resume sends only the remainder on the same route (127.0.0.1)', { timeout: 60000 }, async () => {
     const ctx = { nodes: [], dirs: [] }
@@ -426,6 +428,8 @@ test('Cancel of a resumed transfer deletes its partial (127.0.0.1)', { timeout: 
     } finally {
         await cleanup(ctx)
     }
+})
+
 })
 
 // A TCP proxy on 127.0.0.1 that counts the bytes in each direction. The sender dials the relay through it, thus

@@ -1,5 +1,5 @@
 // G7a check 1: friend requests (127.0.0.1, real protected room nodes, design F3 and F5a).
-import test from 'node:test';
+import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createFriendRequests, validFriendRoom, validNodes } from '../src/network/friend-requests.mjs';
@@ -41,6 +41,8 @@ function wiredPair({ isBlockedB = () => false, makeGrant, acceptGrant, undo = ()
     return { a, b, clock, events, lines };
 }
 const settle = () => delay(5);
+
+describe('friend requests', { concurrency: 4 }, () => {
 
 test('friend request lines: the room name form and the node rules of readInvite', () => {
     assert.equal(validFriendRoom('friend-' + 'A'.repeat(22)), true);
@@ -191,3 +193,5 @@ for (const withCandidates of [true, false]) {
         }
     });
 }
+
+});

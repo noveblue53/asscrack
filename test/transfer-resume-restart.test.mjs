@@ -1,7 +1,7 @@
 // P7c: Resume of a kept part after a restart of the app. The receiver keeps the retry state next to the part, and
 // the sender keeps the grant of the paused leg (in a protected room, by the device ID of the receiver). Each restart
 // gives a new libp2p peer ID. All results of this file are 127.0.0.1 results on this PC, not LAN results.
-import test from 'node:test'
+import test, { describe } from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash, randomBytes } from 'node:crypto'
 import { createReadStream } from 'node:fs'
@@ -143,6 +143,8 @@ async function sendAndPause(a, b, size) {
 }
 
 const replyBytes = offset => Buffer.byteLength(JSON.stringify({ offset }) + '\n')
+
+describe('transfer resume restart', { concurrency: 3 }, () => {
 
 test('after a restart of the receiver (a new peer ID), Resume of the kept part sends only the remainder (127.0.0.1)',
     { timeout: 90000 }, async () => {
@@ -382,3 +384,5 @@ for (const mode of ['quit', 'drop']) {
         }
     })
 }
+
+})

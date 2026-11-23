@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
 import { once } from 'node:events'
 import { createServer } from 'node:net'
-import { test } from 'node:test'
+import { describe, test } from 'node:test'
 import { setTimeout as delay } from 'node:timers/promises'
 import { createAsscrackNode, keyedServiceTag } from '../src/network/node.mjs'
 import { newRoomKey, readRoomCode } from '../src/network/invite.mjs'
@@ -71,6 +71,8 @@ async function knockWith(owner, code, answer, { identity = createDeviceIdentity(
         owner.events.off('knocks', onKnocks)
     }
 }
+
+describe('knock node', { concurrency: 4 }, () => {
 
 test('127.0.0.1 knock through a relaying member: Allow gives a device invite with no host rights, then the normal admission and chat', { timeout: 60000 }, async t => {
     const { roomKey, owner, member, start } = await setup(t)
@@ -259,4 +261,6 @@ test('127.0.0.1 knock with an old room code after a restart of the owner (new pe
         assert.equal(prompts.length, 1)
         assert.equal(checkAllowedInvite(readRoomCode(code), identity, outcome.invite).membership.grant.canHost, false)
     }
+})
+
 })

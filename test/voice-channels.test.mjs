@@ -1,6 +1,6 @@
 // G6: voice channels. The catalog (pure, with real memberships) and the routing with real protected-room nodes.
 // All results of this file are 127.0.0.1 results, not LAN results.
-import { test } from 'node:test'
+import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { createAsscrackNode } from '../src/network/node.mjs'
@@ -183,6 +183,8 @@ async function talk(node, frames = 30) {
     return out
 }
 
+describe('voice channels network (127.0.0.1)', { concurrency: true }, () => {
+
 test('127.0.0.1: the host forwards only inside a voice channel; direct streams only in one channel; the move hold', { timeout: 90000 }, async t => {
     const { owner: A, members: [B, C, D] } = await protectedRoom(t, 3)
     // A full TCP mesh of B, C and D: each pair can have a direct voice stream.
@@ -361,4 +363,6 @@ test('L12: 127.0.0.1: 200 bad catalog lines of one member give at most 30 signat
     }
     await waitFor(() => M.voiceChannels().seq === O.voiceChannels().seq, 10000, 'the last owner edit reaches M')
     assert.equal(O.voiceChannels().seq, 40)
+})
+
 })

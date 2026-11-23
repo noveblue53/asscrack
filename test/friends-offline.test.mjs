@@ -1,6 +1,6 @@
 // G7b checks 1 and 2: the offline outbox and the common room (127.0.0.1 on this PC, real friend nodes, a real archive
 // in a temp folder for each side). The sender has a controllable clock for the time of each line.
-import test from 'node:test';
+import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -45,6 +45,8 @@ async function friendsThenBQuits(t, optsA = {}, optsB = {}) {
     await waitFor(() => linksA.friend(friendA).state === 'offline', 'A shows B offline');
     return { A, B, a, b, linksA, friendA, friendB };
 }
+
+describe('friends offline', { concurrency: 4 }, () => {
 
 test('127.0.0.1 outbox: 3 lines with no session arrive once, in order, with away true, and the queue is empty', async t => {
     const { A, B, b, linksA, friendA, friendB } = await friendsThenBQuits(t, { now: pastClock() });
@@ -263,4 +265,6 @@ test('private message: a sender clock in the future gives times after each other
     // A time in the past of this computer stays as it is.
     b.handle({ peerId: 'peerA', deviceId: devA, message: { type: 'pm', v: 1, op: 'msg', id: `${devA}.${randomUUID()}`, text: 'y', time: 900_000 } });
     assert.equal(got.at(-1).time, 900_000);
+});
+
 });

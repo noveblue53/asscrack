@@ -1,6 +1,7 @@
 // G7a test helpers: two protected room nodes on 127.0.0.1, a real archive in a temp folder for each side, and a
 // friend-links instance for each side. No Electron.
 import assert from 'node:assert/strict';
+import { randomInt } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -19,8 +20,9 @@ export async function waitFor(check, description, ms = 20000) {
     assert.ok(check(), description);
 }
 
-// A free TCP port range start for the friend ports of one test (the suite runs files in parallel).
-export const randomBasePort = () => 20000 + Math.floor(Math.random() * 400) * 100;
+// A free TCP port range start for the friend ports of one test (the suite runs files and tests in parallel).
+let nextPortSlot = randomInt(400);
+export const randomBasePort = () => 20000 + ((nextPortSlot++ % 400) * 100);
 
 // A profile: the device identity, the archive folder and the saved rooms of one side.
 export function makeProfile(t, label, dir = fs.mkdtempSync(path.join(os.tmpdir(), `friends-${label}-`))) {

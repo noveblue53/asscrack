@@ -66,8 +66,7 @@ async function oneRun() {
 }
 
 test('voice start: the other member gets the frames of A soon after Join voice, with no gap (127.0.0.1)', { timeout: 180000 }, async () => {
-    const runs = []
-    for (let i = 0; i < 5; i++) runs.push(await oneRun())
+    const runs = await Promise.all(Array.from({ length: 5 }, () => oneRun()))
     const starts = runs.map(r => r.startMs).sort((a, b) => a - b)
     const median = starts[Math.floor(starts.length / 2)]
     console.log(`voice start (127.0.0.1): median ${median.toFixed(1)} ms, runs ${runs.map(r => `${r.startMs.toFixed(1)} ms first seq ${r.firstSeq} got ${r.seqs.length}/${r.sent}`).join('; ')}`)

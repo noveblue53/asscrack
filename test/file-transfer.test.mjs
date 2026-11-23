@@ -1,4 +1,4 @@
-import test from 'node:test'
+import test, { describe } from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { createReadStream, writeSync } from 'node:fs'
@@ -90,6 +90,8 @@ async function fetchWithoutOffer(receiver, sender, offerId) {
     await sent
     return bytes
 }
+
+describe('file transfer', { concurrency: 4 }, () => {
 
 test('a file offered to one of two identically named peers stays with that peer (127.0.0.1)', { timeout: 30000 }, async () => {
     const ctx = await setup(3, { name: 'Sam' })
@@ -865,4 +867,6 @@ test('127.0.0.1 filesystem fixture: simultaneous verified saves retain both orig
         rename: async () => { throw new Error('publish failed') }
     }), /publish failed/)
     assert.deepEqual((await entries(dir)).sort(), ['.incoming-c','same (1).txt','same.txt'])
+})
+
 })

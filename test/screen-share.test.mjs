@@ -1,6 +1,6 @@
 // W1 checks of work-orders/astra/P8/DESIGN.md (revision 2): the screen protocol and the share state.
 // All results of this file are 127.0.0.1 results on one computer, not LAN results.
-import { test } from 'node:test'
+import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { tcp } from '@libp2p/tcp'
@@ -108,6 +108,8 @@ async function sendFrames(node, tier, list) {
     }
 }
 const tierOf = node => node.screenState().own.tiers[0].tier
+
+describe('screen-share', { concurrency: 4 }, () => {
 
 test('check 1: the share state reaches each session, also a late session', { timeout: 30000 }, async t => {
     const { nodes: [A, B, C] } = await directRoom(t, 3)
@@ -546,4 +548,6 @@ test('L11: 2000 screen lines of one peer give at most 30 screen-state events', {
     M.sendTo(P.peerId, { type: 'presence', v: 1, state: 'away', note: 'end of the screen lines' })
     await waitFor(() => P.peerPresence()[M.peerId]?.note === 'end of the screen lines', 15000, 'P read all lines')
     assert.ok(events <= 30, `screen-state events: ${events}`)
+})
+
 })

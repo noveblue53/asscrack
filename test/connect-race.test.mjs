@@ -1,4 +1,4 @@
-import { test } from 'node:test'
+import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
 import { createAsscrackNode } from '../src/network/node.mjs'
@@ -84,18 +84,20 @@ async function race(who, { roomKey = null, round }) {
     }
 }
 
-test('connect race: the lower peer ID calls connect() while discovery runs', { timeout: 120000 }, async () => {
-    for (let round = 0; round < ROUNDS; round++) await race('lo', { round })
-})
+describe('connect race', { concurrency: true }, () => {
+    test('connect race: the lower peer ID calls connect() while discovery runs', { timeout: 120000 }, async () => {
+        for (let round = 0; round < ROUNDS; round++) await race('lo', { round })
+    })
 
-test('connect race: the higher peer ID calls connect() while discovery runs', { timeout: 120000 }, async () => {
-    for (let round = 0; round < ROUNDS; round++) await race('hi', { round })
-})
+    test('connect race: the higher peer ID calls connect() while discovery runs', { timeout: 120000 }, async () => {
+        for (let round = 0; round < ROUNDS; round++) await race('hi', { round })
+    })
 
-test('connect race: both nodes call connect() to each other while discovery runs', { timeout: 120000 }, async () => {
-    for (let round = 0; round < ROUNDS; round++) await race('both', { round })
-})
+    test('connect race: both nodes call connect() to each other while discovery runs', { timeout: 120000 }, async () => {
+        for (let round = 0; round < ROUNDS; round++) await race('both', { round })
+    })
 
-test('connect race: keyed room, both nodes call connect() to each other while discovery runs', { timeout: 120000 }, async () => {
-    for (let round = 0; round < ROUNDS; round++) await race('both', { roomKey: newRoomKey(), round })
+    test('connect race: keyed room, both nodes call connect() to each other while discovery runs', { timeout: 120000 }, async () => {
+        for (let round = 0; round < ROUNDS; round++) await race('both', { roomKey: newRoomKey(), round })
+    })
 })

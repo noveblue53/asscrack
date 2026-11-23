@@ -1,4 +1,4 @@
-import test from 'node:test'
+import test, { describe } from 'node:test'
 import assert from 'node:assert/strict'
 import { setTimeout as delay } from 'node:timers/promises'
 import { multiaddr } from '@multiformats/multiaddr'
@@ -58,6 +58,8 @@ async function sendThree(nodes) {
     nodes[0].send('three')
     await waitUntil(() => nodes.every(n => n.history().length === 3), 5000)
 }
+
+describe('history', { concurrency: 4 }, () => {
 
 test('a: a late member gets the history from the host', { timeout: 30000 }, async () => {
     const nodes = await makeNodes(3)
@@ -250,4 +252,6 @@ test('attachment projection keeps only validated public fields and downgrades in
     const byId = Object.fromEntries(history.list().map(row => [row.id, row]))
     assert.deepEqual(byId.message.attachment, attachment)
     assert.deepEqual(byId.bad, { ...line, id: 'bad' })
+})
+
 })
