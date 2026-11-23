@@ -30,6 +30,7 @@ const LAYOUT = [
     ] },
     { id: 'screen-picker', tag: 'dialog', children: [
         { id: 'screen-picker-status', tag: 'p' }, { id: 'screen-list-screens', tag: 'ul' }, { id: 'screen-list-windows', tag: 'ul' },
+        { id: 'screen-border-hint', tag: 'p', hidden: true, children: [{ id: 'screen-border-switch', tag: 'button' }] },
         { id: 'screen-quality', tag: 'select' }, { id: 'screen-share-go', tag: 'button' }, { id: 'screen-cancel', tag: 'button' }
     ] },
     { id: 'peers', tag: 'ul' }
@@ -220,6 +221,39 @@ test('W4 check 1: the picker shows Loading sources, then the two lists; Share wa
     assert.equal(names(f.calls, 'pickScreenSource').length, 0);
     assert.equal(f.displayRequests(), 0, 'no capture function');
     assert.equal(names(f.calls, 'startScreenShare').length, 0);
+});
+
+test('capture border: a window that fills a screen shows the hint; Share screen starts the share of that screen', async () => {
+    const f = load({ sources: [
+        { id: 'screen:0:0', kind: 'screen', name: 'Screen 1', thumbnail: null },
+        { id: 'screen:1:0', kind: 'screen', name: 'Screen 2', thumbnail: null },
+        { id: 'window:5:0', kind: 'window', name: 'Game', thumbnail: null, fillsScreen: true, screenId: 'screen:1:0' },
+        { id: 'window:6:0', kind: 'window', name: 'Notes', thumbnail: null, fillsScreen: false, screenId: null },
+        { id: 'window:7:0', kind: 'window', name: 'Twin', thumbnail: null, fillsScreen: true, screenId: null }
+    ] });
+    f.el('share-screen').click();
+    await flush();
+    f.resolveSources();
+    await flush();
+    const hint = f.el('screen-border-hint'), toggle = f.el('screen-border-switch');
+    const tile = id => f.el('screen-list-windows').querySelectorAll('.screen-source').find(b => b.dataset.id === id)
+        ?? f.el('screen-list-screens').querySelectorAll('.screen-source').find(b => b.dataset.id === id);
+    assert.equal(hint.hidden, true, 'no selection: no hint');
+    tile('window:6:0').click();
+    assert.equal(hint.hidden, true, 'a window that does not fill a screen');
+    tile('window:7:0').click();
+    assert.equal(hint.hidden, false);
+    assert.equal(toggle.hidden, true, 'the screen is not known: no switch');
+    tile('screen:0:0').click();
+    assert.equal(hint.hidden, true, 'a screen');
+    tile('window:5:0').click();
+    assert.equal(hint.hidden, false);
+    assert.equal(toggle.hidden, false);
+    toggle.click();
+    await flush();
+    assert.deepEqual(names(f.calls, 'pickScreenSource').map(c => c.args[0]), ['screen:1:0'], 'the share is of the screen, not of the window');
+    assert.equal(names(f.calls, 'startScreenShare').length, 1);
+    assert.equal(f.picker.open, false);
 });
 
 test('W4 check 2: Share screen is disabled in Idle Peer and while another member shares', async () => {

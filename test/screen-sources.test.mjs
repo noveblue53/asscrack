@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { acceptScreenFrame, createScreenSources, kindOfSource, MAX_SOURCES, MAX_SOURCE_NAME, MAX_THUMBNAIL_BYTES,
-    PICKER_QUALITIES, SELECTION_MS } from '../src/application/screen-sources.mjs';
+    PICKER_QUALITIES, SELECTION_MS, windowShareHasBorder } from '../src/application/screen-sources.mjs';
 
 const roomFrame = { url: 'file:///asscrack/index.html' };
 
@@ -140,4 +140,45 @@ test('W3 check 5: the frame IPC drops a frame with no share, with no Uint8Array,
     assert.equal(acceptScreenFrame(frame(new Uint8Array(0)), true), false, '0 bytes');
     assert.equal(acceptScreenFrame(frame(new Uint8Array(1024 * 1024 + 1)), true), false, '1 048 577 bytes');
     assert.equal(acceptScreenFrame(null, true), false);
+});
+
+// The yellow capture border (operator, 2026-11-22). Chromium 156 captures a window with WGC; Windows before build
+// 20348 cannot turn the border off. A thumbnail keeps the aspect ratio of its source in 320 x 180 (this PC: a
+// 2560 x 1440 window gives 320 x 180, a 1000 x 500 window gives 320 x 160, a 3440 x 1440 screen gives 320 x 134).
+test('capture border: only a window share on Windows before build 20348 has the border', () => {
+    assert.equal(windowShareHasBorder('win32', '10.0.19045'), true, 'Windows 10 22H2');
+    assert.equal(windowShareHasBorder('win32', '10.0.17763'), true);
+    assert.equal(windowShareHasBorder('win32', '10.0.20348'), false, 'IsBorderRequired is available');
+    assert.equal(windowShareHasBorder('win32', '10.0.22631'), false, 'Windows 11');
+    assert.equal(windowShareHasBorder('win32', '10.0.26100'), false, 'Windows 11 24H2');
+    assert.equal(windowShareHasBorder('win32', ''), false);
+    assert.equal(windowShareHasBorder('linux', '6.8.0'), false);
+    assert.equal(windowShareHasBorder('darwin', '24.0.0'), false);
+});
+
+test('capture border: a window with the thumbnail size of one screen gets that screen ID, only where the border shows', async () => {
+    const sized = (width, height) => ({ isEmpty: () => false, toPNG: () => Buffer.alloc(10, 1), getSize: () => ({ width, height }) });
+    const sources = [
+        { id: 'window:21:0', name: 'Game', thumbnail: sized(320, 180) },
+        { id: 'window:22:0', name: 'Wide game', thumbnail: sized(320, 134) },
+        { id: 'window:23:0', name: 'Maximized', thumbnail: sized(320, 175) },
+        { id: 'window:24:0', name: 'Minimized', thumbnail: { isEmpty: () => true, toPNG: () => Buffer.alloc(0), getSize: () => ({ width: 0, height: 0 }) } },
+        { id: 'window:25:0', name: 'No size', thumbnail: thumb(10) },
+        { id: 'screen:0:0', name: 'Screen 1', thumbnail: sized(320, 180) },
+        { id: 'screen:1:0', name: 'Screen 2', thumbnail: sized(320, 134) }
+    ];
+    const listOf = async (windowBorder, list = sources) => createScreenSources({ desktopCapturer: { getSources: async () => list },
+        isRoomFrame: () => true, isIdle: () => false, windowBorder }).list();
+    const marks = list => list.filter(e => e.kind === 'window').map(e => [e.id, e.fillsScreen, e.screenId]);
+    assert.deepEqual(marks(await listOf(true)), [
+        ['window:21:0', true, 'screen:0:0'], ['window:22:0', true, 'screen:1:0'], ['window:23:0', false, null],
+        ['window:24:0', false, null], ['window:25:0', false, null]]);
+    assert.ok(marks(await listOf(false)).every(([, fills, screenId]) => fills === false && screenId === null), 'no border: no mark');
+    const listed = await listOf(true);
+    assert.deepEqual(Object.keys(listed.find(e => e.id === 'screen:0:0')).sort(), ['id', 'kind', 'name', 'thumbnail']);
+    assert.deepEqual(Object.keys(listed.find(e => e.id === 'window:21:0')).sort(), ['fillsScreen', 'id', 'kind', 'name', 'screenId', 'thumbnail'],
+        'the window gets no size and no source object');
+    // Two screens with the same size: the window fills a screen, but which one is not known.
+    const twins = [sources[0], { id: 'screen:0:0', name: 'Screen 1', thumbnail: sized(320, 180) }, { id: 'screen:1:0', name: 'Screen 2', thumbnail: sized(320, 180) }];
+    assert.deepEqual(marks(await listOf(true, twins)), [['window:21:0', true, null]]);
 });
