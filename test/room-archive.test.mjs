@@ -615,3 +615,176 @@ test('first start race: two opens of one new folder share one key, and a third o
   assert.deepEqual(c.listMessages(roomId).map(m => m.text), ['from first', 'from second']);
   assert.deepEqual(fs.readdirSync(dir).filter(f => f.endsWith('.tmp')), []);
 });
+
+// A model of the Windows safeStorage key (Chromium os_crypt). Each run of the app has its key in memory. The key gets
+// to the disk only at commit() (Chromium writes "Local State" about 10 s after the first start of a data folder). A new
+// run loads the key from the disk, or makes a new key when the disk has none. durable() reads the disk, like
+// makeProtector reads "Local State".
+function osCryptRun(disk, { reEncrypt = false } = {}) {
+  const key = disk.key ?? crypto.randomBytes(8).toString('hex');
+  return {
+    key,
+    available: async () => true,
+    durable: async () => disk.key !== null,
+    wrap: async (buf) => Buffer.concat([Buffer.from(`${key}:`), buf]),
+    unwrap: async (buf) => {
+      const pre = Buffer.from(`${key}:`);
+      if (!buf.subarray(0, pre.length).equals(pre)) throw new Error('cannot unwrap');
+      return { value: Buffer.from(buf.subarray(pre.length)), reEncrypt };
+    },
+    commit: () => { disk.key = key; },
+  };
+}
+
+const keyJson = dir => JSON.parse(fs.readFileSync(path.join(dir, 'archive.key'), 'utf8'));
+
+test('kill before the safeStorage key is on disk: the next start opens a new archive and keeps the old files', async (t) => {
+  const dir = tmpDir();
+  const keep = cleanup(t, dir);
+  const disk = { key: null };
+  // Run 1 (a new data folder): the archive opens and saves a room. Then a kill: no commit of the safeStorage key.
+  const a = await openRoomArchiveAsync({ dir, protector: osCryptRun(disk) });
+  assert.deepEqual(a.state(), { state: 'open', reason: null });
+  a.saveRoom({ name: 'room', roomKey: KEY, userName: 'u' });
+  a.close();
+  const before = snapshot(dir);
+  // Run 2: a new safeStorage key. The old key file can never unwrap again.
+  const run2 = osCryptRun(disk);
+  const b = keep(await openRoomArchiveAsync({ dir, protector: run2 }));
+  assert.deepEqual(b.state(), { state: 'open', reason: null });
+  assert.deepEqual(b.listRooms(), []);
+  const lost = b.lostFiles();
+  assert.deepEqual(lost.map(f => path.extname(f)).sort(), ['.db', '.key']);
+  for (const f of lost) {
+    assert.match(f, /^archive\.lost-\d{8}T\d{6}Z-[0-9a-f]{6}\.(db|key)$/);
+    assert.equal(fs.readFileSync(path.join(dir, f)).toString('hex'), before[`archive${path.extname(f)}`], `${f} is the old file`);
+  }
+  const { roomId } = b.saveRoom({ name: 'room 2', roomKey: KEY, userName: 'u' });
+  // Chromium writes "Local State": the pending field goes.
+  assert.equal(keyJson(dir).pending, true);
+  assert.equal(await b.checkPending(), false);
+  run2.commit();
+  assert.equal(await b.checkPending(), true);
+  assert.equal(keyJson(dir).pending, undefined);
+  b.close();
+  // Run 3 loads the key from the disk: the new archive opens, and the old files stay.
+  const c = keep(await openRoomArchiveAsync({ dir, protector: osCryptRun(disk) }));
+  assert.deepEqual(c.state(), { state: 'open', reason: null });
+  assert.equal(c.getRoom(roomId).name, 'room 2');
+  assert.equal(c.lostFiles(), null);
+  for (const f of lost) assert.equal(fs.existsSync(path.join(dir, f)), true);
+});
+
+test('pending key: a run that stops after the commit keeps its archive, and the next open removes pending', async (t) => {
+  const dir = tmpDir();
+  const keep = cleanup(t, dir);
+  const disk = { key: null };
+  const run1 = osCryptRun(disk);
+  const a = await openRoomArchiveAsync({ dir, protector: run1 });
+  const { roomId } = a.saveRoom({ name: 'room', roomKey: KEY, userName: 'u' });
+  // A normal quit writes "Local State" before the timer of the archive sees it.
+  run1.commit();
+  a.close();
+  assert.equal(keyJson(dir).pending, true);
+  const b = keep(await openRoomArchiveAsync({ dir, protector: osCryptRun(disk) }));
+  assert.deepEqual(b.state(), { state: 'open', reason: null });
+  assert.equal(b.getRoom(roomId).name, 'room');
+  assert.equal(b.lostFiles(), null);
+  assert.equal(keyJson(dir).pending, undefined);
+  assert.deepEqual(fs.readdirSync(dir).filter(f => f.startsWith('archive.lost-') || f.endsWith('.tmp')), []);
+});
+
+test('pending key: the timer removes pending after the commit', async (t) => {
+  const dir = tmpDir();
+  const keep = cleanup(t, dir);
+  const disk = { key: null };
+  const run1 = osCryptRun(disk);
+  const a = keep(await openRoomArchiveAsync({ dir, protector: run1, confirm: { stepMs: 10, tries: 500 } }));
+  assert.equal(keyJson(dir).pending, true);
+  await new Promise(r => setTimeout(r, 50));
+  assert.equal(keyJson(dir).pending, true);
+  run1.commit();
+  for (let i = 0; i < 200 && keyJson(dir).pending; i++) await new Promise(r => setTimeout(r, 10));
+  assert.equal(keyJson(dir).pending, undefined);
+  assert.equal(a.state().state, 'open');
+});
+
+test('a key on disk at the first start has no pending field; a key that does not unwrap later stays locked', async (t) => {
+  const dir = tmpDir();
+  const keep = cleanup(t, dir);
+  const disk = { key: null };
+  osCryptRun(disk).commit();
+  const a = await openRoomArchiveAsync({ dir, protector: osCryptRun(disk) });
+  a.saveRoom({ name: 'room', roomKey: KEY, userName: 'u' });
+  a.close();
+  assert.equal(keyJson(dir).pending, undefined);
+  const before = snapshot(dir);
+  // An other safeStorage key (an other Windows account or PC): the lock of the old versions, all files stay.
+  const b = keep(await openRoomArchiveAsync({ dir, protector: osCryptRun({ key: null }) }));
+  assert.deepEqual(b.state(), { state: 'locked', reason: 'key-unwrap-failed' });
+  assert.equal(b.lostFiles(), null);
+  assert.deepEqual(snapshot(dir), before);
+});
+
+test('pending key that does not unwrap while the protector key is on disk: the lock stays and each file stays', async (t) => {
+  const dir = tmpDir();
+  const keep = cleanup(t, dir);
+  const disk = { key: null };
+  const run1 = osCryptRun(disk);
+  const a = await openRoomArchiveAsync({ dir, protector: run1 });
+  a.saveRoom({ name: 'room', roomKey: KEY, userName: 'u' });
+  // A normal quit before the timer removed pending: the key of run 1 is on disk.
+  run1.commit();
+  a.close();
+  assert.equal(keyJson(dir).pending, true);
+  const before = snapshot(dir);
+  // Run 2: the unwrap fails (a transient failure), but durable() is true. The cause is not clear: no move.
+  const run2 = osCryptRun(disk);
+  const unwrap = run2.unwrap;
+  run2.unwrap = async () => { throw new Error('transient'); };
+  const b = keep(await openRoomArchiveAsync({ dir, protector: run2 }));
+  assert.deepEqual(b.state(), { state: 'locked', reason: 'key-unwrap-failed' });
+  assert.equal(b.lostFiles(), null);
+  assert.deepEqual(snapshot(dir), before);
+  run2.unwrap = unwrap;
+  assert.deepEqual(await b.unlockAsync(), { state: 'open', reason: null });
+  assert.equal(b.listRooms().length, 1);
+});
+
+test('pending key that does not unwrap: a failed rename keeps the lock and each file',
+  { skip: process.platform !== 'win32' && 'needs the Windows file lock' }, async (t) => {
+  const dir = tmpDir();
+  const keep = cleanup(t, dir);
+  const disk = { key: null };
+  const a = await openRoomArchiveAsync({ dir, protector: osCryptRun(disk) });
+  a.saveRoom({ name: 'room', roomKey: KEY, userName: 'u' });
+  a.close();
+  const before = snapshot(dir);
+  // An other process has the database open: Windows refuses the rename.
+  const holder = new Database(path.join(dir, 'archive.db'));
+  t.after(() => { try { holder.close(); } catch { /* closed */ } });
+  const b = keep(await openRoomArchiveAsync({ dir, protector: osCryptRun(disk) }));
+  assert.deepEqual(b.state(), { state: 'locked', reason: 'key-unwrap-failed' });
+  assert.equal(b.lostFiles(), null);
+  assert.deepEqual(snapshot(dir), before);
+  holder.close();
+  // With the database free, the open puts the files aside.
+  assert.deepEqual(await b.unlockAsync(), { state: 'open', reason: null });
+  assert.equal(b.lostFiles().length, 2);
+});
+
+test('reEncrypt keeps the old wrapped key: a new protector key that never got to the disk does not lock', async (t) => {
+  const dir = tmpDir();
+  const keep = cleanup(t, dir);
+  const roomId = seed(dir, fakeProtector('A'));
+  // Run 2 wraps the key again with a protector key that a kill then loses.
+  const a = await openRoomArchiveAsync({ dir, protector: asyncProtector('A', { reEncrypt: true, newWrap: true }) });
+  assert.equal(a.state().state, 'open');
+  a.close();
+  assert.equal(wrappedKey(dir).subarray(0, 3).toString(), 'A2:');
+  // Run 3 has only the old protector key ('A:'): the old wrapped value opens, and the key is wrapped again.
+  const b = keep(openRoomArchive({ dir, protector: fakeProtector('A') }));
+  assert.deepEqual(b.state(), { state: 'open', reason: null });
+  assert.equal(b.listMessages(roomId)[0].text, 'secret-plaintext-xyz');
+  assert.equal(wrappedKey(dir).subarray(0, 2).toString(), 'A:');
+});

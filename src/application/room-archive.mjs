@@ -229,19 +229,20 @@ async function runAsync(gen) {
 
 // The protector can be synchronous (tests) or asynchronous (Electron safeStorage, makeProtector).
 // openRoomArchive() needs a synchronous protector. openRoomArchiveAsync() accepts both.
-export function openRoomArchive({ dir, protector, limits = null }) {
-  const a = makeRoomArchive({ dir, protector, limits });
+// confirm: optional { stepMs, tries } of the check of a pending key file (tests).
+export function openRoomArchive({ dir, protector, limits = null, confirm = null }) {
+  const a = makeRoomArchive({ dir, protector, limits, confirm });
   a.unlock();
   return a;
 }
 
-export async function openRoomArchiveAsync({ dir, protector, limits = null }) {
-  const a = makeRoomArchive({ dir, protector, limits });
+export async function openRoomArchiveAsync({ dir, protector, limits = null, confirm = null }) {
+  const a = makeRoomArchive({ dir, protector, limits, confirm });
   await a.unlockAsync();
   return a;
 }
 
-function makeRoomArchive({ dir, protector, limits = null }) {
+function makeRoomArchive({ dir, protector, limits = null, confirm: confirmOptions = null }) {
   const lim = { ...ARCHIVE_LIMITS, ...(limits || {}) };
   const dbFile = path.join(dir, 'archive.db');
   const keyFile = path.join(dir, 'archive.key');
@@ -259,15 +260,22 @@ function makeRoomArchive({ dir, protector, limits = null }) {
     return path.join(dir, `archive.key.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`);
   }
 
-  function keyText(wrapped) {
-    return JSON.stringify({ v: 1, wrapped: Buffer.from(wrapped).toString('base64') });
+  // The key file: { v: 1, wrapped, pending?, prev? }. Versions up to 1.0.5 read only v and wrapped.
+  // pending: true: the protector said that its own key was maybe not on disk yet (protector.durable() gave false) when
+  // it wrapped this key. On Windows, Chromium writes the safeStorage key to "Local State" about 10 s after the first
+  // start of a new data folder: a kill before that write loses the safeStorage key, and then the wrapped key can never
+  // unwrap again. Thus only a pending key that does not unwrap lets the open put the old files aside (setAsideLost).
+  // prev: the wrapped value before the last reEncrypt. The open tries it when wrapped does not unwrap.
+  function keyText(wrapped, { pending = false, prev = null } = {}) {
+    return JSON.stringify({ v: 1, wrapped: Buffer.from(wrapped).toString('base64'), ...(pending ? { pending: true } : {}),
+      ...(prev ? { prev: Buffer.from(prev).toString('base64') } : {}) });
   }
 
-  // Replaces the key file (reEncrypt).
-  function writeKey(wrapped) {
+  // Replaces the key file (reEncrypt, the end of pending).
+  function writeKey(wrapped, extra) {
     const tmp = ownTmpFile();
     try {
-      writeFileSync600(tmp, keyText(wrapped));
+      writeFileSync600(tmp, keyText(wrapped, extra));
       fs.renameSync(tmp, keyFile);
     } finally {
       fs.rmSync(tmp, { force: true });
@@ -275,10 +283,10 @@ function makeRoomArchive({ dir, protector, limits = null }) {
   }
 
   // Creates the key file only if it does not exist. Gives false when an other process created it first (EEXIST).
-  function createKeyExclusive(wrapped) {
+  function createKeyExclusive(wrapped, extra) {
     const tmp = ownTmpFile();
     try {
-      writeFileSync600(tmp, keyText(wrapped));
+      writeFileSync600(tmp, keyText(wrapped, extra));
       try {
         fs.linkSync(tmp, keyFile);
         return true;
@@ -290,7 +298,7 @@ function makeRoomArchive({ dir, protector, limits = null }) {
     }
     // The file system refused the hard link: use an exclusive create of the key file.
     try {
-      fs.writeFileSync(keyFile, keyText(wrapped), { flag: 'wx', mode: 0o600 });
+      fs.writeFileSync(keyFile, keyText(wrapped, extra), { flag: 'wx', mode: 0o600 });
       return true;
     } catch (err) {
       if (err && err.code === 'EEXIST') return false;
@@ -298,37 +306,140 @@ function makeRoomArchive({ dir, protector, limits = null }) {
     }
   }
 
-  // Reads and unwraps the existing key file. Gives { profileKey, reEncrypt } or { fail: reason }.
+  function* unwrapKey(wrapped) {
+    try {
+      const r = unwrapResult(yield protector.unwrap(wrapped));
+      return r.value.length === 32 ? r : null;
+    } catch {
+      return null;
+    }
+  }
+
+  // Reads and unwraps the existing key file. Gives { profileKey, reEncrypt, record } or { fail: reason, pending }.
+  // record: { wrapped, pending, prev } of the file.
   function* readExistingKey() {
-    let wrapped;
+    let record;
     try {
       const j = JSON.parse(fs.readFileSync(keyFile, 'utf8'));
       if (!j || j.v !== 1 || typeof j.wrapped !== 'string') throw new Error('bad');
-      wrapped = Buffer.from(j.wrapped, 'base64');
+      record = { wrapped: Buffer.from(j.wrapped, 'base64'), pending: j.pending === true,
+        prev: typeof j.prev === 'string' ? Buffer.from(j.prev, 'base64') : null };
     } catch {
       return { fail: 'key-unreadable' };
     }
-    let profileKey;
-    let reEncrypt;
-    try {
-      ({ value: profileKey, reEncrypt } = unwrapResult(yield protector.unwrap(wrapped)));
-    } catch {
-      return { fail: 'key-unwrap-failed' };
-    }
-    if (profileKey.length !== 32) return { fail: 'key-unwrap-failed' };
-    return { profileKey, reEncrypt };
+    const r = yield* unwrapKey(record.wrapped);
+    if (r) return { profileKey: r.value, reEncrypt: r.reEncrypt, record };
+    // The value before the last reEncrypt still opens: wrap the key again with the key of this run.
+    const old = record.prev ? yield* unwrapKey(record.prev) : null;
+    if (old) return { profileKey: old.value, reEncrypt: true, record: { ...record, wrapped: record.prev, prev: null } };
+    return { fail: 'key-unwrap-failed', pending: record.pending };
   }
+
+  // true when the key of the protector is on disk (protector.durable). A protector with no durable() is always on disk.
+  function* keySaved() {
+    if (typeof protector.durable !== 'function') return true;
+    try { return (yield protector.durable()) === true; } catch { return false; }
+  }
+
+  // The files of an archive whose pending key can never unwrap: rename them to archive.lost-<time>-<random>.*, never
+  // delete. The journal files go first, the key file last: an interrupted move leaves a key file and no database, or
+  // all files. Gives the new names, or null (a rename failed; the renames are undone, the files stay).
+  function setAsideLost() {
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+    const base = `archive.lost-${stamp}-${crypto.randomBytes(3).toString('hex')}`;
+    const moves = ['db-journal', 'db-wal', 'db-shm', 'db', 'key'].map(ext => [`archive.${ext}`, `${base}.${ext}`]);
+    const done = [];
+    for (const [from, to] of moves) {
+      try {
+        fs.renameSync(path.join(dir, from), path.join(dir, to));
+        done.push([from, to]);
+      } catch (err) {
+        if (err?.code === 'ENOENT') continue;
+        for (const [f, t] of done.reverse()) { try { fs.renameSync(path.join(dir, t), path.join(dir, f)); } catch { /* keep */ } }
+        return null;
+      }
+    }
+    return done.map(([, to]) => to);
+  }
+
+  // The end of pending: write the key file again with no pending field, only when it still has this wrapped value.
+  function clearPending(wrapped) {
+    try {
+      const j = JSON.parse(fs.readFileSync(keyFile, 'utf8'));
+      if (!j || j.v !== 1 || j.pending !== true || j.wrapped !== Buffer.from(wrapped).toString('base64')) return false;
+      writeKey(wrapped, { prev: typeof j.prev === 'string' ? Buffer.from(j.prev, 'base64') : null });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // A pending key file of this run: ask protector.durable() each confirm.stepMs, at most confirm.tries times, until the
+  // key of the protector is on disk. Then clearPending. close() stops it.
+  const confirm = { stepMs: 1000, tries: 120, ...(confirmOptions || {}) };
+  let confirmTimer = null;
+  let pendingWrapped = null;
+  function stopConfirm() {
+    if (confirmTimer) clearTimeout(confirmTimer);
+    confirmTimer = null;
+  }
+  async function checkPending() {
+    if (!pendingWrapped || !db) return false;
+    let saved;
+    try { saved = (await protector.durable()) === true; } catch { saved = false; }
+    if (!saved || !pendingWrapped || !db) return false;
+    clearPending(pendingWrapped);
+    pendingWrapped = null;
+    stopConfirm();
+    return true;
+  }
+  function confirmLater(wrapped) {
+    stopConfirm();
+    pendingWrapped = wrapped;
+    let tries = 0;
+    const step = async () => {
+      confirmTimer = null;
+      if (await checkPending()) return;
+      if (pendingWrapped && db && ++tries < confirm.tries) {
+        confirmTimer = setTimeout(step, confirm.stepMs);
+        confirmTimer.unref?.();
+      }
+    };
+    confirmTimer = setTimeout(step, confirm.stepMs);
+    confirmTimer.unref?.();
+  }
+
+  let lostFiles = null;
 
   function* openSequence() {
     if (!protector || !(yield protector.available())) return setState('unavailable', 'protection-unavailable');
     fs.mkdirSync(dir, { recursive: true });
+    lostFiles = null;
     let profileKey;
     let reEncrypt = false;
+    let record = null;
     let useExisting = fs.existsSync(keyFile);
     // An other process can create the key file and the database between the two checks: check the key file again.
     if (!useExisting && fs.existsSync(dbFile)) {
       useExisting = fs.existsSync(keyFile);
       if (!useExisting) return setState('locked', 'key-missing');
+    }
+    if (useExisting) {
+      const r = yield* readExistingKey();
+      // The run that made this key stopped before its protector key was on disk: no one can open these files. Then
+      // the protector key of this run is not on disk yet either (a new data folder). Put the files aside and make a new
+      // archive. A failed rename keeps the lock and all files. When the protector key is on disk, the cause is not
+      // clear (for example a transient failure of the unwrap): keep the lock, as for a key with no pending field.
+      if (r.fail === 'key-unwrap-failed' && r.pending && !(yield* keySaved())) {
+        const moved = setAsideLost();
+        if (!moved) return setState('locked', r.fail);
+        lostFiles = moved;
+        useExisting = false;
+      } else if (r.fail) {
+        return setState('locked', r.fail);
+      } else {
+        ({ profileKey, reEncrypt, record } = r);
+      }
     }
     if (!useExisting) {
       // Remove the tmp file of an interrupted first start of an older version.
@@ -336,17 +447,19 @@ function makeRoomArchive({ dir, protector, limits = null }) {
       profileKey = crypto.randomBytes(32);
       let created;
       try {
-        created = createKeyExclusive(yield protector.wrap(profileKey));
+        const wrapped = yield protector.wrap(profileKey);
+        const pending = !(yield* keySaved());
+        created = createKeyExclusive(wrapped, { pending });
+        if (created) record = { wrapped: Buffer.from(wrapped), pending, prev: null };
       } catch {
         return setState('locked', 'key-write-failed');
       }
       // An other process created the key file first: use its key.
-      if (!created) useExisting = true;
-    }
-    if (useExisting) {
-      const r = yield* readExistingKey();
-      if (r.fail) return setState('locked', r.fail);
-      ({ profileKey, reEncrypt } = r);
+      if (!created) {
+        const r = yield* readExistingKey();
+        if (r.fail) return setState('locked', r.fail);
+        ({ profileKey, reEncrypt, record } = r);
+      }
     }
     let handle;
     try {
@@ -373,9 +486,22 @@ function makeRoomArchive({ dir, protector, limits = null }) {
     }
     db = handle;
     // safeStorage asked for a new encryption of the key (shouldReEncrypt). Only after the database opened with the key.
-    // A failure keeps the old key file, which still opens.
+    // A failure keeps the old key file, which still opens. The old wrapped value stays as prev: the new value can use
+    // a protector key that is not on disk yet.
     if (reEncrypt) {
-      try { writeKey(yield protector.wrap(profileKey)); } catch { /* writeKey removed its own tmp file */ }
+      try {
+        const next = yield protector.wrap(profileKey);
+        const pending = record.pending || !(yield* keySaved());
+        writeKey(next, { pending, prev: record.wrapped });
+        record = { wrapped: Buffer.from(next), pending, prev: record.wrapped };
+      } catch { /* writeKey removed its own tmp file */ }
+    }
+    if (record?.pending) {
+      if (yield* keySaved()) {
+        if (clearPending(record.wrapped)) record = { ...record, pending: false };
+      } else {
+        confirmLater(record.wrapped);
+      }
     }
     return setState('open', null);
   }
@@ -389,6 +515,10 @@ function makeRoomArchive({ dir, protector, limits = null }) {
 
   return {
     state: () => ({ ...st }),
+    // The new names of the files that the last open put aside (a pending key that did not unwrap), or null.
+    lostFiles: () => (lostFiles ? [...lostFiles] : null),
+    // One check of a pending key file of this run (the timer of confirmLater does the same). Gives true when it ended.
+    checkPending,
     unlock() {
       if (st.state !== 'open') runSync(openSequence());
       return { ...st };
@@ -804,6 +934,8 @@ function makeRoomArchive({ dir, protector, limits = null }) {
       return { rows: r.n, bytes: r.b };
     },
     close() {
+      stopConfirm();
+      pendingWrapped = null;
       if (db) { try { db.close(); } catch { /* ignore */ } }
       db = null;
       if (st.state === 'open') setState('locked', 'closed');

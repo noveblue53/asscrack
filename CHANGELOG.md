@@ -7,6 +7,64 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased
+
+### A kill in the first seconds of a new data folder no longer locks the saved rooms
+
+- Finding (2026-11-23, an app check of an other branch): the check stopped a copy by its process ID. The copy had
+  run for a few seconds after the first start of a new data folder. At the next start, the log had "Saved rooms archive opened: state locked,
+  reason key-unwrap-failed". The saved rooms and the friends stayed locked at each later start.
+- Cause: on Windows, safeStorage protects its own key with DPAPI and keeps it in the file `Local State` of the data
+  folder (`os_crypt.encrypted_key`). Chromium writes that file about 10 s after the first start. The archive wrote
+  `archive.key` (the archive key, wrapped by safeStorage) at about 0.3 s (`openSequence` of
+  `src/application/room-archive.mjs`, the call `createKeyExclusive(yield protector.wrap(profileKey))`). A kill before
+  the write of `Local State` lost the safeStorage key. The next start made a new safeStorage key, and the old
+  `archive.key` could never unwrap again. The bug is in each version since the archive (milestone 6), also in 1.0.0.
+- Change:
+  - `makeProtector` has the new call `durable()`. On Windows, it is true only when `Local State` has
+    `os_crypt.encrypted_key`. On other systems, it is always true (the system key store has the key).
+  - A new key file gets `"pending": true` when `durable()` is false. The archive reads `durable()` again each 1 s,
+    for at most 120 s. When it is true, the archive writes the key file again with no `pending`. An open that unwraps
+    a pending key while `durable()` is true also removes `pending`.
+  - A pending key that does not unwrap while `durable()` is false can never open: its safeStorage key is lost. The
+    open renames `archive.db`, its journal files and `archive.key` to `archive.lost-<time>-<random>.*` in the same
+    folder, and makes a new archive. The old files stay. A failed rename gives the old lock, and all files stay. The
+    log gets one WARN line with the names of the kept files.
+  - A key file with no `pending` that does not unwrap stays locked, as before (for example a data folder of an
+    other Windows account). The files stay. A pending key that does not unwrap while `durable()` is true also stays
+    locked. Then the cause is not clear, for example a transient failure of the unwrap.
+  - reEncrypt keeps the old wrapped value in the key file as `prev`. When `wrapped` does not unwrap, the open tries
+    `prev`.
+  - Versions up to 1.0.5 read only `v` and `wrapped` of the key file. They ignore `pending` and `prev`.
+- Limits:
+  - Such a kill loses the rooms, lines and friends of the first about 10 s of a new data folder (before the write of
+    `Local State`). The old files stay, but no key opens them.
+  - An archive that 1.0.0 to 1.0.5 locked this way has no `pending` field. It stays locked, and its files stay. It
+    cannot be opened: the key that wrapped its key was never on disk. The window text for this lock says "This data
+    folder belongs to another Windows account or PC", which is not the cause in this case.
+- Results (**this PC**, not a LAN result). The check starts copies of `electron .` with `--profile` and a fake
+  `APPDATA`. Each copy makes one saved LAN room with a random name. The check stops the copy by its process ID T s
+  after the start (T = 1 s to 15 s), then starts it again. No copy connected to an other copy.
+
+  | Source | Starts | Locked starts | Rooms saved before the kill, not listed after | Archives put aside |
+  |---|---|---|---|---|
+  | 1.0.5 (`05fa933`), new data folder | 30 | 20 (each kill at 1 s to 10 s) | 18 | 0 |
+  | 1.0.0 (`af40267`), new data folder | 15 | 9 (each kill at 2 s to 10 s) | 8 | 0 |
+  | this change, new data folder | 30 | 0 | 18 | 20 |
+  | this change with the `durable()` check of the put-aside, new data folder (T = 3, 5, 8, 12 s) | 4 | 0 | 3 | 3 |
+  | 1.0.5, a data folder with `Local State` on disk | 15 | 0 | 0 | 0 |
+  | this change, a data folder with `Local State` on disk | 15 | 0 | 0 | 0 |
+
+  At each kill after 10 s, `Local State` had the key, and the next start opened the archive with its room.
+- Tests (127.0.0.1): `test/room-archive.test.mjs` has 7 new tests with a model of the Windows safeStorage key. In the
+  model, each run has its own key, and a commit writes it to the disk. Each test fails on `05fa933` and passes with
+  the change. On `05fa933`, 2 tests fail because the archive stays locked (`key-unwrap-failed`). The other 5 fail
+  because `05fa933` has no `pending` field and no `lostFiles()`.
+  `test/saved-rooms.test.mjs` has 2 new tests (`durable()`, and the log line after a kill).
+- `npm test`: 1202 tests, 1184 pass, 0 fail, 18 skipped (127.0.0.1).
+- One start of the app (this PC): a new data folder, 25 s, then Quit. The terminal and the developer console had no
+  error line. The archive opened. After the quit, the key file had no `pending` field.
+
 ## 1.0.5 (2026-11-23): times for the join and leave lines, the music visualizer and the installs badge
 
 Release 1.0.5 is the fifth update of 1.0.0. A 1.0.0, 1.0.1, 1.0.2, 1.0.3 or 1.0.4 app gets it with the signed update

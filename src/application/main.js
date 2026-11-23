@@ -1260,7 +1260,9 @@ function getSavedRooms() {
     if (!savedRooms) {
         savedRooms = createSavedRooms({
             dir: path.join(app.getPath('userData'), 'saved-rooms'),
-            protector: makeProtector(safeStorage),
+            // The safeStorage key of Windows is in "Local State" of the user data folder (saved-rooms.mjs durable()).
+            protector: makeProtector(safeStorage, process.platform,
+                { localStateFile: path.join(app.getPath('userData'), 'Local State') }),
             log: writeLog,
             backend: process.platform === 'linux' ? () => safeStorage.getSelectedStorageBackend() : null,
             // Saved rooms (milestone 6): the result of each archive write goes to the window. Only the ID and the reason.
