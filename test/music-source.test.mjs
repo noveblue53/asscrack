@@ -129,7 +129,7 @@ function fakeElectron() {
     class Win extends EventEmitter {
         constructor(options) {
             super(); this.options = options; this.destroyed = false; windows.push(this);
-            this.webContents = Object.assign(new EventEmitter(), { sent: [], send: (...args) => this.webContents.sent.push(args) });
+            this.webContents = Object.assign(new EventEmitter(), { sent: [], send: (...args) => this.webContents.sent.push(args), getOSProcessId: () => 4242 });
         }
         isDestroyed() { return this.destroyed; }
         destroy() { this.destroyed = true; this.emit('closed'); }
@@ -138,11 +138,12 @@ function fakeElectron() {
     return { ipc, windows, Win };
 }
 
-test('player script sandbox: a sandboxed window, a result only from its frame, only string fields, a timeout closes it', async () => {
+test('player script sandbox: an own session, a result only from its frame, only string fields, a timeout stops its process', async () => {
     const { ipc, windows, Win } = fakeElectron();
     const timers = [];
+    const killed = [];
     const sandbox = createMusicEval({ BrowserWindow: Win, ipc, page: 'asscrack-app://app/music-eval.html', preload: 'p.cjs',
-        isFrame: (win, event) => event.sender === win.webContents,
+        isFrame: (win, event) => event.sender === win.webContents, partition: 'music-eval', killProcess: pid => killed.push(pid),
         setTimer: (fn, ms) => { const t = { fn, ms }; timers.push(t); return t; }, clearTimer: () => {} });
     const first = sandbox.run('return process("a")');
     await new Promise(r => setImmediate(r));
@@ -150,6 +151,7 @@ test('player script sandbox: a sandboxed window, a result only from its frame, o
     assert.equal(win.options.webPreferences.sandbox, true);
     assert.equal(win.options.webPreferences.nodeIntegration, false);
     assert.equal(win.options.show, false);
+    assert.equal(win.options.webPreferences.partition, 'music-eval', 'never the session of the room window');
     assert.equal(win.url, 'asscrack-app://app/music-eval.html');
     const [channel, id, code] = win.webContents.sent[0];
     assert.equal(channel, 'asscrack:music-eval');
@@ -167,6 +169,7 @@ test('player script sandbox: a sandboxed window, a result only from its frame, o
     timers.filter(t => t.ms === 5000).at(-1).fn();
     assert.equal(await third, null);
     assert.equal(win.destroyed, true, 'a timeout closes the window');
+    assert.deepEqual(killed, [4242], 'a timeout stops the renderer process by its ID');
     assert.equal(await sandbox.run(''), null);
     assert.equal(await sandbox.run('x'.repeat(4 * 1024 * 1024 + 1)), null);
 });

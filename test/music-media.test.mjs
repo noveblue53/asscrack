@@ -21,7 +21,7 @@ test('handler: only GET and HEAD of a known token of the track host', async () =
         const url = media.addFile(file);
         assert.match(url, /^asscrack-music:\/\/track\/[0-9a-f-]{36}$/);
         assert.equal(media.addFile(path.join(dir, 'a.exe')), null, 'no audio type: no URL');
-        for (const bad of [url + '?x=1', url.replace('track', 'other'), url.slice(0, -1) + '0', 'asscrack-music://track/../a.mp3',
+        for (const bad of [url + '?x=1', url.replace('track', 'other'), url.slice(0, -1) + (url.endsWith('0') ? '1' : '0'), 'asscrack-music://track/../a.mp3',
             'room-media://track/' + url.split('/').pop()]) {
             assert.equal((await media.serve(req(bad))).status, 404, bad);
         }

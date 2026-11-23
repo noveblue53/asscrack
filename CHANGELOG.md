@@ -24,8 +24,8 @@ volume, and the music goes lower while someone talks (Duck, on by default).
 - Diagnostics: the journal event `music` (start, end, skip, error kind, stop). No title, link or path.
 
 Checks (all 127.0.0.1 on one PC, no LAN result):
-- `npm test`: 1113 tests, 1095 passed, 18 skipped, 0 failed (base 1.0.3: 1085 tests). The 28 new tests in
-  `test/music*.test.mjs` fail on 1.0.3 (the modules are not there).
+- `npm test`: 1113 tests, 1095 passed, 18 skipped, 0 failed (base 1.0.3: 1085 tests, 1067 passed). The five new test
+  files fail on 1.0.3: four stop at the import (the modules are not there), and `music-relay.test.mjs` fails 2 of 2.
 - Three app copies (a DJ and two listeners): a local file and a YouTube video (Big Buck Bunny, CC BY 3.0) played. Each
   listener got 128 kbit/s and a music level above 0. Volume, Duck, Pause, Play, Skip, `/play`, `/queue` and `/skip`
   worked. Voice from a listener arrived at the two other copies while the music played. No error line in the
@@ -35,6 +35,7 @@ Checks (all 127.0.0.1 on one PC, no LAN result):
 - The voice check (`voice-check.mjs` of the voice processing goal): each step gave its expected result. Voice
   activity and a key down sent voice. A threshold above the signal, no key, a key up and a blur sent 0 bytes.
 - One start with a fresh `--profile` and a fake APPDATA: no error line.
+- The sandbox of the YouTube player script in Electron: its own process, no network, a loop stopped after 3 s.
 
 ## 1.0.3 (2026-11-22): message alerts, the image menu and three members that see each other
 

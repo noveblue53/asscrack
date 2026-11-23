@@ -344,9 +344,11 @@ const DECODER_PAGE = appPage('image-decoder.html');
 const imageDecoder = createImageDecoder({ BrowserWindow, ipc: ipcMain, page: DECODER_PAGE,
     preload: path.join(__dirname, 'image-decoder-preload.cjs'), lock: lockDesktopNavigation,
     isFrame: (win, event) => isDesktopFrame(win, event.sender, event.senderFrame, DECODER_PAGE) });
-// Room music (MU-6): the YouTube player script runs in a hidden sandboxed window with no network, not here.
+// Room music (MU-6): the YouTube player script runs in a hidden sandboxed window with no network, not here. The window
+// has its own in-memory session: no shared renderer process with the room window (see app ready for its handlers).
 const MUSIC_EVAL_PAGE = appPage('music-eval.html');
-const musicEval = createMusicEval({ BrowserWindow, ipc: ipcMain, page: MUSIC_EVAL_PAGE,
+const MUSIC_EVAL_PARTITION = 'music-eval';
+const musicEval = createMusicEval({ BrowserWindow, ipc: ipcMain, page: MUSIC_EVAL_PAGE, partition: MUSIC_EVAL_PARTITION,
     preload: path.join(__dirname, 'music-eval-preload.cjs'), lock: lockDesktopNavigation,
     isFrame: (win, event) => isDesktopFrame(win, event.sender, event.senderFrame, MUSIC_EVAL_PAGE) });
 // Room music (music-ipc.mjs): the IPC of the music bar, the local files and the YouTube source of the DJ.
@@ -2363,6 +2365,12 @@ app.whenReady().then(async () => {
     });
     protocol.handle('room-media', request => roomMedia.serve(request));
     protocol.handle(MUSIC_SCHEME, request => music.serve(request));
+    // Room music (MU-6): the session of the player script window. The app pages only, no permission, no download.
+    const musicEvalSession = session.fromPartition(MUSIC_EVAL_PARTITION);
+    musicEvalSession.protocol.handle(APP_SCHEME, createAppHandler({ root: __dirname }));
+    musicEvalSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+    musicEvalSession.setPermissionCheckHandler(() => false);
+    musicEvalSession.on('will-download', event => event.preventDefault());
     protocol.handle(APP_SCHEME, createAppHandler({ root: __dirname,
         extra: { [RNNOISE_WORKLET]: require.resolve('@sapphi-red/web-noise-suppressor/rnnoiseWorklet.js') } }));
     installRoomPermissions(session.defaultSession, () => mainWindow, ROOM_PAGE, () => idlePeer, () => screenSources.hasPending());

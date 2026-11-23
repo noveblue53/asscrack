@@ -1,6 +1,8 @@
 // Room music (MU-6, P10): the player script of YouTube (the signature and n functions that youtubei.js cuts from it)
 // runs in a hidden sandboxed window, not in the main process. The page has no Node, no preload API except the job
 // channel, and a CSP with no network (connect-src 'none'). The main process sends the code and gets back two strings.
+// The window has its own in-memory session (partition): thus it never shares a renderer process with the room window,
+// and a script that does not end stops only its own process.
 const JOB = 'asscrack:music-eval';
 const RESULT = 'asscrack:music-evaluated';
 // The largest script and result.
@@ -9,9 +11,11 @@ const MAX_RESULT = 64 * 1024;
 
 // BrowserWindow, ipc: of Electron (a test gives fakes). page: the URL of music-eval.html. preload: the path of
 // music-eval-preload.cjs. isFrame(win, event): the sender check. lock(webContents): the navigation lock.
-// A job that takes longer than timeoutMs closes the window (a loop in the script). The window closes after idleMs.
-export function createMusicEval({ BrowserWindow, ipc, page, preload, isFrame, lock = () => {}, timeoutMs = 5000,
-    idleMs = 120000, setTimer = setTimeout, clearTimer = clearTimeout } = {}) {
+// partition: the session of the window (main.js gives it the app scheme and no permissions). A job that takes longer
+// than timeoutMs stops the renderer process (killProcess(pid)) and closes the window. The window closes after idleMs.
+export function createMusicEval({ BrowserWindow, ipc, page, preload, isFrame, lock = () => {}, partition = undefined,
+    timeoutMs = 5000, idleMs = 120000, setTimer = setTimeout, clearTimer = clearTimeout,
+    killProcess = pid => process.kill(pid) } = {}) {
     let win = null, loaded = null, seq = 0, idle = null, disposed = false;
     const jobs = new Map();
 
@@ -24,14 +28,24 @@ export function createMusicEval({ BrowserWindow, ipc, page, preload, isFrame, lo
         if (!jobs.size) armIdle();
     }
 
-    function close() {
+    // hung: a job ran too long. The renderer of a hung script still runs after destroy(), and a new window of the
+    // same page got the same process (measured in Electron 45). Thus the process stops first, by its ID.
+    function close(hung = false) {
         clearTimer(idle);
         idle = null;
         const old = win;
         win = null;
         loaded = null;
         for (const id of [...jobs.keys()]) finish(id, null);
-        if (old && !old.isDestroyed()) old.destroy();
+        if (old && !old.isDestroyed()) {
+            if (hung) {
+                try {
+                    const pid = old.webContents.getOSProcessId();
+                    if (Number.isInteger(pid) && pid > 0) killProcess(pid);
+                } catch { /* the renderer is gone */ }
+            }
+            old.destroy();
+        }
     }
 
     function armIdle() {
@@ -44,7 +58,7 @@ export function createMusicEval({ BrowserWindow, ipc, page, preload, isFrame, lo
         if (win && !win.isDestroyed()) return loaded;
         win = new BrowserWindow({ show: false, width: 64, height: 64, skipTaskbar: true, focusable: false,
             webPreferences: { preload, sandbox: true, contextIsolation: true, nodeIntegration: false,
-                backgroundThrottling: false, spellcheck: false } });
+                backgroundThrottling: false, spellcheck: false, ...(partition ? { partition } : {}) } });
         const own = win;
         lock(own.webContents);
         own.webContents.on('render-process-gone', () => { if (win === own) close(); });
@@ -79,7 +93,7 @@ export function createMusicEval({ BrowserWindow, ipc, page, preload, isFrame, lo
         clearTimer(idle);
         const id = ++seq;
         const result = new Promise(resolve => {
-            const timer = setTimer(() => { finish(id, null); close(); }, timeoutMs);
+            const timer = setTimer(() => { finish(id, null); close(true); }, timeoutMs);
             timer?.unref?.();
             jobs.set(id, { resolve, timer });
         });

@@ -66,7 +66,7 @@ async function play(D, frames = FRAMES) {
     }
 }
 
-test('music: the DJ stream goes on the music relay only; a non-DJ sends no music; deafen and other channels get none',
+test('music: the DJ stream goes on the music relay only; a non-DJ sends no music; a deafened member and a member out of voice get none',
     { timeout: 120000 }, async () => {
         const nodes = []
         try {
@@ -81,8 +81,7 @@ test('music: the DJ stream goes on the music relay only; a non-DJ sends no music
             D.music.addLocal([{ title: 'test.ogg', local: 'k1' }])
             await waitFor(() => A.music.state().dj === D.peerId && B.music.state().dj === D.peerId, 5000, 'A and B see the DJ')
             assert.equal(A.music.state().now.title, 'test.ogg')
-            // B deafens, C moves to a different channel (General and one more: a legacy-free keyed room has only General,
-            // thus C leaves voice in place of a move).
+            // B deafens, C leaves voice. (The voice channel rule is the rule of the voice relay: voice-channels.test.mjs.)
             B.setVoice({ inVoice: true, deafened: true })
             C.setVoice({ inVoice: false })
             await sleep(600)
