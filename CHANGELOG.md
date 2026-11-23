@@ -19,12 +19,14 @@ Each result has one of these labels:
   `clipboard.write`) decodes the PNG in the main process, thus the app does not use it.
 - Save image as: a Save dialog with the original name. The main process checks the target path (`checkSaveTarget`,
   audit L8). It copies the local original to a temporary file and compares the SHA-256. Then it writes the
-  Mark-of-the-Web on the file of a peer (audit M3) and renames the file. With no local original, the "Download original" path starts,
-  and the copy occurs when the download is complete.
+  Mark-of-the-Web on the file of a peer (audit M3) and renames the file. With no local original, the "Download
+  original" path starts, and the copy occurs when the download is complete.
 - **127.0.0.1**: `test/image-menu.test.mjs` has 8 tests. They fail before the change and pass after it.
 - **this PC**: two app copies (a LAN room on this PC). B pasted an image. On A: "Copy image" put PNG (49348),
   CF_DIBV5 (17), CF_BITMAP (2), CF_DIB (8) and HTML Format on the clipboard. `Get-Clipboard -Format Image` and
-  `Clipboard.GetImage()` read a 320x200 image. A paste in the message box of the app made an image draft.
+  `Clipboard.GetImage()` read a 320x200 image. A paste in the message box of the app made an image draft. A paste in
+  an editable field of another Chromium window showed the image: the HTML Format has a data: URL. Before this fix, it
+  had a blob: URL of the decoder window, and the field showed a broken image.
   "Save image as…" downloaded the original and saved it: SHA-256 equal to the posted image, Zone.Identifier with
   ZoneId=3. "Open original" then opened the downloaded file. On B: "Save image as…" on the own image saved a file with
   the SHA-256 of the posted image. The viewer menu opened in the viewer, and "Copy image" worked there.

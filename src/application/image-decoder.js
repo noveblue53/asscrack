@@ -34,15 +34,25 @@
     }
 
     // Copy image: the image is at the top left corner of the page, where the main process calls copyImageAt(0, 0).
-    // It stays until the next copy, because copyImageAt reads it after this answer.
+    // It stays until the next copy, because copyImageAt reads it after this answer. The src is a data: URL, because
+    // copyImageAt also writes an <img> with this src as HTML Format: a browser or an editor can read a data: URL, but
+    // not a blob: URL of this page.
+    function dataUrl(bytes) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(new Blob([bytes], { type: 'image/png' }));
+        });
+    }
     let shown = null;
     window.imageDecoder.onCopy?.(async (id, bytes) => {
-        if (shown) { URL.revokeObjectURL(shown.src); shown.remove(); shown = null; }
+        if (shown) { shown.remove(); shown = null; }
         let ok = false;
         try {
             const image = new Image();
             image.className = 'copy';
-            image.src = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
+            image.src = await dataUrl(bytes);
             document.body.prepend(image);
             shown = image;
             await image.decode();

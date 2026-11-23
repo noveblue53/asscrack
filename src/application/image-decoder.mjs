@@ -58,7 +58,7 @@ export function createImageDecoder({ BrowserWindow, ipc, page, preload, isFrame,
 
     ipc.on(RESULT, (event, id, bytes) => {
         if (!win || !isFrame(win, event)) return;
-        if (!jobs.has(id)) return;
+        if (!jobs.has(id) || jobs.get(id).copy) return;
         finish(id, bytes instanceof Uint8Array && bytes.length > 0 ? Buffer.from(bytes) : null);
     });
 

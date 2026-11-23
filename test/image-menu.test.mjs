@@ -223,7 +223,8 @@ test('Copy image: the decoder window gets the preview PNG and copies it; the mai
     assert.match(body, /imageDecoder\.copy\(bytes\)/);
     assert.doesNotMatch(body, /nativeImage|clipboard\./);
     const page = await read('image-decoder.html');
-    assert.match(page, /img-src blob:/);
+    assert.match(page, /img-src data:/);
+    assert.doesNotMatch(page, /blob:/);
 });
 
 test('Save image as: the target path check refuses private folders, device paths and folders', async t => {
