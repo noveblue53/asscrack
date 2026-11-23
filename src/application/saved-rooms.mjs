@@ -1,5 +1,6 @@
 // Saved rooms (milestone 6): the main-process part. This module does not import electron.
 // main.js gives the safeStorage object, the archive folder and the log function.
+import { readFileSync } from 'node:fs';
 import { openRoomArchive, openRoomArchiveAsync, roomFingerprint } from './room-archive.mjs';
 
 // The protector of the archive key, from Electron safeStorage (DECISIONS.md S2).
@@ -7,9 +8,23 @@ import { openRoomArchive, openRoomArchiveAsync, roomFingerprint } from './room-a
 // Only the asynchronous safeStorage calls (Electron 45 deprecates the synchronous calls). decryptStringAsync also reads
 // a key that an older version wrote with encryptString (Electron 45 test, candidate 0.8.0 B2).
 // unwrap() gives { value, reEncrypt }: reEncrypt is shouldReEncrypt of safeStorage.
-export function makeProtector(safeStorage, platform = process.platform) {
+// durable(): true when the safeStorage key is on disk. On Windows, Chromium keeps that key (DPAPI-protected) in the file
+// "Local State" of the user data folder (os_crypt.encrypted_key), and writes the file about 10 s after the first start
+// of a new data folder. A kill before that write loses the key (this PC, 2026-11-23: each kill 1 s to 10 s after the
+// first start locked the archive). localStateFile: the path of "Local State"; with no path, durable() is always true.
+// Other platforms keep the key in the system key store.
+export function makeProtector(safeStorage, platform = process.platform, { localStateFile = null } = {}) {
     return {
         async: true,
+        durable() {
+            if (platform !== 'win32' || !localStateFile) return true;
+            try {
+                const key = JSON.parse(readFileSync(localStateFile, 'utf8'))?.os_crypt?.encrypted_key;
+                return typeof key === 'string' && key.length > 0;
+            } catch {
+                return false;
+            }
+        },
         async available() {
             if (!(await safeStorage.isAsyncEncryptionAvailable())) return false;
             if (platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text') return false;
@@ -43,6 +58,7 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
     // Tombstones for the run of the app (DECISIONS.md P7): room ID -> Set of cleared message IDs.
     const tombstones = new Map();
 
+    let lostLogged = null;
     function logState(what) {
         const st = archive.state();
         let line = `Saved rooms archive ${what}: state ${st.state}, reason ${st.reason ?? 'none'}`;
@@ -52,6 +68,12 @@ export function createSavedRooms({ dir, protector, log = () => {}, backend = nul
             line += `, safeStorage backend ${name}`;
         }
         log(st.state === 'open' ? 'INFO' : 'WARN', line);
+        const lost = archive.lostFiles?.();
+        if (lost?.length && lost[0] !== lostLogged) {
+            lostLogged = lost[0];
+            log('WARN', 'Saved rooms archive: the key of an interrupted first start does not open. A new archive ' +
+                `replaces it. The old files stay in ${dir}: ${lost.join(', ')}`);
+        }
     }
 
     let opening = null;

@@ -452,6 +452,66 @@ test('createSavedRooms with the async protector: open(), then the saved room and
     assert.equal((await second.unlock()).state, 'open');
 });
 
+// The safeStorage key of Windows is on disk only when "Local State" has os_crypt.encrypted_key (Chromium writes the
+// file about 10 s after the first start of a new data folder).
+test('makeProtector durable(): reads os_crypt.encrypted_key of Local State on Windows only', t => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'saved-rooms-'));
+    t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+    const localStateFile = path.join(dir, 'Local State');
+    const p = makeProtector(fakeSafeStorage(), 'win32', { localStateFile });
+    assert.equal(p.durable(), false, 'no file');
+    fs.writeFileSync(localStateFile, '{"os_crypt":');
+    assert.equal(p.durable(), false, 'not JSON');
+    fs.writeFileSync(localStateFile, JSON.stringify({ uninstall_metrics: {} }));
+    assert.equal(p.durable(), false, 'no os_crypt');
+    fs.writeFileSync(localStateFile, JSON.stringify({ os_crypt: { encrypted_key: '' } }));
+    assert.equal(p.durable(), false, 'empty key');
+    fs.writeFileSync(localStateFile, JSON.stringify({ os_crypt: { audit_enabled: true, encrypted_key: 'RFBBUEkBAAAA' } }));
+    assert.equal(p.durable(), true);
+    assert.equal(makeProtector(fakeSafeStorage(), 'linux', { localStateFile: path.join(dir, 'none') }).durable(), true);
+    assert.equal(makeProtector(fakeSafeStorage(), 'win32').durable(), true, 'no path: as before');
+});
+
+test('createSavedRooms: a kill before Local State has the key, then the next start opens and logs the kept files', async t => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'saved-rooms-'));
+    const dir = path.join(root, 'saved-rooms');
+    const stores = [];
+    t.after(() => { for (const s of stores) s.close(); fs.rmSync(root, { recursive: true, force: true }); });
+    const localStateFile = path.join(root, 'Local State');
+    // Each run of the fake safeStorage has its own key, like Chromium before the first write of Local State.
+    const run = n => ({
+        ...fakeSafeStorage(),
+        encryptStringAsync: async text => Buffer.from(`${n}:${text}`),
+        decryptStringAsync: async buf => {
+            const text = buf.toString();
+            if (!text.startsWith(`${n}:`)) throw new Error('Error while decrypting the ciphertext provided to safeStorage.decryptString.');
+            return { shouldReEncrypt: false, result: text.slice(String(n).length + 1) };
+        }
+    });
+    const logs = [];
+    const make = n => {
+        const s = createSavedRooms({ dir, protector: makeProtector(run(n), 'win32', { localStateFile }),
+            log: (l, x) => logs.push([l, x]) });
+        stores.push(s);
+        return s;
+    };
+    const first = make(1);
+    await first.open();
+    assert.equal(first.afterLogin({ room: 'r', roomKey: KEY_A, userName: 'Ann', save: true }).saved, true);
+    first.close();
+    const second = make(2);
+    await second.open();
+    const st = second.status();
+    assert.equal(st.state, 'open');
+    assert.deepEqual(st.rooms, []);
+    const lost = logs.filter(([l, x]) => l === 'WARN' && x.startsWith('Saved rooms archive: the key of an interrupted first start'));
+    assert.equal(lost.length, 1);
+    assert.match(lost[0][1], /archive\.lost-\S+\.db, archive\.lost-\S+\.key$/);
+    assert.equal(fs.readdirSync(dir).filter(f => f.startsWith('archive.lost-')).length, 2);
+    assert.equal((await second.unlock()).state, 'open');
+    assert.equal(logs.filter(([, x]) => x.startsWith('Saved rooms archive: the key')).length, 1, 'one line only');
+});
+
 // G6: the voice channel catalog comes back after a full restart (a new store on the same folder), and the node takes
 // it as seedVoiceChannels. Only a higher seq replaces the saved catalog. Clear keeps it; Forget removes it.
 test('the voice channel catalog of a saved room comes back after a full restart', async t => {
