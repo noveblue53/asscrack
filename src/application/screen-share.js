@@ -756,6 +756,8 @@
             closePicker();
             showError(limitText());
         }
+        // A place is free again: the limit text goes away.
+        if (!atLimit() && errorLine?.textContent === limitText()) showError('');
         updateButton();
     });
     api.onScreenEnded?.(data => {

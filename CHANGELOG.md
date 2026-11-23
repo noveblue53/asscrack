@@ -20,6 +20,11 @@ Protocol (`src/network/screen-share.mjs`):
 - Two members can start a share at the same moment when the room has 2 shares. Then the room has 4 shares. In the
   conflict time (3 s) after the own start, the young shares with the highest peer IDs stop (reason `limit`). A share
   line does not stop a share below the limit, and a later share line does not stop a running share (L11).
+- A share line on a session that opened after the own start counts as an old share. Thus a member that starts a share
+  before its sessions open stops it when the room then has 4 shares. Two new members that both start before their
+  sessions open both stop.
+- Each Watch opens a stream at the sharer, and a sharer accepts 12 streams of each peer each minute. A viewer that
+  switches to one sharer more than 12 times in a minute gets "This share is not available.". The limit does not change.
 - A new Watch ends the old watch at its sharer (reason `switched`). The sharer of the old share then sends no frames
   to this viewer.
 - The events `screen-frame`, `screen-config`, `screen-ended` and `screen-state` (also the stop) carry the share ID.
@@ -47,18 +52,24 @@ Released clients (1.0.1 to 1.0.5, the same protocol code since 1.0.1):
   refuses with "Another member shares a screen.".
 - An old sharer stops its share when a new member with a lower peer ID starts a share in 3 s after the old start.
   This is the old rule, with the text "<name> started sharing. Your share stopped.". The new member does not stop.
-  The source of this item is the old code and check 11 on the base. The runs on this PC did not show this case.
+  A check with a 1.0.5 node and a new node (127.0.0.1) showed this. The old node stopped with the reason `conflict`,
+  and the new node continued. Then the old node refused a Start ("Another member shares a screen."). It watched the
+  new share.
 
 Checks (127.0.0.1 and this PC only):
-- New tests that fail on the base (`05fa933`) and pass now: 9 tests in `test/multi-share.test.mjs` and 3 tests in
+- New tests that fail on the base (`05fa933`) and pass now: 10 tests in `test/multi-share.test.mjs` and 3 tests in
   `test/screen-ui.test.mjs`. Five old tests had the one-share rule. Check 11 and two L11 tests now use a limit of 1, so
   that they test the same rules as before. Check 1 and W4 check 2 now expect that a second member can start a share.
-- `npm test`: 1205 tests, 1187 pass, 0 fail, 18 skipped (127.0.0.1).
-- One start of the app with a fresh `--profile` and a fake APPDATA: no error line (this PC).
+- `npm test`: 1206 tests, 1188 pass, 0 fail, 18 skipped (127.0.0.1).
+- One start of the app with a fresh `--profile` and a fake APPDATA: no error line (this PC). This start used the last
+  source of the branch.
 - Three copies on this PC (127.0.0.1, direct sessions): Ann and Bo shared small test windows of the check. Cy clicked
   the Live badge of Ann, then the switcher button of Bo, then the Live badge of Ann. Each watch decoded 15.1 frames
   each second (about 0.7 Mbit/s). In 1 s after each switch, the old sharer had 0 viewers and the new sharer had 1.
-  No error line in the terminal or the developer console.
+  No error line in the terminal or the developer console. These runs used `02cc289`, before the session rule above
+  and the clear of the limit text. A check of another session used the CDP port of the copy of Ann at an unknown
+  time. Thus the results of that copy are not sure. A second run was not possible. The new test windows were not on
+  the current virtual desktop of this PC, and the picker did not list them.
 - Host relay bytes (127.0.0.1, real nodes): H is the host, and A, B and C use only the relay of H. With two shares
   and no viewer, H relayed about 15 kbit/s. While C watched one share, H relayed about 0.96 Mbit/s, the data of one
   share.

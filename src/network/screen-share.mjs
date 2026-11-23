@@ -114,6 +114,9 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
     const allowLine = roomRateLimit(O.linesPerPeer, O.linesPerRoom)
     // One entry for each member: a member has at most one share. at: the time of the first line of this share ID.
     const peers = new Map() // peerId -> { shareId, preset, at }
+    // The open time of the session of each peer (opened). A share line on a session that opened after the own start can
+    // come from an old share: its age is not known.
+    const sessionOpenedAt = new Map()
     let own = null
     let watch = null
     let stopped = false
@@ -495,7 +498,8 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
     // 1.0.6: more than maxShares shares after the start of the own share (two members started at the same moment at
     // the limit). Only in conflictMs after the own start: a later share line cannot stop a running share (L11). The
     // young shares (the own share and each share with a first line in conflictMs) with the highest peer IDs stop, so
-    // that each member that sees the same lines gets the same result. An old share does not stop for a new one.
+    // that each member that sees the same lines gets the same result. An old share does not stop for a new one. A line
+    // on a session that opened after the own start counts as an old share (a Start before the sessions opened).
     function checkLimit(peerId) {
         const t = clock()
         if (!own || t - own.startedAt > O.conflictMs) return
@@ -514,7 +518,10 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
             const preset = SCREEN_QUALITIES.includes(control.preset) ? control.preset : null
             if (old?.shareId === control.shareId && old.preset === preset) return
             // One entry for each member: a new share ID of a member replaces its old share (one event, L11).
-            peers.set(peerId, { shareId: control.shareId, preset, at: old?.shareId === control.shareId ? old.at : clock() })
+            const openedAt = sessionOpenedAt.get(peerId)
+            const unknownAge = own && openedAt !== undefined && openedAt >= own.startedAt
+            peers.set(peerId, { shareId: control.shareId, preset,
+                at: old?.shareId === control.shareId ? old.at : unknownAge ? -Infinity : clock() })
             events.emit('screen-state', { peerId, sharing: true, shareId: control.shareId, preset })
             // Section 2.6, item 6 (1.0.6): two shares at the same time are permitted. Only a share over the limit stops.
             checkLimit(peerId)
@@ -524,10 +531,12 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
         }
     }
     function opened(peerId) {
+        sessionOpenedAt.set(peerId, clock())
         if (own) sendLine(peerId, screenLine())
         checkIsolated()
     }
     function peerLeft(peerId) {
+        sessionOpenedAt.delete(peerId)
         const old = peers.get(peerId)
         if (peers.delete(peerId)) events.emit('screen-state', { peerId, sharing: false, shareId: old.shareId, preset: null })
         const v = own?.viewers.get(peerId)

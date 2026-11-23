@@ -158,6 +158,34 @@ test('the limit race: two starts at the same moment with two live shares: the hi
     await waitFor(() => Object.keys(A.screenState().peers).length === 2, 2000, 'A knows two other shares')
 })
 
+test('the limit: a share that starts before its sessions open stops when the room then has 4 shares', { timeout: 60000 }, async t => {
+    const room = roomName()
+    const roomKey = newRoomKey()
+    const nodes = []
+    t.after(() => Promise.allSettled(nodes.map(n => n.stop())))
+    for (let i = 0; i < 4; i++) nodes.push(await createAsscrackNode({ room, roomKey, listen: LOCAL, discovery: false, fullNode: false, ...fast }))
+    // D has the lowest peer ID: a rule of the highest peer ID alone does not stop it.
+    nodes.sort((x, y) => (x.peerId < y.peerId ? -1 : 1))
+    const [D, A, B, C] = nodes
+    await B.connect(localAddr(A))
+    await C.connect(localAddr(A))
+    await C.connect(localAddr(B))
+    await waitFor(() => [A, B, C].every(n => n.peers().length === 2), 20000, 'the sessions of A, B and C')
+    for (const n of [A, B, C]) n.startScreenShare({ preset: 'standard' })
+    await waitFor(() => [A, B, C].every(n => Object.keys(n.screenState().peers).length === 2), 3000, 'three shares')
+    await sleep(SCREEN_DEFAULTS.conflictMs + 200)
+    const ended = ownEnds([A, B, C, D])
+    // D has no session yet: its Start sees no share.
+    D.startScreenShare({ preset: 'standard' })
+    for (const n of [A, B, C]) await D.connect(localAddr(n))
+    await waitFor(() => D.peers().length === 3, 20000, 'the sessions of D')
+    await waitFor(() => ended.length > 0, 5000, 'a share stops')
+    await sleep(500)
+    assert.deepEqual(ended.map(e => [e.node, e.reason]), [[D.peerId, 'limit']])
+    assert.equal(D.screenState().own, null)
+    assert.ok(A.screenState().own && B.screenState().own && C.screenState().own, 'the three older shares continue')
+})
+
 test('old client: the share line of a 1.0.5 sharer with a lower peer ID, in the conflict time, does not stop a new share', { timeout: 30000 }, async t => {
     const { nodes } = await directRoom(t, 2)
     const [low, high] = nodes[0].peerId < nodes[1].peerId ? nodes : [nodes[1], nodes[0]]

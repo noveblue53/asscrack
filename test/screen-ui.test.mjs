@@ -757,6 +757,7 @@ test('multi-share: a share of another member does not disable Share; at the limi
     assert.equal(share.title, 'Share limit reached (3).');
     f.emit('onScreenState', { peerId: 'peer-c', sharing: false, shareId: SHARE_C, preset: null });
     assert.equal(share.title, '');
+    assert.equal(f.el('share-error').hidden, true, 'a free place removes the limit text');
     await startShare(f, 'standard');
     assert.equal(f.window.screenShare.isSharing(), true, 'a place is free again');
     // The race of two starts at the limit: the node stops the own share with the reason limit.
