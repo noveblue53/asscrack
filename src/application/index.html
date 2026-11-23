@@ -282,12 +282,15 @@
       <section id="message-panel" class="panel">
         <!-- P8b, screen-share.js: the share bar of the sharer, above the room heading. -->
         <div id="share-bar" role="status" hidden>
+          <!-- The own capture, on this computer only (screen-share.js). No network and no encode. -->
+          <video id="share-preview" muted playsinline disablepictureinpicture aria-label="Preview of your share" hidden></video>
           <div class="share-bar-text">
             <strong id="share-bar-source"></strong>
             <span id="share-bar-viewers"></span>
             <span id="share-bar-quality"></span>
             <span id="share-bar-notes" hidden></span>
           </div>
+          <button id="share-preview-toggle" type="button" aria-pressed="true">Hide preview</button>
           <button id="share-stop" type="button">Stop sharing</button>
         </div>
         <p id="share-error" role="alert" hidden></p>

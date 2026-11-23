@@ -28,6 +28,12 @@ Each result has one of these labels:
   "Save image as…" downloaded the original and saved it: SHA-256 equal to the posted image, Zone.Identifier with
   ZoneId=3. "Open original" then opened the downloaded file. On B: "Save image as…" on the own image saved a file with
   the SHA-256 of the posted image. The viewer menu opened in the viewer, and "Copy image" worked there.
+- Preview of the own share (operator: "i cant see my own preview"). The share bar shows the captured stream in a small
+  muted video (128 x 72 px). The stream stays on this computer: no network and no encode. "Hide preview" turns it off,
+  and the app keeps this choice. When the window is hidden or the preview is off, the video has no track.
+- **127.0.0.1**: a new test in `test/screen-ui.test.mjs`. It fails before the change and passes after it.
+- **this PC**: copy A shared a window of the app (Standard). The preview played (802 x 600 source in a 128 x 72 box).
+  The CPU time of all the processes of A in 8 s: 265 ms with the preview, 141 ms without it.
 
 ## Unreleased: sessions between members after the first admission (2026-11-22)
 

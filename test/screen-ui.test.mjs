@@ -17,6 +17,7 @@ const LAYOUT = [
     { id: 'share-bar', hidden: true, children: [
         { id: 'share-bar-source', tag: 'strong' }, { id: 'share-bar-viewers', tag: 'span' },
         { id: 'share-bar-quality', tag: 'span' }, { id: 'share-bar-notes', tag: 'span', hidden: true },
+        { id: 'share-preview', tag: 'video', hidden: true }, { id: 'share-preview-toggle', tag: 'button' },
         { id: 'share-stop', tag: 'button' }
     ] },
     { id: 'share-error', tag: 'p', hidden: true },
@@ -36,7 +37,7 @@ const LAYOUT = [
 
 const flush = async () => { for (let i = 0; i < 6; i++) await new Promise(resolve => setImmediate(resolve)); };
 
-function load({ sources: list = [{ id: 'screen:0:0', kind: 'screen', name: 'Screen 1', thumbnail: null },
+function load({ storage = new Map(), sources: list = [{ id: 'screen:0:0', kind: 'screen', name: 'Screen 1', thumbnail: null },
     { id: 'window:5:0', kind: 'window', name: 'Check window', thumbnail: null }], settings = { width: 2560, height: 1440, frameRate: 60 } } = {}) {
     const { document, window, Event } = createDom(LAYOUT);
     const clock = { t: 1000 };
@@ -124,6 +125,9 @@ function load({ sources: list = [{ id: 'screen:0:0', kind: 'screen', name: 'Scre
         window, document, console: { log() {}, info() {}, warn() {}, error() {} },
         performance: { now: () => clock.t },
         setTimeout: (fn, ms) => setTimeout(fn, Math.min(ms, 5)), clearTimeout, setInterval: () => 0, clearInterval: () => {},
+        // The preview of the own share: a MediaStream of the track, and the stored choice.
+        MediaStream: class { constructor(tracks) { this.tracks = tracks; } getVideoTracks() { return this.tracks; } },
+        localStorage: { getItem: k => (storage.has(k) ? storage.get(k) : null), setItem: (k, v) => storage.set(k, String(v)) },
         queueMicrotask, Promise, Map, Set, Object, Math, Number, String, Array, JSON, Uint8Array, Error,
         VideoEncoder: FakeEncoder, VideoFrame: FakeVideoFrame, VideoDecoder: FakeDecoder,
         EncodedVideoChunk: class { constructor(init) { Object.assign(this, init); } },
@@ -517,4 +521,50 @@ test('W6: the published voice panel view has the field sharing from window.scree
     activate(true);
     await settle();
     assert.equal(published.at(-1).sharing, true);
+});
+
+// Operator 2026-11-22: "i cant see my own preview". The share bar shows the own capture in a small muted video, on
+// this computer only. The toggle hides it, and the choice stays. A hidden window gives the video no track.
+test('the share bar shows a preview of the own capture; the toggle hides it and the choice stays', async () => {
+    const storage = new Map();
+    const f = load({ storage });
+    const video = f.el('share-preview');
+    video.plays = 0;
+    video.play = () => { video.plays++; return Promise.resolve(); };
+    video.pause = () => {};
+    assert.equal(video.hidden, true, 'no share: no preview');
+    await startShare(f, 'standard');
+    assert.equal(video.hidden, false);
+    assert.equal(video.muted, true);
+    assert.equal(video.srcObject.getVideoTracks()[0], f.track, 'the captured track, no copy and no encode');
+    assert.ok(video.plays >= 1);
+    const sends = names(f.calls, 'sendScreenFrame').length;
+    const toggle = f.el('share-preview-toggle');
+    assert.equal(toggle.textContent, 'Hide preview');
+    toggle.click();
+    assert.equal(video.hidden, true);
+    assert.equal(video.srcObject, null, 'off: the video has no track');
+    assert.equal(toggle.textContent, 'Show preview');
+    assert.equal(toggle.getAttribute('aria-pressed'), 'false');
+    assert.equal(storage.get('asscrack.sharePreview.v1'), 'false');
+    toggle.click();
+    assert.equal(video.hidden, false);
+    assert.equal(video.srcObject.getVideoTracks()[0], f.track);
+    // A hidden window: no track in the video. Visible again: the track comes back.
+    f.document.visibilityState = 'hidden';
+    f.document.dispatchEvent(new f.Event('visibilitychange'));
+    assert.equal(video.srcObject, null);
+    f.document.visibilityState = 'visible';
+    f.document.dispatchEvent(new f.Event('visibilitychange'));
+    assert.equal(video.srcObject.getVideoTracks()[0], f.track);
+    assert.equal(names(f.calls, 'sendScreenFrame').length, sends, 'the preview sends nothing');
+    f.el('share-stop').click();
+    assert.equal(video.hidden, true);
+    assert.equal(video.srcObject, null, 'stop: the preview lets the track go');
+    // The stored choice: a new window starts with the preview off.
+    storage.set('asscrack.sharePreview.v1', 'false');
+    const g = load({ storage });
+    await startShare(g, 'standard');
+    assert.equal(g.el('share-preview').hidden, true);
+    assert.equal(g.el('share-preview-toggle').textContent, 'Show preview');
 });

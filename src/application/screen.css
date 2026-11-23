@@ -15,6 +15,18 @@
   font: 12px/1.35 var(--font-small);
 }
 #share-bar { border-color: var(--danger, #c0392b); }
+/* The preview of the own share (screen-share.js): small, so that the compositor scales each frame down. */
+#share-preview {
+  flex: 0 0 auto;
+  width: 128px;
+  height: 72px;
+  border: 1px solid var(--line, #9fb6cc);
+  border-radius: 4px;
+  background: #000000;
+  object-fit: contain;
+}
+#share-preview[hidden] { display: none; }
+#share-preview-toggle { white-space: nowrap; }
 #share-bar[hidden], #screen-banner[hidden], #share-error[hidden], #screen-notice[hidden], #share-bar-notes[hidden] { display: none; }
 #share-bar .share-bar-text { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
 #share-bar-quality, #share-bar-notes { display: flex; flex-direction: column; color: var(--ink-soft, #5b7a99); }

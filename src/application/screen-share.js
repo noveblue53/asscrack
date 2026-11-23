@@ -33,6 +33,13 @@
     const MAX_REPORT_TIERS = 4;
 
     const statusBar = byId('share-bar');
+    // The preview of the own share: the captured track in a small muted <video>, on this computer only (no network,
+    // no encode). The video has no track while the window is hidden or the preview is off. The choice stays.
+    const preview = byId('share-preview');
+    const previewToggle = byId('share-preview-toggle');
+    const PREVIEW_KEY = 'asscrack.sharePreview.v1';
+    let previewOn = true;
+    try { previewOn = localStorage.getItem(PREVIEW_KEY) !== 'false'; } catch { /* no storage */ }
     const errorLine = byId('share-error');
     const pickStatus = byId('screen-picker-status');
     const screensList = byId('screen-list-screens');
@@ -534,8 +541,28 @@
         const slow = tier.role === 'slow';
         return `Quality: ${label}${names.length ? ` for ${names.join(', ')}` : ''}${slow ? ' (slow connection)' : ''}`;
     }
+    function updatePreview() {
+        if (previewToggle) {
+            previewToggle.textContent = previewOn ? 'Hide preview' : 'Show preview';
+            previewToggle.setAttribute('aria-pressed', String(previewOn));
+        }
+        if (!preview) return;
+        const track = share?.track ?? null;
+        preview.hidden = !(track && previewOn);
+        if (track && previewOn && document.visibilityState !== 'hidden' && typeof MediaStream === 'function') {
+            if (preview.srcObject?.getVideoTracks?.()[0] !== track) {
+                preview.muted = true;
+                preview.srcObject = new MediaStream([track]);
+            }
+            Promise.resolve(preview.play?.()).catch(() => {});
+        } else if (preview.srcObject) {
+            preview.pause?.();
+            preview.srcObject = null;
+        }
+    }
     function render() {
         updateButton();
+        updatePreview();
         const current = share;
         if (statusBar) {
             statusBar.hidden = !current;
@@ -585,6 +612,12 @@
     // Escape closes the dialog (the native cancel). The close ends a pending list.
     picker.addEventListener('close', () => { pickerToken++; });
     byId('share-stop')?.addEventListener('click', () => stop('stopped'));
+    previewToggle?.addEventListener('click', () => {
+        previewOn = !previewOn;
+        try { localStorage.setItem(PREVIEW_KEY, String(previewOn)); } catch { /* no storage */ }
+        updatePreview();
+    });
+    document.addEventListener('visibilitychange', updatePreview);
     fillQualities();
 
     api.onScreenEncoder?.(view => onEncoder(view));
@@ -628,6 +661,8 @@
 
     window.screenShare = Object.freeze({
         isSharing: () => share !== null,
+        // The preview state for the checks: shown (the element), live (a track in the video).
+        preview: () => ({ on: previewOn, shown: Boolean(preview && !preview.hidden), live: Boolean(preview?.srcObject) }),
         stop,
         stats: () => ({
             sharing: share !== null, trackState: lastTrack?.readyState ?? null, ...totals,
