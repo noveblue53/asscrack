@@ -8,7 +8,7 @@ import { addrClass, ipClass } from './journal.mjs';
 export const JOURNAL_NODE_EVENTS = Object.freeze(['connection', 'dial-failed', 'dial-result', 'upnp', 'full-node', 'host-changed',
     'peer-left', 'failover', 'session-refused', 'session-ids', 'admission', 'clock', 'file-offer', 'file-done', 'file-failed',
     'file-refused', 'file-cancelled', 'file-paused', 'file-resumed', 'file-restarted', 'file-discarded', 'file-expired',
-    'file-retried', 'diag', 'knock-event', 'screen-diag']);
+    'file-retried', 'diag', 'knock-event', 'screen-diag', 'screen-state', 'screen-ended', 'screen-watch']);
 
 // A text of this program (a reason) as a code: lower case, or undefined.
 export function reasonCode(value) {
@@ -103,6 +103,18 @@ export function projectNodeEvent(type, data, selfId = null) {
                 rate: d.rate, target: d.target, excessMs: d.excessMs, drops: d.drops, kframes: d.kframes,
                 congestions: d.congestions, queueBytes: d.queueBytes, slow: d.slow, circuit: d.circuit, cap: reasonCode(d.cap),
                 count: d.count }];
+        // Multi-share (1.0.6, screen-share.mjs): the start and the stop of each share (own: start and stop, another
+        // member: live and gone), and each watch. The share ID and the peer ID, no name.
+        case 'screen-state':
+            if (d.own) return d.sharing === true ? ['screen', { event: 'start', share: d.shareId, preset: reasonCode(d.preset) }] : null;
+            return ['screen', { event: d.sharing === true ? 'live' : 'gone', share: d.shareId, peer: d.peerId,
+                preset: d.sharing === true ? reasonCode(d.preset) : undefined }];
+        case 'screen-ended':
+            // The end of a watch comes from 'screen-watch' (also a stop or a switch of the user).
+            return d.own ? ['screen', { event: 'stop', share: d.shareId, reason: reasonCode(d.reason), peer: d.by }] : null;
+        case 'screen-watch':
+            return ['screen', { event: d.event === 'start' ? 'watch' : 'watch-end', share: d.shareId, peer: d.peerId,
+                reason: d.event === 'start' ? undefined : reasonCode(d.reason) }];
         // Easy-join (1.0.1, node.mjs knockEvent): the knock steps. The name and the invite are not in the event.
         case 'knock-event':
             return ['knock', { event: d.event, side: d.side, peer: d.peerId, id: d.id, route: d.route, friend: d.friend,

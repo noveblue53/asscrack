@@ -55,6 +55,10 @@
     const clock = () => performance.now();
     let idle = false;
     const others = new Map(); // peerId -> shareId of the other members that share
+    // Multi-share (1.0.6): at most maxShares shares in a room (screen-share.mjs). The node gives the value.
+    let maxShares = 3;
+    const atLimit = () => others.size >= maxShares;
+    const limitText = () => `Share limit reached (${maxShares}).`;
     let share = null;
     let lastEncoder = { tiers: [] };
     let lastViewers = { viewers: [], tiers: [], cap: null, relayed: [], cpu: null };
@@ -100,7 +104,9 @@
     function updateButton() {
         button.textContent = share ? 'Stop sharing' : 'Share screen';
         button.setAttribute('aria-pressed', String(Boolean(share)));
-        button.disabled = !share && (idle || others.size > 0 || starting);
+        // At the share limit the button stays enabled: a click shows the reason.
+        button.disabled = !share && (idle || starting);
+        button.title = !share && atLimit() ? limitText() : '';
     }
 
     function sourceEntry(source) {
@@ -155,7 +161,8 @@
 
     async function openPicker() {
         if (share) { stop('stopped'); return; }
-        if (idle || others.size > 0 || starting) return;
+        if (idle || starting) return;
+        if (atLimit()) { showError(limitText()); return; }
         const token = ++pickerToken;
         selectedId = null;
         listedSources = new Map();
@@ -228,7 +235,8 @@
             for (const track of stream?.getTracks?.() ?? []) track.stop();
             starting = false;
             closePicker();
-            showError(`Couldn't start the share: ${errorName(err)}`);
+            const reason = errorName(err);
+            showError(/^Share limit reached/.test(reason) ? reason : `Couldn't start the share: ${reason}`);
         } finally {
             starting = false;
             goButton.textContent = 'Share';
@@ -614,7 +622,7 @@
         render();
         return true;
     }
-    // The node stopped the share (Idle Peer, the 10 s with no session, a conflict, Leave room): release the capture.
+    // The node stopped the share (Idle Peer, the 10 s with no session, the share limit, Leave room): release the capture.
     function endLocal() {
         const current = share;
         if (!current) return;
@@ -744,7 +752,10 @@
         }
         if (state.sharing) others.set(state.peerId, state.shareId);
         else others.delete(state.peerId);
-        if (others.size > 0 && picker.open && !starting) closePicker();
+        if (atLimit() && picker.open && !starting) {
+            closePicker();
+            showError(limitText());
+        }
         updateButton();
     });
     api.onScreenEnded?.(data => {
@@ -752,7 +763,7 @@
         endLocal();
         if (data.reason === 'source') showError('Sharing stopped: the source closed.');
         else if (data.reason === 'isolated') showError('Sharing stopped: the room connection was lost.');
-        else if (data.reason === 'conflict') showError(`${nameOf(data.by)} started sharing. Your share stopped.`);
+        else if (data.reason === 'limit') showError(`${limitText()} Your share stopped.`);
     });
     api.onIdlePeer?.(state => {
         idle = state?.idle === true;
@@ -765,6 +776,7 @@
     window.roomVoiceMonitor?.onStopShare?.(() => stop('stopped'));
     // The window reads the state after it subscribed, so that an early event is not lost.
     Promise.resolve(api.getScreenState?.()).then(state => {
+        if (Number.isInteger(state?.maxShares) && state.maxShares > 0) maxShares = state.maxShares;
         for (const [peerId, value] of Object.entries(state?.peers ?? {})) others.set(peerId, value?.shareId ?? null);
         updateButton();
     }).catch(() => {});

@@ -189,7 +189,10 @@ export const EVENT_FIELDS = Object.freeze({
         size: kinds.int, reason: kinds.code, action: kinds.code, peer: kinds.peer, retryOf: kinds.id },
     // Rank 9: 'tier' (a change of the rate control: tierId role from to why bitrate agoMs, or a viewer step: peer why rate)
     // and 'stats' (each 10 s for each viewer). 'skipped': count tier lines over the limit of one interval.
-    screen: { event: oneOf('start', 'stop', 'watch-end', 'tier', 'stats', 'skipped'), share: kinds.id, preset: kinds.code,
+    // Multi-share (1.0.6): 'live' and 'gone' (a share of another member: share peer), 'watch' and 'watch-end' (share peer
+    // reason), 'limit' (a Start over the share limit: count of the other shares).
+    screen: { event: oneOf('start', 'stop', 'live', 'gone', 'watch', 'watch-end', 'limit', 'tier', 'stats', 'skipped'),
+        share: kinds.id, preset: kinds.code,
         reason: kinds.code, tier: kinds.code, why: kinds.code, viewers: kinds.int, tierId: kinds.int, role: kinds.code,
         from: kinds.code, to: kinds.code, bitrate: kinds.int, agoMs: kinds.int, peer: kinds.peer, rate: kinds.int,
         target: kinds.int, excessMs: kinds.int, drops: kinds.int, kframes: kinds.int, congestions: kinds.int,

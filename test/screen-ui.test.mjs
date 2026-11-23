@@ -25,7 +25,8 @@ const LAYOUT = [
     { id: 'screen-notice', tag: 'p', hidden: true },
     { id: 'screen-stage', tag: 'section', hidden: true, children: [
         { id: 'screen-stage-title', tag: 'h2' }, { id: 'screen-stage-info', tag: 'span' },
-        { id: 'screen-stage-note', tag: 'span', hidden: true }, { id: 'screen-fill', tag: 'button' },
+        { id: 'screen-stage-note', tag: 'span', hidden: true }, { id: 'screen-switcher', tag: 'span', hidden: true },
+        { id: 'screen-fill', tag: 'button' },
         { id: 'screen-unwatch', tag: 'button' }, { id: 'screen-canvas', tag: 'canvas' }
     ] },
     { id: 'screen-picker', tag: 'dialog', children: [
@@ -165,7 +166,7 @@ function load({ storage = new Map(), sources: list = [{ id: 'screen:0:0', kind: 
             record('getDisplayMedia', constraints);
             return { getVideoTracks: () => [track], getTracks: () => [track] };
         } } },
-        peerNames: new Map([['peer-a', 'Ann'], ['peer-b', 'Bo']]),
+        peerNames: new Map([['peer-a', 'Ann'], ['peer-b', 'Bo'], ['peer-c', 'Cy']]),
         peerItems: new Map(),
         selfLine: null,
         updateVoiceView: () => {}
@@ -344,7 +345,8 @@ test('guarded share: a plain screen or window share has no guard and no pause', 
     assert.equal(stats.paused, false, 'a guard event of another share changes nothing');
 });
 
-test('W4 check 2: Share screen is disabled in Idle Peer and while another member shares', async () => {
+// 1.0.6: a share of another member does not disable Share (the share limit is in the multi-share tests below).
+test('W4 check 2: Share screen is disabled in Idle Peer, not while another member shares', async () => {
     const f = load();
     await flush();
     const share = f.el('share-screen');
@@ -354,10 +356,11 @@ test('W4 check 2: Share screen is disabled in Idle Peer and while another member
     f.emit('onIdlePeer', { idle: false });
     assert.equal(share.disabled, false);
     f.emit('onScreenState', { peerId: 'peer-a', sharing: true, shareId: SHARE, preset: 'auto' });
-    assert.equal(share.disabled, true, 'another member shares');
+    assert.equal(share.disabled, false, 'another member shares');
     share.click();
     await flush();
-    assert.equal(f.picker.open, false, 'a click does nothing');
+    assert.equal(f.picker.open, true, 'a click opens the picker');
+    f.el('screen-cancel').click();
     f.emit('onScreenState', { peerId: 'peer-a', sharing: false, shareId: null, preset: null });
     assert.equal(share.disabled, false);
 });
@@ -703,4 +706,133 @@ test('the share bar shows a preview of the own capture; the toggle hides it and 
     await startShare(g, 'standard');
     assert.equal(g.el('share-preview').hidden, true);
     assert.equal(g.el('share-preview-toggle').textContent, 'Show preview');
+});
+
+// Multi-person screen share, step 1 (1.0.6): several members share at the same time (at most 3 in a room). Each viewer
+// watches one share and switches between them.
+const SHARE_B = '2c5f39cb-3ab2-42e3-994d-1127e4ddb538';
+const SHARE_C = '3d6a4adc-4bc3-43f4-a05e-2238f5eec649';
+
+// Buddy lines for the screen-view.js marks. A click on a line opens the inspector in renderer.js.
+function buddyLines(f, ids) {
+    const list = f.el('peers');
+    const opened = [];
+    for (const peerId of ids) {
+        const item = f.document.createElement('li');
+        item.addEventListener('click', () => opened.push(peerId));
+        list.append(item);
+        f.context.peerItems.set(peerId, item);
+    }
+    const self = f.document.createElement('li');
+    list.append(self);
+    f.context.selfLine = self;
+    return { opened, line: peerId => f.context.peerItems.get(peerId), self };
+}
+async function resolveWatch(f, shareId) {
+    await flush();
+    f.api.pendingWatch.resolve({ shareId, width: 1280, height: 720, fps: 30 });
+    await flush();
+}
+
+test('multi-share: a share of another member does not disable Share; at the limit Share shows the limit text', async () => {
+    const f = load();
+    await flush();
+    const share = f.el('share-screen');
+    f.emit('onScreenState', { peerId: 'peer-a', sharing: true, shareId: SHARE, preset: 'auto' });
+    f.emit('onScreenState', { peerId: 'peer-b', sharing: true, shareId: SHARE_B, preset: 'auto' });
+    assert.equal(share.disabled, false, 'two other shares: Share works');
+    share.click();
+    await flush();
+    assert.equal(f.picker.open, true, 'the picker opens');
+    // A third share while the picker is open: the limit. The picker closes and shows the text.
+    f.emit('onScreenState', { peerId: 'peer-c', sharing: true, shareId: SHARE_C, preset: 'auto' });
+    assert.equal(f.picker.open, false);
+    assert.equal(f.el('share-error').textContent, 'Share limit reached (3).');
+    f.el('share-error').textContent = '';
+    share.click();
+    await flush();
+    assert.equal(f.picker.open, false, 'at the limit a click opens no picker');
+    assert.equal(f.el('share-error').hidden, false);
+    assert.equal(f.el('share-error').textContent, 'Share limit reached (3).');
+    assert.equal(share.title, 'Share limit reached (3).');
+    f.emit('onScreenState', { peerId: 'peer-c', sharing: false, shareId: SHARE_C, preset: null });
+    assert.equal(share.title, '');
+    await startShare(f, 'standard');
+    assert.equal(f.window.screenShare.isSharing(), true, 'a place is free again');
+    // The race of two starts at the limit: the node stops the own share with the reason limit.
+    f.emit('onScreenState', { peerId: 'self', own: true, sharing: false, shareId: SHARE, preset: null });
+    f.emit('onScreenEnded', { peerId: 'self', own: true, reason: 'limit', shareId: SHARE });
+    assert.equal(f.window.screenShare.isSharing(), false);
+    assert.equal(f.el('share-error').textContent, 'Share limit reached (3). Your share stopped.');
+});
+
+test('multi-share: a Live badge on each sharer line and on the own line; a click on a badge watches that share', async () => {
+    const f = load();
+    await flush();
+    const lines = buddyLines(f, ['peer-a', 'peer-b']);
+    f.emit('onScreenState', { peerId: 'peer-a', sharing: true, shareId: SHARE, preset: 'auto' });
+    f.emit('onScreenState', { peerId: 'peer-b', sharing: true, shareId: SHARE_B, preset: 'auto' });
+    f.emit('onScreenState', { peerId: 'self', own: true, sharing: true, shareId: SHARE_C, preset: 'auto' });
+    const badge = peerId => lines.line(peerId).querySelector('.live-badge');
+    for (const peerId of ['peer-a', 'peer-b']) {
+        assert.equal(badge(peerId)?.textContent, 'Live', peerId);
+        assert.equal(badge(peerId).tagName.toLowerCase(), 'button');
+    }
+    const own = lines.self.querySelector('.live-badge');
+    assert.equal(own?.textContent, 'Live');
+    assert.notEqual(own.tagName.toLowerCase(), 'button', 'the own badge is not a watch control');
+    assert.equal(f.el('screen-banner-text').textContent, 'Ann and Bo are sharing screens.');
+    badge('peer-b').click();
+    assert.deepEqual(names(f.calls, 'watchScreen').map(c => c.args[0]), ['peer-b']);
+    assert.deepEqual(lines.opened, [], 'the click does not open the inspector');
+    await resolveWatch(f, SHARE_B);
+    assert.equal(f.el('screen-stage-title').textContent, 'Bo\'s screen');
+    assert.equal(badge('peer-b').getAttribute('aria-pressed'), 'true');
+    assert.equal(badge('peer-a').getAttribute('aria-pressed'), 'false');
+    // The end of a share removes its badge. The own stop removes the own badge.
+    f.emit('onScreenState', { peerId: 'peer-a', sharing: false, shareId: SHARE, preset: null });
+    assert.equal(badge('peer-a'), null);
+    f.emit('onScreenState', { peerId: 'self', own: true, sharing: false, shareId: SHARE_C, preset: null });
+    assert.equal(lines.self.querySelector('.live-badge'), null);
+});
+
+test('multi-share: the stage switcher lists the sharers; a click switches the watch; frames of another share are not decoded', async () => {
+    const f = load();
+    await flush();
+    const switcher = f.el('screen-switcher');
+    f.emit('onScreenState', { peerId: 'peer-a', sharing: true, shareId: SHARE, preset: 'auto' });
+    f.el('screen-watch').click();
+    await resolveWatch(f, SHARE);
+    assert.equal(switcher.hidden, true, 'one share: no switcher');
+    f.emit('onScreenState', { peerId: 'peer-b', sharing: true, shareId: SHARE_B, preset: 'auto' });
+    assert.equal(switcher.hidden, false, 'two shares: the switcher');
+    const buttons = () => [...switcher.querySelectorAll('button')];
+    assert.deepEqual(buttons().map(b => b.textContent), ['Ann', 'Bo']);
+    assert.deepEqual(buttons().map(b => b.getAttribute('aria-pressed')), ['true', 'false']);
+    assert.equal(f.el('screen-banner').hidden, true, 'no banner while watching');
+    const key = () => { const b = new Uint8Array(32); b[0] = 0x10; b.set([0x9d, 0x01, 0x2a], 3); b[6] = 1280 & 255; b[7] = 1280 >> 8; b[8] = 720 & 255; b[9] = 720 >> 8; return b; };
+    f.emit('onScreenFrame', { peerId: 'peer-a', shareId: SHARE, key: true, seq: 0, timestampMs: 5, data: key() });
+    assert.equal(f.decoders[0].chunks.length, 1);
+    f.calls.length = 0;
+    buttons()[1].click();
+    assert.deepEqual(f.calls.map(c => c.name), ['watchScreen'], 'the new Watch of the node ends the old watch');
+    assert.equal(names(f.calls, 'watchScreen')[0].args[0], 'peer-b');
+    await resolveWatch(f, SHARE_B);
+    assert.equal(f.el('screen-stage-title').textContent, 'Bo\'s screen');
+    assert.deepEqual(buttons().map(b => b.getAttribute('aria-pressed')), ['false', 'true']);
+    // A late frame of the old share: not decoded.
+    const decoder = f.decoders.at(-1);
+    const before = decoder.chunks.length;
+    f.emit('onScreenFrame', { peerId: 'peer-a', shareId: SHARE, key: true, seq: 1, timestampMs: 40, data: key() });
+    assert.equal(decoder.chunks.length, before);
+    f.emit('onScreenFrame', { peerId: 'peer-b', shareId: SHARE_B, key: true, seq: 0, timestampMs: 40, data: key() });
+    assert.equal(decoder.chunks.length, before + 1);
+    // A late END of the old share does not close the stage.
+    f.emit('onScreenEnded', { peerId: 'peer-a', shareId: SHARE, reason: 'stopped', own: false });
+    assert.equal(f.el('screen-stage').hidden, false);
+    // The watched share stops: the stage closes, the banner shows the other share.
+    f.emit('onScreenState', { peerId: 'peer-b', sharing: false, shareId: SHARE_B, preset: null });
+    assert.equal(f.el('screen-stage').hidden, true);
+    assert.equal(f.el('screen-banner').hidden, false);
+    assert.equal(f.el('screen-banner-text').textContent, 'Ann is sharing a screen.');
 });

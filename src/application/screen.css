@@ -118,5 +118,33 @@ body.screen-fill #screen-stage {
 .screen-picker-buttons .screen-no-audio { align-self: center; margin-right: auto; }
 .screen-picker-buttons { display: flex; justify-content: flex-end; gap: 8px; }
 
-/* The buddy line of a member that shares. */
-.screen-state { color: var(--danger, #c0392b); font-size: 11px; }
+/* 1.0.6: the "Live" badge of each member that shares, in column 3 of row 2 of the buddy line (the voice state then
+   uses column 2 only). On the line of another member the badge is a button that watches the share. */
+#peers li:has(.live-badge) .voice-state { grid-column: 2; }
+#peers .live-badge {
+  grid-column: 3;
+  grid-row: 2;
+  justify-self: end;
+  height: auto;
+  min-height: 0;
+  padding: 0 6px;
+  border: 1px solid var(--danger, #c0392b);
+  border-radius: 8px;
+  background: var(--danger, #c0392b);
+  color: #ffffff;
+  font: 700 9.5px/14px var(--font-small);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  box-shadow: none;
+}
+#peers button.live-badge { cursor: pointer; }
+#peers button.live-badge:hover, #peers button.live-badge:focus-visible { filter: brightness(1.12); }
+#peers button.live-badge[aria-pressed="true"] { outline: 2px solid var(--accent, #2f7fd0); outline-offset: 1px; }
+#peers button.live-badge:disabled { cursor: default; opacity: 0.6; }
+
+/* 1.0.6: the switcher of the stage, one button for each live share. */
+#screen-switcher { display: flex; flex-wrap: wrap; gap: 4px; }
+#screen-switcher[hidden] { display: none; }
+#screen-switcher button { height: 22px; padding: 0 8px; font-size: 12px; }
+#screen-switcher button[aria-pressed="true"] { font-weight: 700; outline: 2px solid var(--accent, #2f7fd0); outline-offset: -2px; }
