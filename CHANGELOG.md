@@ -49,7 +49,12 @@ Results:
 - **this PC** (copies of `electron .` with `--profile` and a fake APPDATA, rooms on 127.0.0.1 and the LAN address of
   this PC):
   - One start: no error line.
-  - The voice regression: 16 of 16 tests, and `voice-check.mjs` with the expected byte counts.
+  - The voice regression of the integration run (R106-6): 16 of 16 tests, and `voice-check.mjs` with the expected
+    byte counts.
+  - The voice regression of the build source (this PC): 16 of 16 tests. Six runs of `voice-check.mjs`: VAD -50 dB
+    gave 7689 to 9268 bytes in 3 s, and PTT key down gave 9344 to 9582. PTT with no key, key up, and key down then
+    blur gave 0. The step "VAD -10 dB (above the signal)" gave 1529, 1389, 0, 1558, 464 and 0 bytes. This step
+    leaks on 1.0.5 and 1.0.6 alike, because the test signal peaks at the highest threshold of the app (-10 dB).
   - Three copies: a friend request and Accept, and Online and Offline of the friend. A knock over the friend link
     and Allow. 6 of 6 chat lines. The picture of one copy showed on the buddy lines and the chat lines of the other
     two copies. Each dialog line of the Settings menu opened its control. The What's new list had 7 versions.
