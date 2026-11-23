@@ -75,8 +75,8 @@ test('the product names of the builds give three different shortcut names', () =
 });
 
 test('the ProductName of electron.exe gives the dev shortcut name', { skip: process.platform !== 'win32' }, () => {
-    const exe = path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/(\w:)/, '$1')), '..', 'node_modules', 'electron', 'dist', 'electron.exe');
-    const name = execFileSync('powershell.exe', ['-NoProfile', '-Command', `(Get-Item -LiteralPath '${exe}').VersionInfo.ProductName`],
+    const exe = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'node_modules', 'electron', 'dist', 'electron.exe');
+    const name = execFileSync('powershell.exe', ['-NoProfile', '-Command', `(Get-Item -LiteralPath '${exe.replace(/'/g, "''")}').VersionInfo.ProductName`],
         { encoding: 'utf8', windowsHide: true }).trim();
     assert.equal(name, WINDOWS_IDENTITIES.dev.shortcut);
 });

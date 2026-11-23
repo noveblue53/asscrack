@@ -40,6 +40,7 @@ test('127.0.0.1: the journal of the sharer has each tier change with its reason 
     const dir = mkdtempSync(path.join(tmpdir(), 'asscrack-diag-screen-'))
     t.after(() => rmSync(dir, { recursive: true, force: true }))
     const journal = createJournal({ dir, budgets: { default: [1e6, 0] } })
+    t.after(() => journal.close())
     journalNodeEvents((type, fn) => A.events.on(type, fn), (type, fields) => journal.write(type, fields), A.peerId)
     for (const X of [B, C]) {
         await X.connect(A.getMultiaddrs().find(m => m.startsWith('/ip4/127.0.0.1/')))
@@ -75,6 +76,7 @@ test('127.0.0.1: the journal of the sharer has each tier change with its reason 
     await sleep(500)
     A.stopScreenShare()
     clearInterval(frames)
+    await journal.flush()
     journal.flushSync()
 
     const lines = readdirSync(dir).filter(name => name.endsWith('.jsonl'))

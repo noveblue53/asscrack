@@ -1,9 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { randomBytes } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 import { pushable } from 'it-pushable'
 import { multiaddr } from '@multiformats/multiaddr'
-import { createAsscrackNode, CHAT_PROTOCOL } from '../src/network/node.mjs'
+import { createAsscrackNode, CHAT_PROTOCOL, roomServiceTag } from '../src/network/node.mjs'
+
+const uniqueRoom = prefix => `${prefix}-${process.pid}-${Date.now()}-${randomBytes(4).toString('hex')}`
 
 async function waitFor(check) {
     for (let attempt = 0; attempt < 100; attempt++) {
@@ -72,7 +75,7 @@ test('two nodes chat through createAsscrackNode', { timeout: 15000 }, async () =
 })
 
 test('two nodes in one room connect through mDNS discovery', { timeout: 30000 }, async () => {
-    const opts = { room: 'auto-test', listen: ['/ip4/0.0.0.0/tcp/0'], discovery: true, discoveryInterval: 1000 }
+    const opts = { room: uniqueRoom('auto-test'), listen: ['/ip4/0.0.0.0/tcp/0'], discovery: true, discoveryInterval: 1000 }
     const a = await createAsscrackNode(opts)
     const b = await createAsscrackNode(opts)
     try {
@@ -99,8 +102,11 @@ test('two nodes in one room connect through mDNS discovery', { timeout: 30000 },
 
 test('nodes in different rooms do not connect', { timeout: 15000 }, async () => {
     const base = { listen: ['/ip4/0.0.0.0/tcp/0'], discovery: true, discoveryInterval: 1000 }
-    const a = await createAsscrackNode({ ...base, room: 'room-one' })
-    const b = await createAsscrackNode({ ...base, room: 'room-two' })
+    const roomOne = uniqueRoom('room-one')
+    const roomTwo = uniqueRoom('room-two')
+    assert.notEqual(roomServiceTag(roomOne), roomServiceTag(roomTwo))
+    const a = await createAsscrackNode({ ...base, room: roomOne })
+    const b = await createAsscrackNode({ ...base, room: roomTwo })
     try {
         await delay(5000)
         assert.deepEqual(a.peers(), [])
@@ -271,7 +277,7 @@ function fullMesh(topology, ids) {
 }
 
 test('three nodes in one room send links lines and show the full mesh, then the stopped node goes', { timeout: 40000 }, async () => {
-    const opts = { room: 'topology-test', listen: ['/ip4/0.0.0.0/tcp/0'], discovery: true, discoveryInterval: 1000 }
+    const opts = { room: uniqueRoom('topology-test'), listen: ['/ip4/0.0.0.0/tcp/0'], discovery: true, discoveryInterval: 1000 }
     const nodes = [await createAsscrackNode(opts), await createAsscrackNode(opts), await createAsscrackNode(opts)]
     const last = new Map(nodes.map(n => [n, null]))
     for (const n of nodes) n.events.on('topology', t => last.set(n, t))

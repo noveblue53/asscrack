@@ -44,6 +44,7 @@ test('127.0.0.1: a stopped host gives one failover line with the time to the new
         const dir = mkdtempSync(path.join(tmpdir(), 'asscrack-diag-failover-'))
         t.after(() => rmSync(dir, { recursive: true, force: true }))
         const journal = createJournal({ dir, budgets: { default: [1e6, 0] } })
+        t.after(() => journal.close())
         journalNodeEvents((type, fn) => n.events.on(type, fn), (type, fields) => journal.write(type, fields), n.peerId)
         journals.push({ dir, journal })
         n.events.on('failover', data => events.get(n).push(data))
@@ -74,6 +75,7 @@ test('127.0.0.1: a stopped host gives one failover line with the time to the new
         assert.ok(Number.isInteger(f.chatMs) && f.chatMs >= 0, `chatMs ${f.chatMs}`)
     }
     for (const { dir, journal } of journals) {
+        await journal.flush()
         journal.flushSync()
         const lines = readdirSync(dir).filter(name => name.endsWith('.jsonl'))
             .flatMap(name => readFileSync(path.join(dir, name), 'utf8').split('\n').filter(Boolean)).map(line => JSON.parse(line))

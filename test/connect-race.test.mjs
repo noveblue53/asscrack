@@ -1,5 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { randomBytes } from 'node:crypto'
 import { createAsscrackNode } from '../src/network/node.mjs'
 import { newRoomKey } from '../src/network/invite.mjs'
 
@@ -40,7 +41,7 @@ function record(node) {
 
 // Two nodes in one new room with discovery on. Returns them as lo (lower peer ID) and hi (higher peer ID).
 async function pair(nodes, roomKey) {
-    const room = `race-${Date.now()}-${Math.random().toString(16).slice(2)}`
+    const room = `race-${process.pid}-${Date.now()}-${randomBytes(4).toString('hex')}`
     const opts = { room, listen: LOCAL, discovery: true, discoveryInterval: 200, ...(roomKey ? { roomKey } : {}), ...fast }
     const a = await createAsscrackNode(opts)
     nodes.push(a)
