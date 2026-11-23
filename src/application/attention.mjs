@@ -17,12 +17,15 @@ const BOOLEAN_KEYS = ['voiceCues', ...Object.values(SOUND_KEYS), ...Object.value
 export const ATTENTION_DEFAULTS = Object.freeze({ voiceCues: true, volume: 35,
     chatSound: true, mentionSound: true, whisperSound: true, friendSound: true, voiceSound: true,
     chatAlert: true, mentionAlert: true, whisperAlert: true, friendAlert: true, voiceAlert: false,
-    previews: true, sound: false, flash: true, background: true });
+    previews: true, sound: false, flash: true, background: true, chatTone: 'soft' });
+// The tones of a plain room line (attention.js CHAT_TONES).
+export const CHAT_TONES = Object.freeze(['soft', 'chime', 'pop']);
 
 function merge(current, patch) {
     const next = { ...current };
     for (const key of BOOLEAN_KEYS) if (typeof patch?.[key] === 'boolean') next[key] = patch[key];
     if (Number.isInteger(patch?.volume)) next.volume = Math.max(0, Math.min(100, patch.volume));
+    if (CHAT_TONES.includes(patch?.chatTone)) next.chatTone = patch.chatTone;
     return next;
 }
 

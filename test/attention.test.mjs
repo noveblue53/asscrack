@@ -72,7 +72,7 @@ test('sound and privacy settings are per profile, validated, and retain mute and
     // of voice join and leave; previews on; only in the background. The Windows sound stays off.
     assert.deepEqual(prefs.get(), { voiceCues: true, volume: 35, chatSound: true, mentionSound: true, whisperSound: true,
         friendSound: true, voiceSound: true, chatAlert: true, mentionAlert: true, whisperAlert: true, friendAlert: true,
-        voiceAlert: false, previews: true, sound: false, flash: true, background: true });
+        voiceAlert: false, previews: true, sound: false, flash: true, background: true, chatTone: 'soft' });
     prefs.set({ chatAlert: false, previews: 'no', voiceCues: false, voiceSound: 'no', mentionSound: 0, volume: 120, background: false });
     const reopened = attentionSettings(file).get();
     assert.equal(reopened.chatAlert, false); assert.equal(reopened.previews, true);
@@ -84,6 +84,11 @@ test('sound and privacy settings are per profile, validated, and retain mute and
     prefs.set({ flash: false, voiceAlert: true });
     assert.equal(attentionSettings(file).get().flash, false);
     assert.equal(attentionSettings(file).get().voiceAlert, true);
+    // The message sound: one of the built-in tones only.
+    prefs.set({ chatTone: 'loud.wav' });
+    assert.equal(attentionSettings(file).get().chatTone, 'soft');
+    prefs.set({ chatTone: 'pop' });
+    assert.equal(attentionSettings(file).get().chatTone, 'pop');
 });
 
 test('a 1.0.x file gets the new defaults one time, keeps its real choices, and later choices stay', t => {

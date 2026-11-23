@@ -45,10 +45,16 @@
         return typeof rule.setting === 'function' ? rule.setting(kind, target) : rule.setting;
     }
     const lastCue = new Map(); // class -> Date.now() of the last accepted cue
-    // The tone of a plain room line: one soft, short tone, so it is not the mention (up) or the whisper (2 tones).
-    const CHAT_TONE = Object.freeze({ pitches: [784], wave: 'sine', length: 0.09 });
+    // The tones of a plain room line (the setting chatTone). soft: one soft, short tone, so it is not the mention (up)
+    // or the whisper (2 equal tones). chime: 2 tones down. pop: one short high tone.
+    const CHAT_TONES = Object.freeze({
+        soft: Object.freeze({ pitches: [784], wave: 'sine', length: 0.09 }),
+        chime: Object.freeze({ pitches: [988, 659], wave: 'sine', length: 0.11 }),
+        pop: Object.freeze({ pitches: [1397], wave: 'triangle', length: 0.05 })
+    });
 
     function playChat(context, volume) {
+        const CHAT_TONE = CHAT_TONES[prefs?.chatTone] ?? CHAT_TONES.soft;
         const time = context.currentTime;
         for (const [i, hz] of CHAT_TONE.pitches.entries()) {
             const start = time + i * 0.085;
@@ -267,7 +273,7 @@
     }
 
     const fields = { voiceCues: 'cues', sound: 'sound', previews: 'content', volume: 'volume', flash: 'flash',
-        background: 'background' };
+        background: 'background', chatTone: 'chat-tone' };
     for (const [row, key] of Object.entries(SOUND)) fields[key] = row + '-sound';
     for (const [row, key] of Object.entries(ALERT)) fields[key] = row + '-alert';
     // The class of each cue in the preview list.
@@ -281,6 +287,7 @@
             // A page with no box for a setting (for example a test page with an older dialog) skips it.
             if (!input) continue;
             if (key === 'volume') input.value = prefs.volume;
+            else if (key === 'chatTone') input.value = prefs.chatTone ?? 'soft';
             else input.checked = prefs[key];
         }
         byId('attention-percent').textContent = prefs.volume + '%';
@@ -297,7 +304,7 @@
         const input = byId('attention-' + suffix);
         if (!input) continue;
         input.addEventListener('change', async () => {
-            const value = key === 'volume' ? Number(input.value) : input.checked;
+            const value = key === 'volume' ? Number(input.value) : key === 'chatTone' ? input.value : input.checked;
             try {
                 prefs = await api.setAttentionSettings({ [key]: value });
                 status.textContent = '';

@@ -605,3 +605,18 @@ test('the mute dialog sends the scope, the time and the mentions choice; Unmute 
     await settle();
     assert.deepEqual(f.requests[1], { scope: 'room', time: 'off', mentions: true });
 });
+
+test('the message sound setting chooses one of the built-in tones', async () => {
+    const chime = toneRecorder();
+    const f = await room({ chatSound: true, chatTone: 'chime' }, undefined, chime.audio);
+    f.state.focus = false;
+    f.receive({ from: 'Sam', text: 'hello', peerId: SAM, id: 't1' });
+    await settle();
+    assert.deepEqual(chime.tones, [988, 659]);
+    const pop = toneRecorder();
+    const g = await room({ chatSound: true, chatTone: 'pop' }, undefined, pop.audio);
+    g.state.focus = false;
+    g.receive({ from: 'Sam', text: 'hello', peerId: SAM, id: 't2' });
+    await settle();
+    assert.deepEqual(pop.tones, [1397]);
+});

@@ -1,12 +1,12 @@
 /* The frame, the title and the backdrop come from the shared dialog rules (desktop-controls.css). With them the
    dialog and its Done button are in an 800 x 600 window with no scroll. */
-#attention-settings { width: min(26rem, calc(100vw - 24px)); }
+#attention-settings { width: min(30rem, calc(100vw - 24px)); }
 #attention-settings label { display: block; margin: 6px 0; }
 #attention-settings input[type="range"] { width: 100%; margin: 0; }
 #attention-settings input[type="checkbox"] { margin: 0 4px 0 0; vertical-align: -1px; }
 #attention-settings p { max-width: 43ch; margin: 6px 0; font-size: 12.5px; color: var(--ink-soft); }
-#attention-percent { float: right; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
-#attention-tone { margin-right: 6px; }
+#attention-percent { color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+#attention-tone { margin: 0; }
 #attention-settings #attention-status { color: var(--ink); }
 #attention-settings #attention-status:empty { display: none; }
 /* The settings grid: one row for each kind of event, the columns Sound and Notification. */
@@ -22,3 +22,10 @@
 #mute-dialog label { display: block; margin: 6px 0; }
 #mute-dialog #mute-status:empty { display: none; }
 #chat-room.muted::after { content: " · muted"; font-size: 0.6em; font-weight: normal; color: var(--ink-soft); }
+/* The Sounds box: one row for each control (label, control, value or button). */
+#attention-sounds { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 8px; align-items: center; }
+#attention-sounds > legend { grid-column: 1 / -1; }
+#attention-settings #attention-sounds > label { margin: 0; }
+#attention-sounds > .attention-wide { grid-column: 1 / -1; }
+#attention-sounds select { min-width: 0; }
+#attention-settings > label { display: inline-block; margin: 4px 12px 4px 0; }

@@ -584,14 +584,18 @@
     </table>
     <label><input id="attention-content" type="checkbox"> Show message text</label>
     <label title="Off: also while the chat is in view"><input id="attention-background" type="checkbox"> Only when in the background</label>
-    <fieldset>
+    <fieldset id="attention-sounds">
       <legend>Sounds</legend>
-      <label title="Join, leave, mute, unmute and deafen"><input id="attention-cues" type="checkbox"> My voice actions</label>
-      <label for="attention-volume">Volume <output id="attention-percent" for="attention-volume"></output></label>
+      <label class="attention-wide" title="Join, leave, mute, unmute and deafen"><input id="attention-cues" type="checkbox"> My voice actions</label>
+      <label for="attention-chat-tone">Message sound</label>
+      <select id="attention-chat-tone"><option value="soft">Soft</option><option value="chime">Chime</option><option value="pop">Pop</option></select>
+      <span></span>
+      <label for="attention-volume">Volume</label>
       <input id="attention-volume" type="range" min="0" max="100" step="1">
+      <output id="attention-percent" for="attention-volume"></output>
       <label for="attention-tone">Preview</label>
       <select id="attention-tone"><option value="join">Join voice</option><option value="leave">Leave voice</option><option value="mute">Mute</option><option value="unmute">Unmute</option><option value="other-join">Other person joins voice</option><option value="other-leave">Other person leaves voice</option><option value="chat">Message</option><option value="mention">Mention</option><option value="whisper">Whisper</option></select>
-      <button id="attention-preview" type="button">Play preview</button>
+      <button id="attention-preview" type="button">Play</button>
     </fieldset>
     <fieldset>
       <legend>Windows</legend>
