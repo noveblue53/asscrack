@@ -426,9 +426,11 @@ function makeRoomArchive({ dir, protector, limits = null, confirm: confirmOption
     }
     if (useExisting) {
       const r = yield* readExistingKey();
-      if (r.fail === 'key-unwrap-failed' && r.pending) {
-        // The run that made this key stopped before its protector key was on disk: no one can open these files.
-        // Put them aside and make a new archive. A failed rename keeps the lock and all files.
+      // The run that made this key stopped before its protector key was on disk: no one can open these files. Then
+      // the protector key of this run is not on disk yet either (a new data folder). Put the files aside and make a new
+      // archive. A failed rename keeps the lock and all files. When the protector key is on disk, the cause is not
+      // clear (for example a transient failure of the unwrap): keep the lock, as for a key with no pending field.
+      if (r.fail === 'key-unwrap-failed' && r.pending && !(yield* keySaved())) {
         const moved = setAsideLost();
         if (!moved) return setState('locked', r.fail);
         lostFiles = moved;

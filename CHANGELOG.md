@@ -26,12 +26,13 @@ Each result has one of these labels:
   - A new key file gets `"pending": true` when `durable()` is false. The archive reads `durable()` again each 1 s,
     for at most 120 s. When it is true, the archive writes the key file again with no `pending`. An open that unwraps
     a pending key while `durable()` is true also removes `pending`.
-  - A pending key that does not unwrap can never open: its safeStorage key is lost. The open renames `archive.db`,
-    its journal files and `archive.key` to `archive.lost-<time>-<random>.*` in the same folder, and makes a new
-    archive. The old files stay. A failed rename gives the old lock, and all files stay. The log gets one WARN
-    line with the names of the kept files.
+  - A pending key that does not unwrap while `durable()` is false can never open: its safeStorage key is lost. The
+    open renames `archive.db`, its journal files and `archive.key` to `archive.lost-<time>-<random>.*` in the same
+    folder, and makes a new archive. The old files stay. A failed rename gives the old lock, and all files stay. The
+    log gets one WARN line with the names of the kept files.
   - A key file with no `pending` that does not unwrap stays locked, as before (for example a data folder of an
-    other Windows account). The files stay.
+    other Windows account). The files stay. A pending key that does not unwrap while `durable()` is true also stays
+    locked. Then the cause is not clear, for example a transient failure of the unwrap.
   - reEncrypt keeps the old wrapped value in the key file as `prev`. When `wrapped` does not unwrap, the open tries
     `prev`.
   - Versions up to 1.0.5 read only `v` and `wrapped` of the key file. They ignore `pending` and `prev`.
@@ -50,15 +51,17 @@ Each result has one of these labels:
   | 1.0.5 (`05fa933`), new data folder | 30 | 20 (each kill at 1 s to 10 s) | 18 | 0 |
   | 1.0.0 (`af40267`), new data folder | 15 | 9 (each kill at 2 s to 10 s) | 8 | 0 |
   | this change, new data folder | 30 | 0 | 18 | 20 |
+  | this change with the `durable()` check of the put-aside, new data folder (T = 3, 5, 8, 12 s) | 4 | 0 | 3 | 3 |
   | 1.0.5, a data folder with `Local State` on disk | 15 | 0 | 0 | 0 |
   | this change, a data folder with `Local State` on disk | 15 | 0 | 0 | 0 |
 
   At each kill after 10 s, `Local State` had the key, and the next start opened the archive with its room.
-- Tests (127.0.0.1): `test/room-archive.test.mjs` has 6 new tests with a model of the Windows safeStorage key. In the
+- Tests (127.0.0.1): `test/room-archive.test.mjs` has 7 new tests with a model of the Windows safeStorage key. In the
   model, each run has its own key, and a commit writes it to the disk. Each test fails on `05fa933` and passes with
-  the change.
+  the change. On `05fa933`, 2 tests fail because the archive stays locked (`key-unwrap-failed`). The other 5 fail
+  because `05fa933` has no `pending` field and no `lostFiles()`.
   `test/saved-rooms.test.mjs` has 2 new tests (`durable()`, and the log line after a kill).
-- `npm test`: 1201 tests, 1183 pass, 0 fail, 18 skipped (127.0.0.1).
+- `npm test`: 1202 tests, 1184 pass, 0 fail, 18 skipped (127.0.0.1).
 - One start of the app (this PC): a new data folder, 25 s, then Quit. The terminal and the developer console had no
   error line. The archive opened. After the quit, the key file had no `pending` field.
 

@@ -726,6 +726,31 @@ test('a key on disk at the first start has no pending field; a key that does not
   assert.deepEqual(snapshot(dir), before);
 });
 
+test('pending key that does not unwrap while the protector key is on disk: the lock stays and each file stays', async (t) => {
+  const dir = tmpDir();
+  const keep = cleanup(t, dir);
+  const disk = { key: null };
+  const run1 = osCryptRun(disk);
+  const a = await openRoomArchiveAsync({ dir, protector: run1 });
+  a.saveRoom({ name: 'room', roomKey: KEY, userName: 'u' });
+  // A normal quit before the timer removed pending: the key of run 1 is on disk.
+  run1.commit();
+  a.close();
+  assert.equal(keyJson(dir).pending, true);
+  const before = snapshot(dir);
+  // Run 2: the unwrap fails (a transient failure), but durable() is true. The cause is not clear: no move.
+  const run2 = osCryptRun(disk);
+  const unwrap = run2.unwrap;
+  run2.unwrap = async () => { throw new Error('transient'); };
+  const b = keep(await openRoomArchiveAsync({ dir, protector: run2 }));
+  assert.deepEqual(b.state(), { state: 'locked', reason: 'key-unwrap-failed' });
+  assert.equal(b.lostFiles(), null);
+  assert.deepEqual(snapshot(dir), before);
+  run2.unwrap = unwrap;
+  assert.deepEqual(await b.unlockAsync(), { state: 'open', reason: null });
+  assert.equal(b.listRooms().length, 1);
+});
+
 test('pending key that does not unwrap: a failed rename keeps the lock and each file',
   { skip: process.platform !== 'win32' && 'needs the Windows file lock' }, async (t) => {
   const dir = tmpDir();
