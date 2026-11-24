@@ -9,22 +9,31 @@ Each result has one of these labels:
 
 ## Unreleased: screen share recovery, combined with B16
 
-- Auto goes back to a better picture sooner after a slow link recovers. After 5 s with no delay, it makes steps of 1.15
-  near the old limit. A headroom of 5 s is sufficient after the first 10 s.
+- Auto has new rules for a slow link that recovers. After 5 s with no delay, it makes steps of 1.15 near the old limit. A
+  headroom of 5 s is sufficient after the first 10 s.
 - Light content above the bitrate of its quality can go up after 1 s (before: 5 s).
 - A step up of Auto is a probe. The rate does not go up in the probe when there is a delay, and it goes back with the probe.
 - After a pause of a full-screen share, the first captured frame goes out at once as a keyframe. A viewer that comes in a
   pause sees the Paused picture.
 - A short pause is no part of the measured frame rate (B16).
 - The change of the rate for the first keyframe of the recovery brief is not in this build. With it, check 20 failed 5 of
-  10 times in the session that made the recovery changes.
+  10 times in the session that made the recovery changes. The PC load of those runs was lower than in the 8 runs without
+  it, which passed. Thus this does not show that the change was the cause.
 
 Results of the combined build:
 - Decisions of the rate control in random runs. For Auto and relayed viewers they are the same as the recovery changes
   alone (200 of 200). For fixed qualities they are the same as B16 alone (200 of 200).
 - **127.0.0.1**: `test/screen-voice.test.mjs` 8 of 8. `test/screen-auto.test.mjs`: checks 16, 18 and 19 passed 3 of 3 times,
-  checks 17 and 21 to 24 passed. Check 20 (Auto, uplink 5 Mbit/s) failed 2 of 11 times. Then 8 alternating runs of check 20:
-  the combined build failed 0 of 8, the recovery changes alone 2 of 8. The largest sum was 5.3 of 5.0 Mbit/s.
+  checks 17 and 21 to 24 passed 1 of 1.
+- Check 18 (the link falls to 3 Mbit/s and comes back at 50 s, limit 65 s). Combined: 3 of 3 runs fell to Standard and were
+  back at Balanced at 62.2 to 63.7 s. 1.0.6 or B16 alone, 7 runs: 5 fell to Standard and came back at 72.4 to 73.9 s (fail).
+  The other 2 fell only to Smooth and came back at 61.4 s (pass). The PC load was 2 to 3 % for the combined runs and 6 to
+  9 % for the others. Thus the comparison is not a proof.
+- The session that made the recovery changes measured 62.2 to 63.8 s (5 runs, load 24 to 30 %). For 1.0.6 it measured 61.2
+  to 61.6 s in 4 runs, and one run with no return. The cause of the fall to Standard is not known.
+- Check 20 (Auto, uplink 5 Mbit/s) fails in each build. Failed runs: 1.0.6 1 of 14 (two sessions), recovery alone 2 of 8 and
+  combined 2 of 11. B16 alone, with the same Auto decisions as 1.0.6, failed 2 of 4. The largest sum was 5.3 of 5.0 Mbit/s. The load was 2 to 16 % for the
+  failed runs of this night. These counts do not show a difference between the builds.
 - `npm test` (127.0.0.1): 1284 tests, 1266 pass, 0 fail, 18 skipped.
 - **this PC**: two app copies started with 0 error lines. The source window was not in the picker, thus there was no share.
 - Not done: the real-encoder run of check 19, the full-screen pause and resume on this PC, a share on the internet.
