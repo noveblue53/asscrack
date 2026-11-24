@@ -106,8 +106,11 @@ test('check A1, rule R3: decrease, hold, a late viewer, and the smallest bitrate
     assert.ok(s.rate.history().length >= 0)
 })
 
+// B16: rule A2c has its own test. Here the start phase has the values of the normal phase.
+const NO_RAMP = { rampBitrate: 500000, rampFactor: 1.25 }
+
 test('check A2, rule R4: hold after a decrease, the used rule, the factors and the limit', () => {
-    const s = sim({ quality: 'max' })
+    const s = sim({ quality: 'max', params: NO_RAMP })
     s.add('a')
     // No limit: 1.25 x after 2 calm periods with the stream at its bitrate.
     s.run(1000)
@@ -130,10 +133,52 @@ test('check A2, rule R4: hold after a decrease, the used rule, the factors and t
     assert.equal(s.v('a').limit, null)
     assert.ok(s.v('a').rate >= 1.2 * limit)
     // No increase when the stream uses less than 70 % of the bitrate.
-    const u = sim({ quality: 'max' })
+    const u = sim({ quality: 'max', params: NO_RAMP })
     u.add('a')
     u.run(5000, { frameBytes: tier => Math.round(0.3 * tier.bitrate / 8 / 15) })
     assert.equal(u.v('a').rate, 500000)
+})
+
+test('rule A2c (B16): a full own queue at the start of a fixed preset is no slow link, and the rate reaches the target', () => {
+    // The first picture of Max (150 kB) does not fit in 1 s of the pacer at 500 kbit/s. Each written frame has its ack in 5 ms.
+    const s = sim({ quality: 'max' })
+    s.add('a')
+    const bytes = (tier, key) => key ? 150000 : Math.round(tier.bitrate / 8 / 15)
+    s.run(3000, { frameBytes: bytes })
+    assert.equal(s.v('a').congestions, 0, 'no late frame')
+    assert.equal(s.v('a').limit, null)
+    s.run(17000, { frameBytes: bytes })
+    assert.equal(s.v('a').rate, 12000000)
+})
+
+test('rule A2c (B16): no step in the start phase with no ack, and a delay ends the phase', () => {
+    // No ack at all: the rate stays at the start.
+    const s = sim({ quality: 'max' })
+    s.add('a', { delay: Infinity })
+    s.run(250)
+    const start = s.v('a').rate
+    assert.equal(start, 1000000)
+    s.run(1500)
+    assert.ok(s.v('a').rate <= start, `rate ${s.v('a').rate}`)
+    // A delay of 100 ms above the base: the phase ends and the rate goes down.
+    const d = sim({ quality: 'max' })
+    d.add('a')
+    d.run(1000)
+    assert.equal(d.v('a').ramp, true)
+    const top = d.v('a').rate
+    d.conf.get('a').delay = 105
+    d.run(1500)
+    assert.equal(d.v('a').ramp, false)
+    assert.ok(d.v('a').rate < top)
+    // A circuit viewer, a second viewer and Auto have no start phase.
+    const c = sim({ quality: 'max' })
+    c.add('a', { circuit: true })
+    c.add('b')
+    assert.deepEqual([c.v('a').ramp, c.v('b').ramp], [false, false])
+    const auto = sim()
+    auto.add('a')
+    assert.equal(auto.v('a').ramp, false)
+    assert.equal(auto.v('a').rate, 500000)
 })
 
 test('check A3, rule R5: the start bitrate and the targets for 1 to 6 circuit viewers', () => {
@@ -567,7 +612,7 @@ test('rule U2 (revisions 3 and 3b): the rate stops near the use / 0.7, also with
     // 500 kbit/s has 2384 kbit/s (use 0.67) and then 2980 kbit/s. Rule U2 over 2 s stops at 2384 kbit/s. The smoothed
     // use alone goes to 2980 kbit/s.
     const final = usedNow => {
-        const s = sim({ quality: 'max', params: { usedNow } })
+        const s = sim({ quality: 'max', params: { ...NO_RAMP, usedNow } })
         s.add('a')
         s.run(30000, { frameBytes: tier => Math.round(Math.min(1600000, tier.bitrate) / 8 / 15) })
         return s.v('a').rate

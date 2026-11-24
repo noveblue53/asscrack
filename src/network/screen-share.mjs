@@ -226,10 +226,22 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
         if (history.length > end) events.emit('screen-diag', { kind: 'skipped', shareId: share.shareId, count: history.length - end })
         share.diagAt = history.length
         const stats = share.rate.stats()
+        // B16: the stream of each tier since the last tick.
+        const streams = new Map()
+        for (const tier of stats.tiers) {
+            const last = share.diagTiers?.get(tier.tier)
+            const ms = last ? t - last.t : 0
+            streams.set(tier.tier, { t, frames: tier.frames, bitrate: tier.bitrate, usePct: Math.round(tier.usage * 100),
+                skipPct: Math.round(tier.skipRatio * 100), width: tier.width, height: tier.height,
+                fps: ms > 0 ? Math.round((tier.frames - last.frames) * 1000 / ms) : undefined })
+        }
+        share.diagTiers = streams
         for (const v of stats.viewers) {
+            const s = streams.get(v.tier)
             events.emit('screen-diag', { kind: 'stats', shareId: share.shareId, peerId: v.peerId, tierId: v.tier, slow: v.slow,
                 circuit: v.circuit, rate: v.rate, target: v.target, excessMs: v.excessMs, drops: v.dropped, kframes: v.keyframes,
-                congestions: v.congestions, queueBytes: v.queueBytes, cap: stats.cap })
+                congestions: v.congestions, queueBytes: v.queueBytes, cap: stats.cap,
+                bitrate: s?.bitrate, usePct: s?.usePct, skipPct: s?.skipPct, fps: s?.fps, width: s?.width, height: s?.height })
         }
     }
 

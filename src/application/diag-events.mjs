@@ -103,7 +103,7 @@ export function projectNodeEvent(type, data, selfId = null) {
                 from: reasonCode(d.from), to: reasonCode(d.to), why: reasonCode(d.why), bitrate: d.bitrate, peer: d.peerId,
                 rate: d.rate, target: d.target, excessMs: d.excessMs, drops: d.drops, kframes: d.kframes,
                 congestions: d.congestions, queueBytes: d.queueBytes, slow: d.slow, circuit: d.circuit, cap: reasonCode(d.cap),
-                count: d.count }];
+                count: d.count, usePct: d.usePct, skipPct: d.skipPct, fps: d.fps, width: d.width, height: d.height }];
         // Multi-share (1.0.6, screen-share.mjs): the start and the stop of each share (own: start and stop, another
         // member: live and gone), and each watch. The share ID and the peer ID, no name.
         case 'screen-state':

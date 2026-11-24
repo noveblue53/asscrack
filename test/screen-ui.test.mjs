@@ -427,7 +427,7 @@ test('W4 check 3a: frame slots, E1, the full bucket of E3, the E11 report and a 
         'E10: 15, 30 and 60 frames in 1 s');
     assert.equal(a.configs[0].width, 1280, 'the encoder scales the frame to the fit of its preset');
     assert.equal(c.configs[0].height, 1080);
-    assert.deepEqual(JSON.parse(JSON.stringify(a.configs[0])), { codec: 'vp8', width: 1280, height: 720, bitrate: 1500000, framerate: 15, latencyMode: 'realtime', hardwareAcceleration: 'prefer-software' });
+    assert.deepEqual(JSON.parse(JSON.stringify(a.configs[0])), { codec: 'vp8', width: 1280, height: 720, bitrate: 1500000, framerate: 15, latencyMode: 'realtime', bitrateMode: 'constant', hardwareAcceleration: 'prefer-software' });
     assert.equal(a.frames[0].key, true, 'the first frame of an encoder is a keyframe');
     assert.equal(a.frames[1].key, false);
     assert.deepEqual(JSON.parse(JSON.stringify(names(f.calls, 'setScreenSize').map(c => c.args[0]))),
@@ -479,6 +479,31 @@ test('W4 check 3a: frame slots, E1, the full bucket of E3, the E11 report and a 
     f.calls.length = 0;
     b.out(1000);
     assert.equal(names(f.calls, 'sendScreenFrame').length, 0);
+});
+
+test('E6a (B16): the encoder gets the measured frame rate of the capture; a still picture keeps the preset', async () => {
+    const f = load();
+    await startShare(f);
+    f.emit('onScreenEncoder', { tiers: [{ tier: 1, preset: 'high', width: 1920, height: 1080, fps: 60, bitrate: 9000000 }],
+        capture: { preset: 'max', width: 2560, height: 1440, fps: 60 }, cap: 'max' });
+    const capture = async (fps, seconds) => {
+        for (let i = 0; i < fps * seconds; i++) {
+            f.frame();
+            await flush();
+            f.clock.t += 1000 / fps;
+        }
+    };
+    const rates = () => f.encoders[0].configs.map(c => c.framerate);
+    await capture(60, 4);
+    assert.deepEqual([...rates()], [60], 'a capture at the frame rate of the preset: no new configuration');
+    await capture(40, 6);
+    assert.ok(Math.abs(rates().at(-1) - 40) <= 2, `40 frames each second: ${rates()}`);
+    await capture(60, 6);
+    assert.equal(rates().at(-1), 60, `back to 60: ${rates()}`);
+    await capture(4, 6);
+    assert.equal(rates().at(-1), 60, `a still picture: ${rates()}`);
+    assert.equal(f.encoders.length, 1, 'no new encoder');
+    assert.ok(f.encoders[0].configs.every(c => c.bitrateMode === 'constant'));
 });
 
 test('W4: a keyframe request with an old kept frame encodes it at once, and a refresh tick encodes it again', async () => {

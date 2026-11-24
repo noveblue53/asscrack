@@ -7,6 +7,30 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased: screen shares reach the bitrate of their quality (B16)
+
+- The encoder of a screen share uses the `constant` bitrate mode. With the default mode, a VP8 encoder that gets a higher
+  bitrate keeps about its old picture quality. The rate control then sees a low use and stops the rate.
+- The encoder gets the measured frame rate of the capture. Before, a game at 40 frames each second stopped the rate.
+- The first direct viewer of a fixed quality has a start phase: 1 Mbit/s, steps of 1.5. Each step needs an ack that is on
+  time. A first picture that does not fit in the own queue is no sign of a slow link.
+- Auto and relayed viewers do not change. The old and the new rate control made the same decisions in 300 random runs.
+- The share stats in the diagnostics have the bitrate, the use, the skipped frames, the frame rate and the coded size.
+
+Results:
+- **internet** (1.0.6, one viewer): Max used 1.1 to 3.7 of 12 Mbit/s, High a median of 2.6 of 9 Mbit/s.
+- **this PC** (the real encoder, a model of a 22 Mbit/s link, a hidden window). 1.0.6, a game scene that moves, 60 frames
+  each second: Max 4.2 and High 2.7 Mbit/s. With the fix: 12.1 and 9.0 Mbit/s. PSNR: Max 36.5 to 43.0 dB, High 34.4 to 38.1 dB.
+- **this PC** (link model, Max): 1 Mbit/s gave at most 0.7 s of queue at the start. A 5 Mbit/s link gave up to 0.36 s.
+  1.0.6 had 0.1 s at 1 Mbit/s and did not reach these links' limits.
+- **this PC** (two app copies, real capture): 1.0.6 High sent 2.4 Mbit/s of 9. The fix at Max sent 12 Mbit/s after 12 s, with
+  0 error lines. The same preset was not compared in both builds: the PC was in use.
+- **127.0.0.1**: `test/screen-voice.test.mjs` 8 of 8. `test/screen-auto.test.mjs` 7 of 9: checks 18 and 20 failed.
+  Then 3 alternating runs of these two checks. 1.0.6: check 18 failed 2 of 3, check 20 failed 0 of 3. The fix: check 18
+  failed 2 of 3, check 20 failed 1 of 3. The two checks use Auto, which did not change.
+- `npm test` (127.0.0.1): 1277 tests, 1259 pass, 0 fail, 18 skipped.
+- Not done: a share on the internet, voice in a real share, and a game with a real full-screen capture.
+
 ## 1.0.6 (2026-11-23): profile pictures, several screen shares, friend status, the Settings menu and What's new
 
 Release 1.0.6 is the sixth update of 1.0.0. A 1.0.0, 1.0.1, 1.0.2, 1.0.3, 1.0.4 or 1.0.5 app gets it with the signed
