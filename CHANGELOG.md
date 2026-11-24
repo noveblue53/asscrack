@@ -7,6 +7,28 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased: screen share recovery, combined with B16
+
+- Auto goes back to a better picture sooner after a slow link recovers: steps of 1.15 near the old limit after 5 s with no
+  delay. A headroom of 5 s is sufficient after the first 10 s.
+- Light content above the bitrate of its quality can go up after 1 s (before: 5 s).
+- A step up of Auto is a probe. The rate does not go up in the probe when there is a delay, and it goes back with the probe.
+- After a pause of a full-screen share, the first captured frame goes out at once as a keyframe. A viewer that comes in a
+  pause sees the Paused picture.
+- A short pause is no part of the measured frame rate (B16).
+- The change of the rate for the first keyframe of the recovery brief is not in this build. With it, check 20 failed 5 of
+  10 times in the session that made the recovery changes.
+
+Results of the combined build:
+- Decisions of the rate control, random runs: the same as the recovery changes alone for Auto and relayed viewers (200 of
+  200), and the same as B16 alone for fixed qualities (200 of 200).
+- **127.0.0.1**: `test/screen-voice.test.mjs` 8 of 8. `test/screen-auto.test.mjs`: checks 16, 18 and 19 passed 3 of 3 times,
+  checks 17 and 21 to 24 passed. Check 20 (Auto, uplink 5 Mbit/s) failed 2 of 11 times. Then 8 alternating runs of check 20:
+  the combined build failed 0 of 8, the recovery changes alone 2 of 8. The largest sum was 5.3 of 5.0 Mbit/s.
+- `npm test` (127.0.0.1): 1284 tests, 1266 pass, 0 fail, 18 skipped.
+- **this PC**: two app copies started with 0 error lines. The source window was not in the picker, thus no share was done.
+- Not done: the real-encoder run of check 19, the full-screen pause and resume on this PC, a share on the internet.
+
 ## Unreleased: screen shares reach the bitrate of their quality (B16)
 
 - The encoder of a screen share uses the `constant` bitrate mode. With the default mode, a VP8 encoder that gets a higher

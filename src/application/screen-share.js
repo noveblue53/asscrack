@@ -444,7 +444,15 @@
             }
             for (const tier of current.tiers.values()) encodeKept(tier, true);
         } else {
-            for (const tier of current.tiers.values()) tier.keyWanted = true;
+            // 1.0.7: the first captured frame after a resume goes out at once, also when the bucket (E3) is below
+            // zero, and also when the resume is in the frame slot of the last frame before the pause (E10).
+            for (const tier of current.tiers.values()) {
+                tier.keyWanted = true;
+                tier.resumeKey = true;
+                tier.lastSlot = -1;
+                // E6a: the pause is no part of the measured frame rate.
+                tier.slotTimes = [];
+            }
         }
         render();
     }
@@ -520,8 +528,9 @@
         if (!tier.encoder) return;
         maybeReconfigure(tier, t);
         refill(tier, t);
-        // E3: while the bucket is below zero, do not encode for this tier. A keyframe on request comes at once.
-        if (!key && tier.tokens < 0) {
+        // E3: while the bucket is below zero, do not encode for this tier. A keyframe on request comes at once, and
+        // the first frame after a resume.
+        if (!key && !tier.resumeKey && tier.tokens < 0) {
             if (slot) { tier.skipped++; totals.skipped++; }
             return;
         }
@@ -532,6 +541,7 @@
         }
         const keyFrame = key || tier.keyWanted;
         tier.keyWanted = false;
+        tier.resumeKey = false;
         if (tier.starts.size > 64) tier.starts.clear();
         tier.starts.set(frame.timestamp, t);
         try {
@@ -599,7 +609,12 @@
             } else if (entry.bitrate !== tier.bitrate) {
                 setBitrate(tier, entry.bitrate);
             }
-            if (entry.keyFrame) {
+            // 1.0.7: a new tier or a new preset while paused. The node sends no keyframe request and no refresh tick
+            // before setScreenSize, and the paused share encodes no captured frame: open the encoder with the
+            // "Paused" picture at once.
+            if (current.paused && current.kept && (!tier.encoder || !tier.size)) {
+                encodeKept(tier, true);
+            } else if (entry.keyFrame) {
                 tier.keyWanted = true;
                 // E5: a keyframe at once from the kept frame when the last captured frame is older than 100 ms.
                 if (current.kept && clock() - current.kept.at > KEPT_KEY_MS) encodeKept(tier, true);
