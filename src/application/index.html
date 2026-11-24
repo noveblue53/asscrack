@@ -442,6 +442,11 @@
             <span id="screen-stage-note" role="status" hidden></span>
             <!-- 1.0.6, screen-view.js: one button for each live share when there are two or more. -->
             <span id="screen-switcher" role="group" aria-label="Shares" hidden></span>
+            <span id="screen-audio-controls" class="screen-audio-controls" role="group" aria-label="Share audio" hidden>
+              <button id="screen-audio-mute" type="button" aria-pressed="false" title="Mute share audio">Mute</button>
+              <input id="screen-audio-volume" type="range" min="0" max="100" step="1" value="80" aria-label="Share audio volume">
+              <span id="screen-audio-pct">80%</span>
+            </span>
             <button id="screen-fill" type="button" aria-pressed="false">Fill window</button>
             <button id="screen-unwatch" type="button">Stop watching</button>
           </header>
@@ -954,7 +959,7 @@
     <label for="screen-quality">Quality</label>
     <select id="screen-quality"></select>
     <div class="screen-picker-buttons">
-      <span class="state-tag screen-no-audio" title="Others hear you in voice">No audio</span>
+      <label class="screen-audio-opt" title="Share app audio (window) or desktop audio without voice (screen)"><input id="screen-audio" type="checkbox"> Share audio</label>
       <button id="screen-share-go" type="button" disabled>Share</button>
       <button id="screen-cancel" type="button">Cancel</button>
     </div>
@@ -999,6 +1004,7 @@
   <script src="music-viz-core.js"></script>
   <script src="music-viz.js"></script>
   <script src="screen-frame-check.js"></script>
+  <script src="screen-audio.js"></script>
   <script src="screen-share.js"></script>
   <script src="screen-view.js"></script>
   <script src="auto-status-ui.js"></script>

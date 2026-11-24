@@ -12,13 +12,11 @@ const MAX_KEY = 128;
 const validKey = key => typeof key === 'string' && key.length > 0 && key.length <= MAX_KEY;
 
 // A valid choice, or null.
-export function validChoice(value) {
+export function validChoice(value, maxVolume = MAX_VOLUME) {
     if (!value || typeof value.muted !== 'boolean' || !Number.isInteger(value.volume)) return null;
-    if (value.volume < 0 || value.volume > MAX_VOLUME) return null;
+    if (value.volume < 0 || value.volume > maxVolume) return null;
     return { muted: value.muted, volume: value.volume };
 }
-
-const isDefault = choice => !choice.muted && choice.volume === 100;
 
 // The key of a room: the room key is a secret, thus the file keeps only a hash.
 export function listeningRoomTag(roomKey) {
@@ -26,7 +24,8 @@ export function listeningRoomTag(roomKey) {
     return createHash('sha256').update('asscrack-listening\0' + roomKey).digest('hex').slice(0, 32);
 }
 
-export function listeningStore(file) {
+export function listeningStore(file, { maxVolume = MAX_VOLUME, defaultVolume = 100 } = {}) {
+    const isDefault = choice => !choice.muted && choice.volume === defaultVolume;
     // room tag -> Map(device ID -> { muted, volume })
     const rooms = new Map();
     try {
@@ -35,7 +34,7 @@ export function listeningStore(file) {
             if (!validKey(tag) || !people || typeof people !== 'object') continue;
             const map = new Map();
             for (const [device, value] of Object.entries(people).slice(0, MAX_PEOPLE)) {
-                const choice = validKey(device) ? validChoice(value) : null;
+                const choice = validKey(device) ? validChoice(value, maxVolume) : null;
                 if (choice && !isDefault(choice)) map.set(device, choice);
             }
             if (map.size) rooms.set(tag, map);
@@ -56,7 +55,7 @@ export function listeningStore(file) {
         },
         // Returns true when the choice is valid. The default choice removes the entry (Reset).
         set(tag, device, value) {
-            const choice = validChoice(value);
+            const choice = validChoice(value, maxVolume);
             if (!validKey(tag) || !validKey(device) || !choice) return false;
             let people = rooms.get(tag);
             if (isDefault(choice)) {

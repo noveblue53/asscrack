@@ -107,13 +107,13 @@ function abortStream(stream, reason) {
 // connection of the chat session. sendLine(peerId, line) and broadcast(line): control lines on the chat sessions.
 // openPeers(): the peers with an open session. idle(): Idle Peer. canShare(): the device can share (protected room).
 export function createScreenShare({ libp2p, selfId, events, allowed, connectionFor, sendLine, broadcast, openPeers,
-    idle = () => false, canShare = () => true, options = {} }) {
+    idle = () => false, canShare = () => true, onOwnStop = () => {}, onUnwatch = () => {}, options = {} }) {
     const O = { ...SCREEN_DEFAULTS, ...options }
     const clock = () => performance.now()
     const allowOpen = roomRateLimit(O.opensPerPeer, O.opensPerRoom)
     const allowLine = roomRateLimit(O.linesPerPeer, O.linesPerRoom)
     // One entry for each member: a member has at most one share. at: the time of the first line of this share ID.
-    const peers = new Map() // peerId -> { shareId, preset, at }
+    const peers = new Map() // peerId -> { shareId, preset, audio, at }
     // The open time of the session of each peer (opened). A share line on a session that opened after the own start can
     // come from an old share: its age is not known.
     const sessionOpenedAt = new Map()
@@ -125,7 +125,7 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
     const closing = new Set()
 
     const screenLine = () => JSON.stringify(own
-        ? { type: 'screen', v: 1, sharing: true, shareId: own.shareId, preset: own.quality }
+        ? { type: 'screen', v: 1, sharing: true, shareId: own.shareId, preset: own.quality, ...(own.audio ? { audio: true } : {}) }
         : { type: 'screen', v: 1, sharing: false })
 
     function closeStream(stream) {
@@ -259,7 +259,7 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
         }, O.isolatedMs)
     }
 
-    function startScreenShare({ preset = 'auto', width, height } = {}) {
+    function startScreenShare({ preset = 'auto', width, height, audio = false } = {}) {
         if (stopped) throw new Error('The node is stopped.')
         if (idle()) throw new Error('Screen sharing is not available in Idle Peer.')
         if (!canShare()) throw new Error('This device is not admitted to the room.')
@@ -271,7 +271,8 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
         if (!SCREEN_QUALITIES.includes(preset)) throw new TypeError(`Unknown screen quality: ${preset}`)
         const source = Number.isInteger(width) && Number.isInteger(height) && width > 0 && height > 0 ? { width, height } : null
         const shareId = randomUUID()
-        own = { shareId, quality: preset, viewers: new Map(), pending: new Set(), dirty: true, lastEncoder: null, lastViewers: null, rate: null,
+        const withAudio = audio === true
+        own = { shareId, quality: preset, audio: withAudio, viewers: new Map(), pending: new Set(), dirty: true, lastEncoder: null, lastViewers: null, rate: null,
             startedAt: clock() }
         const share = own
         own.rate = createScreenRate({ quality: preset, source, now: clock, params: O.rate, configRecord,
@@ -283,7 +284,7 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
         own.diagTimer = setInterval(() => diagTick(share), O.diagMs)
         own.diagTimer.unref?.()
         broadcast(screenLine())
-        events.emit('screen-state', { peerId: selfId, own: true, sharing: true, shareId, preset })
+        events.emit('screen-state', { peerId: selfId, own: true, sharing: true, shareId, preset, audio: withAudio })
         emitEncoder()
         emitViewers()
         checkIsolated()
@@ -306,10 +307,11 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
         for (const [peerId, v] of [...share.viewers]) endViewer(peerId, wire, v.stream)
         for (const stream of share.pending) { try { stream.send(endRecord(wire)) } catch { /* closed */ } closeStream(stream) }
         own = null
+        onOwnStop(why)
         broadcast(screenLine())
         console.info(`EVENT screen share stopped reason=${why}`)
         // 1.0.6: the events of a stop carry the ID of the share that stopped.
-        events.emit('screen-state', { peerId: selfId, own: true, sharing: false, shareId: share.shareId, preset: null })
+        events.emit('screen-state', { peerId: selfId, own: true, sharing: false, shareId: share.shareId, preset: null, audio: false })
         events.emit('screen-viewers', viewersView())
         events.emit('screen-encoder', { tiers: [] })
         events.emit('screen-ended', { peerId: selfId, shareId: share.shareId, reason: why, own: true, ...(share.limitBy ? { by: share.limitBy } : {}) })
@@ -397,14 +399,17 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
         if (w.done) return
         w.done = true
         clearTimeout(w.timer)
-        if (watch === w) watch = null
+        if (watch === w) {
+            watch = null
+            onUnwatch(reason)
+        }
         // 1.0.6: each end of a watch, also a stop or a switch of the user (no screen-ended event for those two).
         events.emit('screen-watch', { event: 'end', peerId: w.peerId, shareId: w.shareId, reason, frames: w.frames })
         // L11 (P10b): a share that sends no CONFIG in watchTimeoutMs goes out of the list. A screen line with no stream
         // then cannot block Start for ever.
         if (reason === 'timeout' && !w.configured && peers.get(w.peerId)?.shareId === w.shareId) {
             peers.delete(w.peerId)
-            events.emit('screen-state', { peerId: w.peerId, sharing: false, shareId: w.shareId, preset: null })
+            events.emit('screen-state', { peerId: w.peerId, sharing: false, shareId: w.shareId, preset: null, audio: false })
         }
         const user = reason === 'unwatched' || reason === 'switched'
         if (!w.configured) w.reject(new Error(user ? 'Watch stopped.' : `The share is not available (${reason}).`))
@@ -516,18 +521,19 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
         const old = peers.get(peerId)
         if (control.sharing) {
             const preset = SCREEN_QUALITIES.includes(control.preset) ? control.preset : null
-            if (old?.shareId === control.shareId && old.preset === preset) return
+            const audio = control.audio === true
+            if (old?.shareId === control.shareId && old.preset === preset && old.audio === audio) return
             // One entry for each member: a new share ID of a member replaces its old share (one event, L11).
             const openedAt = sessionOpenedAt.get(peerId)
             const unknownAge = own && openedAt !== undefined && openedAt >= own.startedAt
-            peers.set(peerId, { shareId: control.shareId, preset,
+            peers.set(peerId, { shareId: control.shareId, preset, audio,
                 at: old?.shareId === control.shareId ? old.at : unknownAge ? -Infinity : clock() })
-            events.emit('screen-state', { peerId, sharing: true, shareId: control.shareId, preset })
+            events.emit('screen-state', { peerId, sharing: true, shareId: control.shareId, preset, audio })
             // Section 2.6, item 6 (1.0.6): two shares at the same time are permitted. Only a share over the limit stops.
             checkLimit(peerId)
         } else if (old) {
             peers.delete(peerId)
-            events.emit('screen-state', { peerId, sharing: false, shareId: old.shareId, preset: null })
+            events.emit('screen-state', { peerId, sharing: false, shareId: old.shareId, preset: null, audio: false })
         }
     }
     function opened(peerId) {
@@ -538,7 +544,7 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
     function peerLeft(peerId) {
         sessionOpenedAt.delete(peerId)
         const old = peers.get(peerId)
-        if (peers.delete(peerId)) events.emit('screen-state', { peerId, sharing: false, shareId: old.shareId, preset: null })
+        if (peers.delete(peerId)) events.emit('screen-state', { peerId, sharing: false, shareId: old.shareId, preset: null, audio: false })
         const v = own?.viewers.get(peerId)
         if (v) {
             own.viewers.delete(peerId)
@@ -566,9 +572,9 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
 
     function screenState() {
         return {
-            own: own ? { shareId: own.shareId, preset: own.quality, viewers: [...own.viewers.keys()], bitrate: own.rate.tiers()[0]?.bitrate ?? null,
+            own: own ? { shareId: own.shareId, preset: own.quality, audio: own.audio, viewers: [...own.viewers.keys()], bitrate: own.rate.tiers()[0]?.bitrate ?? null,
                 tiers: own.rate.tiers(), cap: own.rate.cap(), capture: own.rate.capture() } : null,
-            peers: Object.fromEntries([...peers].map(([peerId, value]) => [peerId, { shareId: value.shareId, preset: value.preset }])),
+            peers: Object.fromEntries([...peers].map(([peerId, value]) => [peerId, { shareId: value.shareId, preset: value.preset, audio: value.audio === true }])),
             watching: watch?.peerId ?? null,
             watchingShare: watch?.shareId ?? null,
             maxShares: O.maxShares
@@ -585,6 +591,11 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
 
     return {
         handleStream, handleLine, opened, peerLeft, setIdle, stop,
+        getOwnShare: () => (own ? { shareId: own.shareId, audio: own.audio } : null),
+        getPeerShare: peerId => {
+            const p = peers.get(peerId)
+            return p ? { shareId: p.shareId, audio: p.audio === true } : null
+        },
         // A test hook of rule A9 and A7 (W1 check 13a, W5 check 8a).
         testRate: () => own?.rate ?? null,
         api: {

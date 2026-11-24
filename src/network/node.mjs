@@ -28,6 +28,7 @@ import { createRoomTopic } from './room-topic.mjs'
 import { createHistory, HISTORY_LIMIT, MAX_MESSAGE_BYTES, validHistoryItem } from './history.mjs'
 import { createFileTransfer, FILE_PROTOCOLS } from './file-transfer.mjs'
 import { createScreenShare, SCREEN_PROTOCOL } from './screen-share.mjs'
+import { createScreenAudio, SCREEN_AUDIO_PROTOCOL } from './screen-audio.mjs'
 import { createVoiceRelay, VOICE_PROTOCOL, VOICE_DIRECT_PROTOCOL } from './voice-relay.mjs'
 import { createRoomMusic, MUSIC_DIRECT_PROTOCOL, MUSIC_LIMITS, MUSIC_PROTOCOL } from './music.mjs'
 import { makeInvite, makeMemberInvite, makeRoomCode, validAddr, validPeerId } from './invite.mjs'
@@ -861,12 +862,21 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     })
 
     // Screen share (P8): the protocol and the rate control are in screen-share.mjs and screen-rate.mjs.
+    let screenAudio = null
     const screen = createScreenShare({
         libp2p: node, selfId, events, allowed: filePeerAllowed, connectionFor: peerId => sessionConns.get(peerId) ?? null,
         sendLine: (peerId, line) => filePeerAllowed(peerId) && sessions.get(peerId).send(line),
         broadcast: line => { for (const [peerId, session] of sessions) if (memberAllowed(peerId)) session.send(line) },
         openPeers: () => [...sessions.keys()].filter(filePeerAllowed), idle: () => selfIdle,
-        canShare: () => !membership || membership.admitted(), options: screenOptions
+        canShare: () => !membership || membership.admitted(),
+        onOwnStop: reason => screenAudio?.stopOwn(reason),
+        onUnwatch: reason => screenAudio?.api.unwatchScreenAudio(reason === 'switched' ? 'switched' : 'unwatched'),
+        options: screenOptions
+    })
+    screenAudio = createScreenAudio({
+        events, allowed: filePeerAllowed, connectionFor: peerId => sessionConns.get(peerId) ?? null,
+        getOwnShare: () => screen.getOwnShare(), getPeerShare: peerId => screen.getPeerShare(peerId),
+        idle: () => selfIdle
     })
 
     const shelf = createSharedShelf({ self: selfId, name: senderName, peerName: peer => names.get(peer), sessions, files, events })
@@ -1415,6 +1425,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 pendingClock.delete(peerId)
                 files.peerLeft(peerId)
                 screen.peerLeft(peerId)
+                screenAudio.peerLeft(peerId)
                 links.delete(peerId)
                 broadcastLinks()
                 emitTopology()
@@ -1501,6 +1512,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         runOnTransientConnection: true, maxInboundStreams: 4, maxOutboundStreams: 4
     })
     await node.handle(SCREEN_PROTOCOL, data => screen.handleStream(data),
+        { runOnTransientConnection: true, maxInboundStreams: 8, maxOutboundStreams: 2 })
+    await node.handle(SCREEN_AUDIO_PROTOCOL, data => screenAudio.handleStream(data),
         { runOnTransientConnection: true, maxInboundStreams: 8, maxOutboundStreams: 2 })
 
     // In a keyed room, answer a dial-back only for a peer with an open session. The proof of the peer can
@@ -2530,6 +2543,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 typing.edited(false)
                 if (voiceState.inVoice) setVoice({})
                 screen.setIdle(true)
+                screenAudio.setIdle(true)
             }
             const line = nodeLine()
             for (const session of sessions.values()) session.send(line)
@@ -2595,6 +2609,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         // P9C: the number of transfers that move data now (an update restart asks first).
         activeTransfers: () => files.activeCount(),
         ...screen.api,
+        ...screenAudio.api,
+        screenAudioStats: screenAudio.stats,
         screenTestRate: screen.testRate,
         async stop() {
             stopped = true
@@ -2622,6 +2638,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             clearInterval(clockTimer)
             await files.stop()
             await screen.stop()
+            await screenAudio.stop()
             election.stop()
             voiceRelay.stop()
             musicRelay.stop()
