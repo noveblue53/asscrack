@@ -82,6 +82,7 @@
 
 #voice-channel-list .vc-person {
   display: flex;
+  align-items: center;
   gap: 6px;
   font-size: 12px;
 }
@@ -97,10 +98,14 @@
   opacity: 0.75;
 }
 
-/* The speaking ring: only in the own channel (voice-channels-ui.js sets the class). */
+#voice-channel-list .vc-meter {
+  margin-left: auto;
+}
+
+/* Active speaker in own channel: subtle text highlight beside the live oscilloscope meter. */
 #voice-channel-list .vc-person.speaking .vc-person-name {
-  border-radius: 4px;
-  box-shadow: 0 0 0 2px #3fc41f;
+  color: var(--go-dark, #2a7a12);
+  font-weight: 600;
 }
 
 #voice-channel-dialog,

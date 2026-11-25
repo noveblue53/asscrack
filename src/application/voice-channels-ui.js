@@ -136,10 +136,19 @@
             const li = document.createElement('li');
             li.className = person.speaking ? 'vc-person speaking' : 'vc-person';
             li.dataset.peerId = String(person.peerId ?? '');
+            li.dataset.self = person.self ? 'true' : 'false';
             const name = document.createElement('span');
             name.className = 'vc-person-name';
             name.textContent = person.self ? `${person.name} (you)` : person.name;
             li.append(name);
+            if (row.mine && person.speaking) {
+                const meter = document.createElement('canvas');
+                meter.className = 'vc-meter';
+                meter.width = 38;
+                meter.height = 14;
+                meter.setAttribute('aria-hidden', 'true');
+                li.append(meter);
+            }
             if (person.state) {
                 const state = document.createElement('span');
                 state.className = 'vc-person-state';
@@ -176,6 +185,7 @@
             before = item.li.nextElementSibling ?? null;
         }
         if (createButton) createButton.hidden = !view.editable;
+        window.voiceMeters?.refresh?.();
     }
 
     function update(next) {

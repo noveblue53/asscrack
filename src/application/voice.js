@@ -24,6 +24,9 @@
     const BITRATE = 32000;
     // An origin with no frame for this time has level 0.
     const LEVEL_HOLD_MS = 300;
+    const METER_POINTS = 24;
+    const ANALYSER_FFT = 64;
+    const ZERO_WAVE = new Float32Array(METER_POINTS);
 
     let selfId = null;
     let hostId = null;
@@ -60,6 +63,10 @@
     let captureNode = null;
     let playbackNode = null;
     let sourceNode = null;
+    let localAnalyser = null;
+    let localAnalyserBuf = null;
+    const localWave = new Float32Array(METER_POINTS);
+    let localWaveAt = 0;
     let encoder = null;
     let timestamp = 0;
     // RNNoise: the WASM bytes (one read for each start of the window), the worklet module of this context, the node.
@@ -191,10 +198,41 @@
         }
     }
 
+    function downsampleWaveform(samples, out) {
+        if (!samples?.length) {
+            out.fill(0);
+            return;
+        }
+        const half = Math.floor(samples.length / 2);
+        let trigger = 0;
+        for (let i = 1; i < half; i++) {
+            if (samples[i - 1] <= 0 && samples[i] > 0) { trigger = i; break; }
+        }
+        const span = Math.max(1, samples.length - trigger);
+        const count = out.length;
+        for (let i = 0; i < count; i++) {
+            const idx = Math.min(samples.length - 1, trigger + Math.floor(i * span / count));
+            const v = samples[idx];
+            out[i] = Number.isFinite(v) ? Math.min(1, Math.max(-1, v)) : 0;
+        }
+    }
+
+    function rmsToMeterLevel(rms) {
+        if (!Number.isFinite(rms) || rms <= 0) return 0;
+        return Math.min(1, Math.max(0, (20 * Math.log10(rms) + 54) / 48));
+    }
+
+    function dbToMeterLevel(db) {
+        if (!Number.isFinite(db)) return 0;
+        return Math.min(1, Math.max(0, (db + 80) / 70));
+    }
+
     // Each 20 ms block of the microphone.
     function onBlock(samples) {
         const result = gate.push(samples, performance.now());
         inputLevel = result.level;
+        downsampleWaveform(samples, localWave);
+        localWaveAt = performance.now();
         const sending = inVoice && !muted;
         if (sending) { own.blocks++; if (result.open) own.open++; }
         if (sending) for (const b of result.send) encodeBlock(b);
@@ -231,7 +269,7 @@
     function originEntry(origin) {
         let o = origins.get(origin);
         if (o) return o;
-        o = { decoder: null, bytesReceived: 0, audioLevel: 0, lastAt: 0, timestamp: 0 };
+        o = { decoder: null, bytesReceived: 0, audioLevel: 0, lastAt: 0, timestamp: 0, wave: new Float32Array(METER_POINTS) };
         origins.set(origin, o);
         return o;
     }
@@ -246,6 +284,7 @@
                     let sum = 0;
                     for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
                     o.audioLevel = Math.sqrt(sum / Math.max(1, samples.length));
+                    downsampleWaveform(samples, o.wave);
                     // Deafen: the level above still updates, but no samples go to the playback node.
                     if (playbackNode && inVoice && !deafened) {
                         playbackNode.port.postMessage({ type: 'samples', origin, samples }, [samples.buffer]);
@@ -355,16 +394,24 @@
         rnnoiseNode = null;
     }
 
-    // source -> (RNNoise) -> capture worklet.
+    // source -> (RNNoise) -> capture worklet (and localAnalyser tap when supported).
     function wireCapture() {
         if (!sourceNode || !captureNode) return;
         try { sourceNode.disconnect(); } catch { /* already disconnected */ }
         try { rnnoiseNode?.disconnect(); } catch { /* already disconnected */ }
-        if (suppressor() === 'rnnoise' && rnnoiseNode) {
+        const tapSource = suppressor() === 'rnnoise' && rnnoiseNode ? rnnoiseNode : sourceNode;
+        if (tapSource === rnnoiseNode) {
             sourceNode.connect(rnnoiseNode);
-            rnnoiseNode.connect(captureNode);
-        } else {
-            sourceNode.connect(captureNode);
+        }
+        tapSource.connect(captureNode);
+        if (typeof context?.createAnalyser === 'function') {
+            if (!localAnalyser) {
+                localAnalyser = context.createAnalyser();
+                localAnalyser.fftSize = ANALYSER_FFT;
+                localAnalyser.smoothingTimeConstant = 0.25;
+                localAnalyserBuf = new Float32Array(localAnalyser.fftSize);
+            }
+            try { tapSource.connect(localAnalyser); } catch { /* already connected */ }
         }
     }
 
@@ -630,6 +677,7 @@
         for (const o of origins.values()) {
             if (o.decoder && o.decoder.state !== 'closed') o.decoder.close();
             o.decoder = null;
+            o.wave.fill(0);
         }
         try { playbackNode?.disconnect(); } catch { /* already disconnected */ }
         playbackNode = null;
@@ -643,6 +691,11 @@
         if (captureNode) captureNode.port.onmessage = null;
         try { captureNode?.disconnect(); } catch { /* already disconnected */ }
         captureNode = null;
+        try { localAnalyser?.disconnect(); } catch { /* already disconnected */ }
+        localAnalyser = null;
+        localAnalyserBuf = null;
+        localWave.fill(0);
+        localWaveAt = 0;
         if (context) context.close().catch(() => {});
         context = null;
         outputFallback = false;
@@ -927,6 +980,32 @@
                 result[origin] = { bytesReceived: o.bytesReceived, audioLevel: level };
             }
             return result;
+        },
+        meterSnapshot(now = performance.now()) {
+            const localSilent = !localStream || (inVoice && muted);
+            if (!localSilent && localAnalyser && localAnalyserBuf && typeof localAnalyser.getFloatTimeDomainData === 'function') {
+                localAnalyser.getFloatTimeDomainData(localAnalyserBuf);
+                downsampleWaveform(localAnalyserBuf, localWave);
+            }
+            const localFresh = !localSilent && (Boolean(localAnalyser) || now - localWaveAt <= LEVEL_HOLD_MS);
+            const local = {
+                capturing: localStream !== null,
+                transmitting: inVoice && !muted && transmitting,
+                level: localFresh ? dbToMeterLevel(inputLevel) : 0,
+                db: inputLevel,
+                wave: localFresh ? localWave : ZERO_WAVE
+            };
+            const remotes = {};
+            for (const [origin, o] of origins) {
+                const isMuted = listeningFor(origin).muted;
+                const fresh = !isMuted && now - o.lastAt <= LEVEL_HOLD_MS;
+                remotes[origin] = {
+                    active: fresh && o.audioLevel > 0.01,
+                    level: fresh ? rmsToMeterLevel(o.audioLevel) : 0,
+                    wave: fresh ? o.wave : ZERO_WAVE
+                };
+            }
+            return { selfId, inVoice, local, remotes };
         },
         onChange(callback) {
             if (typeof callback === 'function') listeners.push(callback);

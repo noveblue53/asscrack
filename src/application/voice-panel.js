@@ -9,6 +9,121 @@
 //   from the hook, also while the window is not in front. Else the window listens to its own key events. Then a key
 //   up when the window is not in front does not come to the window, thus a blur or a hidden window releases the key.
 (function () {
+    const FRAME_MS = 1000 / 30;
+    const LED_SEGMENTS = 5;
+    const clamp01 = value => (Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0);
+    const clampSigned = value => (Number.isFinite(value) ? Math.min(1, Math.max(-1, value)) : 0);
+
+    function rmsToLevel(rms) {
+        if (!Number.isFinite(rms) || rms <= 0) return 0;
+        return clamp01((20 * Math.log10(rms) + 54) / 48);
+    }
+
+    function ledCount(level, segments = LED_SEGMENTS) {
+        const count = Math.max(1, Math.floor(segments));
+        return Math.min(count, Math.max(0, Math.round(clamp01(level) * count)));
+    }
+
+    function createMeterLoop({ schedule, cancel = () => {}, now, decide, draw, stopped = () => {}, frameMs = FRAME_MS }) {
+        let handle = null;
+        let last = -Infinity;
+        let frames = 0;
+        function tick() {
+            handle = null;
+            if (!decide()) { stopped(); return; }
+            const t = now();
+            if (t - last >= frameMs - 2) {
+                last = t;
+                frames++;
+                draw(t);
+            }
+            if (decide()) handle = schedule(tick);
+            else stopped();
+        }
+        return {
+            refresh() {
+                if (handle !== null) {
+                    if (decide()) return;
+                    cancel(handle);
+                    handle = null;
+                    stopped();
+                    return;
+                }
+                if (decide()) handle = schedule(tick);
+            },
+            stop() {
+                if (handle !== null) cancel(handle);
+                handle = null;
+                stopped();
+            },
+            running: () => handle !== null,
+            frames: () => frames
+        };
+    }
+
+    function drawMiniOscilloscope(ctx, width, height, wave, { active = true, level = 0 } = {}) {
+        if (!ctx || width <= 0 || height <= 0) return;
+        ctx.clearRect(0, 0, width, height);
+        const midY = height / 2;
+        ctx.save?.();
+        ctx.strokeStyle = 'rgba(57, 255, 122, 0.16)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, midY);
+        ctx.lineTo(width, midY);
+        ctx.stroke();
+
+        const points = wave && wave.length ? wave : [0, 0];
+        const amp = Math.max(1.5, height * 0.42);
+        const boost = active || level > 0.02 ? 1 : 0.4;
+        const trace = () => {
+            ctx.beginPath();
+            for (let i = 0; i < points.length; i++) {
+                const x = points.length === 1 ? width / 2 : i * width / (points.length - 1);
+                const y = midY - clampSigned(points[i]) * amp * boost;
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+        };
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = active ? 'rgba(43, 220, 79, 0.38)' : 'rgba(43, 220, 79, 0.2)';
+        ctx.lineWidth = Math.max(2.5, height * 0.14);
+        trace();
+        ctx.strokeStyle = active ? '#6bff95' : '#4aa868';
+        ctx.lineWidth = Math.max(1.2, height * 0.06);
+        trace();
+        ctx.restore?.();
+    }
+
+    function drawLedBar(ctx, width, height, level, segments = LED_SEGMENTS) {
+        if (!ctx || width <= 0 || height <= 0) return;
+        ctx.clearRect(0, 0, width, height);
+        const count = Math.max(1, Math.floor(segments));
+        const lit = ledCount(level, count);
+        const pad = Math.max(1, Math.round(Math.min(width, height) * 0.12));
+        const gap = Math.max(1, Math.round((width - pad * 2) * 0.06));
+        const segW = Math.max(1, Math.floor((width - pad * 2 - gap * (count - 1)) / count));
+        const segH = Math.max(1, height - pad * 2);
+        const x0 = Math.floor((width - (segW * count + gap * (count - 1))) / 2);
+        for (let i = 0; i < count; i++) {
+            const x = x0 + i * (segW + gap);
+            if (i < lit) {
+                ctx.fillStyle = i >= count - 1 ? '#f0302c' : i >= count - 2 ? '#f0e231' : '#2bdc4f';
+            } else {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+            }
+            ctx.fillRect(x, pad, segW, segH);
+        }
+    }
+
+    const metersCore = Object.freeze({
+        FRAME_MS, LED_SEGMENTS, clamp01, clampSigned, rmsToLevel, ledCount,
+        createMeterLoop, drawMiniOscilloscope, drawLedBar
+    });
+    window.voiceMetersCore = metersCore;
+
     const api = window.asscrack;
     const voice = window.voice;
     if (!api || !voice || typeof api.getVoiceSettings !== 'function') return;
@@ -216,6 +331,78 @@
 
     // ---- Meter ----
 
+    const scopeCanvas = (() => {
+        const meterBox = meterFill?.parentElement;
+        if (!meterBox) return null;
+        let canvas = $('vs-scope');
+        if (!canvas && typeof document.createElement === 'function') {
+            canvas = document.createElement('canvas');
+            canvas.id = 'vs-scope';
+            canvas.className = 'vs-scope';
+            canvas.setAttribute('aria-hidden', 'true');
+            meterBox.insertBefore(canvas, meterLine ?? null);
+        }
+        return canvas;
+    })();
+
+    const reducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true;
+
+    function sizeCanvas(canvas, fallbackW, fallbackH) {
+        const ratio = window.devicePixelRatio || 1;
+        const w = Math.max(1, Math.round((canvas.clientWidth || fallbackW) * ratio));
+        const h = Math.max(1, Math.round((canvas.clientHeight || fallbackH) * ratio));
+        if (canvas.width !== w) canvas.width = w;
+        if (canvas.height !== h) canvas.height = h;
+        const ctx = canvas.getContext?.('2d');
+        return ctx ? { ctx, width: w, height: h } : null;
+    }
+
+    function drawEntryOnCanvas(canvas, entry, fallbackW, fallbackH) {
+        const surface = sizeCanvas(canvas, fallbackW, fallbackH);
+        if (!surface) return;
+        const level = entry?.level ?? 0;
+        const wave = entry?.wave;
+        if (reducedMotion()) {
+            metersCore.drawLedBar(surface.ctx, surface.width, surface.height, level, metersCore.LED_SEGMENTS);
+        } else {
+            metersCore.drawMiniOscilloscope(surface.ctx, surface.width, surface.height, wave, {
+                active: entry?.active ?? entry?.transmitting ?? level > 0.02,
+                level
+            });
+        }
+    }
+
+    const metersLoop = metersCore.createMeterLoop({
+        schedule: fn => (typeof requestAnimationFrame === 'function' ? requestAnimationFrame(fn) : setTimeout(fn, metersCore.FRAME_MS)),
+        cancel: id => { if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(id); else clearTimeout(id); },
+        now: () => performance.now(),
+        decide: () => {
+            if (document.visibilityState === 'hidden') return false;
+            if (!panel.hidden && voice.state().capturing) return true;
+            return document.querySelector?.('#voice-channel-list .vc-person.speaking canvas.vc-meter') !== null;
+        },
+        draw: () => {
+            const snap = voice.meterSnapshot?.();
+            if (!snap) return;
+            if (!panel.hidden && scopeCanvas && (scopeCanvas.clientWidth > 0 || scopeCanvas.width > 0)) {
+                drawEntryOnCanvas(scopeCanvas, snap.local, 320, 20);
+            }
+            const canvases = document.querySelectorAll?.('#voice-channel-list .vc-person.speaking canvas.vc-meter') ?? [];
+            for (const canvas of canvases) {
+                const li = canvas.closest?.('.vc-person');
+                const isSelf = li?.dataset?.self === 'true';
+                const peerId = li?.dataset?.peerId ?? '';
+                const entry = isSelf ? snap.local : snap.remotes?.[peerId];
+                drawEntryOnCanvas(canvas, entry, 38, 14);
+            }
+        },
+        stopped: () => {
+            if (scopeCanvas && scopeCanvas.width > 0 && scopeCanvas.height > 0) {
+                scopeCanvas.getContext?.('2d')?.clearRect(0, 0, scopeCanvas.width, scopeCanvas.height);
+            }
+        }
+    });
+
     function drawMeter() {
         meterFrame = 0;
         meterFill.style.width = percent(meterLevel);
@@ -227,6 +414,7 @@
         meterLevel = level;
         meterOpen = open;
         if (!meterFrame) meterFrame = requestAnimationFrame(drawMeter);
+        metersLoop.refresh();
     });
 
     // ---- Panel ----
@@ -250,6 +438,7 @@
                 .then(() => {
                     renderMeterNote();
                     renderDeviceNote();
+                    metersLoop.refresh();
                     // The device names show only after the microphone permission. Read the list after the start.
                     return refreshDevices();
                 })
@@ -257,6 +446,7 @@
                     // C7: one text for each error name (voice.js). The original text goes to the console.
                     meterNote.textContent = voice.microphoneErrorText(err);
                     console.warn('Voice preview failed:', err?.name ?? 'Error', err?.message ?? err);
+                    metersLoop.refresh();
                     refreshDevices();
                 });
         } else {
@@ -265,6 +455,7 @@
             meterLevel = METER_MIN;
             meterOpen = false;
             drawMeter();
+            metersLoop.refresh();
         }
     }
 
@@ -396,9 +587,11 @@
     });
     document.addEventListener('visibilitychange', () => {
         if (document.hidden && hookStatus !== 'on') voice.setPushToTalk(false);
+        metersLoop.refresh();
     });
 
     voice.onChange(() => {
+        metersLoop.refresh();
         if (panel.hidden) return;
         if (voice.state().inVoice) renderMeterNote();
         renderDeviceNote();
@@ -411,6 +604,12 @@
             render();
         })
         .catch(err => console.warn('Voice settings read failed:', err?.message ?? err));
+
+    window.voiceMeters = Object.freeze({
+        refresh: () => metersLoop.refresh(),
+        stop: () => metersLoop.stop(),
+        running: () => metersLoop.running()
+    });
 
     window.voicePanel = {
         isOpen: () => !panel.hidden,
