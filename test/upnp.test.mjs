@@ -436,3 +436,215 @@ test('non-host member directAddrs upgrades a relayed session to a direct TCP con
         await Promise.allSettled([memberA.stop(), memberB.stop(), owner.stop()])
     }
 })
+
+// NAT-PMP fallback unit tests (fake PMP client, no network packets).
+test('NAT-PMP fallback: UPnP no-gateway falls back to NAT-PMP, renews, and stop() unmaps and closes', { timeout: 15000 }, async () => {
+    const { EventEmitter } = await import('node:events')
+    const calls = []
+    let closed = 0
+    const pmp = Object.assign(new EventEmitter(), {
+        async externalIp() {
+            calls.push(['externalIp'])
+            return PUBLIC_IP
+        },
+        async portMapping(opts) {
+            calls.push(['portMapping', { ...opts }])
+            return opts
+        },
+        async portUnmapping(opts) {
+            calls.push(['portUnmapping', { ...opts }])
+        },
+        async close() {
+            closed++
+        }
+    })
+    let factoryCalls = 0
+    const client = fakeClient(1, {
+        fail: 'Could not discover gateway',
+        pmp: () => { factoryCalls++; return pmp }
+    })
+    const a = await createAsscrackNode({
+        room: 'pmp-1', listen: LISTEN, discovery: false,
+        upnp: true, upnpLeaseSeconds: 1, upnpClient: client
+    })
+    try {
+        const events = upnpEvents(a)
+        await waitFor(() => events.length === 1)
+        const port = portOf(a)
+        assert.equal(factoryCalls, 1)
+        assert.equal(events[0].state, 'mapped')
+        assert.equal(events[0].ip, PUBLIC_IP)
+        assert.equal(events[0].port, port)
+        assert.deepEqual(a.publicAddrs(), [`/ip4/${PUBLIC_IP}/tcp/${port}`])
+        // Wait for at least one renewal via NAT-PMP.
+        await waitFor(() => calls.filter(c => c[0] === 'portMapping').length >= 2)
+        const firstMap = calls.find(c => c[0] === 'portMapping')[1]
+        assert.deepEqual(firstMap, { public: port, private: port, type: 'tcp', ttl: 1 })
+        await a.stop()
+        assert.equal(events.at(-1).state, 'unmapped')
+        const unmap = calls.find(c => c[0] === 'portUnmapping')
+        assert.ok(unmap, 'expected portUnmapping call')
+        assert.deepEqual(unmap[1], { public: port, private: port, type: 'tcp' })
+        assert.equal(closed, 1)
+    } finally {
+        await a.stop().catch(() => {})
+    }
+})
+
+test('NAT-PMP fallback: UPnP externalIp router-error falls back to NAT-PMP and succeeds', { timeout: 15000 }, async () => {
+    const { EventEmitter } = await import('node:events')
+    const { createPortMapper } = await import('../src/network/port-mapper.mjs')
+    const calls = []
+    const upnp = {
+        async externalIp() { throw new Error('router refused GetExternalIPAddress') },
+        async portMapping() { throw new Error('should not be called') },
+        async portUnmapping() {},
+        destroy() {}
+    }
+    const pmp = Object.assign(new EventEmitter(), {
+        async externalIp() { calls.push('externalIp'); return PUBLIC_IP },
+        async portMapping(opts) { calls.push(['portMapping', opts]); return opts },
+        async portUnmapping(opts) { calls.push(['portUnmapping', opts]) },
+        async close() { calls.push('close') }
+    })
+    const a = await createAsscrackNode({
+        room: 'pmp-2', listen: LISTEN, discovery: false,
+        upnp: true, upnpClient: createPortMapper(upnp, { pmp: () => pmp })
+    })
+    try {
+        const events = upnpEvents(a)
+        await waitFor(() => events.length === 1)
+        assert.equal(events[0].state, 'mapped')
+        assert.equal(events[0].ip, PUBLIC_IP)
+        assert.equal(calls[0], 'externalIp')
+        assert.equal(calls[1][0], 'portMapping')
+        await a.stop()
+        assert.ok(calls.some(c => Array.isArray(c) && c[0] === 'portUnmapping'))
+        assert.ok(calls.includes('close'))
+    } finally {
+        await a.stop().catch(() => {})
+    }
+})
+
+test('NAT-PMP fallback: HTTP 500 on AddPortMapping falls back to NAT-PMP and unmaps via NAT-PMP on stop()', { timeout: 15000 }, async () => {
+    const { EventEmitter } = await import('node:events')
+    const igd = await startIgd({ externalIp: PUBLIC_IP, addStatus: 500 })
+    const calls = []
+    const pmp = Object.assign(new EventEmitter(), {
+        async externalIp() { calls.push('externalIp'); return PUBLIC_IP },
+        async portMapping(opts) { calls.push(['portMapping', opts]); return opts },
+        async portUnmapping(opts) { calls.push(['portUnmapping', opts]) },
+        async close() { calls.push('close') }
+    })
+    const a = await createAsscrackNode({
+        room: 'pmp-3', listen: LISTEN, discovery: false,
+        upnp: true, upnpClient: fakeClient(igd.port, { pmp: () => pmp })
+    })
+    try {
+        const events = upnpEvents(a)
+        await waitFor(() => events.length === 1)
+        const port = portOf(a)
+        assert.equal(events[0].state, 'mapped')
+        assert.equal(events[0].ip, PUBLIC_IP)
+        assert.equal(events[0].port, port)
+        assert.deepEqual(igd.log.map(r => r.action), ['GetExternalIPAddress', 'AddPortMapping'])
+        assert.ok(!calls.includes('externalIp'), 'externalIp already succeeded via UPnP')
+        assert.deepEqual(calls[0][1], { public: port, private: port, type: 'tcp', ttl: 1800 })
+        await a.stop()
+        assert.equal(igd.log.filter(r => r.action === 'DeletePortMapping').length, 0)
+        assert.ok(calls.some(c => Array.isArray(c) && c[0] === 'portUnmapping'))
+        assert.ok(calls.includes('close'))
+    } finally {
+        await a.stop().catch(() => {})
+        await igd.close()
+    }
+})
+
+test('NAT-PMP fallback: both UPnP and NAT-PMP fail (timeout, error, or error event) -> original UPnP reason, closes PMP, no crash', { timeout: 15000 }, async () => {
+    const { EventEmitter } = await import('node:events')
+
+    // Case 1: no-gateway + PMP timeout
+    let closedTimeout = 0
+    const timeoutPmp = Object.assign(new EventEmitter(), {
+        externalIp: () => new Promise(() => {}),
+        portMapping: () => new Promise(() => {}),
+        portUnmapping: () => new Promise(() => {}),
+        close: async () => { closedTimeout++ }
+    })
+    const a1 = await createAsscrackNode({
+        room: 'pmp-fail-1', listen: LISTEN, discovery: false,
+        upnp: true, upnpTimeout: 1000,
+        upnpClient: fakeClient(1, { fail: 'Could not discover gateway', pmp: () => timeoutPmp, pmpTimeout: 50 })
+    })
+    try {
+        const events = upnpEvents(a1)
+        await waitFor(() => events.length === 1)
+        assert.equal(events[0].state, 'none')
+        assert.equal(events[0].reason, 'no-gateway')
+        assert.equal(closedTimeout, 1)
+    } finally {
+        await a1.stop()
+    }
+
+    // Case 2: router-error (HTTP 500) + PMP emits 'error' event on EventEmitter
+    const igd = await startIgd({ externalIp: PUBLIC_IP, addStatus: 500 })
+    let closedErr = 0
+    const errPmp = Object.assign(new EventEmitter(), {
+        externalIp: async () => PUBLIC_IP,
+        portMapping() {
+            queueMicrotask(() => this.emit('error', new Error('EADDRINUSE')))
+            return new Promise(() => {})
+        },
+        portUnmapping: async () => {},
+        close: async () => { closedErr++ }
+    })
+    const a2 = await createAsscrackNode({
+        room: 'pmp-fail-2', listen: LISTEN, discovery: false,
+        upnp: true, upnpTimeout: 1000,
+        upnpClient: fakeClient(igd.port, { pmp: () => errPmp, pmpTimeout: 500 })
+    })
+    try {
+        const events = upnpEvents(a2)
+        await waitFor(() => events.length === 1)
+        assert.equal(events[0].state, 'none')
+        assert.equal(events[0].reason, 'router-error')
+        assert.equal(closedErr, 1)
+    } finally {
+        await a2.stop()
+        await igd.close()
+    }
+})
+
+test('NAT-PMP fallback: when UPnP succeeds or returns CGNAT IP, NAT-PMP factory is not called', { timeout: 15000 }, async () => {
+    let factoryCalls = 0
+    const igdOk = await startIgd({ externalIp: PUBLIC_IP })
+    const a1 = await createAsscrackNode({
+        room: 'pmp-skip-1', listen: LISTEN, discovery: false,
+        upnp: true, upnpClient: fakeClient(igdOk.port, { pmp: () => { factoryCalls++; return {} } })
+    })
+    try {
+        const events = upnpEvents(a1)
+        await waitFor(() => events.length === 1)
+        assert.equal(events[0].state, 'mapped')
+        assert.equal(factoryCalls, 0)
+    } finally {
+        await a1.stop()
+        await igdOk.close()
+    }
+
+    const igdCgnat = await startIgd({ externalIp: '100.64.1.5' })
+    const a2 = await createAsscrackNode({
+        room: 'pmp-skip-2', listen: LISTEN, discovery: false,
+        upnp: true, upnpClient: fakeClient(igdCgnat.port, { pmp: () => { factoryCalls++; return {} } })
+    })
+    try {
+        const events = upnpEvents(a2)
+        await waitFor(() => events.length === 1)
+        assert.equal(events[0].state, 'none')
+        assert.equal(events[0].reason, 'private-ip')
+        assert.equal(factoryCalls, 0)
+    } finally {
+        await a2.stop()
+        await igdCgnat.close()
+    }
+})

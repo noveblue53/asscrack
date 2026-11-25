@@ -53,7 +53,7 @@ export function startIgd(mode = {}) {
 }
 
 // Substitute only SSDP discovery. The real transport reads the descriptor and sends SOAP requests.
-export function fakeClient(igdPort, { fail, delay = 0 } = {}) {
+export function fakeClient(igdPort, { fail, delay = 0, pmp = false, pmpTimeout } = {}) {
     const transport = Object.create(UPnP.prototype)
     const device = new Device({ url: `http://127.0.0.1:${igdPort}/desc.xml` })
     const controller = new AbortController()
@@ -63,5 +63,5 @@ export function fakeClient(igdPort, { fail, delay = 0 } = {}) {
         return { gateway: device, address: '127.0.0.1' }
     }
     transport.destroy = () => controller.abort()
-    return createPortMapper(transport)
+    return createPortMapper(transport, { pmp, pmpTimeout })
 }

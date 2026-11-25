@@ -79,7 +79,7 @@
         <input type="text" id="public-address" placeholder="203.0.113.5:47000" autocomplete="off" spellcheck="false">
       </div>
       <div class="field" id="upnp-field">
-        <label class="admission-check" title="Asks your router to forward a port, also when you reopen this room"><input type="checkbox" id="allow-upnp"> Open port (UPnP)</label>
+        <label class="admission-check" title="Asks your router to forward a port, also when you reopen this room"><input type="checkbox" id="allow-upnp" checked> Open port (UPnP)</label>
         <p id="upnp-off-note" class="login-note warn-line" hidden>Without UPnP or a public address, only your LAN can join.</p>
       </div>
 
@@ -194,6 +194,7 @@
             <li id="view-close-idle" data-room-only hidden role="menuitemcheckbox" aria-checked="true" tabindex="-1">Close to tray</li>
             <li id="view-screen-forwarding" data-room-only hidden role="menuitemcheckbox" aria-checked="true" tabindex="-1" title="Relay watched screen shares to other buddies">Forward screen shares</li>
             <li id="view-screen-hub-forwarding" data-room-only hidden role="menuitemcheckbox" aria-checked="false" tabindex="-1" title="Allow this full node to relay screen shares without watching">Relay shares when not watching</li>
+            <li id="view-auto-upnp" role="menuitemcheckbox" aria-checked="true" tabindex="-1" title="Ask your router to open a port (UPnP / NAT-PMP) for internet rooms">Open port automatically</li>
             <li id="view-system-buttons" role="menuitemcheckbox" aria-checked="false" tabindex="-1" title="Applies after restart" hidden>Native title bar</li>
             <li id="view-updates" role="menuitem" aria-haspopup="dialog" aria-controls="about-dialog" tabindex="-1" hidden>Check for updates…</li>
           </ul>

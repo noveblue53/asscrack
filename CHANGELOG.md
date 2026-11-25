@@ -28,6 +28,12 @@ Build:
 
 ## Unreleased
 
+- **Auto UPnP by default and NAT-PMP fallback**:
+  - Set `Open port (UPnP)` to checked by default on Create and Join for internet rooms, added a global Settings toggle (`Open port automatically`, persisted in `auto-upnp.json`), and kept background UPnP failures silent in `#map-upnp-box` until the user clicks `Open port (UPnP)`.
+  - Added zero-dependency NAT-PMP fallback (`@silentbot1/nat-api/lib/pmp/index.js` + `default-gateway`) in `src/network/port-mapper.mjs` when UPnP `externalIp()` or `portMapping()` fails, with `.unref()` call timeouts and safe socket error handling.
+  - `127.0.0.1`: `node --test test/upnp.test.mjs test/getting-in-ui.test.mjs test/room-admission-ui.test.mjs test/settings-menu.test.mjs test/login-menu.test.mjs test/preload-bridge.test.mjs` (`83` pass, `0` fail) and `npm test` (`1367` tests, `1349` pass, `0` fail, `18` skipped).
+  - `this PC`: clean Electron app smoke check (`node tools/app-smoke-check.mjs`) verified `allowUpnpChecked: true`, `menuChecked: "true"`, `hasAutoUpnp: true`, `hasApi: true`, and `0` errors.
+
 - **Any-member circuit relay Full Nodes (Session 1)**:
   - Separated `canRelay()` (any admitted, non-revoked, non-LAN, non-`relayOnly` member) from `canHost()` (`hostGrant`, still required for room-host and voice-host election) in `src/network/node.mjs` and `src/network/election.mjs`.
   - Updated `openHintChat` in `src/network/node.mjs` to pass `{ upgrade: true }` so existing relayed sessions upgrade to direct TCP when a member promotes to a Full Node.

@@ -365,6 +365,9 @@ contextBridge.exposeInMainWorld('asscrack', {
     setScreenForwarding: value => ipcRenderer.invoke('asscrack:set-screen-forwarding', typeof value === 'boolean' ? value : Number(value)),
     setScreenHubForwarding: value => ipcRenderer.invoke('asscrack:set-screen-hub-forwarding', Boolean(value)),
     onScreenForwarding: listen('asscrack:screen-forwarding'),
+    getAutoUpnp: () => ipcRenderer.invoke('asscrack:auto-upnp'),
+    setAutoUpnp: enabled => ipcRenderer.invoke('asscrack:set-auto-upnp', enabled === true),
+    onAutoUpnp: listen('asscrack:auto-upnp'),
     // 1.0.4: { active, paused, reason } of the guard of a window share that uses the screen.
     onScreenGuard: listen('asscrack:screen-guard'),
     onScreenViewers: listen('asscrack:screen-viewers'),

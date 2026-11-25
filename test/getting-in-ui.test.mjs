@@ -121,6 +121,28 @@ test('a member in an internet room can open a port with UPnP from the Network ma
     assert.equal(room.el('map-upnp-box').hidden, true);
 });
 
+test('background UPnP failure stays silent in the Network map panel until the user clicks Open port (UPnP)', async () => {
+    const { room, state } = await startRoom({
+        reach: { state: 'upnp-failed', reason: 'no-gateway', proven: false },
+        owner: false
+    });
+    assert.equal(room.el('map-upnp-box').hidden, false);
+    assert.equal(room.el('map-upnp').textContent, 'Open port (UPnP)');
+    assert.equal(room.el('map-upnp-note').hidden, true);
+    let calls = 0;
+    room.window.asscrack.enableUpnp = async () => {
+        calls++;
+        state.reach = { state: 'upnp-failed', reason: 'no-gateway', proven: false };
+        return { started: true, reach: state.reach };
+    };
+    room.el('map-upnp').click();
+    await settle();
+    assert.equal(calls, 1);
+    assert.equal(room.el('map-upnp').textContent, 'Try UPnP again');
+    assert.equal(room.el('map-upnp-note').hidden, false);
+    assert.equal(room.el('map-upnp-note').textContent, 'Router didn\'t respond.');
+});
+
 test('the UPnP button calls enableUpnp and the panel shows the wait text', async () => {
     const { room, state } = await startRoom({ reach: { state: 'none', reason: null, proven: false } });
     let calls = 0;
@@ -267,6 +289,10 @@ test('the user name of the last successful login comes back from localStorage', 
 test('the UPnP note of the login card shows only for an internet room with no address and no UPnP', async () => {
     const room = await loadRoomWindow({ elements: loginControls });
     const note = room.el('upnp-off-note');
+    assert.equal(room.el('allow-upnp').checked, true);
+    assert.equal(note.hidden, true);
+    room.el('allow-upnp').checked = false;
+    room.el('allow-upnp').dispatchEvent(new room.Event('change'));
     assert.equal(note.hidden, false);
     room.el('allow-upnp').checked = true;
     room.el('allow-upnp').dispatchEvent(new room.Event('change'));
@@ -281,6 +307,37 @@ test('the UPnP note of the login card shows only for an internet room with no ad
     assert.equal(note.hidden, false);
     choose(room, 'lan');
     assert.equal(note.hidden, true);
+});
+
+test('window.autoUpnp syncs Open port automatically with the login checkbox and Settings menu', async () => {
+    let saved = false;
+    const setCalls = [];
+    const room = await loadRoomWindow({
+        elements: [...loginControls, { id: 'view-auto-upnp' }],
+        api: {
+            getAutoUpnp: async () => ({ enabled: saved }),
+            setAutoUpnp: async value => {
+                setCalls.push(value);
+                saved = value;
+                return { enabled: saved };
+            }
+        }
+    });
+    await settle();
+    assert.equal(room.window.autoUpnp.state().enabled, false);
+    assert.equal(room.el('view-auto-upnp').getAttribute('aria-checked'), 'false');
+    assert.equal(room.el('allow-upnp').checked, false);
+    // Manual edit on the login checkbox is preserved against background events.
+    room.el('allow-upnp').checked = true;
+    room.el('allow-upnp').dispatchEvent(new room.Event('change'));
+    room.handlers.onAutoUpnp({ enabled: false });
+    assert.equal(room.el('allow-upnp').checked, true);
+    // Explicit toggle resets touched state and syncs both controls.
+    await room.window.autoUpnp.toggle();
+    assert.deepEqual(setCalls, [true]);
+    assert.equal(room.window.autoUpnp.state().enabled, true);
+    assert.equal(room.el('view-auto-upnp').getAttribute('aria-checked'), 'true');
+    assert.equal(room.el('allow-upnp').checked, true);
 });
 
 async function savedRoomsWindow() {
