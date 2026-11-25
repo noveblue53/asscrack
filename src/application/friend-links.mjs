@@ -98,7 +98,7 @@ function ownCandidates(friendNode, roomNode, port) {
     if (own.length) return own.slice(0, MAX_ADDRS);
     const roomIp = (roomNode?.publicAddrs?.() ?? []).map(tcpParts).find(Boolean)?.ip ??
         (roomNode?.libp2p ? observedIp(roomNode.libp2p) : null);
-    if (roomIp) return [`/ip4/${roomIp}/tcp/${port}`];
+    if (roomIp) return [`/${roomIp.includes(':') ? 'ip6' : 'ip4'}/${roomIp}/tcp/${port}`];
     return (friendNode.getMultiaddrs?.() ?? []).map(a => a.replace(/\/p2p\/[^/]+$/, ''))
         .filter(a => tcpParts(a) && !a.includes('/p2p-circuit')).slice(0, 4);
 }

@@ -28,6 +28,13 @@ Build:
 
 ## Unreleased
 
+- **Dual-stack IPv4 + IPv6 reachability (Session 3)**:
+  - Added automatic `/ip6/::/tcp/<port>` listener alongside IPv4 for internet rooms in `src/network/node.mjs` (gracefully skipping IPv6 if unavailable or port-occupied, leaving LAN/explicit/relay-only listeners untouched).
+  - Extended `src/network/fullnode.mjs` (`tcpTarget`, `isGlobalUnicastIpv6`, `isPrivateIp`, `peerAddrAllowed`, `tryTcp`, `handleDialback`, `requestDialback`, `observedIp`) with strict global unicast IPv6 (`2000::/3`) validation (excluding `::`, `::1`, `fe80::/10`, `fc00::/7`, `ff00::/8`, and IPv4-mapped `::ffff:0:0/96`) and family-aware dial-back.
+  - Tracked per-family proven dial-back addresses so proven global IPv6 addresses are included in `publicAddrs()`, `directAddrs`, `full-node-addrs`, `invite()`, `createMemberInvite()`, `roomCode()`, and optional backwards-compatible `ipv6` invite fields in `src/network/invite.mjs` (and family-aware candidate formatting in `src/application/friend-links.mjs`).
+  - Added unit and `127.0.0.1` / `::1` integration coverage in `test/ipv6-reachability.test.mjs`.
+  - **127.0.0.1 / ::1**: `node --test test/ipv6-reachability.test.mjs test/peer-addrs.test.mjs test/lan-listen.test.mjs test/relay.test.mjs test/invite.test.mjs test/invite-compact.test.mjs test/diag-dial.test.mjs` (`33` pass, `0` fail); `npm test` (`1382` tests, `1364` pass, `0` fail, `18` skipped, `53.13 s`).
+
 - **Auto UPnP by default and NAT-PMP fallback**:
   - Set `Open port (UPnP)` to checked by default on Create and Join for internet rooms, added a global Settings toggle (`Open port automatically`, persisted in `auto-upnp.json`), and kept background UPnP failures silent in `#map-upnp-box` until the user clicks `Open port (UPnP)`.
   - Added zero-dependency NAT-PMP fallback (`@silentbot1/nat-api/lib/pmp/index.js` + `default-gateway`) in `src/network/port-mapper.mjs` when UPnP `externalIp()` or `portMapping()` fails, with `.unref()` call timeouts and safe socket error handling.

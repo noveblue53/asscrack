@@ -19,6 +19,7 @@ import { circuitRelayServer, circuitRelayTransport, RELAY_V2_HOP_CODEC } from '@
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { readFileSync, writeFileSync, renameSync } from 'node:fs'
 import { EventEmitter } from 'node:events'
+import { isIPv4, isIPv6 } from 'node:net'
 import { networkInterfaces } from 'node:os'
 import { createChatSession } from './chat-session.mjs'
 import { createElection } from './election.mjs'
@@ -34,7 +35,7 @@ import { createRoomMusic, MUSIC_DIRECT_PROTOCOL, MUSIC_LIMITS, MUSIC_PROTOCOL } 
 import { makeInvite, makeMemberInvite, makeRoomCode, validAddr, validPeerId } from './invite.mjs'
 import { createKnockDesk, KNOCK_PROTOCOL } from './knock.mjs'
 import { knockChannel } from './knock-stream.mjs'
-import { DIALBACK_PROTOCOL, handleDialback, requestDialback, isPrivateIp, observedIp, peerAddrAllowed, tcpTarget } from './fullnode.mjs'
+import { DIALBACK_PROTOCOL, handleDialback, requestDialback, isGlobalUnicastIpv6, isPrivateIp, observedIp, peerAddrAllowed, tcpTarget } from './fullnode.mjs'
 
 export { FILE_PROTOCOL, safeFileName } from './file-transfer.mjs'
 export { VOICE_PROTOCOL, VOICE_DIRECT_PROTOCOL } from './voice-relay.mjs'
@@ -213,6 +214,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     if (!Number.isInteger(port) || port < 0 || port > 65535) throw new TypeError('port must be an integer from 0 to 65535')
     // Rule 5: a relay-only node has no TCP listen address and no mDNS.
     // L5 (P10a): a LAN room listens only on the private addresses (lanListenAddrs), not on 0.0.0.0.
+    const wantAutoIpv6 = !relayOnly && !listen && !membership?.lan && Boolean(key)
     const listenAddrs = relayOnly ? [] : (listen ?? (membership?.lan ? lanListenAddrs(port) :
         [`/ip4/${key ? '0.0.0.0' : '127.0.0.1'}/tcp/${port}`]))
     if (!key && !listen) discovery = false
@@ -1679,15 +1681,16 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         })
     }
 
-    // The public addresses of this node: the announce addresses, else the dial-back address of a full node.
-    let dialbackIp = null
+    // The public addresses of this node: the announce addresses, else the proven dial-back addresses (IPv4 and/or IPv6).
+    const dialbackAddrs = { ip4: null, ip6: null }
     function publicAddrs() {
         if (announce.length > 0) return [...announce]
-        const port = listenPort()
-        if (selfFull && dialbackIp && port !== null) return [`/${dialbackIp.includes(':') ? 'ip6' : 'ip4'}/${dialbackIp}/tcp/${port}`]
+        const out = []
+        if (dialbackAddrs.ip4) out.push(dialbackAddrs.ip4)
         // A UPnP address is not proven. It is a candidate, the same as an unproven typed announce address.
-        if (upnpState) return [`/ip4/${upnpState.ip}/tcp/${upnpState.port}`]
-        return []
+        else if (upnpState) out.push(`/ip4/${upnpState.ip}/tcp/${upnpState.port}`)
+        if (dialbackAddrs.ip6 && !out.includes(dialbackAddrs.ip6)) out.push(dialbackAddrs.ip6)
+        return out
     }
 
     // Keep hints from an invite separate from addresses advertised by an authenticated peer.
@@ -1958,36 +1961,65 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         scheduleRelayDials()
     }
 
-    // Rule 1, 'auto': ask a peer with a direct session to dial back to the listen port.
-    let checking = false
-    function listenPort() {
+    // Rule 1, 'auto': ask a peer with a direct session to dial back to the listen port (per address family).
+    const checkingFamilies = new Set()
+    function listenPort(family = null) {
+        let fallback = null
         for (const ma of node.getMultiaddrs()) {
             const t = tcpTarget(ma)
-            if (t) return t.port
+            if (!t) continue
+            if (family) {
+                if (t.family === family) return t.port
+            } else {
+                if (t.family === 'ip4') return t.port
+                if (fallback === null) fallback = t.port
+            }
         }
-        return null
+        return fallback
     }
     function checkFullNode(peerId) {
-        if (fullNode !== 'auto' || relayOnly || !canRelay() || selfFull || checking || stopped) return
+        if (stopped || relayOnly) return
         const conn = sessionConns.get(peerId)
-        const port = listenPort()
-        if (!conn || port === null || conn.remoteAddr.toString().includes('/p2p-circuit')) return
-        checking = true
+        const targetInfo = conn ? tcpTarget(conn.remoteAddr) : null
+        if (!targetInfo) return
+        const family = targetInfo.family
+        if (dialbackAddrs[family] || checkingFamilies.has(family)) return
+        const eligibleAutoFull = fullNode === 'auto' && canRelay()
+        const eligibleDirectV6 = family === 'ip6' && !membership?.lan &&
+            (!membership || (membership.admitted() && !membership.revoked(membership.id)))
+        if (!eligibleAutoFull && !eligibleDirectV6) return
+        const dialPort = family === 'ip6' ? listenPort('ip6') : (upnpState?.port ?? listenPort('ip4'))
+        if (dialPort === null) return
+        checkingFamilies.add(family)
         const started = Date.now()
         const target = conn.remoteAddr.toString()
         // With a UPnP mapping, the peer must dial the mapped public port.
-        requestDialback(conn, upnpState?.port ?? port)
+        requestDialback(conn, dialPort)
             .then(({ ok, ip }) => {
                 // Diagnostics: the reach attempt with its result (a negative answer is a failed dial-back).
                 dialResult({ peer: peerId, addr: target, via: 'dial-back', started, reason: ok ? undefined : 'no-dial-back' })
-                const publicIp = observedIp(node) ?? ip
-                const full = ok && canRelay() && publicIp !== null && (allowPrivateFullNode || !isPrivateIp(publicIp))
-                if (full) dialbackIp = publicIp
-                console.info(`Dial-back from ${peerId}: ${ok ? 'ok' : 'failed'}, IP ${publicIp}, full node ${full}`)
-                if (full && !stopped) setSelfFull(true)
+                const publicIp = observedIp(node, family) ??
+                    (ip && (family === 'ip6' ? isIPv6(ip) : isIPv4(ip)) ? ip : null)
+                const ipOk = publicIp !== null && (allowPrivateFullNode ||
+                    (family === 'ip6' ? isGlobalUnicastIpv6(publicIp) : !isPrivateIp(publicIp)))
+                const full = ok && ipOk
+                if (full) {
+                    const addr = `/${family}/${publicIp}/tcp/${dialPort}`
+                    const isNew = dialbackAddrs[family] !== addr
+                    dialbackAddrs[family] = addr
+                    console.info(`Dial-back (${family}) from ${peerId}: ok, IP ${publicIp}, full node ${eligibleAutoFull}`)
+                    if (eligibleAutoFull && !selfFull && !stopped) {
+                        setSelfFull(true)
+                    } else if (isNew && !stopped) {
+                        const line = nodeLine()
+                        for (const session of sessions.values()) session.send(line)
+                    }
+                } else {
+                    console.info(`Dial-back (${family}) from ${peerId}: ${ok ? 'ok' : 'failed'}, IP ${publicIp}, full node false`)
+                }
             })
             .catch(err => dialFailed({ peer: peerId, addr: target, via: 'dial-back', err, started }))
-            .finally(() => { checking = false })
+            .finally(() => { checkingFamilies.delete(family) })
     }
 
     // Rule 4: reserve a slot on each full node with a session.
@@ -2287,7 +2319,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         upnpPhase = 'discovery'
         let timedOut = false
         const work = (async () => {
-            const port = listenPort()
+            const port = listenPort('ip4')
             if (port === null) throw Object.assign(new Error('no TCP listen port'), { upnpReason: 'router-error' })
             if (!upnpClient) {
                 const { createPortMapper } = await import('./port-mapper.mjs')
@@ -2385,6 +2417,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                     }
                 }
                 if (membership.revoked(membership.id)) {
+                    dialbackAddrs.ip4 = null
+                    dialbackAddrs.ip6 = null
                     if (voiceState.inVoice) setVoice({})
                     clearTimeout(upnpRenewTimer)
                     if (upnpState) {
@@ -2398,6 +2432,21 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         })
     }
     await node.start()
+    if (wantAutoIpv6) {
+        const v4Port = listenPort('ip4')
+        const v6Candidates = port === 0 && v4Port !== null
+            ? [`/ip6/::/tcp/${v4Port}`, '/ip6/::/tcp/0']
+            : [`/ip6/::/tcp/${port}`]
+        let v6Bound = false
+        for (const addr of v6Candidates) {
+            try {
+                await node.components.transportManager.listen([multiaddr(addr)])
+                v6Bound = true
+                break
+            } catch { /* IPv6 unavailable or port in use */ }
+        }
+        if (!v6Bound) console.info('IPv6 listener unavailable; continuing with IPv4 only')
+    }
     // Not awaited: the UPnP task must not slow down or stop the start. The TCP listener is bound now.
     // setImmediate: the caller attaches its event listeners before the first 'upnp' event can come.
     if (useUpnp) setImmediate(runUpnp)
