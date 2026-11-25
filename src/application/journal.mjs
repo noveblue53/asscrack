@@ -199,7 +199,9 @@ export const EVENT_FIELDS = Object.freeze({
         reason: kinds.code, tier: kinds.code, why: kinds.code, viewers: kinds.int, tierId: kinds.int, role: kinds.code,
         from: kinds.code, to: kinds.code, bitrate: kinds.int, agoMs: kinds.int, peer: kinds.peer, rate: kinds.int,
         target: kinds.int, excessMs: kinds.int, drops: kinds.int, kframes: kinds.int, congestions: kinds.int,
-        queueBytes: kinds.int, slow: kinds.bool, circuit: kinds.bool, cap: kinds.code, count: kinds.int },
+        queueBytes: kinds.int, slow: kinds.bool, circuit: kinds.bool, cap: kinds.code, count: kinds.int,
+        // B16: the stream of the tier of the viewer (use of the bitrate, skipped slots, frames each second, coded size).
+        usePct: kinds.int, skipPct: kinds.int, fps: kinds.int, width: kinds.int, height: kinds.int },
     update: { event: kinds.code, ok: kinds.bool, reason: kinds.code, text: kinds.text },
     crash: { process: kinds.code, reason: kinds.code, exitCode: kinds.int, service: kinds.code },
     hang: { state: oneOf('unresponsive', 'responsive'), ms: kinds.int },

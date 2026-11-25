@@ -77,6 +77,60 @@ Results:
   sheet and passes with the fix.
 - `npm test` (127.0.0.1): 1275 tests, 1257 pass, 0 fail, 18 skipped.
 - Not done: the start of the full app. A game was in use on this PC.
+### Screen share recovery, combined with B16
+
+- Auto has new rules for a slow link that recovers. After 5 s with no delay, it makes steps of 1.15 near the old limit. A
+  headroom of 5 s is sufficient after the first 10 s.
+- Light content above the bitrate of its quality can go up after 1 s (before: 5 s).
+- A step up of Auto is a probe. The rate does not go up in the probe when there is a delay, and it goes back with the probe.
+- After a pause of a full-screen share, the first captured frame goes out at once as a keyframe. A viewer that comes in a
+  pause sees the Paused picture.
+- A short pause is no part of the measured frame rate (B16).
+- The change of the rate for the first keyframe of the recovery brief is not in this build. With it, check 20 failed 5 of
+  10 times in the session that made the recovery changes. The PC load of those runs was lower than in the 8 runs without
+  it, which passed. Thus this does not show that the change was the cause.
+
+Results of the combined build:
+- Decisions of the rate control in random runs. For Auto and relayed viewers they are the same as the recovery changes
+  alone (200 of 200). For fixed qualities they are the same as B16 alone (200 of 200).
+- **127.0.0.1**: `test/screen-voice.test.mjs` 8 of 8. `test/screen-auto.test.mjs`: checks 16, 18 and 19 passed 3 of 3 times,
+  checks 17 and 21 to 24 passed 1 of 1.
+- Check 18 (the link falls to 3 Mbit/s and comes back at 50 s, limit 65 s). Combined: 3 of 3 runs fell to Standard and were
+  back at Balanced at 62.2 to 63.7 s. 1.0.6 or B16 alone, 7 runs: 5 fell to Standard and came back at 72.4 to 73.9 s (fail).
+  The other 2 fell only to Smooth and came back at 61.4 s (pass). The PC load was 2 to 3 % for the combined runs and 6 to
+  9 % for the others. Thus the comparison is not a proof.
+- The session that made the recovery changes measured 62.2 to 63.8 s (5 runs, load 24 to 30 %). For 1.0.6 it measured 61.2
+  to 61.6 s in 4 runs, and one run with no return. The cause of the fall to Standard is not known.
+- Check 20 (Auto, uplink 5 Mbit/s) fails in each build. Failed runs: 1.0.6 1 of 14 (two sessions), recovery alone 2 of 8 and
+  combined 2 of 11. B16 alone, with the same Auto decisions as 1.0.6, failed 2 of 4. The largest sum was 5.3 of 5.0 Mbit/s. The load was 2 to 16 % for the
+  failed runs of this night. These counts do not show a difference between the builds.
+- `npm test` (127.0.0.1): 1284 tests, 1266 pass, 0 fail, 18 skipped.
+- **this PC**: two app copies started with 0 error lines. The source window was not in the picker, thus there was no share.
+- Not done: the real-encoder run of check 19, the full-screen pause and resume on this PC, a share on the internet.
+
+## Unreleased: screen shares reach the bitrate of their quality (B16)
+
+- The encoder of a screen share uses the `constant` bitrate mode. With the default mode, a VP8 encoder that gets a higher
+  bitrate keeps about its old picture quality. The rate control then sees a low use and stops the rate.
+- The encoder gets the measured frame rate of the capture. Before, a game at 40 frames each second stopped the rate.
+- The first direct viewer of a fixed quality has a start phase: 1 Mbit/s, steps of 1.5. Each step needs an ack that is on
+  time. A first picture that does not fit in the own queue is no sign of a slow link.
+- Auto and relayed viewers do not change. The old and the new rate control made the same decisions in 300 random runs.
+- The share stats in the diagnostics have the bitrate, the use, the skipped frames, the frame rate and the coded size.
+
+Results:
+- **internet** (1.0.6, one viewer): Max used 1.1 to 3.7 of 12 Mbit/s, High a median of 2.6 of 9 Mbit/s.
+- **this PC** (the real encoder, a model of a 22 Mbit/s link, a hidden window). 1.0.6, a game scene that moves, 60 frames
+  each second: Max 4.2 and High 2.7 Mbit/s. With the fix: 12.1 and 9.0 Mbit/s. PSNR: Max 36.5 to 43.0 dB, High 34.4 to 38.1 dB.
+- **this PC** (link model, Max): 1 Mbit/s gave at most 0.7 s of queue at the start. A 5 Mbit/s link gave up to 0.36 s.
+  1.0.6 had 0.1 s at 1 Mbit/s and did not reach these links' limits.
+- **this PC** (two app copies, real capture): 1.0.6 High sent 2.4 Mbit/s of 9. The fix at Max sent 12 Mbit/s after 12 s, with
+  0 error lines. The same preset was not compared in both builds: the PC was in use.
+- **127.0.0.1**: `test/screen-voice.test.mjs` 8 of 8. `test/screen-auto.test.mjs` 7 of 9: checks 18 and 20 failed.
+  Then 3 alternating runs of these two checks. 1.0.6: check 18 failed 2 of 3, check 20 failed 0 of 3. The fix: check 18
+  failed 2 of 3, check 20 failed 1 of 3. The two checks use Auto, which did not change.
+- `npm test` (127.0.0.1): 1277 tests, 1259 pass, 0 fail, 18 skipped.
+- Not done: a share on the internet, voice in a real share, and a game with a real full-screen capture.
 
 ## 1.0.6 (2026-11-23): profile pictures, several screen shares, friend status, the Settings menu and What's new
 

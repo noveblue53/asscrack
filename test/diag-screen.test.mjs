@@ -96,9 +96,10 @@ test('127.0.0.1: the journal of the sharer has each tier change with its reason 
     assert.deepEqual([...new Set(stats.map(line => line.peer))].sort(), [B.peerId, C.peerId].sort())
     for (const line of stats) {
         assert.equal(line.share, shareId)
-        for (const field of ['rate', 'target', 'drops', 'kframes', 'congestions', 'queueBytes']) assert.ok(Number.isInteger(line[field]), `${field} ${line[field]}`)
+        for (const field of ['rate', 'target', 'drops', 'kframes', 'congestions', 'queueBytes', 'bitrate', 'usePct', 'skipPct', 'width', 'height']) assert.ok(Number.isInteger(line[field]), `${field} ${line[field]}`)
         assert.equal(typeof line.circuit, 'boolean')
     }
+    assert.ok(stats.some(line => Number.isInteger(line.fps) && line.fps > 0), 'the frames each second of the stream')
     assert.ok(n > 20, `frames sent ${n}`)
     assert.ok(lines.length < 30, `no line for each frame (${lines.length} screen lines for ${n} frames)`)
 })

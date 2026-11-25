@@ -28,6 +28,8 @@
     const SIZE_CHANGE_MS = 1000; // E7
     const RECONFIGURE_MS = 1000; // E6
     const RECONFIGURE_CHANGE = 0.05; // E6
+    const FPS_WINDOW_MS = 2000; // E6a
+    const FPS_CHANGE = 0.05; // E6a
     const QUEUE_LIMIT = 2; // E4
     const REPORT_MS = 500; // E11
     const MAX_REPORT_TIERS = 4;
@@ -293,7 +295,9 @@
             tokens: view.bitrate / 8, lastTokenAt: t,
             // E10: the frame slots count from the start of the tier.
             startAt: t, lastSlot: -1, keyWanted: true,
-            slots: 0, skipped: 0, dropped: 0, starts: new Map(), encodeTimes: [] };
+            slots: 0, skipped: 0, dropped: 0, starts: new Map(), encodeTimes: [],
+            // E6a: the times of the last frame slots, and the frame rate of the encoder.
+            slotTimes: [], encodeFps: null };
     }
     function closeEncoder(tier) {
         const encoder = tier.encoder;
@@ -318,6 +322,8 @@
         tier.startAt = t;
         tier.lastSlot = -1;
         tier.keyWanted = true;
+        tier.slotTimes = [];
+        tier.encodeFps = null;
     }
     // E6: the bucket follows a new bitrate at once. The encoder gets it at most each 1 s, for a change of 5 % or more.
     function setBitrate(tier, bitrate) {
@@ -327,17 +333,36 @@
     }
     function maybeReconfigure(tier, t) {
         if (!tier.encoder || !tier.size || tier.configuredBitrate <= 0) return;
-        if (Math.abs(tier.bitrate - tier.configuredBitrate) / tier.configuredBitrate < RECONFIGURE_CHANGE) return;
         if (t - tier.lastConfigureAt < RECONFIGURE_MS) return;
+        const fps = measuredFps(tier, t);
+        const now = tier.encodeFps ?? tier.fps;
+        const newFps = Math.abs(fps - now) / now >= FPS_CHANGE;
+        if (!newFps && Math.abs(tier.bitrate - tier.configuredBitrate) / tier.configuredBitrate < RECONFIGURE_CHANGE) return;
+        if (newFps) tier.encodeFps = fps;
         try {
             tier.encoder.configure(encoderConfig(tier, tier.size));
             tier.configuredBitrate = tier.bitrate;
             tier.lastConfigureAt = t;
         } catch (err) { fail(err); }
     }
+    // E6a (B16): the encoder gives each frame bitrate / framerate. A capture below the frame rate of the preset (a game
+    // at 40 frames each second) thus leaves a part of the bitrate, and rule A2 stops the rate. The encoder gets the measured
+    // frame rate. A capture below a third of the preset is a still picture: it keeps the frame rate of the preset.
+    function measuredFps(tier, t) {
+        const times = tier.slotTimes;
+        while (times.length && t - times[0] > FPS_WINDOW_MS) times.shift();
+        const span = times.length ? t - times[0] : 0;
+        // Not a full window (the start, or after a pause): no change.
+        if (span < 0.9 * FPS_WINDOW_MS) return tier.encodeFps ?? tier.fps;
+        const fps = (times.length - 1) * 1000 / span;
+        return fps < tier.fps / 3 || fps > 0.9 * tier.fps ? tier.fps : Math.round(fps);
+    }
+    // B16: bitrateMode 'constant'. With the default ('variable'), a VP8 encoder that gets a higher bitrate with configure()
+    // keeps about the old picture quality: 12 Mbit/s asked, 4.8 Mbit/s sent (busy) or 1.1 (calm). Rule A2 then sees a low use.
     function encoderConfig(tier, size) {
-        return { codec: 'vp8', width: size.width, height: size.height, bitrate: Math.round(tier.bitrate), framerate: tier.fps,
-            latencyMode: 'realtime', hardwareAcceleration: 'prefer-software' };
+        return { codec: 'vp8', width: size.width, height: size.height, bitrate: Math.round(tier.bitrate),
+            framerate: tier.encodeFps ?? tier.fps, latencyMode: 'realtime', bitrateMode: 'constant',
+            hardwareAcceleration: 'prefer-software' };
     }
     function openEncoder(tier, size) {
         closeEncoder(tier);
@@ -419,7 +444,15 @@
             }
             for (const tier of current.tiers.values()) encodeKept(tier, true);
         } else {
-            for (const tier of current.tiers.values()) tier.keyWanted = true;
+            // 1.0.7: the first captured frame after a resume goes out at once, also when the bucket (E3) is below
+            // zero, and also when the resume is in the frame slot of the last frame before the pause (E10).
+            for (const tier of current.tiers.values()) {
+                tier.keyWanted = true;
+                tier.resumeKey = true;
+                tier.lastSlot = -1;
+                // E6a: the pause is no part of the measured frame rate.
+                tier.slotTimes = [];
+            }
         }
         render();
     }
@@ -458,6 +491,7 @@
                 if (slot <= tier.lastSlot) continue;
                 tier.lastSlot = slot;
                 tier.slots++;
+                tier.slotTimes.push(t);
                 stamped ??= new VideoFrame(frame, { timestamp: Math.round((t - current.startAt) * 1000) });
                 encode(tier, stamped, t, { slot: true });
             }
@@ -494,8 +528,9 @@
         if (!tier.encoder) return;
         maybeReconfigure(tier, t);
         refill(tier, t);
-        // E3: while the bucket is below zero, do not encode for this tier. A keyframe on request comes at once.
-        if (!key && tier.tokens < 0) {
+        // E3: while the bucket is below zero, do not encode for this tier. A keyframe on request comes at once, and
+        // the first frame after a resume.
+        if (!key && !tier.resumeKey && tier.tokens < 0) {
             if (slot) { tier.skipped++; totals.skipped++; }
             return;
         }
@@ -506,6 +541,7 @@
         }
         const keyFrame = key || tier.keyWanted;
         tier.keyWanted = false;
+        tier.resumeKey = false;
         if (tier.starts.size > 64) tier.starts.clear();
         tier.starts.set(frame.timestamp, t);
         try {
@@ -573,7 +609,12 @@
             } else if (entry.bitrate !== tier.bitrate) {
                 setBitrate(tier, entry.bitrate);
             }
-            if (entry.keyFrame) {
+            // 1.0.7: a new tier or a new preset while paused. The node sends no keyframe request and no refresh tick
+            // before setScreenSize, and the paused share encodes no captured frame: open the encoder with the
+            // "Paused" picture at once.
+            if (current.paused && current.kept && (!tier.encoder || !tier.size)) {
+                encodeKept(tier, true);
+            } else if (entry.keyFrame) {
                 tier.keyWanted = true;
                 // E5: a keyframe at once from the kept frame when the last captured frame is older than 100 ms.
                 if (current.kept && clock() - current.kept.at > KEPT_KEY_MS) encodeKept(tier, true);

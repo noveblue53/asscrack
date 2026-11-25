@@ -336,6 +336,113 @@ test('guarded share: paused at the start; captured frames do not go out while pa
     assert.equal(f.window.screenShare.stats().pauses, 3);
 });
 
+// A guarded share of a window that fills screen 0, paused at the start, with tier 0 and the Paused keyframe encoded.
+async function startGuarded(tier = { tier: 0, preset: 'smooth', fps: 30, bitrate: 3000000 }) {
+    const f = load({ sources: [{ id: 'screen:0:0', kind: 'screen', name: 'Screen 1', thumbnail: null },
+        { id: 'window:5:0', kind: 'window', name: 'Game', thumbnail: null, fillsScreen: true, screenId: 'screen:0:0' }],
+    guards: { 'window:5:0': { paused: true, reason: 'starting' } } });
+    f.el('share-screen').click();
+    await flush();
+    f.resolveSources();
+    await flush();
+    f.el('screen-list-windows').querySelector('.screen-source').click();
+    f.el('screen-share-go').click();
+    await flush();
+    f.clock.t += 200;
+    f.emit('onScreenEncoder', { tiers: [{ ...tier, keyFrame: true }] });
+    assert.deepEqual(f.encoders[0].frames.map(fr => [fr.picture, fr.key]), [['paused', true]]);
+    return f;
+}
+const shot = encoder => encoder.frames.map(fr => [fr.picture, fr.key]);
+// The first bytes of a VP8 keyframe with a size (RFC 6386, section 9.1).
+const vp8Key = (w, h) => { const b = new Uint8Array(32); b[0] = 0x10; b.set([0x9d, 0x01, 0x2a], 3); b[6] = w & 255; b[7] = w >> 8; b[8] = h & 255; b[9] = h >> 8; return b; };
+
+// 1.0.7: before, an empty bucket (E3) skipped the captured frames after a resume. The viewers kept the Paused picture
+// until the bucket filled again. The first frame after a resume now goes out at once as a keyframe. The bucket rule
+// stays for the next frames.
+test('guarded share: the first captured frame after a resume goes out at once as a keyframe when the bucket is empty', async () => {
+    const f = await startGuarded();
+    const encoder = f.encoders[0];
+    // A large Paused keyframe empties the bucket (1 s of 3 Mbit/s = 375 000 bytes).
+    encoder.out(1000000, true);
+    f.emit('onScreenGuard', { active: true, paused: false, reason: null });
+    f.clock.t += 17;
+    f.frame();
+    await flush();
+    assert.deepEqual(shot(encoder).slice(1), [['captured', true]], 'the resumed frame at once, as a keyframe');
+    // The bucket rule applies again to the next frames.
+    encoder.out(1000000, true);
+    for (let i = 0; i < 3; i++) { f.clock.t += 34; f.frame(); await flush(); }
+    assert.equal(encoder.frames.length, 2, 'E3 skips the next frames while the bucket is below zero');
+    assert.ok(f.window.screenShare.stats().skipped >= 3);
+});
+
+// 1.0.7: before, a new tier or a new preset while paused waited for a captured frame. The node sends no keyframe
+// request and no refresh tick to a tier before setScreenSize, and a static screen gives no captured frame: the
+// viewers of that tier got no picture. The tier now opens its encoder with the Paused picture at once.
+test('guarded share: a new tier and a new preset while paused encode the Paused picture at once, with no captured frame', async () => {
+    const f = await startGuarded();
+    f.clock.t += 500;
+    f.calls.length = 0;
+    f.emit('onScreenEncoder', { tiers: [{ tier: 0, preset: 'smooth', fps: 30, bitrate: 3000000 },
+        { tier: 1, preset: 'standard', fps: 15, bitrate: 1500000 }] });
+    assert.equal(f.encoders.length, 2, 'the new tier has an encoder');
+    assert.deepEqual(shot(f.encoders[1]), [['paused', true]], 'the Paused picture as a keyframe');
+    assert.deepEqual(JSON.parse(JSON.stringify(names(f.calls, 'setScreenSize').map(c => c.args[0]))), [{ tier: 1, width: 1280, height: 720 }]);
+    assert.equal(f.encoders[0].frames.length, 1, 'tier 0 does not change');
+    // A new preset of tier 0, also later than KEPT_KEY_MS (100 ms) after the pause.
+    f.clock.t += 500;
+    f.calls.length = 0;
+    f.emit('onScreenEncoder', { tiers: [{ tier: 0, preset: 'balanced', fps: 30, bitrate: 6000000 },
+        { tier: 1, preset: 'standard', fps: 15, bitrate: 1500000 }] });
+    assert.equal(f.encoders[0].state, 'closed');
+    assert.equal(f.encoders.length, 3, 'a new encoder for the new preset');
+    assert.deepEqual(shot(f.encoders[2]), [['paused', true]]);
+    assert.deepEqual(JSON.parse(JSON.stringify(names(f.calls, 'setScreenSize').map(c => c.args[0]))), [{ tier: 0, width: 1920, height: 1080 }]);
+    // A bitrate change only: no new frame.
+    f.emit('onScreenEncoder', { tiers: [{ tier: 0, preset: 'balanced', fps: 30, bitrate: 5000000 },
+        { tier: 1, preset: 'standard', fps: 15, bitrate: 1500000 }] });
+    assert.deepEqual([f.encoders[1].frames.length, f.encoders[2].frames.length], [1, 1]);
+    assert.equal(f.window.screenShare.stats().captured, 0, 'no captured frame in the test');
+});
+
+// 1.0.7: before, a pause and a resume in the same frame slot (E10) dropped the first captured frame after the resume.
+// Now the slot grid starts again at the resume. The viewer decodes the resumed keyframe and draws it.
+test('guarded share: a pause and a resume in one frame slot; the resumed keyframe goes out and the viewer draws it', async () => {
+    const f = await startGuarded();
+    const encoder = f.encoders[0];
+    f.emit('onScreenGuard', { active: true, paused: false, reason: null });
+    for (let i = 0; i < 2; i++) { f.clock.t += 34; f.frame(); await flush(); }
+    assert.deepEqual(shot(encoder).slice(1), [['captured', true], ['captured', false]]);
+    // In the same slot of 33 ms: pause, resume, and a captured frame.
+    f.clock.t += 2;
+    f.emit('onScreenGuard', { active: true, paused: true, reason: 'background' });
+    f.clock.t += 2;
+    f.emit('onScreenGuard', { active: true, paused: false, reason: null });
+    f.clock.t += 2;
+    f.frame();
+    await flush();
+    assert.deepEqual(shot(encoder).slice(3), [['paused', true], ['captured', true]], 'the resumed frame is not dropped');
+    // The chunk of the resumed frame goes to a viewer.
+    f.calls.length = 0;
+    encoder.output({ byteLength: 32, type: 'key', timestamp: encoder.frames.at(-1).timestamp, copyTo: target => target.set(vp8Key(1280, 720)) });
+    const [sent] = names(f.calls, 'sendScreenFrame').map(c => c.args[0]);
+    assert.equal(sent.key, true);
+    const viewer = load();
+    await flush();
+    viewer.emit('onScreenState', { peerId: 'peer-a', sharing: true, shareId: SHARE, preset: 'auto' });
+    viewer.el('screen-watch').click();
+    await flush();
+    viewer.api.pendingWatch.resolve({ shareId: SHARE, width: 1280, height: 720, fps: 30 });
+    await flush();
+    viewer.emit('onScreenFrame', { peerId: 'peer-a', key: sent.key, seq: 0, timestampMs: sent.timestampMs, data: sent.data });
+    const decoder = viewer.decoders[0];
+    assert.deepEqual(decoder.chunks.map(c => c.type), ['key'], 'the viewer decodes the keyframe');
+    decoder.output({ codedWidth: 1280, codedHeight: 720, close() {} });
+    assert.equal(viewer.canvas.draws, 1, 'the viewer draws the picture');
+    assert.equal(viewer.el('screen-stage').hidden, false);
+});
+
 test('guarded share: a plain screen or window share has no guard and no pause', async () => {
     const f = load();
     await startShare(f);
@@ -427,7 +534,7 @@ test('W4 check 3a: frame slots, E1, the full bucket of E3, the E11 report and a 
         'E10: 15, 30 and 60 frames in 1 s');
     assert.equal(a.configs[0].width, 1280, 'the encoder scales the frame to the fit of its preset');
     assert.equal(c.configs[0].height, 1080);
-    assert.deepEqual(JSON.parse(JSON.stringify(a.configs[0])), { codec: 'vp8', width: 1280, height: 720, bitrate: 1500000, framerate: 15, latencyMode: 'realtime', hardwareAcceleration: 'prefer-software' });
+    assert.deepEqual(JSON.parse(JSON.stringify(a.configs[0])), { codec: 'vp8', width: 1280, height: 720, bitrate: 1500000, framerate: 15, latencyMode: 'realtime', bitrateMode: 'constant', hardwareAcceleration: 'prefer-software' });
     assert.equal(a.frames[0].key, true, 'the first frame of an encoder is a keyframe');
     assert.equal(a.frames[1].key, false);
     assert.deepEqual(JSON.parse(JSON.stringify(names(f.calls, 'setScreenSize').map(c => c.args[0]))),
@@ -479,6 +586,31 @@ test('W4 check 3a: frame slots, E1, the full bucket of E3, the E11 report and a 
     f.calls.length = 0;
     b.out(1000);
     assert.equal(names(f.calls, 'sendScreenFrame').length, 0);
+});
+
+test('E6a (B16): the encoder gets the measured frame rate of the capture; a still picture keeps the preset', async () => {
+    const f = load();
+    await startShare(f);
+    f.emit('onScreenEncoder', { tiers: [{ tier: 1, preset: 'high', width: 1920, height: 1080, fps: 60, bitrate: 9000000 }],
+        capture: { preset: 'max', width: 2560, height: 1440, fps: 60 }, cap: 'max' });
+    const capture = async (fps, seconds) => {
+        for (let i = 0; i < fps * seconds; i++) {
+            f.frame();
+            await flush();
+            f.clock.t += 1000 / fps;
+        }
+    };
+    const rates = () => f.encoders[0].configs.map(c => c.framerate);
+    await capture(60, 4);
+    assert.deepEqual([...rates()], [60], 'a capture at the frame rate of the preset: no new configuration');
+    await capture(40, 6);
+    assert.ok(Math.abs(rates().at(-1) - 40) <= 2, `40 frames each second: ${rates()}`);
+    await capture(60, 6);
+    assert.equal(rates().at(-1), 60, `back to 60: ${rates()}`);
+    await capture(4, 6);
+    assert.equal(rates().at(-1), 60, `a still picture: ${rates()}`);
+    assert.equal(f.encoders.length, 1, 'no new encoder');
+    assert.ok(f.encoders[0].configs.every(c => c.bitrateMode === 'constant'));
 });
 
 test('W4: a keyframe request with an old kept frame encodes it at once, and a refresh tick encodes it again', async () => {
@@ -836,4 +968,22 @@ test('multi-share: the stage switcher lists the sharers; a click switches the wa
     assert.equal(f.el('screen-stage').hidden, true);
     assert.equal(f.el('screen-banner').hidden, false);
     assert.equal(f.el('screen-banner-text').textContent, 'Ann is sharing a screen.');
+});
+
+// B16 and the resume: a short pause is no part of the measured frame rate (E6a).
+test('guarded share: a short pause does not change the frame rate of the encoder', async () => {
+    const f = await startGuarded();
+    f.emit('onScreenGuard', { active: true, paused: false, reason: null });
+    const fps = f.encoders[0].configs[0].framerate;
+    const capture = async seconds => {
+        for (let i = 0; i < fps * seconds; i++) { f.clock.t += 1000 / fps; f.frame(); await flush(); }
+    };
+    await capture(4);
+    for (let n = 0; n < 3; n++) {
+        f.emit('onScreenGuard', { active: true, paused: true, reason: 'background' });
+        f.clock.t += 1200;
+        f.emit('onScreenGuard', { active: true, paused: false, reason: null });
+        await capture(4);
+    }
+    assert.deepEqual([...new Set(f.encoders.flatMap(e => e.configs.map(c => c.framerate)))], [fps]);
 });

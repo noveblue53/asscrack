@@ -106,8 +106,11 @@ test('check A1, rule R3: decrease, hold, a late viewer, and the smallest bitrate
     assert.ok(s.rate.history().length >= 0)
 })
 
+// B16: rule A2c has its own test. Here the start phase has the values of the normal phase.
+const NO_RAMP = { rampBitrate: 500000, rampFactor: 1.25 }
+
 test('check A2, rule R4: hold after a decrease, the used rule, the factors and the limit', () => {
-    const s = sim({ quality: 'max' })
+    const s = sim({ quality: 'max', params: NO_RAMP })
     s.add('a')
     // No limit: 1.25 x after 2 calm periods with the stream at its bitrate.
     s.run(1000)
@@ -130,10 +133,52 @@ test('check A2, rule R4: hold after a decrease, the used rule, the factors and t
     assert.equal(s.v('a').limit, null)
     assert.ok(s.v('a').rate >= 1.2 * limit)
     // No increase when the stream uses less than 70 % of the bitrate.
-    const u = sim({ quality: 'max' })
+    const u = sim({ quality: 'max', params: NO_RAMP })
     u.add('a')
     u.run(5000, { frameBytes: tier => Math.round(0.3 * tier.bitrate / 8 / 15) })
     assert.equal(u.v('a').rate, 500000)
+})
+
+test('rule A2c (B16): a full own queue at the start of a fixed preset is no slow link, and the rate reaches the target', () => {
+    // The first picture of Max (150 kB) does not fit in 1 s of the pacer at 500 kbit/s. Each written frame has its ack in 5 ms.
+    const s = sim({ quality: 'max' })
+    s.add('a')
+    const bytes = (tier, key) => key ? 150000 : Math.round(tier.bitrate / 8 / 15)
+    s.run(3000, { frameBytes: bytes })
+    assert.equal(s.v('a').congestions, 0, 'no late frame')
+    assert.equal(s.v('a').limit, null)
+    s.run(17000, { frameBytes: bytes })
+    assert.equal(s.v('a').rate, 12000000)
+})
+
+test('rule A2c (B16): no step in the start phase with no ack, and a delay ends the phase', () => {
+    // No ack at all: the rate stays at the start.
+    const s = sim({ quality: 'max' })
+    s.add('a', { delay: Infinity })
+    s.run(250)
+    const start = s.v('a').rate
+    assert.equal(start, 1000000)
+    s.run(1500)
+    assert.ok(s.v('a').rate <= start, `rate ${s.v('a').rate}`)
+    // A delay of 100 ms above the base: the phase ends and the rate goes down.
+    const d = sim({ quality: 'max' })
+    d.add('a')
+    d.run(1000)
+    assert.equal(d.v('a').ramp, true)
+    const top = d.v('a').rate
+    d.conf.get('a').delay = 105
+    d.run(1500)
+    assert.equal(d.v('a').ramp, false)
+    assert.ok(d.v('a').rate < top)
+    // A circuit viewer, a second viewer and Auto have no start phase.
+    const c = sim({ quality: 'max' })
+    c.add('a', { circuit: true })
+    c.add('b')
+    assert.deepEqual([c.v('a').ramp, c.v('b').ramp], [false, false])
+    const auto = sim()
+    auto.add('a')
+    assert.equal(auto.v('a').ramp, false)
+    assert.equal(auto.v('a').rate, 500000)
 })
 
 test('check A3, rule R5: the start bitrate and the targets for 1 to 6 circuit viewers', () => {
@@ -567,7 +612,7 @@ test('rule U2 (revisions 3 and 3b): the rate stops near the use / 0.7, also with
     // 500 kbit/s has 2384 kbit/s (use 0.67) and then 2980 kbit/s. Rule U2 over 2 s stops at 2384 kbit/s. The smoothed
     // use alone goes to 2980 kbit/s.
     const final = usedNow => {
-        const s = sim({ quality: 'max', params: { usedNow } })
+        const s = sim({ quality: 'max', params: { ...NO_RAMP, usedNow } })
         s.add('a')
         s.run(30000, { frameBytes: tier => Math.round(Math.min(1600000, tier.bitrate) / 8 / 15) })
         return s.v('a').rate
@@ -744,4 +789,61 @@ test('revision 3f: a step down after a held probe is not a failed step up; one s
     while (f.tier().preset !== 'standard' && f.now() < 20000) f.run(50, { frameBytes: () => 2000 })
     f.run(2000, { frameBytes: () => 2000 })
     assert.equal(f.rate.stats().tiers[0].upBackoffMs, 60000, 'one failure: the next wait is 60 s')
+})
+
+test('recovery speed (check 18): returns to balanced within 10 s after congestion clears', () => {
+    const s = sim({ quality: 'auto' })
+    s.add('a', { circuit: true, delay: 5 })
+    const frameBytes = tier => Math.round(Math.min(4800000, 0.85 * tier.bitrate) / 8 / 15)
+    s.run(23000, { frameBytes })
+    assert.equal(s.tier().preset, 'balanced')
+    // Congestion drops the tier to smooth with v.limit set, then 10 s of 25 ms excess fills v.hist.
+    s.conf.get('a').delay = 120
+    s.run(1000, { frameBytes: tier => Math.round(Math.min(2550000, tier.bitrate) / 8 / 15) })
+    assert.equal(s.tier().preset, 'smooth')
+    s.conf.get('a').delay = 30
+    s.run(10000, { frameBytes: tier => Math.round(Math.min(2550000, tier.bitrate) / 8 / 15) })
+    assert.equal(s.tier().preset, 'smooth')
+    // Link recovers: 0 ms excess. Balanced must return within 10 s.
+    s.conf.get('a').delay = 5
+    s.run(10000, { frameBytes: tier => Math.round(Math.min(2550000, tier.bitrate) / 8 / 15) })
+    assert.equal(s.tier().preset, 'balanced', 'recovered to balanced within 10 s')
+})
+
+test('content-capped smooth step-up (check 16/18): no 7 s dead zone above 3 Mbit/s with 2.55 Mbit/s content', () => {
+    const s = autoAt(2384188)
+    s.run(12500, { frameBytes: tier => Math.round(0.8 * Math.min(tier.bitrate, 2550000) / 8 / 15) })
+    assert.equal(s.tier().preset, 'smooth')
+    // Run until rate steps to 3,725,294 (where 2.55 Mbit/s motion has usage ~0.684 < 0.70).
+    for (let i = 0; i < 10 && s.tier().bitrate <= 3000000; i++) {
+        s.run(500, { frameBytes: () => Math.round(2550000 / 8 / 15) })
+    }
+    assert.ok(s.tier().bitrate > 3000000, `bitrate > 3M: ${s.tier().bitrate}`)
+    assert.equal(s.tier().preset, 'smooth')
+    // Smooth motion at 2.55 Mbit/s must step up to balanced within 5 s, not stall 7+ s in the 0.70 dead zone.
+    s.run(5000, { frameBytes: () => Math.round(2550000 / 8 / 15) })
+    assert.equal(s.tier().preset, 'balanced', 'stepped up from content-capped smooth within 5 s')
+})
+
+test('probe rate guard (check 20): no rate inflation while excess >= 20 ms during probe; rollback clamps rate', () => {
+    const s = autoAt(2384188)
+    s.add('b')
+    s.v('b').rate = 2384188
+    // Feed 1.8 Mbit/s (capped at 0.8x tier bitrate at t=0) so Rule U2 holds rates below 3.5 Mbit/s until smooth probe starts.
+    s.run(12500, { frameBytes: tier => Math.round(Math.min(1800000, 0.8 * tier.bitrate) / 8 / 15) })
+    assert.equal(s.tier().preset, 'smooth')
+    const preProbeRate = s.tier().bitrate
+    assert.ok(preProbeRate < 3500000)
+    // Excess 25 ms (>= headroomMs 20, < lowMs 35) during the 5 s probe must not inflate rates.
+    s.conf.get('a').delay = 30
+    s.conf.get('b').delay = 30
+    s.run(2000, { frameBytes: tier => Math.round(0.8 * tier.bitrate / 8 / 15) })
+    assert.ok(s.v('a').rate <= preProbeRate, `viewer a rate stayed <= ${preProbeRate}: ${s.v('a').rate}`)
+    assert.ok(s.v('b').rate <= preProbeRate, `viewer b rate stayed <= ${preProbeRate}: ${s.v('b').rate}`)
+    // Excess > 70 ms triggers probe rollback and keeps rate <= pre-probe bitrate.
+    s.conf.get('a').delay = 100
+    s.conf.get('b').delay = 100
+    s.run(600, { frameBytes: tier => Math.round(0.8 * tier.bitrate / 8 / 15) })
+    assert.equal(s.tier().preset, 'standard')
+    assert.ok(s.tier().bitrate <= preProbeRate)
 })

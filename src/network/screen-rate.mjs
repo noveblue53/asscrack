@@ -36,7 +36,11 @@ export const RATE_DEFAULTS = Object.freeze({
     fastDownEvals: 2, fastDownFactor: 0.8,
     // Revision 3e: the 10 s conditions of U1 and A4 hold when they were true in 90 % of the last 10 s.
     windowShare: 0.9,
+    // Revision 3g: faster clean-link recovery without changing fixed-preset voice protection.
+    recoverHeadroomMs: 5000, increaseRecover: 1.15, contentLightHoldMs: 1000,
     slowHoldMs: 3000, deepMs: 140, deepFactor: 0.7, mergeFactor: 0.9, maxEncoders: 2,
+    // B16: the start of a fixed preset to a direct viewer (rule A2c).
+    rampBitrate: 1000000, rampFactor: 1.5,
     overloadDrop: 0.02, overloadEncode: 0.8, overloadReports: 4, cpuRecoverMs: 60000, cpuRaisesMax: 2
 })
 
@@ -243,7 +247,11 @@ export function createScreenRate({ quality = 'auto', source = null, now, params 
             noHeadroomAt: t, hist: [], histStart: t, mildSince: null, lateNow: false, keyLate: false, otherLate: false, keyExemptAt: -Infinity,
             keyExemptUntil: -Infinity, delivered: 0, mergeProbe: null, mergeBlockedUntil: 0, mergeBackoff: P.upBackoffMs }
         // Rule A2: a new viewer starts at max(start, bitrate of the fast tier), at most its target (R5).
-        v.rate = Math.min(targetOf(v), tiers[0] ? Math.max(P.startBitrate, tiers[0].bitrate) : P.startBitrate)
+        // Rule A2c (B16): the first viewer of a fixed preset, on a direct route, starts at 1 Mbit/s in the start phase. The
+        // first picture of a large preset does not fit in the queue of 500 kbit/s. That is no sign of a slow link.
+        v.ramp = fixed !== null && !v.circuit && !tiers[0]
+        const start = v.ramp ? Math.max(P.startBitrate, P.rampBitrate) : P.startBitrate
+        v.rate = Math.min(targetOf(v), tiers[0] ? Math.max(P.startBitrate, tiers[0].bitrate) : start)
         viewers.set(id, v)
         updateCapture()
         regroup()
@@ -337,17 +345,21 @@ export function createScreenRate({ quality = 'auto', source = null, now, params 
             // Rule T1: late (no ack after base + 300 ms) or a queue with more than 1 s of the pacer rate.
             const queueFull = v.queue.length > 0 && v.queuedBytes + record > paceRateOf(v) * P.queueSeconds
             if (t - oldestOutstanding(v) > lateLimit(v) || queueFull) {
+                // Rule A2c (B16): in the start phase, a full own queue with each written frame on time is not a slow link.
+                const ownQueue = v.ramp && queueFull && t - oldestOutstanding(v) <= lateLimit(v)
                 // Revision 3b: a late frame while a keyframe is on the way (a large keyframe on a slow link).
-                if (keyInFlight(v)) v.keyLate = true
-                else v.otherLate = true
+                if (!ownQueue && keyInFlight(v)) v.keyLate = true
+                else if (!ownQueue) v.otherLate = true
                 // Rule T2: drop the frames of the queue that did not start, and put no new frame in the queue.
                 v.drops++
                 dropQueuedFrames(v, true)
                 v.needKey = true
                 v.recovering = true
-                v.congested = true
-                v.congestions++
-                v.lates.push(t)
+                if (!ownQueue) {
+                    v.congested = true
+                    v.congestions++
+                    v.lates.push(t)
+                }
                 v.behindSince ??= t
                 recoverIfClear(v)
                 continue
@@ -503,7 +515,8 @@ export function createScreenRate({ quality = 'auto', source = null, now, params 
             tier.reports = tier.reports.filter(r => t - r.t < P.downHoldMs)
             const slots = tier.reports.reduce((a, r) => a + r.slots, 0)
             tier.skipRatio = slots ? tier.reports.reduce((a, r) => a + r.skipped, 0) / slots : 0
-            if (tier.usage < P.lightUsage && tier.skipRatio < P.lightSkip) tier.lightSince ??= t
+            const usedNow = P.usedNow ? Math.min(tier.usage, tier.usageNow) : tier.usage
+            if (usedNow < P.lightUsage && tier.skipRatio < P.lightSkip) tier.lightSince ??= t
             else tier.lightSince = null
         }
         // Rule T4: a viewer that got no new frame for 10 s gets END slow.
@@ -536,6 +549,8 @@ export function createScreenRate({ quality = 'auto', source = null, now, params 
             // Rule U1: the last time that this viewer showed no headroom (an excess of 20 ms or more, or a late frame).
             if (!exempt && (congested || v.excess >= P.headroomMs)) v.noHeadroomAt = t
             const got = tier?.bitrate ?? P.minBitrate
+            // Rule A2c (B16): the start phase ends at the first delay or late frame, or at the target.
+            if (congested || v.excess >= P.lowMs || v.rate >= targetOf(v)) v.ramp = false
             v.acked = v.acked.filter(x => t - x.t <= 1000)
             const delivered = v.acked.reduce((a, x) => a + x.bytes, 0) * 8
             v.delivered = delivered
@@ -554,12 +569,19 @@ export function createScreenRate({ quality = 'auto', source = null, now, params 
                 v.noIncreaseUntil = t + P.increaseHoldMs
             } else if (v.excess < P.lowMs) {
                 v.calmSince ??= t
-                if (t >= v.noIncreaseUntil && ++v.calm >= P.calmEvals) {
+                // Rule A2c (B16): in the start phase, each step up needs an ack of this evaluation and no open frame above 70 ms.
+                const proved = !v.ramp || (v.acked.some(x => t - x.t <= P.evalMs) && t - oldestOutstanding(v) <= (Number.isFinite(v.base) ? v.base : 0) + P.highMs)
+                if (!proved) v.calm = 0
+                else if (t >= v.noIncreaseUntil && ++v.calm >= P.calmEvals) {
                     v.calm = 0
                     // Rule A2: the rate goes up only when the tier used its bitrate and this viewer sets it.
-                    if (tier && (P.usedNow ? Math.min(tier.usage, tier.usageNow) : tier.usage) >= P.usedBelow && got >= 0.9 * v.rate) {
+                    const probeOk = !tier?.probe || v.excess < P.headroomMs
+                    if (tier && probeOk && (P.usedNow ? Math.min(tier.usage, tier.usageNow) : tier.usage) >= P.usedBelow && got >= 0.9 * v.rate) {
                         const near = v.limit !== null && v.rate >= P.nearFactor * v.limit
-                        v.rate = Math.min(targetOf(v), Math.round(v.rate * (near ? P.increaseNear : P.increase)))
+                        const factor = near
+                            ? (fixed === null && t - v.noHeadroomAt >= P.recoverHeadroomMs ? P.increaseRecover : P.increaseNear)
+                            : v.ramp && v.excess < P.headroomMs ? P.rampFactor : P.increase
+                        v.rate = Math.min(targetOf(v), Math.round(v.rate * factor))
                         if (v.limit !== null && v.rate >= P.limitClearFactor * v.limit) v.limit = null
                     }
                 }
@@ -651,9 +673,13 @@ export function createScreenRate({ quality = 'auto', source = null, now, params 
             // Rule U3: an up step is a probe of 5 s. An excess above 70 ms or a late viewer sends the tier back at once.
             if (tier.probe) {
                 if (members.some(v => v.lateNow || v.excess > P.highMs)) {
-                    const from = tier.probe.from
+                    const { from, bitrate: probeBitrate } = tier.probe
                     tier.probe = null
                     failedUp(tier, t)
+                    if (probeBitrate) {
+                        for (const v of members) v.rate = Math.min(v.rate, probeBitrate)
+                        setBitrates()
+                    }
                     setPreset(tier, from, 'probe')
                     for (const v of members) v.lates = []
                     tier.upSince = null
@@ -667,11 +693,13 @@ export function createScreenRate({ quality = 'auto', source = null, now, params 
             const up = nextUp(tier.preset)
             const next = up === null ? null : ladder[up]
             const allCalm = members.every(v => v.calmSince !== null)
-            const light = tier.lightSince !== null && t - tier.lightSince >= P.lightHoldMs && members.every(v =>
-                v.calmSince !== null && t - v.calmSince >= P.lightHoldMs && windowOk(v, 'noDecrease'))
+            const lightHold = tier.bitrate > ladder[tier.preset].bitrate ? P.contentLightHoldMs : P.lightHoldMs
+            const light = tier.lightSince !== null && t - tier.lightSince >= lightHold && members.every(v =>
+                v.calmSince !== null && t - v.calmSince >= lightHold && windowOk(v, 'noDecrease'))
             const ceiling = tier.role === 'slow' && tiers[0] ? Math.min(capIndex(), tiers[0].preset) : capIndex()
-            // Rule U1: each viewer of the tier had headroom for the last 10 s.
-            const headroom = members.every(v => t - v.histStart >= P.headroomHoldMs && windowOk(v, 'headroom'))
+            // Rule U1: 90 % headroom over the last 10 s, or 5 s of uninterrupted clean headroom after the initial 10 s window.
+            const headroom = members.every(v => t - v.histStart >= P.headroomHoldMs &&
+                (windowOk(v, 'headroom') || (t - v.noHeadroomAt >= P.recoverHeadroomMs && t - v.lastDecreaseAt >= P.recoverHeadroomMs)))
             const upOk = next !== null && up <= ceiling && t >= tier.upBlockedUntil && allCalm && headroom &&
                 (tier.bitrate >= P.upFactor * next.bitrate || light)
             tier.upSince = upOk ? (tier.upSince ?? t) : null
@@ -695,7 +723,7 @@ export function createScreenRate({ quality = 'auto', source = null, now, params 
                 setPreset(tier, up, tier.bitrate >= P.upFactor * next.bitrate ? 'rate' : 'light')
                 tier.upSince = null
                 tier.lastUpAt = t
-                tier.probe = { from, at: t }
+                tier.probe = { from, at: t, bitrate: tier.bitrate }
             }
         }
         if (before !== tiers.map(x => `${x.id}:${x.preset}:${x.bitrate}`).join()) changed.tiers = true
