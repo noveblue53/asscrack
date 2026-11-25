@@ -668,7 +668,7 @@ const upnpOffNote = document.getElementById('upnp-off-note');
 // not stopped: the owner can turn on UPnP later in the Invite panel.
 function showUpnpChoice() {
     if (!upnpField) return;
-    upnpField.hidden = roomTypeSelect.value !== 'new';
+    upnpField.hidden = roomTypeSelect.value === 'lan';
     allowUpnp.disabled = publicAddressInput.value.trim() !== '';
     if (upnpOffNote) {
         upnpOffNote.hidden = roomTypeSelect.value !== 'new' || publicAddressInput.value.trim() !== '' || allowUpnp.checked === true;
@@ -764,7 +764,7 @@ async function login(friendJoin = null) {
     }
     if (type !== 'lan') {
         if (publicAddress) options.publicAddress = publicAddress;
-        if (type === 'new') options.allowUpnp = !publicAddress && allowUpnp?.checked === true;
+        options.allowUpnp = !publicAddress && allowUpnp?.checked === true;
     }
     // Saved rooms (milestone 6): the save choice of a keyed room.
     if (window.savedRoomsUi) Object.assign(options, window.savedRoomsUi.loginOptions(type));
@@ -2830,6 +2830,11 @@ const inviteCode = document.getElementById('invite-code');
 const copyInviteButton = document.getElementById('copy-invite');
 const inviteNote = document.getElementById('invite-note');
 const fullNodeState = document.getElementById('full-node-state');
+const mapUpnpBox = document.getElementById('map-upnp-box');
+const mapUpnpButton = document.getElementById('map-upnp');
+const mapUpnpNote = document.getElementById('map-upnp-note');
+let mapUpnpBusy = false;
+let mapUpnpError = '';
 
 // The reach state of the room from asscrack:invite (gap A1): { state, reason, proven }, or null before the first
 // answer. roomOwner: this device owns the protected room.
@@ -2862,6 +2867,29 @@ function fullNodeView() {
     return { state: 'hidden', text: '', tip: '' };
 }
 
+const MAP_UPNP_REASONS = {
+    'no-gateway': 'Router didn\'t respond.',
+    'private-ip': 'Router has no public IP.',
+    failed: 'Router refused to open a port.'
+};
+
+function showMapUpnp() {
+    if (!mapUpnpBox || !mapUpnpButton) return;
+    const hide = !internetRoom || roomReach?.state === 'lan' || fullNodeSelf || roomReach?.state === 'ready' || !hasApi('enableUpnp');
+    mapUpnpBox.hidden = hide;
+    if (hide) return;
+    const waiting = mapUpnpBusy || roomReach?.state === 'upnp-wait';
+    mapUpnpButton.disabled = waiting;
+    mapUpnpButton.textContent = waiting ? UPNP_WAIT_TEXT : roomReach?.state === 'upnp-failed' ? 'Try UPnP again' : 'Open port (UPnP)';
+    const note = waiting ? '' : roomReach?.state === 'upnp-failed'
+        ? (MAP_UPNP_REASONS[roomReach.reason] ?? MAP_UPNP_REASONS.failed)
+        : mapUpnpError;
+    if (mapUpnpNote) {
+        mapUpnpNote.textContent = note;
+        mapUpnpNote.hidden = !note;
+    }
+}
+
 function showFullNodeState() {
     const { state, text, tip } = fullNodeView();
     fullNodeState.dataset.state = state;
@@ -2869,7 +2897,26 @@ function showFullNodeState() {
     fullNodeState.textContent = text;
     fullNodeState.title = tip;
     fullNodeState.hidden = state === 'lan' || state === 'hidden';
+    showMapUpnp();
 }
+
+mapUpnpButton?.addEventListener('click', async () => {
+    if (mapUpnpBusy || !hasApi('enableUpnp')) return;
+    mapUpnpBusy = true;
+    mapUpnpError = '';
+    showMapUpnp();
+    try {
+        const result = await window.asscrack.enableUpnp();
+        if (result?.reach) roomReach = result.reach;
+        if (result?.started === false) mapUpnpError = 'UPnP isn\'t available in this room.';
+    } catch (error) {
+        mapUpnpError = error?.message ? errorText(error) : 'Couldn\'t start UPnP.';
+    } finally {
+        mapUpnpBusy = false;
+        showFullNodeState();
+        refreshInvite();
+    }
+});
 
 async function refreshFullNode() {
     if (hasApi('getFullNode')) {

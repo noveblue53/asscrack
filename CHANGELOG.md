@@ -18,6 +18,15 @@ Each result has one of these labels:
   - **127.0.0.1**: `npm test` — `1314` tests, `1296` pass, `0` fail, `18` skipped (`66.22 s`).
   - **this PC**: `node tools/app-smoke-check.mjs --run-dir "D:\Github Repos\asscrack-gemini\work-orders\screen-audio-and-decode-fixes\runs\smoke" --check-no-dev-shortcut` — passed on CDP port `9500` in `2942 ms` (`domReady: true`, `0` errors, `devShortcutAbsent: true`, `devClsidAbsent: true`).
 
+### Allow UPnP on room join and in the Network map panel
+
+- Show and honor **Open port (UPnP)** (`#upnp-field` / `#allow-upnp`) on the login screen for **Join with invite code** (`src/application/renderer.js`, `src/application/main.js`), not only room creation.
+- Add `#map-upnp-box` (**Open port (UPnP)** / **Try UPnP again** and router status) inside the Network map panel (`src/application/index.html`, `src/application/styles.css`, `src/application/renderer.js`) so any non-full-node member in an internet room can open a port after joining.
+- Results:
+  - **127.0.0.1**: `node --test test/room-admission-ui.test.mjs test/getting-in-ui.test.mjs test/upnp.test.mjs` — `44` pass, `0` fail.
+  - **127.0.0.1**: `npm test` — `1313` tests, `1295` pass, `0` fail, `18` skipped (`66.34 s`).
+  - **this PC**: `node tools/app-smoke-check.mjs --run-dir "D:\Github Repos\asscrack-gemini\work-orders\join-and-map-upnp\runs\smoke" --check-no-dev-shortcut` — passed on CDP port `9500` in `3634 ms` (`domReady: true`, `0` errors, `devShortcutAbsent: true`, `devClsidAbsent: true`).
+
 ## 1.0.7 (2026-11-25): screen share audio, music visualizer modes, shade mode, network map pulses and screen rate fixes
 
 Release 1.0.7 is the seventh update of 1.0.0. A 1.0.0, 1.0.1, 1.0.2, 1.0.3, 1.0.4, 1.0.5 or 1.0.6 app gets it with
