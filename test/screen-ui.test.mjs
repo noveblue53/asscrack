@@ -987,3 +987,32 @@ test('guarded share: a short pause does not change the frame rate of the encoder
     }
     assert.deepEqual([...new Set(f.encoders.flatMap(e => e.configs.map(c => c.framerate)))], [fps]);
 });
+
+test('W5: decoder queue overflows reset to a keyframe without killing the stream; 5 fatal codec errors still stop', async () => {
+    const f = load();
+    await flush();
+    f.emit('onScreenState', { peerId: 'peer-a', sharing: true, shareId: SHARE, preset: 'auto' });
+    f.el('screen-watch').click();
+    await resolveWatch(f, SHARE);
+    const decoder = f.decoders[0];
+    const key = () => { const b = new Uint8Array(32); b[0] = 0x10; b.set([0x9d, 0x01, 0x2a], 3); b[6] = 1280 & 255; b[7] = 1280 >> 8; b[8] = 720 & 255; b[9] = 720 >> 8; return b; };
+    const delta = () => { const b = new Uint8Array(32); b[0] = 0x11; return b; };
+    f.emit('onScreenFrame', { peerId: 'peer-a', key: true, seq: 0, timestampMs: 5, data: key() });
+    // 6 consecutive decodeQueueSize overflows within 60 s must not close the stage.
+    let seq = 1;
+    for (let i = 0; i < 6; i++) {
+        f.clock.t += 2500;
+        decoder.decodeQueueSize = 9;
+        f.emit('onScreenFrame', { peerId: 'peer-a', key: false, seq: seq++, timestampMs: f.clock.t, data: delta() });
+        assert.equal(f.el('screen-stage').hidden, false, `stage stays open on queue overflow ${i + 1}`);
+        decoder.decodeQueueSize = 0;
+        f.emit('onScreenFrame', { peerId: 'peer-a', key: true, seq: seq++, timestampMs: f.clock.t + 16, data: key() });
+    }
+    assert.equal(f.window.screenView.stats().overflows, 6);
+    assert.equal(f.window.screenView.stats().resets, 0);
+    assert.equal(f.el('screen-notice').textContent, '');
+    // 5 genuine fatal codec errors within 60 s still stop the watch.
+    for (let i = 0; i < 5; i++) decoder.error(new Error('decode failure'));
+    assert.equal(f.el('screen-stage').hidden, true);
+    assert.equal(f.el('screen-notice').textContent, 'Can\'t play this share on this PC.');
+});

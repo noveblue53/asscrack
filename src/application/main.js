@@ -2737,7 +2737,8 @@ app.whenReady().then(async () => {
         extra: { [RNNOISE_WORKLET]: require.resolve('@sapphi-red/web-noise-suppressor/rnnoiseWorklet.js') } });
     // 1.0.6: /avatar/<hash> and /avatar-pick/<token> (avatars.mjs), else the files of the app.
     protocol.handle(APP_SCHEME, request => avatars.serve(request) ?? appHandler(request));
-    installRoomPermissions(session.defaultSession, () => mainWindow, ROOM_PAGE, () => idlePeer, () => screenSources.hasPending());
+    installRoomPermissions(session.defaultSession, () => mainWindow, ROOM_PAGE, () => idlePeer,
+        () => screenSources.hasPending(), () => screenSources.hasPendingAudio());
     // P8b: getDisplayMedia of the room window gets only the source of the pending selection (design section 2.1).
     session.defaultSession.setDisplayMediaRequestHandler((request, callback) => screenSources.handleDisplayMedia(request, callback));
     pttHook.configure(currentVoiceSettings());
