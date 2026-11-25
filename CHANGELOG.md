@@ -37,6 +37,10 @@ Each result has one of these labels:
   - **127.0.0.1**: `cmd /c start "" /belownormal /b /wait npm test` — `1316` tests, `1298` pass, `0` fail, `18` skipped (`64.10 s`).
   - **this PC**: `node tools/app-smoke-check.mjs --run-dir "D:\Github Repos\asscrack-gemini\work-orders\voice-meters\runs\smoke" --check-no-dev-shortcut --eval "..."` — passed on CDP port `9500` in `3029 ms` (`domReady: true`, `0` errors, `hasMeterSnapshot: true`, `hasVoiceMeters: true`, `hasScopeCanvas: true`, `runningAtRest: false`, `devShortcutAbsent: true`, `devClsidAbsent: true`).
 
+### Retro character skins (`src/application/themes.js`, `src/application/themes.css`, `src/application/index.html`, `src/application/window-frame.css`): added Winamp Slate & Amber, CRT Phosphor Green, and Classic mIRC to the theme gallery, plus a pure-CSS CRT glow & scanlines toggle (`pointer-events: none`, `prefers-reduced-motion` aware) and voice/live-badge contrast polish.
+  - Result (`127.0.0.1`, unit tests): `node --test test/themes.test.mjs test/danger-button.test.mjs test/settings-menu.test.mjs` — 14/14 passed; `npm test` — 1303/1323 passed, 18 skipped, 2 transient timeouts in `test/music-relay.test.mjs` (passed 2/2 in isolation).
+  - Result (`this PC`, Electron `--profile` smoke check): switched all 9 themes and toggled CRT scanlines on/off with 0 console errors and 0 page errors.
+
 ## 1.0.7 (2026-11-25): screen share audio, music visualizer modes, shade mode, network map pulses and screen rate fixes
 
 Release 1.0.7 is the seventh update of 1.0.0. A 1.0.0, 1.0.1, 1.0.2, 1.0.3, 1.0.4, 1.0.5 or 1.0.6 app gets it with

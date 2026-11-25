@@ -54,6 +54,37 @@
   --accent: #ffc66f; --focus: #ffe398; --danger: #ffb4a0; --warning: #ffdc91;
   --voice-line: #c4d39c; --file-line: #f5ab78; --speaking: #b1d77a;
 }
+[data-theme="winamp-slate"] {
+  color-scheme: dark;
+  --font-ui: 'Segoe UI', Tahoma, sans-serif; --font-title: var(--font-ui); --font-small: Consolas, 'Liberation Mono', monospace;
+  --frame-top: #3e4756; --frame-mid: #282f3a; --frame-bottom: #1b2028; --frame-ink: #ffd479;
+  --surface: #222730; --surface-raised: #2c333f; --chat: #12151b; --map: #181d24;
+  --control-top: #444d5c; --control-bottom: #2c333f;
+  --ink: #edf1f7; --ink-soft: #b8c2d1; --line: #7a879b;
+  --accent: #ffb84d; --focus: #ffd77a; --danger: #ff9e96; --warning: #ffd26a;
+  --voice-line: #6ee08d; --file-line: #ffb84d; --speaking: #6eff7a;
+}
+[data-theme="crt-phosphor"] {
+  color-scheme: dark;
+  --font-ui: Consolas, 'Liberation Mono', monospace; --font-title: var(--font-ui); --font-small: var(--font-ui);
+  --frame-top: #1d3c24; --frame-mid: #122818; --frame-bottom: #0b1b10; --frame-ink: #b8ffc7;
+  --surface: #0e1c12; --surface-raised: #14271a; --chat: #08110a; --map: #0b170e;
+  --control-top: #1d3924; --control-bottom: #132818;
+  --ink: #b8ffc7; --ink-soft: #7dd190; --line: #49945a;
+  --accent: #5eff82; --focus: #b8ffc7; --danger: #ff9c92; --warning: #e6db74;
+  --voice-line: #5eff82; --file-line: #b4f57a; --speaking: #7dff9a;
+}
+[data-theme="classic-mirc"] {
+  color-scheme: light;
+  --font-ui: Tahoma, 'Segoe UI', sans-serif; --font-title: var(--font-ui); --font-small: var(--font-ui);
+  --frame-top: #104a8e; --frame-mid: #0a2e66; --frame-bottom: #07224d; --frame-ink: #ffffff;
+  --surface: #d4d0c8; --surface-raised: #e6e3dc; --chat: #ffffff; --map: #ece9e2;
+  --control-top: #efede8; --control-bottom: #c9c5bc;
+  --ink: #111111; --ink-soft: #424242; --line: #76746e;
+  --accent: #003388; --focus: #002a70; --danger: #9e1b1b; --warning: #7a4b00;
+  --voice-line: #006622; --file-line: #8a4200; --speaking: #00a832;
+  --relief: inset 1px 1px 0 #ffffff, inset -1px -1px 0 #808080;
+}
 :root, .theme-preview {
   --control-ink: var(--ink);
   --line-soft: color-mix(in srgb, var(--line) 38%, var(--surface));
@@ -152,6 +183,9 @@ body ::-webkit-scrollbar-thumb { background-color: var(--line); background-clip:
 .layout-sep:is(:hover,:focus-visible)::after, #transfer-sep:is(:hover,:focus-visible)::after { background: var(--focus); }
 
 #peers li:hover, #transfers li.transfer:hover { background: var(--surface-raised); }
+:root[data-theme] #voice-channel-list > li:hover { background: var(--surface-raised); }
+:root[data-theme] #voice-channel-list > li[aria-current="true"] { background: color-mix(in srgb, var(--voice-line) 18%, var(--surface)); }
+:root[data-theme] #peers .live-badge { color: var(--chat); }
 :root[data-theme] #peers .presence-mark { color: var(--ink); background: var(--surface-raised); border-color: var(--line); }
 :root[data-theme] #peers .presence-mark[data-presence="dnd"] { color: var(--danger); border-color: currentColor; }
 :root[data-theme] #peers :is(.presence-mark[data-presence="away"], .voice-state[data-state="in voice (muted)"]) { color: var(--warning); }
@@ -236,12 +270,42 @@ body ::-webkit-scrollbar-thumb { background-color: var(--line); background-clip:
 .mini-composer { grid-area: composer; background: var(--surface); }
 .mini-composer::before, .mini-composer::after { content: ''; position: absolute; inset: 2px 30% 2px 3px; background: var(--chat); border: 1px solid var(--line-soft); border-radius: 2px; }
 .mini-composer::after { inset: 2px 3px 2px 73%; background: var(--glass); border: none; }
-:root[data-theme="amber-terminal"] :is(button:not(.theme-choice),input,textarea,select,.panel,.bubble-text,.presence-mark,.login-card),
-:root[data-theme="amber-terminal"] #messages li .bubble-text { border-radius: 3px; }
-/* The controls that have a radius in a rule with an ID: the same square corner in Amber Terminal. */
-:root[data-theme="amber-terminal"] :is(#login, #send, #message-input, #whisper-draft, #whisper-send, #find-input, #peer-search, #titlebar > button,
+:root:is([data-theme="amber-terminal"], [data-theme="winamp-slate"], [data-theme="crt-phosphor"]) :is(button:not(.theme-choice),input,textarea,select,.panel,.bubble-text,.presence-mark,.login-card),
+:root:is([data-theme="amber-terminal"], [data-theme="winamp-slate"], [data-theme="crt-phosphor"]) #messages li .bubble-text { border-radius: 3px; }
+/* The controls that have a radius in a rule with an ID: the same square corner in retro terminal/slate themes. */
+:root:is([data-theme="amber-terminal"], [data-theme="winamp-slate"], [data-theme="crt-phosphor"]) :is(#login, #send, #message-input, #whisper-draft, #whisper-send, #find-input, #peer-search, #titlebar > button,
   #transfers button, #messages button, .map-heading button, #whisper-open, .field select, #theme-gallery, #quote-chip, #quote-remove) { border-radius: 3px; }
-:root[data-theme="amber-terminal"] :is(#titlebar,#toolbar,#statusbar,.panel-head,#composer) { box-shadow: none; }
+:root:is([data-theme="amber-terminal"], [data-theme="winamp-slate"], [data-theme="crt-phosphor"]) :is(#titlebar,#toolbar,#statusbar,.panel-head,#composer) { box-shadow: none; }
+:root[data-theme="classic-mirc"] :is(button:not(.theme-choice),input,textarea,select,.panel,.bubble-text,.presence-mark,.login-card),
+:root[data-theme="classic-mirc"] #messages li .bubble-text,
+:root[data-theme="classic-mirc"] :is(#login, #send, #message-input, #whisper-draft, #whisper-send, #find-input, #peer-search, #titlebar > button,
+  #transfers button, #messages button, .map-heading button, #whisper-open, .field select, #theme-gallery, #quote-chip, #quote-remove) { border-radius: 0; }
+:root[data-theme="classic-mirc"] :is(#titlebar,#toolbar,#statusbar,.panel-head,#composer) { box-shadow: none; }
+.theme-effects { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line-soft); display: flex; align-items: center; }
+.theme-crt-label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+:root[data-crt="true"] body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(180deg, transparent 0 2px, rgb(0 0 0 / .09) 2px 4px),
+    radial-gradient(ellipse at center, transparent 62%, rgb(0 0 0 / .16) 100%);
+}
+:root[data-crt="true"] :is(#window-brand, #chat-room, .panel-head, #messages .from) {
+  text-shadow: 0 0 5px color-mix(in srgb, currentColor 24%, transparent);
+}
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes crt-scanline-drift {
+    0%, 100% { opacity: 0.94; }
+    50% { opacity: 1; }
+  }
+  :root[data-crt="true"] body::after { animation: crt-scanline-drift 4s ease-in-out infinite; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-crt="true"] body::after { animation: none; }
+}
 @media (max-width: 450px) { .theme-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 #transfers li.transfer:not(.offer-head)::before {
   width: 14px; height: 14px; background: var(--accent);

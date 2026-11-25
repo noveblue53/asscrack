@@ -8,7 +8,8 @@ import { readFile } from 'node:fs/promises';
 
 const css = await readFile(new URL('../src/application/themes.css', import.meta.url), 'utf8');
 const html = await readFile(new URL('../src/application/index.html', import.meta.url), 'utf8');
-const THEMES = ['aero-classic', 'aero-night', 'aero-black', 'aero-midnight', 'pearl', 'amber-terminal'];
+const THEMES = ['aero-classic', 'aero-night', 'aero-black', 'aero-midnight', 'pearl', 'amber-terminal',
+    'winamp-slate', 'crt-phosphor', 'classic-mirc'];
 
 function palette(theme) {
     const start = theme === 'aero-classic' ? css.indexOf(':root, [data-theme="aero-classic"]') : css.indexOf(`[data-theme="${theme}"] {`);

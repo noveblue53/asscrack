@@ -98,8 +98,8 @@ html[data-frame="overlay"] #titlebar {
   transform: rotate(45deg);
 }
 #window-close span::after { content: ''; position: absolute; inset: 0; transform: rotate(90deg); }
-html[data-theme="amber-terminal"] #window-controls { border-radius: 0; }
-html[data-theme="amber-terminal"] #window-controls button:not(#window-close) { background: var(--control-bottom, #352817); }
+html:is([data-theme="amber-terminal"], [data-theme="winamp-slate"], [data-theme="crt-phosphor"], [data-theme="classic-mirc"]) #window-controls { border-radius: 0; }
+html:is([data-theme="amber-terminal"], [data-theme="winamp-slate"], [data-theme="crt-phosphor"], [data-theme="classic-mirc"]) #window-controls button:not(#window-close) { background: var(--control-bottom, #352817); }
 @media (max-width: 560px) {
   :root { --frame-button-width: 27px; --frame-close-width: 35px; }
 }
