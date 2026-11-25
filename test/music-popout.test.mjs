@@ -18,6 +18,18 @@ function fakeElectron() {
         constructor(options) {
             super();
             this.options = options;
+            this.bounds = {
+                x: options.x ?? 0,
+                y: options.y ?? 0,
+                width: options.width ?? 420,
+                height: options.height ?? 560
+            };
+            this.minSize = [options.minWidth ?? 0, options.minHeight ?? 0];
+            this.maxSize = [options.maxWidth ?? 0, options.maxHeight ?? 0];
+            this.maximizable = options.maximizable !== false;
+            this.alwaysOnTop = options.alwaysOnTop === true;
+            this.maximized = false;
+            this.minimized = false;
             this.sent = [];
             this.destroyed = false;
             this.webContents = Object.assign(new EventEmitter(), {
@@ -27,13 +39,21 @@ function fakeElectron() {
             created.push(this);
         }
         isDestroyed() { return this.destroyed; }
-        isMinimized() { return false; }
-        isMaximized() { return false; }
+        isMinimized() { return this.minimized; }
+        isMaximized() { return this.maximized; }
         show() { this.shown = true; }
         focus() { this.focused = (this.focused ?? 0) + 1; }
+        minimize() { this.minimized = true; }
+        maximize() { this.maximized = true; }
+        unmaximize() { this.maximized = false; }
+        setAlwaysOnTop(flag) { this.alwaysOnTop = Boolean(flag); }
+        setMinimumSize(w, h) { this.minSize = [w, h]; }
+        setMaximumSize(w, h) { this.maxSize = [w, h]; }
+        setMaximizable(flag) { this.maximizable = Boolean(flag); }
+        setBounds(b) { this.bounds = { ...this.bounds, ...b }; }
         removeMenu() {}
         async loadURL(url) { this.webContents.mainFrame.url = url; this.emit('ready-to-show'); }
-        getNormalBounds() { return { x: 50, y: 70, width: 444, height: 555 }; }
+        getNormalBounds() { return { ...this.bounds }; }
         close() { this.emit('close'); this.destroyed = true; this.emit('closed'); }
     }
     const handlers = {};
@@ -48,7 +68,7 @@ function fakeElectron() {
 }
 
 test('the music window: one window, own checked channels, the controls of the room, saved bounds, remembered state', async t => {
-    const { attachMusicPopout, MUSIC_WINDOW_FILE, WINDOW_CHANNELS } = await import('../src/application/music-popout.mjs');
+    const { attachMusicPopout, MUSIC_WINDOW_FILE, WINDOW_CHANNELS, POPOUT_CHANNELS } = await import('../src/application/music-popout.mjs');
     const profile = mkdtempSync(path.join(tmpdir(), 'ac-music-window-'));
     t.after(() => rmSync(profile, { recursive: true, force: true }));
     const { Window, created, handlers, listeners, ipc, screen } = fakeElectron();
@@ -63,7 +83,7 @@ test('the music window: one window, own checked channels, the controls of the ro
     const popout = attachMusicPopout({ BrowserWindow: Window, ipc, screen, profile, assets: profile, controls,
         names: () => ({ p1: 'Ann' }), remember: on => remembered.push(on), onState: s => states.push(s.open),
         pull: () => { pulls++; }, warn: assert.fail });
-    assert.deepEqual(Object.keys(handlers).sort(), Object.values(WINDOW_CHANNELS).sort());
+    assert.deepEqual(Object.keys(handlers).sort(), [...Object.values(WINDOW_CHANNELS), ...Object.values(POPOUT_CHANNELS)].sort());
     assert.ok(Object.values(WINDOW_CHANNELS).every(c => c.startsWith('asscrack:music-window-')));
 
     // A first open: the default size in the middle of the display, the own preload, the sandbox.
@@ -115,6 +135,7 @@ test('the music window: one window, own checked channels, the controls of the ro
     assert.deepEqual([win.sent[4][1], win.sent[5][1]], [null, null]);
 
     // The app closes it (Leave room, Quit): the bounds are saved, the setting stays.
+    win.setBounds({ x: 50, y: 70, width: 444, height: 555 });
     popout.close();
     assert.equal(popout.isOpen(), false);
     assert.deepEqual(JSON.parse(readFileSync(path.join(profile, MUSIC_WINDOW_FILE), 'utf8')),
@@ -193,4 +214,210 @@ test('the settings: the visualizer and the layout of this PC, bad values, the po
     assert.equal(music.settings().visualizer, 'off');
     assert.ok(music.controls.has('asscrack:music-skip') && !music.controls.has('asscrack:music-open'),
         'the window controls, not the track URL of the DJ');
+});
+
+test('music popout shade mode and always-on-top pin: bounds separation, persistence across reopens, and window actions', async t => {
+    const { attachMusicPopout, MUSIC_WINDOW_FILE, MUSIC_WINDOW_STATE_FILE, MUSIC_SHADE_HEIGHT, MUSIC_SHADE_MIN_WIDTH,
+        MUSIC_WINDOW_MIN, WINDOW_CHANNELS, POPOUT_CHANNELS } = await import('../src/application/music-popout.mjs');
+    const profile = mkdtempSync(path.join(tmpdir(), 'ac-music-shade-'));
+    t.after(() => rmSync(profile, { recursive: true, force: true }));
+    const { Window, created, handlers, ipc, screen } = fakeElectron();
+    const controls = new Map(Object.keys(WINDOW_CHANNELS).map(channel => [channel, () => ({ ok: true })]));
+    const popout = attachMusicPopout({ BrowserWindow: Window, ipc, screen, profile, assets: profile, controls, warn: assert.fail });
+
+    popout.open();
+    await settle();
+    const win = created[0];
+    assert.equal(win.options.frame, false, 'frameless custom titlebar');
+    assert.equal(win.options.alwaysOnTop, false);
+
+    const from = w => ({ sender: w.webContents, senderFrame: w.webContents.mainFrame });
+    const stranger = new Window({});
+    stranger.webContents.mainFrame.url = 'asscrack-app://app/index.html';
+    await assert.rejects(handlers[POPOUT_CHANNELS.state](from(stranger)), /Unknown music window/);
+    await assert.rejects(handlers[POPOUT_CHANNELS.setState](from(stranger), { shaded: true }), /Unknown music window/);
+    await assert.rejects(handlers[POPOUT_CHANNELS.action](from(stranger), 'close'), /Unknown music window/);
+
+    assert.deepEqual(await handlers[POPOUT_CHANNELS.state](from(win)), { shaded: false, pinned: false });
+
+    // Move full window to custom bounds, then toggle pin and shade mode.
+    win.setBounds({ x: 120, y: 140, width: 460, height: 580 });
+    const pinnedState = await handlers[POPOUT_CHANNELS.setState](from(win), { pinned: true });
+    assert.deepEqual(pinnedState, { shaded: false, pinned: true });
+    assert.equal(win.alwaysOnTop, true);
+
+    const shadedState = await handlers[POPOUT_CHANNELS.setState](from(win), { shaded: true });
+    assert.deepEqual(shadedState, { shaded: true, pinned: true });
+    assert.equal(win.bounds.height, MUSIC_SHADE_HEIGHT);
+    assert.ok(win.bounds.width >= MUSIC_SHADE_MIN_WIDTH);
+    assert.deepEqual(win.minSize, [MUSIC_SHADE_MIN_WIDTH, MUSIC_SHADE_HEIGHT]);
+    assert.deepEqual(win.maxSize, [16384, MUSIC_SHADE_HEIGHT]);
+    assert.equal(win.maximizable, false);
+
+    // Full bounds in music-window.json remain untouched while shaded.
+    assert.deepEqual(JSON.parse(readFileSync(path.join(profile, MUSIC_WINDOW_FILE), 'utf8')),
+        { x: 120, y: 140, width: 460, height: 580, maximized: false });
+
+    // Move/resize shade bar and close while shaded; reopen starts directly in shade mode + pinned.
+    win.setBounds({ x: 300, y: 40, width: 520, height: MUSIC_SHADE_HEIGHT });
+    await handlers[POPOUT_CHANNELS.action](from(win), 'minimize');
+    assert.equal(win.minimized, true);
+    popout.close();
+
+    const savedState = JSON.parse(readFileSync(path.join(profile, MUSIC_WINDOW_STATE_FILE), 'utf8'));
+    assert.equal(savedState.shaded, true);
+    assert.equal(savedState.pinned, true);
+    assert.deepEqual(savedState.shadeBounds, { x: 300, y: 40, width: 520, height: MUSIC_SHADE_HEIGHT });
+
+    popout.open();
+    await settle();
+    const reopened = created.at(-1);
+    assert.equal(reopened.options.alwaysOnTop, true);
+    assert.equal(reopened.options.height, MUSIC_SHADE_HEIGHT);
+    assert.equal(reopened.options.width, 520);
+    assert.equal(reopened.options.x, 300);
+    assert.equal(reopened.options.y, 40);
+    assert.equal(reopened.options.maxHeight, MUSIC_SHADE_HEIGHT);
+    assert.equal(reopened.options.maximizable, false);
+
+    // Unshading restores full bounds and resets max size.
+    const unshadedState = await handlers[POPOUT_CHANNELS.setState](from(reopened), { shaded: false });
+    assert.deepEqual(unshadedState, { shaded: false, pinned: true });
+    assert.deepEqual(reopened.bounds, { x: 120, y: 140, width: 460, height: 580 });
+    assert.deepEqual(reopened.maxSize, [0, 0]);
+    assert.deepEqual(reopened.minSize, [MUSIC_WINDOW_MIN.width, MUSIC_WINDOW_MIN.height]);
+    assert.equal(reopened.maximizable, true);
+
+    await handlers[POPOUT_CHANNELS.action](from(reopened), 'close');
+    assert.equal(popout.isOpen(), false);
+});
+
+test('music window preload bridge sanitizes ui-state and action calls', async () => {
+    const source = await readFile(app('music-window-preload.cjs'), 'utf8');
+    const worlds = {}, invoked = [], listeners = {};
+    const electron = {
+        contextBridge: { exposeInMainWorld: (name, api) => { worlds[name] = api; } },
+        ipcRenderer: {
+            invoke: (...args) => { invoked.push(args); return Promise.resolve(null); },
+            send: () => {},
+            on: (channel, fn) => { listeners[channel] = fn; }
+        }
+    };
+    vm.runInNewContext(source, { require: name => (assert.equal(name, 'electron'), electron), Promise, String, Number });
+    const a = worlds.asscrack;
+    await a.getMusicWindowState();
+    await a.setMusicWindowState({ shaded: true, pinned: 'yes', extra: 123 });
+    await a.musicWindowAction(null);
+    await a.musicWindowAction('minimize');
+    assert.deepEqual(JSON.parse(JSON.stringify(invoked)), [
+        ['asscrack:music-window-ui-state'],
+        ['asscrack:music-window-set-ui-state', { shaded: true }],
+        ['asscrack:music-window-action', ''],
+        ['asscrack:music-window-action', 'minimize']
+    ]);
+    const got = [];
+    a.onMusicViz?.(() => {});
+    a.onMusicWindowState(s => got.push(s));
+    listeners['asscrack:music-window-ui-state-changed']({}, { shaded: true, pinned: false });
+    assert.deepEqual(got, [{ shaded: true, pinned: false }]);
+});
+
+test('music-window.js applies shaded/pinned state, button labels, and marquee class on overflow', async () => {
+    const source = await readFile(app('music-window.js'), 'utf8');
+    const attrs = new Map();
+    const makeEl = (id, props = {}) => {
+        const classes = new Set();
+        const elAttrs = new Map();
+        const styleProps = new Map();
+        const listeners = {};
+        return {
+            id,
+            textContent: '',
+            title: '',
+            scrollWidth: 100,
+            clientWidth: 100,
+            parentElement: null,
+            ...props,
+            setAttribute(k, v) { elAttrs.set(k, String(v)); },
+            getAttribute(k) { return elAttrs.get(k); },
+            addEventListener(ev, fn) { (listeners[ev] ??= []).push(fn); },
+            async click() { for (const fn of listeners.click ?? []) await fn({ target: this }); },
+            classList: {
+                add: c => classes.add(c),
+                remove: c => classes.delete(c),
+                contains: c => classes.has(c)
+            },
+            style: {
+                setProperty: (k, v) => styleProps.set(k, v),
+                removeProperty: k => styleProps.delete(k),
+                getPropertyValue: k => styleProps.get(k) ?? ''
+            }
+        };
+    };
+    const marqueeEl = makeEl('marquee', { clientWidth: 120 });
+    const titleEl = makeEl('music-title', { scrollWidth: 240, parentElement: marqueeEl });
+    const pinButton = makeEl('music-pin');
+    const shadeButton = makeEl('music-shade');
+    const minButton = makeEl('music-win-min');
+    const closeButton = makeEl('music-win-close');
+    const titlebar = makeEl('music-titlebar');
+    const elements = new Map([
+        ['music-title', titleEl], ['music-pin', pinButton], ['music-shade', shadeButton],
+        ['music-win-min', minButton], ['music-win-close', closeButton], ['music-titlebar', titlebar]
+    ]);
+    let stateListener = null;
+    const setCalls = [];
+    const actions = [];
+    const windowListeners = {};
+    const docEl = { dataset: {} };
+    let curState = { shaded: true, pinned: true };
+    const ctx = {
+        localStorage: { getItem: () => null },
+        document: {
+            documentElement: docEl,
+            getElementById: id => elements.get(id) ?? null
+        },
+        window: {
+            asscrack: {
+                getMusicSettings: async () => ({}),
+                getMusicWindowState: async () => ({ ...curState }),
+                setMusicWindowState: async patch => { setCalls.push(patch); curState = { ...curState, ...patch }; return { ...curState }; },
+                onMusicWindowState: fn => { stateListener = fn; },
+                musicWindowAction: async a => { actions.push(a); }
+            },
+            addEventListener: (ev, fn) => { (windowListeners[ev] ??= []).push(fn); },
+            dispatchEvent: () => {}
+        },
+        Promise, Math, Number, String, Event: function Event() {}
+    };
+    vm.runInNewContext(source, ctx);
+    await settle();
+
+    assert.equal(docEl.dataset.shaded, 'true');
+    assert.equal(docEl.dataset.pinned, 'true');
+    assert.equal(shadeButton.getAttribute('aria-pressed'), 'true');
+    assert.equal(shadeButton.textContent, '▾');
+    assert.equal(pinButton.getAttribute('aria-pressed'), 'true');
+    assert.equal(titleEl.classList.contains('scrolling'), true);
+    assert.equal(titleEl.style.getPropertyValue('--marquee-distance'), '-132px');
+
+    // Short title removes scrolling class.
+    titleEl.scrollWidth = 80;
+    for (const fn of windowListeners.resize ?? []) fn();
+    assert.equal(titleEl.classList.contains('scrolling'), false);
+
+    // State update from main process unshades and unpins.
+    curState = { shaded: false, pinned: false };
+    stateListener({ ...curState });
+    assert.equal(docEl.dataset.shaded, 'false');
+    assert.equal(shadeButton.textContent, '▴');
+    assert.equal(pinButton.getAttribute('aria-pressed'), 'false');
+
+    await shadeButton.click();
+    await pinButton.click();
+    await minButton.click();
+    await closeButton.click();
+    assert.deepEqual(JSON.parse(JSON.stringify(setCalls)), [{ shaded: true }, { pinned: true }]);
+    assert.deepEqual(actions, ['minimize', 'close']);
+    assert.equal(attrs.size, 0);
 });
