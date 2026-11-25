@@ -48,7 +48,8 @@ import { isAddressInUse, knockResultText, loginErrorText } from './login-errors.
 import { createLinkPolicy } from './link-policy.mjs';
 import { fitWindowBounds, MIN_WINDOW, readWindowBounds, saveWindowBounds } from './window-bounds.mjs';
 import { createTaskbarFlash } from './taskbar-flash.mjs';
-import { acceptScreenFrame, createScreenSources, windowShareHasBorder } from './screen-sources.mjs';
+import { acceptScreenAudioFrame, acceptScreenFrame, createScreenSources, windowShareHasBorder } from './screen-sources.mjs';
+import { createScreenAudioCapture } from './screen-audio-capture.mjs';
 import { createShareGuard } from './share-guard.mjs';
 import { guardScript, qunsScript, startHelper } from './win-helper.mjs';
 import { createAutoStatus, readSettings as readAutoStatus } from './auto-status.mjs';
@@ -234,7 +235,7 @@ const interfaceCache = installInterfaceCache();
 // 'voice-frame' comes 50 times each second for each speaker.
 // G7a: 'friend' and 'pm' carry room keys and private text. They never go in the log or to the window as raw events.
 // P8b: 'screen-frame' carries the picture bytes of a screen share (design section 2.9). It never goes in the log.
-const UNLOGGED_EVENTS = new Set(['file-progress', 'voice-frame', 'friend', 'pm', 'screen-frame']);
+const UNLOGGED_EVENTS = new Set(['file-progress', 'voice-frame', 'friend', 'pm', 'screen-frame', 'screen-audio-frame']);
 
 function logEvent(type, data) {
     if (!logFile || UNLOGGED_EVENTS.has(type)) return;
@@ -1387,7 +1388,10 @@ function forgetHints(row) {
     if (row?.name && row?.roomKey) deleteHintFiles(roomHintFiles(row.name, row.roomKey));
     // G4: the listening choices of the room go with it.
     const tag = listeningRoomTag(row?.roomKey);
-    if (tag) listeningChoicesStore().removeRoom(tag);
+    if (tag) {
+        listeningChoicesStore().removeRoom(tag);
+        screenListeningChoicesStore().removeRoom(tag);
+    }
 }
 
 // Saved rooms (milestone 6). The check of a roomId from the window.
@@ -1935,9 +1939,15 @@ onRoomIpc('asscrack:voice-frame', (_event, bytes) => {
 // share-guard.mjs: the viewers get a "Paused" picture while the window is not in front. The guard helper has the
 // normal priority: a late pause shows more of the screen.
 const windowBorder = windowShareHasBorder(process.platform, os.release());
+const screenAudioCapture = createScreenAudioCapture({
+    spawn, platform: process.platform, release: os.release(), ownPid: process.pid, log: writeLog
+});
 const shareGuard = createShareGuard({
     start: (hwnd, handlers) => startHelper({ spawn, script: guardScript(hwnd, process.pid), ...handlers }),
-    onChange: state => sendToWindow('asscrack:screen-guard', state),
+    onChange: state => {
+        screenAudioCapture.setPaused(state?.active === true && state?.paused === true);
+        sendToWindow('asscrack:screen-guard', state);
+    },
     log: writeLog
 });
 const physicalDisplays = () => screen.getAllDisplays().map(display => {
@@ -1951,31 +1961,55 @@ const screenSources = createScreenSources({
     log: writeLog,
     windowBorder,
     guard: windowBorder && process.platform === 'win32' ? shareGuard : null,
-    displays: physicalDisplays
+    displays: physicalDisplays,
+    audioCapture: screenAudioCapture,
+    onAudioBlock: block => { if (screenOwn && !idlePeer) sendToWindow('asscrack:screen-audio-pcm', block); },
+    onAudioEnd: reason => writeLog('EVENT', `screen audio capture ended reason=${reason}`)
 });
 let screenOwn = false;
-// A guard with no share after the selection time stops (the share did not start).
+// A guard or audio helper with no share after the selection time stops (the share did not start).
 let guardExpiry = null;
 const SCREEN_STOP_REASONS = new Set(['stopped', 'source', 'error']);
 handleRoomIpc('asscrack:screen-sources', () => (node && !idlePeer ? screenSources.list() : []));
 handleRoomIpc('asscrack:screen-pick', async (_event, id, quality, options) => {
     clearTimeout(guardExpiry);
-    const info = await screenSources.pick(String(id ?? ''), String(quality ?? ''), { border: options?.border === true });
-    if (info?.guard) guardExpiry = setTimeout(() => { if (!screenOwn) shareGuard.close('expired'); }, 15000);
+    const info = await screenSources.pick(String(id ?? ''), String(quality ?? ''), {
+        border: options?.border === true,
+        audio: options?.audio === true
+    });
+    if (info?.guard || info?.audioMode === 'process') {
+        guardExpiry = setTimeout(() => {
+            if (!screenOwn) {
+                shareGuard.close('expired');
+                screenAudioCapture.stop();
+            }
+        }, 15000);
+    }
     return info;
 });
 handleRoomIpc('asscrack:screen-last-quality', () => screenSources.lastQuality());
+handleRoomIpc('asscrack:screen-last-audio', () => screenSources.lastAudio());
 handleRoomIpc('asscrack:screen-start', (_event, options = {}) => {
     if (!node) throw new Error('Not logged in');
     const size = n => (Number.isInteger(n) && n > 0 && n <= 16384 ? n : undefined);
-    return node.startScreenShare({ preset: String(options?.preset ?? 'auto'), width: size(options?.width), height: size(options?.height) });
+    return node.startScreenShare({
+        preset: String(options?.preset ?? 'auto'),
+        width: size(options?.width),
+        height: size(options?.height),
+        audio: options?.audio === true
+    });
 });
 onRoomIpc('asscrack:screen-stop', (_event, reason) => {
+    screenAudioCapture.stop();
     node?.stopScreenShare(SCREEN_STOP_REASONS.has(reason) ? reason : 'stopped');
 });
 onRoomIpc('asscrack:screen-frame', (_event, frame) => {
     if (!node || idlePeer || !acceptScreenFrame(frame, screenOwn)) return;
     node.sendScreenFrame({ tier: frame.tier, key: frame.key === true, timestampMs: Number(frame.timestampMs), data: frame.data });
+});
+onRoomIpc('asscrack:screen-audio-frame', (_event, data) => {
+    if (!node || idlePeer || !acceptScreenAudioFrame(data, screenOwn)) return;
+    node.sendScreenAudioFrame(data);
 });
 onRoomIpc('asscrack:screen-report', (_event, report) => { if (node && screenOwn) node.reportScreenEncoder(report); });
 onRoomIpc('asscrack:screen-size', (_event, size) => { if (node && screenOwn) node.setScreenSize(size ?? {}); });
@@ -1985,12 +2019,18 @@ handleRoomIpc('asscrack:screen-watch', (_event, peerId) => {
     return node.watchScreen(String(peerId ?? ''));
 });
 onRoomIpc('asscrack:screen-unwatch', () => { node?.unwatchScreen(); });
+handleRoomIpc('asscrack:screen-audio-watch', (_event, peerId) => {
+    if (!node) throw new Error('Not logged in');
+    if (idlePeer) throw new Error('Watching is not available in Idle Peer.');
+    return node.watchScreenAudio(String(peerId ?? ''));
+});
+onRoomIpc('asscrack:screen-audio-unwatch', () => { node?.unwatchScreenAudio(); });
 onRoomIpc('asscrack:screen-keyreq', () => { node?.requestScreenKey(); });
 handleRoomIpc('asscrack:screen-state', () => {
     if (!node) return { own: null, peers: {}, watching: null, maxShares: null };
     const state = node.screenState();
     // The window gets the view, not the internal tier objects of the rate control.
-    return { own: state.own ? { shareId: state.own.shareId, preset: state.own.preset, viewers: state.own.viewers } : null,
+    return { own: state.own ? { shareId: state.own.shareId, preset: state.own.preset, audio: state.own.audio === true, viewers: state.own.viewers } : null,
         peers: state.peers, watching: state.watching, maxShares: state.maxShares };
 });
 // The forwarding of the screen events of one node (startRoom). 'screen-frame' does not go to the window in Idle Peer.
@@ -1998,7 +2038,10 @@ function forwardScreenEvents(onLiveEvent) {
     onLiveEvent('screen-state', data => {
         if (data?.own) {
             screenOwn = data.sharing === true;
-            if (!screenOwn) shareGuard.close('stop');
+            if (!screenOwn) {
+                shareGuard.close('stop');
+                screenAudioCapture.stop();
+            }
             taskbarFlash.setSharing(screenOwn);
             if (screenOwn) writeLog('EVENT', `screen share started preset ${data.preset}`);
         }
@@ -2006,21 +2049,29 @@ function forwardScreenEvents(onLiveEvent) {
     });
     onLiveEvent('screen-ended', data => {
         writeLog('EVENT', data?.own ? `screen share stopped reason ${data.reason}` : `screen watch ended reason ${data?.reason}`);
-        if (data?.own) shareGuard.close('stop');
+        if (data?.own) {
+            shareGuard.close('stop');
+            screenAudioCapture.stop();
+        }
         // The journal lines of the screen events (with the share ID) come from diag-events.mjs (journalNodeEvents).
         sendToWindow('asscrack:screen-ended', data);
     });
-    for (const type of ['screen-viewers', 'screen-encoder', 'screen-config']) onLiveEvent(type, data => sendToWindow(`asscrack:${type}`, data));
+    for (const type of ['screen-viewers', 'screen-encoder', 'screen-config', 'screen-audio-ended']) {
+        onLiveEvent(type, data => sendToWindow(`asscrack:${type}`, data));
+    }
     onLiveEvent('screen-frame', data => { if (!idlePeer) sendToWindow('asscrack:screen-frame', data); });
+    onLiveEvent('screen-audio-frame', data => { if (!idlePeer) sendToWindow('asscrack:screen-audio-frame', data); });
 }
 function resetScreen(current) {
     try {
         current?.stopScreenShare?.('stopped');
         current?.unwatchScreen?.();
+        current?.unwatchScreenAudio?.();
     } catch (err) {
         writeLog('WARN', `Screen share stop: ${err?.message ?? err}`);
     }
     screenSources.clear();
+    screenAudioCapture.stop();
     screenOwn = false;
     taskbarFlash.setSharing(false);
 }
@@ -2044,6 +2095,12 @@ function listeningChoicesStore() {
     listeningChoices ??= listeningStore(path.join(app.getPath('userData'), 'listening.json'));
     return listeningChoices;
 }
+let screenListeningChoices = null;
+function screenListeningChoicesStore() {
+    screenListeningChoices ??= listeningStore(path.join(app.getPath('userData'), 'screen-listening.json'),
+        { maxVolume: 100, defaultVolume: 80 });
+    return screenListeningChoices;
+}
 function listeningKey(peerId) {
     if (!node || typeof peerId !== 'string' || peerId.length > 128) return null;
     const tag = listeningRoomTag(node.roomKey());
@@ -2062,6 +2119,21 @@ handleRoomIpc('asscrack:set-listening', (_event, peerId, muted, volume) => {
         return listeningChoicesStore().set(key.tag, key.device, { muted, volume });
     } catch (err) {
         writeLog('WARN', `Listening choice not saved: ${err?.message ?? err}`);
+        return false;
+    }
+});
+handleRoomIpc('asscrack:get-screen-listening', (_event, peerId) => {
+    const key = listeningKey(peerId);
+    if (!key) return null;
+    return screenListeningChoicesStore().get(key.tag, key.device);
+});
+handleRoomIpc('asscrack:set-screen-listening', (_event, peerId, muted, volume) => {
+    const key = listeningKey(peerId);
+    if (!key) return false;
+    try {
+        return screenListeningChoicesStore().set(key.tag, key.device, { muted, volume });
+    } catch (err) {
+        writeLog('WARN', `Screen listening choice not saved: ${err?.message ?? err}`);
         return false;
     }
 });
@@ -2551,6 +2623,7 @@ app.on('before-quit', event => {
     tray = null;
     pttHook.stop();
     shareGuard.close('quit');
+    screenAudioCapture.stop();
     autoStatus.stop();
     friendWindows.closeAll();
     friendsPopout.close();

@@ -43,12 +43,19 @@
     const fillButton = byId('screen-fill');
     const unwatchButton = byId('screen-unwatch');
     const switcher = byId('screen-switcher');
+    const audioControls = byId('screen-audio-controls');
+    const audioMuteButton = byId('screen-audio-mute');
+    const audioVolumeInput = byId('screen-audio-volume');
+    const audioPct = byId('screen-audio-pct');
 
+    const DEFAULT_AUDIO_VOLUME = 80;
     const now = () => performance.now();
-    const shares = new Map(); // peerId -> { shareId, preset }, in the order of the start
+    const shares = new Map(); // peerId -> { shareId, preset, audio }, in the order of the start
+    const audioPrefs = new Map(); // peerId -> { muted, volume }
     let ownSharing = false;
     let idle = false;
     let watch = null;
+    let audioStreaming = false;
     let lost = null; // { peerId, shareId, until, timer, retry }
     let filled = false;
     let noticeTimer = null;
@@ -155,6 +162,63 @@
         markLines();
     }
 
+    // ---- Stage audio ----
+
+    const isDeafened = () => window.voice?.state?.()?.deafened === true;
+    function prefFor(peerId) {
+        return audioPrefs.get(peerId) ?? { muted: false, volume: DEFAULT_AUDIO_VOLUME };
+    }
+    function stopAudioStream(sendUnwatch = true) {
+        window.screenAudio?.stopPlayback?.();
+        if (audioStreaming) {
+            audioStreaming = false;
+            if (sendUnwatch) api.unwatchScreenAudio?.();
+        }
+    }
+    function syncAudio() {
+        const w = watch;
+        if (!w || !w.hasAudio) {
+            if (audioControls) audioControls.hidden = true;
+            stopAudioStream(true);
+            return;
+        }
+        const pref = prefFor(w.peerId);
+        const deafened = isDeafened();
+        if (audioControls) audioControls.hidden = false;
+        if (audioMuteButton) {
+            const effectiveMuted = pref.muted || deafened;
+            audioMuteButton.textContent = effectiveMuted ? 'Unmute' : 'Mute';
+            audioMuteButton.setAttribute('aria-pressed', String(effectiveMuted));
+            audioMuteButton.disabled = deafened;
+            audioMuteButton.title = deafened ? 'Muted while deafened' : (pref.muted ? 'Unmute share audio' : 'Mute share audio');
+        }
+        if (audioVolumeInput) audioVolumeInput.value = String(pref.volume);
+        if (audioPct) audioPct.textContent = `${pref.volume}%`;
+        const shouldStream = !pref.muted && pref.volume > 0 && !deafened && !idle;
+        if (shouldStream) {
+            window.screenAudio?.startPlayback?.({ peerId: w.peerId, shareId: w.shareId, volume: pref.volume });
+            if (!audioStreaming) {
+                audioStreaming = true;
+                Promise.resolve(api.watchScreenAudio?.(w.peerId)).catch(() => {
+                    if (watch === w) audioStreaming = false;
+                });
+            }
+        } else {
+            stopAudioStream(true);
+        }
+    }
+    async function loadAudioPref(w) {
+        if (!w?.hasAudio) return;
+        try {
+            const saved = await api.getScreenListening?.(w.peerId);
+            if (watch !== w) return;
+            if (saved && typeof saved.muted === 'boolean' && Number.isInteger(saved.volume)) {
+                audioPrefs.set(w.peerId, { muted: saved.muted, volume: Math.max(0, Math.min(100, saved.volume)) });
+            }
+        } catch { /* keep default or cached */ }
+        if (watch === w) syncAudio();
+    }
+
     // ---- The stage ----
 
     function openStage(peerId, text) {
@@ -169,6 +233,8 @@
         delete stage.dataset.peerId;
         setNote('');
         if (info) info.textContent = '';
+        if (audioControls) audioControls.hidden = true;
+        stopAudioStream(true);
         unfill();
     }
     function closeDecoder(w) {
@@ -182,6 +248,7 @@
     function endWatch(w) {
         if (watch !== w) return;
         watch = null;
+        stopAudioStream(false);
         closeDecoder(w);
         clearInterval(waitTimer);
         waitTimer = null;
@@ -219,12 +286,14 @@
             endWatch(old);
             canvas.getContext('2d')?.clearRect?.(0, 0, canvas.width, canvas.height);
         }
-        const w = { peerId, shareId: share.shareId, config: null, decoder: null, gate: check.createFrameGate({ now, keyRequestMs: KEY_REQUEST_MS }),
+        const w = { peerId, shareId: share.shareId, hasAudio: share.audio === true, config: null, decoder: null,
+            gate: check.createFrameGate({ now, keyRequestMs: KEY_REQUEST_MS }),
             resets: [], lastFrameAt: now(), frames: 0, decoded: 0 };
         watch = w;
         totals.watches++;
         if (old) totals.switches++;
         openStage(peerId, `Connecting to ${nameOf(peerId)}…`);
+        if (audioControls) audioControls.hidden = !w.hasAudio;
         renderBanner();
         try {
             const config = await api.watchScreen(peerId);
@@ -236,6 +305,8 @@
             if (watch === w) stopWatching({ send: true, text: 'This share is not available.' });
             return false;
         }
+        if (w.hasAudio) loadAudioPref(w);
+        else syncAudio();
         clearInterval(waitTimer);
         // Section 2.7: "Waiting for <name>…" after 5 s with no frame. A timer of the stage, not of the decoder.
         waitTimer = setInterval(() => {
@@ -361,6 +432,26 @@
     watchButton?.addEventListener('click', () => { const peerId = banner.dataset.peerId; if (peerId) watchPeer(peerId); });
     unwatchButton?.addEventListener('click', () => stopWatching({ send: true }));
     fillButton?.addEventListener('click', () => fill(!filled));
+    audioMuteButton?.addEventListener('click', () => {
+        const w = watch;
+        if (!w || !w.hasAudio || isDeafened()) return;
+        const cur = prefFor(w.peerId);
+        const next = { muted: !cur.muted, volume: cur.volume };
+        audioPrefs.set(w.peerId, next);
+        Promise.resolve(api.setScreenListening?.(w.peerId, next.muted, next.volume)).catch(() => {});
+        syncAudio();
+    });
+    audioVolumeInput?.addEventListener('input', () => {
+        const w = watch;
+        if (!w || !w.hasAudio) return;
+        const vol = Math.max(0, Math.min(100, Math.round(Number(audioVolumeInput.value) || 0)));
+        const cur = prefFor(w.peerId);
+        const next = { muted: cur.muted, volume: vol };
+        audioPrefs.set(w.peerId, next);
+        window.screenAudio?.setVolume?.(vol);
+        Promise.resolve(api.setScreenListening?.(w.peerId, next.muted, next.volume)).catch(() => {});
+        syncAudio();
+    });
 
     api.onScreenState?.(state => {
         if (!state) return;
@@ -370,7 +461,7 @@
             return;
         }
         if (state.sharing) {
-            shares.set(state.peerId, { shareId: state.shareId, preset: state.preset ?? null });
+            shares.set(state.peerId, { shareId: state.shareId, preset: state.preset ?? null, audio: state.audio === true });
             // Section 2.5, item 3: the same share comes again in 60 s after a lost connection: watch again.
             if (lost && lost.peerId === state.peerId && lost.shareId === state.shareId && now() < lost.until) watchPeer(state.peerId);
             else if (lost && lost.peerId === state.peerId) { clearLost(); closeStage(); }
@@ -380,6 +471,13 @@
             if (watch && watch.peerId === state.peerId) stopWatching({ send: false });
         }
         renderBanner();
+    });
+    api.onScreenAudioEnded?.(data => {
+        const w = watch;
+        if (w && data?.peerId === w.peerId && (!data.shareId || data.shareId === w.shareId)) {
+            audioStreaming = false;
+            window.screenAudio?.stopPlayback?.();
+        }
     });
     api.onScreenConfig?.(config => {
         const w = watch;
@@ -428,10 +526,14 @@
         }
         renderBanner();
     });
+    window.voice?.onChange?.(() => {
+        syncAudio();
+        window.screenAudio?.applyOutputDevice?.();
+    });
     // The window reads the state after it subscribed, so that an early event is not lost (a late join).
     Promise.resolve(api.getScreenState?.()).then(state => {
         for (const [peerId, value] of Object.entries(state?.peers ?? {})) {
-            if (!shares.has(peerId)) shares.set(peerId, { shareId: value?.shareId ?? null, preset: value?.preset ?? null });
+            if (!shares.has(peerId)) shares.set(peerId, { shareId: value?.shareId ?? null, preset: value?.preset ?? null, audio: value?.audio === true });
         }
         if (state?.own) ownSharing = true;
         renderBanner();
@@ -442,8 +544,10 @@
         unfill,
         canWatch: peerId => shares.has(peerId) && !idle && !(watch && watch.peerId === peerId),
         watch: peerId => watchPeer(peerId),
+        onVoiceStateChanged: () => syncAudio(),
         stats: () => ({ ...totals, watching: watch?.peerId ?? null, watchingShare: watch?.shareId ?? null, config: watch?.config ?? null,
             lost: lost !== null, shares: shares.size, switcher: Boolean(switcher && !switcher.hidden), stage: !stage.hidden,
-            banner: !banner.hidden, note: note?.textContent ?? '', notice: notice?.textContent ?? '' })
+            banner: !banner.hidden, note: note?.textContent ?? '', notice: notice?.textContent ?? '',
+            audioStreaming, audioControlsVisible: Boolean(audioControls && !audioControls.hidden) })
     });
 })();

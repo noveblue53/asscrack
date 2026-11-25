@@ -49,6 +49,7 @@
     const screensList = byId('screen-list-screens');
     const windowsList = byId('screen-list-windows');
     const qualitySelect = byId('screen-quality');
+    const audioCheck = byId('screen-audio');
     const goButton = byId('screen-share-go');
     const borderHint = byId('screen-border-hint');
     const borderSwitch = byId('screen-border-switch');
@@ -177,10 +178,13 @@
         goButton.disabled = true;
         showError('');
         qualitySelect.value = 'auto';
+        if (audioCheck) audioCheck.checked = false;
         picker.showModal();
         try {
             const last = await api.getScreenQuality?.();
             if (token === pickerToken && QUALITIES.some(([id]) => id === last)) qualitySelect.value = last;
+            const lastAud = await api.getScreenAudio?.();
+            if (token === pickerToken && audioCheck) audioCheck.checked = lastAud === true;
             const sources = await api.getScreenSources();
             if (token !== pickerToken || !picker.open) return;
             const list = Array.isArray(sources) ? sources : [];
@@ -218,19 +222,26 @@
         goButton.disabled = true;
         updateButton();
         const quality = qualitySelect.value || 'auto';
+        const wantAudio = audioCheck?.checked === true;
         let stream = null;
         try {
-            const info = await api.pickScreenSource(selectedId, quality, { border: border === true });
+            const pickOpts = wantAudio ? { border: border === true, audio: true } : { border: border === true };
+            const info = await api.pickScreenSource(selectedId, quality, pickOpts);
+            const audioMode = info?.audioMode ?? 'none';
             // Section 2.1, item 6: the constraints of the preset (Auto: the capture preset of rule A1, at first Max).
             stream = await navigator.mediaDevices.getDisplayMedia({
                 video: { width: { max: info.width }, height: { max: info.height }, frameRate: { max: info.frameRate } },
-                audio: false
+                audio: audioMode === 'loopback'
             });
             const track = stream.getVideoTracks()[0];
             if (!track) throw Object.assign(new Error('no video track'), { name: 'NotFoundError' });
             const settings = track.getSettings?.() ?? {};
-            const result = await api.startScreenShare({ preset: quality, width: settings.width, height: settings.height });
-            begin(track, info.name, quality, result?.shareId ?? null, settings, Boolean(info?.guard));
+            const startOpts = audioMode !== 'none'
+                ? { preset: quality, width: settings.width, height: settings.height, audio: true }
+                : { preset: quality, width: settings.width, height: settings.height };
+            const result = await api.startScreenShare(startOpts);
+            begin(track, info.name, quality, result?.shareId ?? null, settings, Boolean(info?.guard),
+                { audioMode, audioWarning: info?.audioWarning ?? null, stream });
             starting = false;
             closePicker();
         } catch (err) {
@@ -248,13 +259,15 @@
 
     // ---- The share and the encoder loop ----
 
-    function begin(track, name, quality, shareId, settings, guarded = false) {
+    function begin(track, name, quality, shareId, settings, guarded = false, audioInfo = {}) {
         const startAt = clock();
         lastTrack = track;
-        share = { track, name: String(name ?? ''), quality, shareId, startAt, tiers: new Map(), kept: null, lastReportAt: startAt,
-            capture: { width: settings.width ?? null, height: settings.height ?? null, fps: settings.frameRate ?? null }, reader: null,
-            guarded, paused: false, frameSize: null };
+        const audioMode = audioInfo.audioMode ?? 'none';
+        share = { track, stream: audioInfo.stream ?? null, name: String(name ?? ''), quality, shareId, startAt, tiers: new Map(), kept: null,
+            lastReportAt: startAt, capture: { width: settings.width ?? null, height: settings.height ?? null, fps: settings.frameRate ?? null },
+            reader: null, guarded, paused: false, frameSize: null, audioMode, audioWarning: audioInfo.audioWarning ?? null };
         const current = share;
+        if (audioMode !== 'none') window.screenAudio?.startCapture?.({ mode: audioMode, stream: current.stream });
         // A guarded share starts paused until the guard says that the window is in front.
         if (guarded) setPaused(guardView.active ? guardView.paused : true);
         track.addEventListener?.('ended', () => { if (share === current) stop('source'); });
@@ -432,6 +445,7 @@
         const current = share;
         if (!current?.guarded || current.paused === paused) return;
         current.paused = paused;
+        window.screenAudio?.setCapturePaused?.(paused);
         try { current.kept?.frame.close(); } catch { /* closed */ }
         current.kept = null;
         if (paused) {
@@ -645,7 +659,9 @@
     }
 
     function release(current) {
+        window.screenAudio?.stopCapture?.();
         try { current.track.stop(); } catch { /* ended */ }
+        for (const t of current.stream?.getAudioTracks?.() ?? []) { try { t.stop(); } catch { /* ended */ } }
         for (const tier of current.tiers.values()) closeEncoder(tier);
         current.tiers.clear();
         try { current.kept?.frame.close(); } catch { /* closed */ }
@@ -737,6 +753,7 @@
                 if (notes) {
                     const texts = [];
                     if (current.guarded && current.paused) texts.push('Paused');
+                    if (current.audioWarning) texts.push(current.audioWarning);
                     for (const r of Array.isArray(lastViewers.relayed) ? lastViewers.relayed : []) {
                         texts.push(`${nameOf(r.peerId)}: relayed, ${Math.round((r.bitrate ?? 0) / 1000)} kbit/s`);
                     }

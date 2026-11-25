@@ -1,9 +1,12 @@
 // Screen share, main process part (work-orders/astra/P8/DESIGN.md, sections 2.1, 2.2 and 2.9, package W3).
 // The preset table of the picker, the source list, the pending selection and the display media handler.
 // Electron is not imported: main.js gives desktopCapturer and the frame check, so that a test can use fakes.
+import { MAX_SCREEN_AUDIO_BYTES } from '../network/screen-audio.mjs';
 import { MAX_SCREEN_FRAME_BYTES, SCREEN_PRESETS } from '../network/screen-rate.mjs';
 import { covers, sameRect } from './share-guard.mjs';
 import { hwndOf } from './win-helper.mjs';
+
+export const LOOPBACK_FALLBACK_WARNING = 'System audio includes voice on this Windows version.';
 
 // Section 5.
 export const SELECTION_MS = 10000;
@@ -60,19 +63,24 @@ export function acceptScreenFrame(frame, shareActive) {
     return data instanceof Uint8Array && data.length >= 1 && data.length <= MAX_SCREEN_FRAME_BYTES;
 }
 
+export function acceptScreenAudioFrame(data, shareActive) {
+    return shareActive === true && data instanceof Uint8Array && data.length >= 1 && data.length <= MAX_SCREEN_AUDIO_BYTES;
+}
+
 // desktopCapturer: { getSources(options) }. isRoomFrame(frame): the frame is the main frame of the room window.
 // isIdle(): the app is in Idle Peer. now(): the clock in ms. log(level, text): one line, never with a source name.
 // windowBorder: a window share has the yellow border (windowShareHasBorder).
 // 1.0.4: guard (share-guard.mjs) and displays() ([{ id, rect }], physical pixels): a window that fills a screen is
 // shared as that screen, with the guard. With no guard, a window share stays a window share.
 export function createScreenSources({ desktopCapturer, isRoomFrame, isIdle, now = Date.now, log = () => {}, windowBorder = false,
-    guard = null, displays = () => [] }) {
+    guard = null, displays = () => [], audioCapture = null, onAudioBlock = () => {}, onAudioEnd = () => {} }) {
     let listed = new Map(); // id -> DesktopCapturerSource of the last list
     let fillCandidates = new Set(); // the window IDs with the thumbnail size of a screen
-    let pending = null; // { id, kind, from, source, expires }
+    let pending = null; // { id, kind, from, source, audioMode, expires }
     let pickSeq = 0;
     const seqNow = () => pickSeq;
     let lastQuality = 'auto'; // only in memory: a restart gives Auto again (section 2.7)
+    let lastAudio = false; // only in memory: a restart gives unchecked again
 
     async function list() {
         const sources = await desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: THUMBNAIL_SIZE, fetchWindowIcons: false });
@@ -132,6 +140,7 @@ export function createScreenSources({ desktopCapturer, isRoomFrame, isIdle, now 
 
     // The window sends the ID of the selected source and the quality. The selection is valid for one request in 10 s.
     // options.border: share the window itself, also when it fills a screen (the window then has the border).
+    // options.audio: share audio with the screen or window (process loopback on Win10 20348+, else Chromium loopback).
     async function pick(id, quality, options = {}) {
         if (isIdle()) throw new Error('Screen sharing is not available in Idle Peer.');
         const preset = PICKER_QUALITIES.find(q => q.id === quality);
@@ -141,18 +150,50 @@ export function createScreenSources({ desktopCapturer, isRoomFrame, isIdle, now 
         const seq = ++pickSeq;
         pending = null;
         guard?.close('repick');
+        audioCapture?.stop?.();
+        const wantAudio = options?.audio === true;
         // No await for a source with no guard step: the selection is set before pick returns its promise.
         const screen = options?.border === true || !fillCandidates.has(id) || !guard || !windowBorder ? null : await screenInstead(id, seq);
         if (seq !== pickSeq || isIdle() || !listed.has(id)) {
             if (screen && seq === pickSeq) guard.close('repick');
             throw new Error('The selection changed.');
         }
-        pending = screen ? { id: screen.id, kind: 'screen', from: 'window', source: screen.source, expires: now() + SELECTION_MS }
-            : { id, kind: kindOfSource(id), from: null, source, expires: now() + SELECTION_MS };
+        let audioMode = 'none';
+        let audioWarning = null;
+        if (wantAudio) {
+            const origKind = kindOfSource(id);
+            const hwnd = origKind === 'window' ? hwndOf(id) : null;
+            if (audioCapture && audioCapture.supported?.() && (origKind === 'screen' || hwnd !== null)) {
+                const mode = origKind === 'window' ? 'include' : 'exclude';
+                const started = await audioCapture.start({ mode, hwnd, onBlock: onAudioBlock, onEnd: onAudioEnd });
+                if (seq !== pickSeq || isIdle() || !listed.has(id)) {
+                    audioCapture.stop();
+                    if (screen && seq === pickSeq) guard.close('repick');
+                    throw new Error('The selection changed.');
+                }
+                if (started?.ok) {
+                    audioMode = 'process';
+                } else {
+                    audioMode = 'loopback';
+                    audioWarning = LOOPBACK_FALLBACK_WARNING;
+                }
+            } else {
+                audioMode = 'loopback';
+                audioWarning = LOOPBACK_FALLBACK_WARNING;
+            }
+        }
+        pending = screen
+            ? { id: screen.id, kind: 'screen', from: 'window', source: screen.source, audioMode, expires: now() + SELECTION_MS }
+            : { id, kind: kindOfSource(id), from: null, source, audioMode, expires: now() + SELECTION_MS };
         lastQuality = preset.id;
+        lastAudio = wantAudio;
         const guarded = screen ? guard.state() : null;
-        return { name: String(source.name ?? '').slice(0, MAX_SOURCE_NAME), width: preset.width, height: preset.height,
-            frameRate: preset.fps, bitrate: preset.bitrate, ...(guarded ? { guard: { paused: guarded.paused, reason: guarded.reason } } : {}) };
+        return {
+            name: String(source.name ?? '').slice(0, MAX_SOURCE_NAME),
+            width: preset.width, height: preset.height, frameRate: preset.fps, bitrate: preset.bitrate,
+            ...(guarded ? { guard: { paused: guarded.paused, reason: guarded.reason } } : {}),
+            ...(wantAudio ? { audioMode, ...(audioWarning ? { audioWarning } : {}) } : {})
+        };
     }
 
     function hasPending() {
@@ -167,14 +208,16 @@ export function createScreenSources({ desktopCapturer, isRoomFrame, isIdle, now 
             log('EVENT', `screen capture request refused reason=${reason}${selection ? ` kind=${selection.kind}` : ''}`);
             callback(null);
         };
-        if (!request || request.audioRequested === true) return refuse('audio');
+        const allowLoopback = selection?.audioMode === 'loopback';
+        if (!request || (request.audioRequested === true && !allowLoopback)) return refuse('audio');
         if (!isRoomFrame(request.frame)) return refuse('frame');
         if (request.userGesture !== true) return refuse('gesture');
         if (isIdle()) return refuse('idle');
         if (!selection) return refuse('no-selection');
         pending = null;
-        log('EVENT', `screen capture request granted kind=${selection.kind}${selection.from ? ` from=${selection.from}` : ''}`);
-        callback({ video: selection.source });
+        const grantAudio = allowLoopback && request.audioRequested === true;
+        log('EVENT', `screen capture request granted kind=${selection.kind}${selection.from ? ` from=${selection.from}` : ''}${grantAudio ? ' audio=loopback' : ''}`);
+        callback(grantAudio ? { video: selection.source, audio: 'loopback' } : { video: selection.source });
     }
 
     function clear() {
@@ -183,7 +226,8 @@ export function createScreenSources({ desktopCapturer, isRoomFrame, isIdle, now 
         listed = new Map();
         fillCandidates = new Set();
         guard?.close('clear');
+        audioCapture?.stop?.();
     }
 
-    return { list, pick, hasPending, handleDisplayMedia, clear, lastQuality: () => lastQuality };
+    return { list, pick, hasPending, handleDisplayMedia, clear, lastQuality: () => lastQuality, lastAudio: () => lastAudio };
 }

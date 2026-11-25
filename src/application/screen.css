@@ -63,7 +63,11 @@
 #screen-stage-title { margin: 0; font-size: 12px; }
 #screen-stage-info, #screen-stage-note { color: var(--ink-soft, #5b7a99); }
 #screen-stage-note[hidden] { display: none; }
-#screen-fill { margin-left: auto; }
+#screen-audio-controls { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }
+#screen-audio-controls[hidden] { display: none; }
+#screen-audio-volume { width: 76px; accent-color: var(--accent, #2f7fd0); }
+#screen-audio-pct { min-width: 30px; text-align: right; color: var(--ink-soft, #5b7a99); font-variant-numeric: tabular-nums; }
+#screen-audio-controls[hidden] ~ #screen-fill { margin-left: auto; }
 #screen-canvas {
   display: block;
   flex: 1 1 auto;
@@ -115,7 +119,7 @@ body.screen-fill #screen-stage {
 #screen-border-hint[hidden], #screen-border-switch[hidden] { display: none; }
 #screen-border-switch { background: none; border: 0; padding: 0; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; opacity: 0.8; }
 #screen-border-switch:hover, #screen-border-switch:focus-visible { opacity: 1; }
-.screen-picker-buttons .screen-no-audio { align-self: center; margin-right: auto; }
+.screen-picker-buttons .screen-audio-opt { display: inline-flex; align-items: center; gap: 5px; align-self: center; margin-right: auto; font-size: 12px; cursor: pointer; }
 .screen-picker-buttons { display: flex; justify-content: flex-end; gap: 8px; }
 
 /* 1.0.6: the "Live" badge of each member that shares, in column 3 of row 2 of the buddy line (the voice state then
