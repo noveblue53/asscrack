@@ -9,6 +9,15 @@ Each result has one of these labels:
 
 ## Unreleased
 
+### No Start menu shortcut or dev CLSID on dev runs with --profile
+
+- A dev start with `--profile` now uses the `test` identity in `src/application/windows-identity.mjs` instead of `dev`.
+- Because `test` keeps desktop notifications off, Electron does not make `Electron.lnk` or the dev toast CLSID key `HKCU\Software\Classes\CLSID\{AB0DC94C-048E-4960-8BA8-F5ED6ED4DC12}`.
+- A dev start with no `--profile`, the installed build, and the portable build keep their identities and notifications.
+- **127.0.0.1**: `test/windows-identity.test.mjs` has 8 tests. On `origin/main` (`05fa933`), the 2 updated/new `--profile` tests fail (`'dev' !== 'test'`) and the `electron.exe` product name test fails because `URL.pathname` keeps `%20` in a folder path with a space. After the fix in `src/application/windows-identity.mjs` and the `fileURLToPath` fix in `test/windows-identity.test.mjs`, all 8 pass.
+- **127.0.0.1**: `npm test` ran 1194 tests: 1176 pass, 0 fail, 18 skipped. One earlier `npm test` run before the `fileURLToPath` fix had 1 fail in `test/node.test.mjs` (`nodes in different rooms do not connect`). That file passed 10 of 10 alone and the full run passed after.
+- **this PC**: one dev start with `--profile`, a fake `APPDATA`, and CDP port `9500` enabled `chatAlert` through `setAttentionSettings` with 0 console errors and 0 terminal error lines. The log showed `notification identity test: no desktop notifications`. No `Electron.lnk` and no dev CLSID key existed after the run.
+
 ### Clickable visualizer mode cycling (`gemini/viz-modes`)
 
 - Add four clickable visualizer modes to the music player: LED bars, phosphor oscilloscope, dual analog VU needles, and retro starfield with plasma.
@@ -441,7 +450,6 @@ Checks (127.0.0.1 and this PC only):
   updaters accepts (127.0.0.1). The test fails on `369054a` (no 1.0.6 entry). Until the version commit, the release
   check test fails with "The newest entry is 1.0.6, not 1.0.5." on purpose: the build must not have a version that is
   older than the newest notes.
-
 ## 1.0.5 (2026-11-23): times for the join and leave lines, the music visualizer and the installs badge
 
 Release 1.0.5 is the fifth update of 1.0.0. A 1.0.0, 1.0.1, 1.0.2, 1.0.3 or 1.0.4 app gets it with the signed update
