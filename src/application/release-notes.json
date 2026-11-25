@@ -1,5 +1,15 @@
 [
   {
+    "version": "1.0.9",
+    "date": "2026-11-25",
+    "notes": [
+      "- Screen share forwarding for up to 24 viewers: video and companion audio now fan out through watching peers with automatic failover, a \"via <peer>\" indicator, cyan forwarding arrows in the network map, a \"Forward screen shares\" setting, and an opt-in \"Relay shares when not watching\" hub setting.",
+      "- Any-member Full Node relays: any reachable room member can relay for friends behind NAT, and relayed sessions automatically upgrade to direct connections when a peer becomes reachable.",
+      "- Automatic UPnP by default with NAT-PMP fallback: port mapping is now enabled by default for internet rooms (configurable in Settings > Open port automatically), with NAT-PMP fallback when UPnP is unavailable.",
+      "- Dual-stack IPv4 and IPv6 reachability: peers with global IPv6 automatically listen and prove reachability over IPv6 so IPv6-capable peers can connect directly without port forwarding."
+    ]
+  },
+  {
     "version": "1.0.8",
     "date": "2026-11-25",
     "notes": [

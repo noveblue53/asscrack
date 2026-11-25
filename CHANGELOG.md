@@ -26,7 +26,30 @@ Build:
 - The notes and the date of `update.json` come from the 1.0.8 entry of `src/application/release-notes.json`.
 - Verification (`127.0.0.1` / `this PC`): feature unit tests, `test/release-notes.test.mjs`, `ASSCRACK_RELEASE=1 test/update-release.test.mjs`, and `node tools/sign-update.mjs --check-release`.
 
-## Unreleased
+## 1.0.9 (2026-11-25): screen share fanout, any-member relays, auto UPnP/NAT-PMP and IPv6
+
+Release 1.0.9 is the ninth update of 1.0.0. A 1.0.0 through 1.0.8 app gets it with the signed update
+(Settings, About ASSCRACK, Check now). The entries below this heading, down to the 1.0.7 entry, were "Unreleased"
+entries. Since 1.0.8, the app has these new items:
+
+- Screen share forwarding tree for up to 24 viewers (video + companion audio fanout, automatic failover, `via <peer>`
+  stage indicator, network map arrows, `Forward screen shares` opt-out, and opt-in `Relay shares when not watching`
+  full-node hubs).
+- Any-member circuit relay Full Nodes (`canRelay()` separated from `canHost()`, plus automatic relayed-to-direct
+  upgrades).
+- Auto UPnP by default on Create/Join for internet rooms (`Open port automatically` in Settings) with NAT-PMP fallback.
+- Dual-stack IPv4 and IPv6 listening and dial-back reachability (`2000::/3`).
+
+Build:
+- `npm run dist` makes `ASSCRACK-1.0.9-portable.exe` (product name "ASSCRACK Portable"). `npm run dist:installer`
+  makes `ASSCRACK-1.0.9-setup.exe` (product name "ASSCRACK").
+- The release has six files: the two files above, their download copies `ASSCRACK-1.0.9-update.exe` and
+  `ASSCRACK-1.0.9-portable-update.exe` (the same bytes), `update.json` and `update.json.sig`. See
+  `docs/RELEASE_UPDATES.md`.
+- The notes and the date of `update.json` come from the 1.0.9 entry of `src/application/release-notes.json`.
+- Verification (`127.0.0.1` / `this PC`): full `npm test` suite, `test/release-notes.test.mjs`,
+  `ASSCRACK_RELEASE=1 test/update-release.test.mjs`, `node tools/sign-update.mjs --check-release`, and clean
+  `node tools/app-smoke-check.mjs`.
 
 - **Dual-stack IPv4 + IPv6 reachability (Session 3)**:
   - Added automatic `/ip6/::/tcp/<port>` listener alongside IPv4 for internet rooms in `src/network/node.mjs` (gracefully skipping IPv6 if unavailable or port-occupied, leaving LAN/explicit/relay-only listeners untouched).
