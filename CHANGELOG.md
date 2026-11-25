@@ -7,6 +7,11 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased
+
+- Retro character skins (`src/application/themes.js`, `src/application/themes.css`, `src/application/index.html`, `src/application/window-frame.css`): added Winamp Slate & Amber, CRT Phosphor Green, and Classic mIRC to the theme gallery, plus a pure-CSS CRT glow & scanlines toggle (`pointer-events: none`, `prefers-reduced-motion` aware) and voice/live-badge contrast polish.
+  - Result (`127.0.0.1`, unit tests): `node --test test/themes.test.mjs test/danger-button.test.mjs test/settings-menu.test.mjs` — 14/14 passed; `npm test` — 1303/1323 passed, 18 skipped, 2 transient timeouts in `test/music-relay.test.mjs` (passed 2/2 in isolation).
+  - Result (`this PC`, Electron `--profile` smoke check): switched all 9 themes and toggled CRT scanlines on/off with 0 console errors and 0 page errors.
 ## 1.0.7 (2026-11-25): screen share audio, music visualizer modes, shade mode, network map pulses and screen rate fixes
 
 Release 1.0.7 is the seventh update of 1.0.0. A 1.0.0, 1.0.1, 1.0.2, 1.0.3, 1.0.4, 1.0.5 or 1.0.6 app gets it with
