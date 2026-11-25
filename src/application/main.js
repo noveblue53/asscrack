@@ -532,6 +532,9 @@ const closePreference = path.join(app.getPath('userData'), 'close-to-idle.json')
 let closeToTray = true;
 try { closeToTray = JSON.parse(readFileSync(closePreference, 'utf8')) !== false; } catch { /* new profile */ }
 const idleState = () => ({ idle: idlePeer, closeToTray });
+const autoUpnpPreference = path.join(app.getPath('userData'), 'auto-upnp.json');
+let autoUpnp = true;
+try { autoUpnp = JSON.parse(readFileSync(autoUpnpPreference, 'utf8')) !== false; } catch { /* new profile */ }
 const screenForwardingPreference = path.join(app.getPath('userData'), 'screen-forwarding.json');
 const clampForwardingCap = value => (Number.isInteger(value) ? Math.max(0, Math.min(8, value)) : 2);
 let screenForwardingCap = 2;
@@ -836,6 +839,15 @@ function setCloseToTray(enabled) {
     return idleState();
 }
 
+function setAutoUpnp(enabled) {
+    if (typeof enabled !== 'boolean') throw new TypeError('Expected an auto-UPnP preference');
+    writeFileSync(autoUpnpPreference + '.tmp', JSON.stringify(enabled));
+    renameSync(autoUpnpPreference + '.tmp', autoUpnpPreference);
+    autoUpnp = enabled;
+    sendToWindow('asscrack:auto-upnp', { enabled });
+    return { enabled };
+}
+
 // P9B: the start at sign-in. The window gets the choice, the protected saved rooms (ID and name) and the state of
 // the start entry in Windows. No path and no argument.
 function startupView() {
@@ -897,6 +909,8 @@ handleRoomIpc('asscrack:close-to-tray', (_event, enabled) => setCloseToTray(enab
 handleRoomIpc('asscrack:screen-forwarding', screenForwardingState);
 handleRoomIpc('asscrack:set-screen-forwarding', (_event, value) => setScreenForwarding(value));
 handleRoomIpc('asscrack:set-screen-hub-forwarding', (_event, value) => setScreenHubForwarding(value));
+handleRoomIpc('asscrack:auto-upnp', () => ({ enabled: autoUpnp }));
+handleRoomIpc('asscrack:set-auto-upnp', (_event, value) => setAutoUpnp(value));
 onRoomIpc('asscrack:quit', () => app.quit());
 
 // Gap E3: the values of the About dialog.
@@ -1222,7 +1236,7 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
         // Older saved host data has no affirmative UPnP preference. Restoring an
         // address and allowing the app to ask a router for a mapping are distinct.
         const address = lan ? '' : reopen && hostFile ? readHostAddress(hostFile) : publicAddress;
-        const mapping = !lan && !address && (reopen && hostFile ? readHostFile(hostFile).allowUpnp === true : allowUpnp === true);
+        const mapping = !lan && !address && (reopen && hostFile ? autoUpnp && readHostFile(hostFile).allowUpnp === true : allowUpnp === true);
         if (address !== '') {
             const { ip, port } = parsePublicAddress(address);
             options.announce = [`/ip4/${ip}/tcp/${port}`];

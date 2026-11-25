@@ -28,6 +28,12 @@ Build:
 
 ## Unreleased
 
+- **Auto UPnP by default and NAT-PMP fallback**:
+  - Set `Open port (UPnP)` to checked by default on Create and Join for internet rooms, added a global Settings toggle (`Open port automatically`, persisted in `auto-upnp.json`), and kept background UPnP failures silent in `#map-upnp-box` until the user clicks `Open port (UPnP)`.
+  - Added zero-dependency NAT-PMP fallback (`@silentbot1/nat-api/lib/pmp/index.js` + `default-gateway`) in `src/network/port-mapper.mjs` when UPnP `externalIp()` or `portMapping()` fails, with `.unref()` call timeouts and safe socket error handling.
+  - `127.0.0.1`: `node --test test/upnp.test.mjs test/getting-in-ui.test.mjs test/room-admission-ui.test.mjs test/settings-menu.test.mjs test/login-menu.test.mjs test/preload-bridge.test.mjs` (`83` pass, `0` fail) and `npm test` (`1367` tests, `1349` pass, `0` fail, `18` skipped).
+  - `this PC`: clean Electron app smoke check (`node tools/app-smoke-check.mjs`) verified `allowUpnpChecked: true`, `menuChecked: "true"`, `hasAutoUpnp: true`, `hasApi: true`, and `0` errors.
+
 - Non-watching full-node fanout hubs (`HUB_OFFER` / `HUB_ACCEPT` / `HUB_STOP` lifecycle in `src/network/screen-share.mjs` and `src/network/screen-fanout.mjs`) with automatic teardown at 0 children and an opt-in Settings toggle (`Relay shares when not watching`, default off).
   - `127.0.0.1`: `node --test test/screen-fanout.test.mjs test/screen-fanout-streams.test.mjs test/screen-hub.test.mjs test/settings-menu.test.mjs test/preload-bridge.test.mjs` (47/47 pass) and `npm test` (1340 pass, 0 fail, 18 skipped).
   - `this PC`: clean Electron app smoke start (`node tools/app-smoke-check.mjs`) with fresh `--profile` and fake `APPDATA`.

@@ -422,3 +422,19 @@ test('the screen forwarding calls send the IPC channel and events cleanly', asyn
     b.emit('asscrack:screen-forwarding', { maxChildren: 0, effectiveMaxChildren: 0, hubForwarding: true, idle: false });
     assert.deepEqual(got, [{ maxChildren: 0, effectiveMaxChildren: 0, hubForwarding: true, idle: false }]);
 });
+
+test('the auto-UPnP calls send the IPC channel and events cleanly', async () => {
+    const b = loadBridge();
+    await b.api.getAutoUpnp();
+    await b.api.setAutoUpnp(false);
+    await b.api.setAutoUpnp(1);
+    assert.deepEqual(b.invoked, [
+        ['asscrack:auto-upnp'],
+        ['asscrack:set-auto-upnp', false],
+        ['asscrack:set-auto-upnp', false]
+    ]);
+    const got = [];
+    b.api.onAutoUpnp(value => got.push(value));
+    b.emit('asscrack:auto-upnp', { enabled: false });
+    assert.deepEqual(got, [{ enabled: false }]);
+});

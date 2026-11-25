@@ -649,6 +649,9 @@ const publicAddressField = document.getElementById('public-address-field');
 const publicAddressInput = document.getElementById('public-address');
 const upnpField = document.getElementById('upnp-field');
 const allowUpnp = document.getElementById('allow-upnp');
+let autoUpnpEnabled = true;
+let allowUpnpTouched = false;
+if (allowUpnp) allowUpnp.checked = autoUpnpEnabled;
 const legacyConsent = document.getElementById('legacy-consent');
 const allowLegacy = document.getElementById('allow-legacy');
 
@@ -705,7 +708,7 @@ function setRoomType(type) {
 }
 roomTypeSelect.addEventListener('change', showRoomType);
 publicAddressInput.addEventListener('input', showUpnpChoice);
-allowUpnp?.addEventListener('change', showUpnpChoice);
+allowUpnp?.addEventListener('change', () => { allowUpnpTouched = true; showUpnpChoice(); });
 inviteInput.addEventListener('input', showLegacyConsent);
 roomInput.addEventListener('input', () => { sameNameWarned = false; });
 showRoomType();
@@ -769,6 +772,8 @@ async function login(friendJoin = null) {
     // Saved rooms (milestone 6): the save choice of a keyed room.
     if (window.savedRoomsUi) Object.assign(options, window.savedRoomsUi.loginOptions(type));
     loginBusy = true;
+    mapUpnpTried = false;
+    mapUpnpError = '';
     roomRole = type === 'join' ? 'joiner' : 'creator';
     loginButton.disabled = true;
     loginButton.textContent = STARTING_TEXT;
@@ -2837,6 +2842,7 @@ const mapUpnpButton = document.getElementById('map-upnp');
 const mapUpnpNote = document.getElementById('map-upnp-note');
 let mapUpnpBusy = false;
 let mapUpnpError = '';
+let mapUpnpTried = false;
 
 // The reach state of the room from asscrack:invite (gap A1): { state, reason, proven }, or null before the first
 // answer. roomOwner: this device owns the protected room.
@@ -2882,8 +2888,8 @@ function showMapUpnp() {
     if (hide) return;
     const waiting = mapUpnpBusy || roomReach?.state === 'upnp-wait';
     mapUpnpButton.disabled = waiting;
-    mapUpnpButton.textContent = waiting ? UPNP_WAIT_TEXT : roomReach?.state === 'upnp-failed' ? 'Try UPnP again' : 'Open port (UPnP)';
-    const note = waiting ? '' : roomReach?.state === 'upnp-failed'
+    mapUpnpButton.textContent = waiting ? UPNP_WAIT_TEXT : (mapUpnpTried && roomReach?.state === 'upnp-failed') ? 'Try UPnP again' : 'Open port (UPnP)';
+    const note = waiting ? '' : (mapUpnpTried && roomReach?.state === 'upnp-failed')
         ? (MAP_UPNP_REASONS[roomReach.reason] ?? MAP_UPNP_REASONS.failed)
         : mapUpnpError;
     if (mapUpnpNote) {
@@ -2905,6 +2911,7 @@ function showFullNodeState() {
 mapUpnpButton?.addEventListener('click', async () => {
     if (mapUpnpBusy || !hasApi('enableUpnp')) return;
     mapUpnpBusy = true;
+    mapUpnpTried = true;
     mapUpnpError = '';
     showMapUpnp();
     try {
@@ -3431,4 +3438,30 @@ document.addEventListener('keydown', e => {
     };
     api.onScreenForwarding?.(next => { updates++; apply(next); });
     api.getScreenForwarding?.().then(next => { if (!updates) apply(next); }).catch(() => {});
+}
+
+// Auto-UPnP preference (Settings -> System -> Open port automatically).
+{
+    const api = window.asscrack;
+    const setting = document.getElementById('view-auto-upnp');
+    let updates = 0;
+    function apply(next, syncLogin = false) {
+        if (!next || typeof next.enabled !== 'boolean') return;
+        autoUpnpEnabled = next.enabled;
+        if (setting) setting.setAttribute('aria-checked', String(autoUpnpEnabled));
+        if (allowUpnp && (syncLogin || !allowUpnpTouched)) {
+            allowUpnp.checked = autoUpnpEnabled;
+            showUpnpChoice();
+        }
+    }
+    window.autoUpnp = {
+        state: () => ({ enabled: autoUpnpEnabled }),
+        toggle: async () => {
+            allowUpnpTouched = false;
+            try { apply(await api.setAutoUpnp?.(!autoUpnpEnabled), true); }
+            catch { status.textContent = 'Couldn\'t save this setting.'; }
+        }
+    };
+    api.onAutoUpnp?.(next => { updates++; apply(next); });
+    api.getAutoUpnp?.().then(next => { if (!updates) apply(next); }).catch(() => {});
 }

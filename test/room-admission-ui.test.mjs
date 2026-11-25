@@ -25,6 +25,7 @@ test('login starts with protected internet, asks for explicit UPnP on create and
         const room = await loadRoomWindow({ elements: loginControls });
         room.window.asscrack.login = async value => { options.push(value); return { room: 'test', internet: type !== 'lan' }; };
         assert.equal(room.el('room-type').value, 'new');
+        assert.equal(room.el('allow-upnp').checked, true);
         choose(room, type);
         if (type === 'join') {
             room.el('invite-input').value = 'asscrack2:device-bound';
