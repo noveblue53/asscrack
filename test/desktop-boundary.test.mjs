@@ -103,3 +103,27 @@ test('with no screen selection function, display-capture is always refused (the 
     request(webContents, 'display-capture', value => { granted = value; }, { isMainFrame: true, requestingUrl: page, mediaTypes: ['video'] });
     assert.equal(granted, false);
 });
+
+test('display-capture allows video and audio only when a loopback audio share is pending', () => {
+    const page = 'file:///Asscrack/src/application/index.html';
+    const webContents = { mainFrame: { url: page }, isDestroyed: () => false };
+    let pending = true, pendingAudio = false, request;
+    installRoomPermissions({
+        setPermissionCheckHandler() {},
+        setPermissionRequestHandler: handler => { request = handler; }
+    }, () => ({ webContents, isDestroyed: () => false }), page, () => false, () => pending, () => pendingAudio);
+    const ask = mediaTypes => {
+        let granted;
+        request(webContents, 'display-capture', value => { granted = value; }, { isMainFrame: true, requestingUrl: page, mediaTypes });
+        return granted;
+    };
+    assert.equal(ask(['video']), true);
+    assert.equal(ask(['video', 'audio']), false, 'no loopback audio pending');
+    pendingAudio = true;
+    assert.equal(ask(['video', 'audio']), true);
+    assert.equal(ask(['audio', 'video']), true);
+    assert.equal(ask(['audio']), false, 'audio alone stays refused');
+    assert.equal(ask(['video', 'video']), false, 'duplicate types stay refused');
+    pending = false;
+    assert.equal(ask(['video', 'audio']), false, 'requires pending selection');
+});

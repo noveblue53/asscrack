@@ -60,7 +60,7 @@
     let filled = false;
     let noticeTimer = null;
     let waitTimer = null;
-    const totals = { watches: 0, switches: 0, frames: 0, bytes: 0, decoded: 0, resets: 0, keyRequests: 0, sizeErrors: 0, configs: 0,
+    const totals = { watches: 0, switches: 0, frames: 0, bytes: 0, decoded: 0, resets: 0, overflows: 0, keyRequests: 0, sizeErrors: 0, configs: 0,
         dropped: 0 };
 
     function nameOf(peerId) {
@@ -343,13 +343,18 @@
         try { configureDecoder(w); } catch { failWatch(w); return; }
         setNote('');
     }
-    // A decoder error or a long queue: reset the decoder and ask for a keyframe. After 5 resets in 60 s, stop.
-    function resetDecoder(w) {
-        totals.resets++;
-        const t = now();
-        w.resets = w.resets.filter(at => t - at < RESETS_WINDOW_MS);
-        w.resets.push(t);
-        if (w.resets.length >= RESETS_MAX) { failWatch(w); return; }
+    // A decoder error or a long queue: reset the decoder and ask for a keyframe. Only fatal codec errors count toward
+    // the 5-in-60s limit; queue overflows on a slower PC drop to the next keyframe without killing the stream.
+    function resetDecoder(w, { fatal = true } = {}) {
+        if (fatal) {
+            totals.resets++;
+            const t = now();
+            w.resets = w.resets.filter(at => t - at < RESETS_WINDOW_MS);
+            w.resets.push(t);
+            if (w.resets.length >= RESETS_MAX) { failWatch(w); return; }
+        } else {
+            totals.overflows++;
+        }
         try { configureDecoder(w); } catch { failWatch(w); return; }
         if (w.gate.reset()) requestKey();
     }
@@ -379,7 +384,7 @@
         }
         const decoder = w.decoder;
         if (!decoder || decoder.state !== 'configured') return;
-        if (decoder.decodeQueueSize > DECODE_QUEUE_LIMIT) { resetDecoder(w); return; }
+        if (decoder.decodeQueueSize > DECODE_QUEUE_LIMIT) { resetDecoder(w, { fatal: false }); return; }
         try {
             decoder.decode(new EncodedVideoChunk({ type: key ? 'key' : 'delta', timestamp: Math.max(0, Number(data.timestampMs) || 0) * 1000, data: data.data }));
         } catch {

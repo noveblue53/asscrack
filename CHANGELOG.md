@@ -7,6 +7,17 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased
+
+### Fix screen-share loopback audio permission and viewer decoder overflow
+
+- Allow `['video', 'audio']` in `display-capture` permission requests in `src/application/desktop-boundary.mjs` when `src/application/screen-sources.mjs` has a pending `'loopback'` audio selection (`hasPendingAudio()`), fixing `NotAllowedError` on Windows builds below 20348 when Share audio is enabled.
+- Separate `VideoDecoder` queue overflows (`decodeQueueSize > 8`) from fatal codec errors in `src/application/screen-view.js` so slow-PC decode backlogs reset to the next keyframe instead of tripping the 5-in-60s fatal limit and stopping the stream.
+- Results:
+  - **127.0.0.1**: `node --test test/desktop-boundary.test.mjs test/screen-ui.test.mjs test/screen-audio.test.mjs` — `37` pass, `0` fail.
+  - **127.0.0.1**: `npm test` — `1314` tests, `1296` pass, `0` fail, `18` skipped (`66.22 s`).
+  - **this PC**: `node tools/app-smoke-check.mjs --run-dir "D:\Github Repos\asscrack-gemini\work-orders\screen-audio-and-decode-fixes\runs\smoke" --check-no-dev-shortcut` — passed on CDP port `9500` in `2942 ms` (`domReady: true`, `0` errors, `devShortcutAbsent: true`, `devClsidAbsent: true`).
+
 ## 1.0.7 (2026-11-25): screen share audio, music visualizer modes, shade mode, network map pulses and screen rate fixes
 
 Release 1.0.7 is the seventh update of 1.0.0. A 1.0.0, 1.0.1, 1.0.2, 1.0.3, 1.0.4, 1.0.5 or 1.0.6 app gets it with

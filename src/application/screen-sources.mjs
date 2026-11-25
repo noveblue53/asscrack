@@ -201,6 +201,10 @@ export function createScreenSources({ desktopCapturer, isRoomFrame, isIdle, now 
         return pending !== null;
     }
 
+    function hasPendingAudio() {
+        return hasPending() && pending.audioMode === 'loopback';
+    }
+
     // session.setDisplayMediaRequestHandler. Refuse only with callback(null): callback({}) throws (section 2.1).
     function handleDisplayMedia(request, callback) {
         const selection = hasPending() ? pending : null;
@@ -229,5 +233,5 @@ export function createScreenSources({ desktopCapturer, isRoomFrame, isIdle, now 
         audioCapture?.stop?.();
     }
 
-    return { list, pick, hasPending, handleDisplayMedia, clear, lastQuality: () => lastQuality, lastAudio: () => lastAudio };
+    return { list, pick, hasPending, hasPendingAudio, handleDisplayMedia, clear, lastQuality: () => lastQuality, lastAudio: () => lastAudio };
 }
