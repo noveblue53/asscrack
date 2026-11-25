@@ -7,6 +7,11 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased
+
+- Screen share forwarder per-child pacer and congestion detector (`src/network/screen-forwarder.mjs`, `test/screen-forwarder.test.mjs`): caches `CONFIG`, gates new and recovering children on `CONFIG` + keyframe, isolates slow children with record-boundary-safe queue dropping, detects forwarder uplink saturation (including voice backpressure), coalesces and rate-limits `KEYREQ` propagation, and enforces periodic `allowed(childPeerId)` revocation cutoff.
+  - Result (`127.0.0.1` / `this PC`, unit tests): `node --test test/screen-forwarder.test.mjs` — 8/8 passed; `npm test` — 1303/1323 passed, 18 skipped, 2 transient timeouts in `test/music-relay.test.mjs` (passed 2/2 in isolation).
+
 ## 1.0.7 (2026-11-25): screen share audio, music visualizer modes, shade mode, network map pulses and screen rate fixes
 
 Release 1.0.7 is the seventh update of 1.0.0. A 1.0.0, 1.0.1, 1.0.2, 1.0.3, 1.0.4, 1.0.5 or 1.0.6 app gets it with
