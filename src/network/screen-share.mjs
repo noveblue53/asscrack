@@ -23,7 +23,7 @@ const MAX_FANOUT_WATCH_JSON = 511
 const MAX_REDIRECT_JSON = 1024
 const MAX_CONFIG_JSON = 1023
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
-const FANOUT_EVENTS = new Set(['child-joined', 'child-left', 'child-shed', 'capacity'])
+const FANOUT_EVENTS = new Set(['child-joined', 'child-left', 'child-shed', 'capacity', 'hub-offer', 'hub-accept', 'hub-decline', 'hub-stop'])
 const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex')
 
 export const SCREEN_DEFAULTS = Object.freeze({
@@ -45,6 +45,8 @@ export const SCREEN_DEFAULTS = Object.freeze({
     fanout: true, maxChildren: 2, maxDirectViewers: 1, redirectTokenMs: 15000,
     reparentDelayMs: 150, reparentMaxAttempts: 5, reparentWindowMs: 10000,
     fanoutLinesPerPeer: 120, fanoutLinesPerRoom: 1200,
+    // Session 7: non-watching full-node fanout hubs (opt-in via hubForwarding).
+    hubForwarding: false, hubOfferTimeoutMs: 2000, hubInitialWaitMs: 8000, hubIdleTeardownMs: 500,
     fanoutOptions: {}, forwarderParams: {},
     rate: {}, // parameters of screen-rate.mjs (for the tests: for example relayLimit)
     beforeRecord: null // test hook at the viewer: a function that can return a promise; the viewer reads no record until it settles
@@ -152,8 +154,13 @@ function verifyRedirectToken(pubKey, fields) {
 function allViewerIds(share) {
     if (!share) return []
     if (!share.fanout) return [...share.viewers.keys()]
-    const set = new Set(share.viewers.keys())
-    for (const id of Object.keys(share.fanout.snapshot().nodes)) set.add(id)
+    const set = new Set()
+    for (const [id, v] of share.viewers) {
+        if (!v.hub) set.add(id)
+    }
+    for (const [id, node] of Object.entries(share.fanout.snapshot().nodes)) {
+        if (!node.hub) set.add(id)
+    }
     return [...set]
 }
 
@@ -161,7 +168,7 @@ function allViewerIds(share) {
 // connection of the chat session. sendLine(peerId, line) and broadcast(line): control lines on the chat sessions.
 // openPeers(): the peers with an open session. idle(): Idle Peer. canShare(): the device can share (protected room).
 export function createScreenShare({ libp2p, selfId, events, allowed, connectionFor, sendLine, broadcast, openPeers,
-    getTopology = () => null, onTopologyChanged = () => {}, voiceBackpressure = () => false,
+    getTopology = () => null, onTopologyChanged = () => {}, isFullNode = () => false, voiceBackpressure = () => false,
     idle = () => false, canShare = () => true, onOwnStop = () => {}, onUnwatch = () => {},
     onWatchParentChanged = () => {}, onForwarderChildLeft = () => {}, options = {} }) {
     const O = { ...SCREEN_DEFAULTS, ...options }
@@ -171,7 +178,9 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
     const allowFanoutLine = roomRateLimit(O.fanoutLinesPerPeer, O.fanoutLinesPerRoom)
     const clampMaxChildren = n => (Number.isInteger(n) ? Math.max(0, Math.min(FANOUT_DEFAULTS.maxChildrenPerNode, n)) : FANOUT_DEFAULTS.defaultGlobalMaxChildren)
     let configuredMaxChildren = clampMaxChildren(O.maxChildren)
-    const effectiveMaxChildren = () => (idle() || own || (watch && watch.hop >= FANOUT_DEFAULTS.maxHop)) ? 0 : configuredMaxChildren
+    let hubForwardingEnabled = O.hubForwarding === true
+    const globalMaxChildren = () => (idle() || own) ? 0 : configuredMaxChildren
+    const effectiveMaxChildren = () => (watch && watch.hop >= FANOUT_DEFAULTS.maxHop) ? 0 : globalMaxChildren()
     const slotLedger = createGlobalSlotLedger({ maxShares: O.maxShares, defaultCap: O.maxChildren })
     // One entry for each member: a member has at most one share. at: the time of the first line of this share ID.
     const peers = new Map() // peerId -> { shareId, preset, audio, fanoutPub, at }
@@ -181,10 +190,19 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
     const sessionOpenedAt = new Map()
     let own = null
     let watch = null
+    const hubs = new Map() // shareId -> headless hub context
+    const fanoutPending = new Set()
     let stopped = false
     let isolatedTimer = null
     const ended = []
     const closing = new Set()
+
+    function activeForwardedChildren() {
+        let total = watch?.forwarderChildren.size ?? 0
+        for (const h of hubs.values()) total += h.forwarderChildren.size
+        return total
+    }
+    const availableGlobalSlots = () => Math.max(0, globalMaxChildren() - activeForwardedChildren())
 
     const screenLine = () => JSON.stringify(own
         ? { type: 'screen', v: 1, sharing: true, shareId: own.shareId, preset: own.quality, ...(own.audio ? { audio: true } : {}), ...(own.fanoutPub ? { fanoutPub: own.fanoutPub } : {}) }
@@ -416,6 +434,7 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
             })
         }
         slotLedger.setOwnSharing(selfId, true)
+        stopAllHubs('own-share')
         if (watch?.forwarder) {
             watch.forwarder.setMaxChildren(0)
             sendFanoutReport(watch, {
@@ -425,7 +444,7 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
                 congested: watch.forwarder.isCongested()
             })
         }
-        own = { shareId, quality: preset, audio: withAudio, fanoutKey, fanoutPub, fanout, viewers: new Map(), pending: new Set(), dirty: true, lastEncoder: null, lastViewers: null, lastTree: null, rate: null,
+        own = { shareId, quality: preset, audio: withAudio, fanoutKey, fanoutPub, fanout, viewers: new Map(), pending: new Set(), pendingHubOffers: new Map(), dirty: true, lastEncoder: null, lastViewers: null, lastTree: null, rate: null,
             startedAt: clock() }
         const share = own
         own.rate = createScreenRate({ quality: preset, source, now: clock, params: O.rate, configRecord,
@@ -457,7 +476,15 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
         diagTick(share)
         clearTimeout(isolatedTimer)
         isolatedTimer = null
-        for (const [peerId, v] of [...share.viewers]) endViewer(peerId, wire, v.stream)
+        for (const offer of share.pendingHubOffers.values()) {
+            clearTimeout(offer.timer)
+            for (const w of offer.waiters) w.fail(wire)
+        }
+        share.pendingHubOffers.clear()
+        for (const [peerId, v] of [...share.viewers]) {
+            if (v.hub) sendLine(peerId, JSON.stringify({ type: 'screen-fanout', v: 1, shareId: share.shareId, event: 'hub-stop', reason: 'stopped' }))
+            endViewer(peerId, wire, v.stream)
+        }
         for (const stream of share.pending) { try { stream.send(endRecord(wire)) } catch { /* closed */ } closeStream(stream) }
         share.fanout?.destroy()
         slotLedger.setOwnSharing(selfId, false)
@@ -481,6 +508,42 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
         events.emit('screen-encoder', { tiers: [] })
         events.emit('screen-ended', { peerId: selfId, shareId: share.shareId, reason: why, own: true, ...(share.limitBy ? { by: share.limitBy } : {}) })
         return true
+    }
+
+    function hasSymmetricMesh(topo, a, b) {
+        if (!topo || !a || !b || a === b) return false
+        const kinds = topo.kinds
+        if (kinds?.[a]?.[b] !== 'mesh' || kinds?.[b]?.[a] !== 'mesh') return false
+        if (Array.isArray(topo.links?.[a]) && !topo.links[a].includes(b)) return false
+        if (Array.isArray(topo.links?.[b]) && !topo.links[b].includes(a)) return false
+        return true
+    }
+
+    function hasEligibleMeshParent(share, viewerId) {
+        const topo = getTopology()
+        if (!topo || !share?.fanout) return false
+        const snap = share.fanout.snapshot()
+        for (const [id, node] of Object.entries(snap.nodes)) {
+            if (id === viewerId) continue
+            if (node.hop < 1 || node.hop >= FANOUT_DEFAULTS.maxHop) continue
+            if (node.congested) continue
+            if ((node.children.length + node.pendingChildren.length) >= node.maxChildren) continue
+            if (share.fanout.isProbation(viewerId, id)) continue
+            if (hasSymmetricMesh(topo, id, viewerId)) return true
+        }
+        return false
+    }
+
+    function failHubOffer(share, hubPeerId, reason) {
+        const offer = share?.pendingHubOffers?.get(hubPeerId)
+        if (!offer) return
+        share.pendingHubOffers.delete(hubPeerId)
+        clearTimeout(offer.timer)
+        share.fanout?.recordHubFailure(hubPeerId)
+        if (own !== share) return
+        for (const waiter of offer.waiters) {
+            if (!waiter.isClosed()) waiter.complete()
+        }
     }
 
     // The stream handler at the sharer (section 2.9: who can watch).
@@ -509,55 +572,110 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
                 share?.pending.delete(stream)
                 const value = parseJson(body, MAX_WATCH_JSON)
                 if (!share || own !== share || value?.v !== 1 || value.shareId !== share.shareId || idle() || !allowed(peerId)) return refuse('refused')
-                const old = share.viewers.get(peerId)
-                if (share.fanout) {
-                    if (typeof value.failedParent === 'string' && value.failedParent) {
-                        share.fanout.recordParentFailure(peerId, value.failedParent)
+                const circuit = connection.remoteAddr?.toString().includes('/p2p-circuit') === true
+                if (value.hub === true) {
+                    if (!share.fanout || !share.pendingHubOffers.has(peerId)) return refuse('refused')
+                    const offer = share.pendingHubOffers.get(peerId)
+                    share.pendingHubOffers.delete(peerId)
+                    clearTimeout(offer.timer)
+                    const cap = clampMaxChildren(Number.isInteger(value.maxChildren) ? value.maxChildren : offer.maxChildren)
+                    const attached = share.fanout.attachHub(peerId, { maxChildren: cap })
+                    if (!attached.ok) {
+                        for (const waiter of offer.waiters) if (!waiter.isClosed()) waiter.complete()
+                        return refuse(attached.reason ?? 'refused')
                     }
-                    const decision = share.fanout.planWatch(peerId, {
-                        fanout: value.fanout === 1 ? 1 : 0,
-                        maxChildren: Number.isInteger(value.maxChildren) ? value.maxChildren : 0,
-                        redirectCount: Number.isInteger(value.redirectCount) ? value.redirectCount : 0
-                    })
-                    if (decision.action === 'reject') return refuse(decision.reason)
-                    if (decision.action === 'redirect') {
-                        if (old) endViewer(peerId, 'replaced', old.stream)
-                        const exp = Date.now() + O.redirectTokenMs
-                        const sig = signRedirectToken(share.fanoutKey.privateKey, {
-                            shareId: share.shareId,
-                            sharerPeerId: selfId,
-                            parentPeerId: decision.parentPeerId,
-                            childPeerId: peerId,
-                            hop: decision.hop,
-                            tokenSeq: decision.tokenSeq,
-                            exp
+                    const old = share.viewers.get(peerId)
+                    if (old) endViewer(peerId, 'replaced', old.stream)
+                    share.viewers.set(peerId, { stream, circuit, hub: true })
+                    share.rate.addViewer(peerId, { send: bytes => stream.send(bytes), onDrain: () => stream.onDrain(), circuit })
+                    share.dirty = true
+                    state = 'watching'
+                    emitViewers()
+                    broadcastTree()
+                    for (const waiter of offer.waiters) {
+                        if (!waiter.isClosed()) waiter.complete()
+                    }
+                    return
+                }
+                const completeWatch = () => {
+                    if (state === 'closed' || own !== share || idle() || !allowed(peerId)) return refuse('refused')
+                    const old = share.viewers.get(peerId)
+                    if (share.fanout) {
+                        if (typeof value.failedParent === 'string' && value.failedParent) {
+                            share.fanout.recordParentFailure(peerId, value.failedParent)
+                        }
+                        const decision = share.fanout.planWatch(peerId, {
+                            fanout: value.fanout === 1 ? 1 : 0,
+                            maxChildren: Number.isInteger(value.maxChildren) ? value.maxChildren : 0,
+                            redirectCount: Number.isInteger(value.redirectCount) ? value.redirectCount : 0,
+                            circuit
                         })
-                        state = 'closed'
-                        try {
-                            stream.send(jsonRecord(TYPE.REDIRECT, {
-                                v: 1,
+                        if (decision.action === 'reject') return refuse(decision.reason)
+                        if (decision.action === 'redirect') {
+                            if (old) endViewer(peerId, 'replaced', old.stream)
+                            const exp = Date.now() + O.redirectTokenMs
+                            const sig = signRedirectToken(share.fanoutKey.privateKey, {
                                 shareId: share.shareId,
+                                sharerPeerId: selfId,
                                 parentPeerId: decision.parentPeerId,
+                                childPeerId: peerId,
                                 hop: decision.hop,
                                 tokenSeq: decision.tokenSeq,
-                                exp,
-                                sig
-                            }))
-                        } catch { /* closed */ }
-                        closeStream(stream)
+                                exp
+                            })
+                            state = 'closed'
+                            try {
+                                stream.send(jsonRecord(TYPE.REDIRECT, {
+                                    v: 1,
+                                    shareId: share.shareId,
+                                    parentPeerId: decision.parentPeerId,
+                                    hop: decision.hop,
+                                    tokenSeq: decision.tokenSeq,
+                                    exp,
+                                    sig
+                                }))
+                            } catch { /* closed */ }
+                            closeStream(stream)
+                            return
+                        }
+                    } else {
+                        if (!old && share.viewers.size >= O.maxViewers) return refuse('full')
+                    }
+                    if (old) endViewer(peerId, 'replaced', old.stream)
+                    share.viewers.set(peerId, { stream, circuit, hub: false })
+                    share.rate.addViewer(peerId, { send: bytes => stream.send(bytes), onDrain: () => stream.onDrain(), circuit })
+                    share.dirty = true
+                    state = 'watching'
+                    emitViewers()
+                    broadcastTree()
+                }
+                if (share.fanout && circuit && value.fanout === 1 && !hasEligibleMeshParent(share, peerId)) {
+                    const topo = getTopology()
+                    const waiter = { complete: completeWatch, isClosed: () => state === 'closed', fail: reason => refuse(reason) }
+                    for (const [hubPeerId, offer] of share.pendingHubOffers) {
+                        if (hasSymmetricMesh(topo, hubPeerId, peerId)) {
+                            offer.waiters.push(waiter)
+                            return
+                        }
+                    }
+                    const hubPeerId = share.fanout.findHubCandidate(peerId, {
+                        isFullNode,
+                        exclude: new Set(share.pendingHubOffers.keys())
+                    })
+                    if (hubPeerId) {
+                        const offer = {
+                            accepted: false,
+                            maxChildren: 0,
+                            waiters: [waiter],
+                            timer: setTimeout(() => failHubOffer(share, hubPeerId, 'timeout'), O.hubOfferTimeoutMs)
+                        }
+                        offer.timer.unref?.()
+                        share.pendingHubOffers.set(hubPeerId, offer)
+                        sendLine(hubPeerId, JSON.stringify({ type: 'screen-fanout', v: 1, shareId: share.shareId, event: 'hub-offer' }))
                         return
                     }
-                } else {
-                    if (!old && share.viewers.size >= O.maxViewers) return refuse('full')
                 }
-                if (old) endViewer(peerId, 'replaced', old.stream)
-                const circuit = connection.remoteAddr?.toString().includes('/p2p-circuit') === true
-                share.viewers.set(peerId, { stream, circuit })
-                share.rate.addViewer(peerId, { send: bytes => stream.send(bytes), onDrain: () => stream.onDrain(), circuit })
-                share.dirty = true
-                state = 'watching'
-                emitViewers()
-                broadcastTree()
+                completeWatch()
                 return
             }
             if (own !== share || share.viewers.get(peerId)?.stream !== stream) return
@@ -609,6 +727,46 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
                 peerTrees.set(peerId, next)
                 onTopologyChanged()
             }
+            return
+        }
+        if (control.event === 'hub-offer') {
+            if (typeof control.shareId !== 'string' || !UUID.test(control.shareId)) return
+            const decline = reason => {
+                sendLine(peerId, JSON.stringify({ type: 'screen-fanout', v: 1, shareId: control.shareId, event: 'hub-decline', reason }))
+            }
+            if (!hubForwardingEnabled) return decline('opt-out')
+            if (idle()) return decline('idle')
+            if (own || (watch && !watch.done && watch.peerId === peerId && watch.shareId === control.shareId)) return decline('busy')
+            if (!isFullNode(selfId) || stopped || !allowed(peerId)) return decline('refused')
+            const peerShare = peers.get(peerId)
+            if (!peerShare || peerShare.shareId !== control.shareId || !peerShare.fanoutPub) return decline('refused')
+            if (hubs.has(control.shareId)) return decline('busy')
+            const activeCount = hubs.size + (watch && !watch.done ? 1 : 0)
+            if (activeCount >= O.maxShares || availableGlobalSlots() <= 0) return decline('full')
+            startHub(peerId, control.shareId)
+            return
+        }
+        if (control.event === 'hub-accept') {
+            if (!own?.fanout || control.shareId !== own.shareId) return
+            const offer = own.pendingHubOffers.get(peerId)
+            if (!offer) return
+            offer.accepted = true
+            offer.maxChildren = clampMaxChildren(control.maxChildren)
+            return
+        }
+        if (control.event === 'hub-decline') {
+            if (!own?.fanout || control.shareId !== own.shareId) return
+            if (own.pendingHubOffers.has(peerId)) failHubOffer(own, peerId, typeof control.reason === 'string' ? control.reason : 'declined')
+            return
+        }
+        if (control.event === 'hub-stop') {
+            if (own?.fanout && control.shareId === own.shareId) {
+                if (own.pendingHubOffers.has(peerId)) failHubOffer(own, peerId, 'stopped')
+                if (own.viewers.get(peerId)?.hub) endViewer(peerId, 'stopped')
+                return
+            }
+            const hub = hubs.get(control.shareId)
+            if (hub && hub.peerId === peerId) stopHub(control.shareId, 'stopped', { notifySharer: false })
             return
         }
         if (!own?.fanout || control.shareId !== own.shareId || !FANOUT_EVENTS.has(control.event)) return
@@ -667,6 +825,189 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
         onForwarderChildLeft(childId, w.shareId)
         closeStream(entry.stream)
         onTopologyChanged()
+    }
+
+    function sendHubReport(hub, report) {
+        if (hub.done || hubs.get(hub.shareId) !== hub || stopped) return
+        sendLine(hub.peerId, JSON.stringify({
+            type: 'screen-fanout',
+            v: 1,
+            shareId: hub.shareId,
+            ...report
+        }))
+    }
+
+    function sendHubKeyReq(hub) {
+        if (hub.done || hubs.get(hub.shareId) !== hub || !hub.stream || !hub.configured) return false
+        const t = clock()
+        if (t - hub.lastKeyRequest < O.keyRequestMs) return false
+        hub.lastKeyRequest = t
+        try { hub.stream.send(record(TYPE.KEYREQ)); return true } catch { return false }
+    }
+
+    function closeHubChild(hub, childId) {
+        const entry = hub.forwarderChildren.get(childId)
+        if (!entry) return
+        hub.forwarderChildren.delete(childId)
+        onForwarderChildLeft(childId, hub.shareId)
+        closeStream(entry.stream)
+        onTopologyChanged()
+        if (hub.forwarderChildren.size === 0) scheduleHubTeardown(hub)
+    }
+
+    function scheduleHubTeardown(hub) {
+        if (!hub || hub.done || hub.forwarderChildren.size > 0 || hub.idleTimer) return
+        hub.idleTimer = setTimeout(() => {
+            hub.idleTimer = null
+            if (!hub.done && hub.forwarderChildren.size === 0) stopHub(hub.shareId, 'idle-children')
+        }, O.hubIdleTeardownMs)
+        hub.idleTimer.unref?.()
+    }
+
+    function stopHub(shareId, reason = 'stopped', { notifySharer = true } = {}) {
+        const hub = hubs.get(shareId)
+        if (!hub || hub.done) return false
+        hub.done = true
+        hubs.delete(shareId)
+        clearTimeout(hub.initialTimer)
+        clearTimeout(hub.idleTimer)
+        clearInterval(hub.forwarderPaceTimer)
+        clearInterval(hub.forwarderEvalTimer)
+        if (hub.forwarder) {
+            hub.forwarder.stop('stopped')
+            for (const [childId, entry] of hub.forwarderChildren) {
+                onForwarderChildLeft(childId, hub.shareId)
+                closeStream(entry.stream)
+            }
+            hub.forwarderChildren.clear()
+            for (const stream of hub.forwarderPending) {
+                try { stream.send(endRecord('stopped')) } catch { /* closed */ }
+                closeStream(stream)
+            }
+            hub.forwarderPending.clear()
+        }
+        if (notifySharer && !stopped && allowed(hub.peerId)) {
+            sendLine(hub.peerId, JSON.stringify({ type: 'screen-fanout', v: 1, shareId: hub.shareId, event: 'hub-stop', reason }))
+        }
+        if (hub.stream) {
+            abortStream(hub.stream, `hub stopped (${reason})`)
+            hub.stream = null
+        }
+        onTopologyChanged()
+        return true
+    }
+
+    function stopAllHubs(reason = 'stopped', opts = {}) {
+        for (const shareId of [...hubs.keys()]) stopHub(shareId, reason, opts)
+    }
+
+    async function startHub(sharerPeerId, shareId) {
+        const avail = availableGlobalSlots()
+        const connection = connectionFor(sharerPeerId)
+        if (!connection || avail <= 0) {
+            sendLine(sharerPeerId, JSON.stringify({ type: 'screen-fanout', v: 1, shareId, event: 'hub-decline', reason: avail <= 0 ? 'full' : 'lost' }))
+            return
+        }
+        const hub = {
+            isHub: true,
+            peerId: sharerPeerId,
+            shareId,
+            parentPeerId: sharerPeerId,
+            hop: 1,
+            stream: null,
+            configured: false,
+            done: false,
+            lastKeyRequest: -Infinity,
+            frames: 0,
+            bytes: 0,
+            keys: 0,
+            acks: 0,
+            forwarder: null,
+            forwarderChildren: new Map(),
+            forwarderPending: new Set(),
+            forwarderPaceTimer: null,
+            forwarderEvalTimer: null,
+            initialTimer: null,
+            idleTimer: null,
+            usedTokens: new Set()
+        }
+        hub.forwarder = createScreenForwarder({
+            now: clock,
+            allowed,
+            voiceBackpressure,
+            onKeyRequest: () => sendHubKeyReq(hub),
+            onShed: childId => closeHubChild(hub, childId),
+            onReport: report => sendHubReport(hub, report),
+            params: { maxChildren: avail, ...O.forwarderParams }
+        })
+        hub.forwarderPaceTimer = setInterval(() => hub.forwarder?.tick(), O.paceTickMs)
+        hub.forwarderEvalTimer = setInterval(() => hub.forwarder?.evaluate(), O.evalMs)
+        hub.initialTimer = setTimeout(() => {
+            hub.initialTimer = null
+            if (!hub.done && hub.forwarderChildren.size === 0) stopHub(shareId, 'idle-children')
+        }, O.hubInitialWaitMs)
+        hub.initialTimer.unref?.()
+        hubs.set(shareId, hub)
+        sendLine(sharerPeerId, JSON.stringify({ type: 'screen-fanout', v: 1, shareId, event: 'hub-accept', maxChildren: avail }))
+        let stream
+        try {
+            stream = await connection.newStream(SCREEN_PROTOCOL, { runOnTransientConnection: true })
+        } catch {
+            stopHub(shareId, 'error')
+            return
+        }
+        if (hub.done || hubs.get(shareId) !== hub) {
+            abortStream(stream, 'hub stopped')
+            return
+        }
+        hub.stream = stream
+        try {
+            stream.send(jsonRecord(TYPE.WATCH, { v: 1, shareId, fanout: 1, hub: true, maxChildren: avail }))
+        } catch {
+            stopHub(shareId, 'error')
+            return
+        }
+        const onRecord = (type, body) => {
+            if (hub.done || hubs.get(shareId) !== hub) return
+            if (type === TYPE.CONFIG) {
+                const value = parseJson(body, MAX_CONFIG_JSON)
+                if (!validConfig(value, shareId)) throw new Error('CONFIG is not valid')
+                hub.configured = true
+                hub.forwarder?.onConfig(body)
+                onTopologyChanged()
+            } else if (type === TYPE.FRAME) {
+                if (!hub.configured) throw new Error('FRAME before CONFIG')
+                if (body.length < FRAME_HEAD_BYTES + 1) throw new Error('FRAME is too short')
+                const seq = body.readUInt32BE(1)
+                try { stream.send(ackRecord(seq)) } catch { /* closed */ }
+                hub.acks++
+                hub.frames++
+                hub.bytes += body.length - FRAME_HEAD_BYTES
+                if ((body[0] & 1) === 1) hub.keys++
+                hub.forwarder?.onFrame(body)
+            } else if (type === TYPE.END) {
+                const reason = END_NAME[body[0]] ?? 'stopped'
+                hub.stream = null
+                closeStream(stream)
+                stopHub(shareId, reason, { notifySharer: false })
+            }
+        }
+        readRecords(stream.source ?? stream, onRecord, MAX_SHARER_RECORD)
+            .then(
+                () => {
+                    if (!hub.done && hubs.get(shareId) === hub) {
+                        hub.stream = null
+                        stopHub(shareId, 'lost', { notifySharer: false })
+                    }
+                },
+                () => {
+                    if (!hub.done && hubs.get(shareId) === hub) {
+                        abortStream(stream, 'screen hub record is not valid')
+                        hub.stream = null
+                        stopHub(shareId, 'error', { notifySharer: false })
+                    }
+                }
+            )
     }
 
     function finishWatch(w, reason) {
@@ -896,6 +1237,7 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
         if (!share) throw new Error('This member does not share a screen.')
         // 1.0.6: one watch at a time. A new watch ends the old one: its sharer sends no more frames to this viewer.
         unwatchScreen('switched')
+        if (hubs.has(share.shareId)) stopHub(share.shareId, 'switched')
         const connection = connectionFor(peerId)
         if (!connection) throw new Error('No session with this member.')
         const w = {
@@ -934,23 +1276,24 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
             abortStream(stream, 'Screen fanout stream is not authorized')
             return
         }
-        const w = watch
-        if (!w || w.done || !w.forwarder) {
+        const hasWatchFwd = Boolean(watch && !watch.done && watch.forwarder)
+        if (!hasWatchFwd && hubs.size === 0) {
             abortStream(stream, 'Screen fanout is not active')
             return
         }
         let state = 'open'
-        w.forwarderPending.add(stream)
+        let targetCtx = null
+        fanoutPending.add(stream)
         const refuse = reason => {
             state = 'closed'
-            w.forwarderPending.delete(stream)
+            fanoutPending.delete(stream)
             try { stream.send(endRecord(reason)) } catch { /* closed */ }
             closeStream(stream)
         }
         const watchTimer = setTimeout(() => {
             if (state === 'open') {
                 state = 'closed'
-                w.forwarderPending.delete(stream)
+                fanoutPending.delete(stream)
                 abortStream(stream, 'no WATCH record')
             }
         }, O.watchRecordMs)
@@ -959,15 +1302,18 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
             if (state === 'open') {
                 if (type !== TYPE.WATCH) return
                 clearTimeout(watchTimer)
-                w.forwarderPending.delete(stream)
+                fanoutPending.delete(stream)
                 const value = parseJson(body, MAX_FANOUT_WATCH_JSON)
-                const pubKey = peers.get(w.peerId)?.fanoutPub ?? null
-                if (watch !== w || w.done || !w.forwarder || idle() || !allowed(peerId) ||
-                    value?.v !== 1 || value.shareId !== w.shareId || value.sharerPeerId !== w.peerId ||
-                    value.hop !== w.hop + 1 || w.usedTokens.has(value.tokenSeq) ||
+                const ctx = (watch && !watch.done && watch.forwarder && watch.shareId === value?.shareId)
+                    ? watch
+                    : hubs.get(value?.shareId)
+                const pubKey = ctx ? (peers.get(ctx.peerId)?.fanoutPub ?? null) : null
+                if (!ctx || ctx.done || !ctx.forwarder || idle() || !allowed(peerId) ||
+                    value?.v !== 1 || value.shareId !== ctx.shareId || value.sharerPeerId !== ctx.peerId ||
+                    value.hop !== ctx.hop + 1 || ctx.usedTokens.has(value.tokenSeq) ||
                     !verifyRedirectToken(pubKey, {
-                        shareId: w.shareId,
-                        sharerPeerId: w.peerId,
+                        shareId: ctx.shareId,
+                        sharerPeerId: ctx.peerId,
                         parentPeerId: selfId,
                         childPeerId: peerId,
                         hop: value.hop,
@@ -977,31 +1323,44 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
                     })) {
                     return refuse('refused')
                 }
-                const added = w.forwarder.addChild(peerId, { send: bytes => stream.send(bytes), onDrain: () => stream.onDrain() })
+                if (!ctx.forwarderChildren.has(peerId) && activeForwardedChildren() >= globalMaxChildren()) {
+                    return refuse('full')
+                }
+                const added = ctx.forwarder.addChild(peerId, { send: bytes => stream.send(bytes), onDrain: () => stream.onDrain() })
                 if (!added.ok) return refuse(added.reason)
-                w.usedTokens.add(value.tokenSeq)
-                const prev = w.forwarderChildren.get(peerId)
+                ctx.usedTokens.add(value.tokenSeq)
+                if (ctx.isHub) {
+                    clearTimeout(ctx.initialTimer)
+                    ctx.initialTimer = null
+                    clearTimeout(ctx.idleTimer)
+                    ctx.idleTimer = null
+                }
+                const prev = ctx.forwarderChildren.get(peerId)
                 if (prev && prev.stream !== stream) closeStream(prev.stream)
-                w.forwarderChildren.set(peerId, { stream })
+                ctx.forwarderChildren.set(peerId, { stream })
+                targetCtx = ctx
                 state = 'watching'
                 onTopologyChanged()
                 return
             }
-            if (watch !== w || w.done || w.forwarderChildren.get(peerId)?.stream !== stream) return
-            if (type === TYPE.ACK && body.length === 4) w.forwarder.onAck(peerId, body.readUInt32BE(0))
-            else if (type === TYPE.KEYREQ) w.forwarder.onChildKeyRequest(peerId)
+            const ctx = targetCtx
+            if (!ctx || ctx.done || ctx.forwarderChildren.get(peerId)?.stream !== stream) return
+            if (type === TYPE.ACK && body.length === 4) ctx.forwarder.onAck(peerId, body.readUInt32BE(0))
+            else if (type === TYPE.KEYREQ) ctx.forwarder.onChildKeyRequest(peerId)
         }
         readRecords(stream.source ?? stream, onRecord, MAX_FANOUT_VIEWER_RECORD)
             .catch(() => abortStream(stream, 'screen fanout record is not valid'))
             .finally(() => {
                 clearTimeout(watchTimer)
-                w.forwarderPending.delete(stream)
+                fanoutPending.delete(stream)
                 state = 'closed'
-                if (w.forwarderChildren.get(peerId)?.stream === stream) {
-                    w.forwarderChildren.delete(peerId)
-                    w.forwarder?.removeChild(peerId, 'stopped')
-                    onForwarderChildLeft(peerId, w.shareId)
+                const ctx = targetCtx
+                if (ctx && ctx.forwarderChildren.get(peerId)?.stream === stream) {
+                    ctx.forwarderChildren.delete(peerId)
+                    ctx.forwarder?.removeChild(peerId, 'stopped')
+                    onForwarderChildLeft(peerId, ctx.shareId)
                     onTopologyChanged()
+                    if (ctx.isHub && ctx.forwarderChildren.size === 0) scheduleHubTeardown(ctx)
                 }
             })
     }
@@ -1056,6 +1415,9 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
             const openedAt = sessionOpenedAt.get(peerId)
             const unknownAge = own && openedAt !== undefined && openedAt >= own.startedAt
             if (old?.shareId !== control.shareId && peerTrees.delete(peerId)) onTopologyChanged()
+            for (const [sId, hub] of hubs) {
+                if (hub.peerId === peerId && sId !== control.shareId) stopHub(sId, 'stopped', { notifySharer: false })
+            }
             peers.set(peerId, { shareId: control.shareId, preset, audio, fanoutPub,
                 at: old?.shareId === control.shareId ? old.at : unknownAge ? -Infinity : clock() })
             events.emit('screen-state', { peerId, sharing: true, shareId: control.shareId, preset, audio })
@@ -1064,6 +1426,9 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
         } else {
             slotLedger.setOwnSharing(peerId, false)
             if (peerTrees.delete(peerId)) onTopologyChanged()
+            for (const [sId, hub] of hubs) {
+                if (hub.peerId === peerId) stopHub(sId, 'stopped', { notifySharer: false })
+            }
             if (old) {
                 peers.delete(peerId)
                 events.emit('screen-state', { peerId, sharing: false, shareId: old.shareId, preset: null, audio: false })
@@ -1103,14 +1468,32 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
             }
         }
         if (treeChanged) broadcastTree()
+        if (own?.pendingHubOffers?.has(peerId)) failHubOffer(own, peerId, 'left')
         const fc = watch?.forwarderChildren?.get(peerId)
+        let hubChanged = false
+        for (const [sId, hub] of [...hubs]) {
+            if (hub.peerId === peerId) {
+                stopHub(sId, 'lost', { notifySharer: false })
+                hubChanged = true
+                continue
+            }
+            const hc = hub.forwarderChildren.get(peerId)
+            if (hc) {
+                hub.forwarderChildren.delete(peerId)
+                hub.forwarder?.removeChild(peerId, 'stopped')
+                onForwarderChildLeft(peerId, hub.shareId)
+                abortStream(hc.stream, 'peer left')
+                hubChanged = true
+                if (hub.forwarderChildren.size === 0) scheduleHubTeardown(hub)
+            }
+        }
         if (fc) {
             watch.forwarderChildren.delete(peerId)
             watch.forwarder?.removeChild(peerId, 'stopped')
             onForwarderChildLeft(peerId, watch.shareId)
             abortStream(fc.stream, 'peer left')
             onTopologyChanged()
-        } else if (hadTree) {
+        } else if (hadTree || hubChanged) {
             onTopologyChanged()
         }
         checkIsolated()
@@ -1119,10 +1502,13 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
         if (!value) return
         stopScreenShare('idle')
         unwatchScreen()
+        stopAllHubs('idle')
     }
     function setScreenForwarding(maxChildren) {
         configuredMaxChildren = clampMaxChildren(maxChildren)
         const eff = effectiveMaxChildren()
+        const glob = globalMaxChildren()
+        if (glob === 0) stopAllHubs('opt-out')
         if (watch?.forwarder) {
             watch.forwarder.setMaxChildren(eff)
             const entries = [...watch.forwarderChildren.entries()]
@@ -1143,7 +1529,33 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
             })
             if (shedAny) onTopologyChanged()
         }
+        for (const hub of [...hubs.values()]) {
+            hub.forwarder?.setMaxChildren(glob)
+            const entries = [...hub.forwarderChildren.entries()]
+            let shedAny = false
+            for (let i = entries.length - 1; i >= 0 && activeForwardedChildren() > glob; i--) {
+                const [childId, entry] = entries[i]
+                hub.forwarder.removeChild(childId, 'stopped')
+                hub.forwarderChildren.delete(childId)
+                onForwarderChildLeft(childId, hub.shareId)
+                closeStream(entry.stream)
+                shedAny = true
+            }
+            sendHubReport(hub, {
+                event: 'capacity',
+                children: hub.forwarder.childCount(),
+                maxChildren: hub.forwarder.maxChildren(),
+                congested: hub.forwarder.isCongested()
+            })
+            if (shedAny) onTopologyChanged()
+            if (hub.forwarderChildren.size === 0 && activeForwardedChildren() >= glob) stopHub(hub.shareId, 'opt-out')
+        }
         return { maxChildren: configuredMaxChildren, effectiveMaxChildren: eff }
+    }
+    function setScreenHubForwarding(enabled) {
+        hubForwardingEnabled = enabled === true
+        if (!hubForwardingEnabled) stopAllHubs('opt-out')
+        return { hubForwarding: hubForwardingEnabled, activeHubs: hubs.size }
     }
     function screenEdges() {
         const seen = new Set()
@@ -1166,6 +1578,11 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
             if (watch.configured && watch.parentPeerId) add(watch.parentPeerId, selfId, watch.peerId)
             for (const childId of watch.forwarderChildren.keys()) add(selfId, childId, watch.peerId)
         }
+        for (const hub of hubs.values()) {
+            if (hub.done) continue
+            if (hub.configured && hub.parentPeerId) add(hub.parentPeerId, selfId, hub.peerId)
+            for (const childId of hub.forwarderChildren.keys()) add(selfId, childId, hub.peerId)
+        }
         return out
     }
     async function stop() {
@@ -1173,6 +1590,11 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
         const sharing = stopScreenShare('stopped')
         stopped = true
         unwatchScreen()
+        stopAllHubs('stopped')
+        for (const stream of [...fanoutPending]) {
+            fanoutPending.delete(stream)
+            abortStream(stream, 'stopped')
+        }
         // Give END a short time to go out before the sessions close.
         let timer
         if (sharing) await Promise.race([Promise.allSettled([...closing]), new Promise(resolve => { timer = setTimeout(resolve, 300) })])
@@ -1199,7 +1621,12 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
                 configured: watch.configured, frames: watch.frames, bytes: watch.bytes,
                 keys: watch.keys, acks: watch.acks, config: watch.config ?? null,
                 forwarder: watch.forwarder?.stats() ?? null
-            } : null
+            } : null,
+            hubs: [...hubs.values()].map(h => ({
+                peerId: h.peerId, shareId: h.shareId, parentPeerId: h.parentPeerId, hop: h.hop,
+                configured: h.configured, frames: h.frames, bytes: h.bytes,
+                keys: h.keys, acks: h.acks, forwarder: h.forwarder?.stats() ?? null
+            }))
         }
     }
 
@@ -1212,12 +1639,12 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
             return p ? { shareId: p.shareId, audio: p.audio === true } : null
         },
         getVideoWatch: () => (watch && !watch.done ? { peerId: watch.peerId, shareId: watch.shareId, parentPeerId: watch.parentPeerId, hop: watch.hop } : null),
-        isForwarderChild: (peerId, shareId) => Boolean(watch && !watch.done && watch.shareId === shareId && watch.forwarderChildren.has(peerId)),
+        isForwarderChild: (peerId, shareId) => Boolean((watch && !watch.done && watch.shareId === shareId && watch.forwarderChildren.has(peerId)) || hubs.get(shareId)?.forwarderChildren.has(peerId)),
         // A test hook of rule A9 and A7 (W1 check 13a, W5 check 8a).
         testRate: () => own?.rate ?? null,
         api: {
             startScreenShare, stopScreenShare, sendScreenFrame, reportScreenEncoder, setScreenSize,
-            watchScreen, unwatchScreen, requestScreenKey, setScreenForwarding, screenState, screenStats
+            watchScreen, unwatchScreen, requestScreenKey, setScreenForwarding, setScreenHubForwarding, screenState, screenStats
         }
     }
 }

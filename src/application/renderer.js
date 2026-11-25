@@ -3386,13 +3386,15 @@ document.addEventListener('keydown', e => {
 {
     const api = window.asscrack;
     const setting = document.getElementById('view-screen-forwarding');
-    let state = { maxChildren: 2, effectiveMaxChildren: 2, idle: false };
+    const hubSetting = document.getElementById('view-screen-hub-forwarding');
+    let state = { maxChildren: 2, effectiveMaxChildren: 2, hubForwarding: false, idle: false };
     let updates = 0;
     function apply(next) {
         if (!next || typeof next.maxChildren !== 'number') return;
         state = {
             maxChildren: next.maxChildren,
             effectiveMaxChildren: typeof next.effectiveMaxChildren === 'number' ? next.effectiveMaxChildren : next.maxChildren,
+            hubForwarding: next.hubForwarding === true,
             idle: next.idle === true
         };
         if (setting) {
@@ -3403,11 +3405,23 @@ document.addEventListener('keydown', e => {
                     ? `Relay watched screen shares (max ${state.maxChildren})`
                     : 'Opted out of forwarding';
         }
+        if (hubSetting) {
+            hubSetting.setAttribute('aria-checked', String(state.hubForwarding));
+            hubSetting.title = state.idle
+                ? 'Paused while Idle Peer'
+                : state.hubForwarding
+                    ? 'Full node relays shares when not watching'
+                    : 'Allow this full node to relay screen shares without watching';
+        }
     }
     window.screenForwarding = {
         state: () => ({ ...state }),
         toggle: async () => {
             try { apply(await api.setScreenForwarding?.(state.maxChildren === 0)); }
+            catch { status.textContent = 'Couldn\'t save this setting.'; }
+        },
+        toggleHub: async () => {
+            try { apply(await api.setScreenHubForwarding?.(!state.hubForwarding)); }
             catch { status.textContent = 'Couldn\'t save this setting.'; }
         },
         setCap: async maxChildren => {
