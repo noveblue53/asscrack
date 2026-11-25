@@ -7,7 +7,35 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
-## Unreleased
+## 1.0.7 (2026-11-25): screen share audio, music visualizer modes, shade mode, network map pulses and screen rate fixes
+
+Release 1.0.7 is the seventh update of 1.0.0. A 1.0.0, 1.0.1, 1.0.2, 1.0.3, 1.0.4, 1.0.5 or 1.0.6 app gets it with
+the signed update (Settings, About ASSCRACK, Check now). The entries below this heading, down to the 1.0.6 entry,
+were "Unreleased" entries. Since 1.0.6, the app has these new items:
+
+- Screen share audio on Windows (WASAPI process loopback, companion `/asscrack/screen-audio/1.0.0` Opus stream, and per-sharer mute/volume controls).
+- Clickable music visualizer modes (LED bars, oscilloscope, dual VU needles, and starfield with plasma), synced between the inline bar and the pop-out window.
+- Winamp-style 48 px shade mode and always-on-top pin button on the music pop-out window, with saved shaded bounds.
+- Live traffic pulses on the network map for active voice, music, screen share, and file transfer links while the map is open.
+- Faster screen share recovery after congestion and full quality-bitrate climbing, plus friend chat message list layout fix.
+- Dev runs with `--profile` use the `test` notification identity, and `tools/app-smoke-check.mjs` plus faster concurrent tests.
+
+Build:
+- `npm run dist` makes `ASSCRACK-1.0.7-portable.exe` (product name "ASSCRACK Portable"). `npm run dist:installer`
+  makes `ASSCRACK-1.0.7-setup.exe` (product name "ASSCRACK").
+- The release has six files: the two files above, their download copies `ASSCRACK-1.0.7-update.exe` and
+  `ASSCRACK-1.0.7-portable-update.exe` (the same bytes), `update.json` and `update.json.sig`. See
+  `docs/RELEASE_UPDATES.md`.
+- The notes and the date of `update.json` come from the 1.0.7 entry of `src/application/release-notes.json`.
+- The source of the files is the commit of this entry. The signed `update.json` of the release gives the byte size
+  and the SHA-256 of each file. The files have no code signature.
+- No new dependency.
+
+Results:
+- **127.0.0.1 and this PC only.** No LAN test and no internet test occurred.
+- **127.0.0.1**: `cmd /c start "" /belownormal /b /wait npm test` on the integrated `main` source: `1312` tests, `1294` pass, `0` fail, `18` skipped (`64.19 s`).
+- **127.0.0.1**: `node tools/sign-update.mjs --check-release` passed, and `ASSCRACK_RELEASE=1 node --test test/update-release.test.mjs` passed (`6` pass, `0` fail).
+- **this PC**: `node tools/app-smoke-check.mjs --run-dir "D:\Github Repos\asscrack-gemini\work-orders\release-107\runs\smoke" --check-no-dev-shortcut` passed on CDP port `9500` in `2893 ms` (`domReady: true`, `0` console/log/stderr/stdout errors, `devShortcutAbsent: true`, `devClsidAbsent: true`).
 
 ### Integrated `gemini/107-prep` verification
 

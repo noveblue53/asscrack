@@ -1,5 +1,17 @@
 [
   {
+    "version": "1.0.7",
+    "date": "2026-11-25",
+    "notes": [
+      "- Screen share audio: share app or system audio alongside your screen on Windows, with per-sharer mute and volume controls.",
+      "- Music visualizer modes: click the visualizer or its mode pill to switch between LED bars, oscilloscope, dual VU needles, and starfield.",
+      "- Music pop-out shade mode: collapse the pop-out music window into a compact 48 px bar with a scrolling title and pin it on top of other windows.",
+      "- Network map live traffic: watch color-coded pulses move across active voice, music, screen share, and file transfer links while the map is open.",
+      "- Fixed: screen share now climbs to the full bitrate of the chosen quality and recovers faster after congestion.",
+      "- Fixed: the message list now fills the friend chat window cleanly."
+    ]
+  },
+  {
     "version": "1.0.6",
     "date": "2026-11-23",
     "notes": [
