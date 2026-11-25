@@ -9,6 +9,13 @@ Each result has one of these labels:
 
 ## Unreleased
 
+### Integrated `gemini/107-prep` verification
+
+- Combined the five `gemini/*` 1.0.7 candidate branches (`gemini/viz-modes`, `gemini/music-shade-mode`, `gemini/nodemap-live-traffic`, `gemini/no-dev-shortcut`, and `gemini/test-speed-and-reliability`), hid `.music-viz-pill` and sized `.music-viz-wrap` in 48 px shade mode (`src/application/music-window.css`), and kept both `--profile` identity tests and Windows space-in-path fixes (`test/windows-identity.test.mjs`).
+- Results:
+  - **127.0.0.1**: `cmd /c start "" /belownormal /b /wait npm test` — `1293` tests, `1275` pass, `0` fail, `18` skipped (`63.81 s`).
+  - **this PC**: `node tools/app-smoke-check.mjs --run-dir "D:\Github Repos\asscrack-gemini\work-orders\107-prep\runs\smoke" --check-no-dev-shortcut` — passed on CDP port `9500` in `3035 ms` with `domReady: true`, `0` console/log/stderr/stdout errors, `devShortcutAbsent: true`, and `devClsidAbsent: true`.
+
 ### Test suite reliability, speed, and pre-release smoke check
 
 - **mDNS room isolation (`127.0.0.1`):** Use unique room names per test in `test/node.test.mjs`, `test/knock-node.test.mjs`, and `test/connect-race.test.mjs`. Parallel `node --test test/node.test.mjs` runs do not connect across worker processes (`10` pass, `0` fail in two parallel runs).
