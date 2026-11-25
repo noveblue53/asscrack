@@ -29,10 +29,12 @@ export function newRoomKey() {
     return randomBytes(32).toString('base64url')
 }
 
-export function makeInvite({ room, key, nodes }) {
+export function makeInvite({ room, key, nodes, ipv6 }) {
     const k = typeof key === 'string' ? key : Buffer.from(key).toString('base64url')
     const list = nodes.map(n => ({ id: n.id, addrs: [...n.addrs] }))
-    return INVITE_PREFIX + Buffer.from(JSON.stringify({ v: 1, room, key: k, nodes: list }), 'utf8').toString('base64url')
+    const payload = { v: 1, room, key: k, nodes: list }
+    if (Array.isArray(ipv6) && ipv6.length > 0) payload.ipv6 = ipv6.map(n => ({ id: n.id, addrs: [...n.addrs] }))
+    return INVITE_PREFIX + Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url')
 }
 
 // A protected room invite in the compact binary form "asscrack3:".
@@ -361,13 +363,25 @@ export function readInvite(code) {
     if (!Array.isArray(nodes) || (!nodes.length && !membership?.lan) || nodes.length > MAX_NODES) {
         throw new Error('The invite code has no valid node list')
     }
+    const extraIpv6 = new Map()
+    if (!prefix || prefix !== COMPACT_INVITE_PREFIX) {
+        if (Array.isArray(value?.ipv6)) {
+            for (const entry of value.ipv6) {
+                if (!entry || typeof entry !== 'object' || !validPeerId(entry.id) || !Array.isArray(entry.addrs)) continue
+                const v6 = entry.addrs.filter(a => typeof a === 'string' && a.startsWith('/ip6/') && validAddr(a))
+                if (v6.length) extraIpv6.set(entry.id, [...(extraIpv6.get(entry.id) ?? []), ...v6])
+            }
+        }
+    }
     const out = []
     for (const n of nodes) {
         if (n === null || typeof n !== 'object' || !validPeerId(n.id)) throw new Error('The invite code has a bad peer ID')
         if (!Array.isArray(n.addrs) || n.addrs.length < 1 || n.addrs.length > MAX_NODES || !n.addrs.every(validAddr)) {
             throw new Error('The invite code has a bad address')
         }
-        out.push({ id: n.id, addrs: [...n.addrs] })
+        const nodeIpv6 = Array.isArray(n.ipv6) ? n.ipv6.filter(a => typeof a === 'string' && a.startsWith('/ip6/') && validAddr(a)) : []
+        const merged = [...new Set([...n.addrs, ...nodeIpv6, ...(extraIpv6.get(n.id) ?? [])])].slice(0, MAX_NODES)
+        out.push({ id: n.id, addrs: merged })
     }
     return membership ? { room, key, nodes: out, membership, lan: membership.lan } : { room, key, nodes: out }
 }
