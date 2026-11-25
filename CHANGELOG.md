@@ -7,6 +7,10 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased
+
+- Revised `docs/SCREENSHARE_FANOUT.md` to lock the Phase 1 screen-share fanout protocol, slim `WATCH`, `REDIRECT` + Ed25519 token, `/asscrack/screen-fanout/1.0.0` open record, parent-to-sharer reports, audio-mute rule, 24-viewer limits, and global cross-share slot accounting (docs only, STE-linted).
+
 ## 1.0.6 (2026-11-23): profile pictures, several screen shares, friend status, the Settings menu and What's new
 
 Release 1.0.6 is the sixth update of 1.0.0. A 1.0.0, 1.0.1, 1.0.2, 1.0.3, 1.0.4 or 1.0.5 app gets it with the signed
