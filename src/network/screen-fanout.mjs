@@ -341,6 +341,7 @@ export function createScreenFanout({
             parentPeerId: selfId,
             hop: 1,
             fanout: isFanout,
+            hub: false,
             maxChildren,
             children: new Set(),
             pendingChildren: new Set(),
@@ -359,7 +360,73 @@ export function createScreenFanout({
         return count
     }
 
-    function planWatch(viewerId, { fanout = 0, maxChildren = 0, redirectCount = 0 } = {}) {
+    function countViewerNodes() {
+        let count = 0
+        for (const node of nodes.values()) {
+            if (!node.hub) count++
+        }
+        return count
+    }
+
+    function attachHub(hubPeerId, { maxChildren = 0 } = {}) {
+        if (typeof hubPeerId !== 'string' || !hubPeerId || hubPeerId === selfId) {
+            return { ok: false, reason: 'refused' }
+        }
+        if (nodes.has(hubPeerId)) detachSubtree(hubPeerId)
+        const cap = clampInt(maxChildren, 0, O.maxChildrenPerNode, 0)
+        ledger.setNodeCap(hubPeerId, cap)
+        nodes.set(hubPeerId, {
+            peerId: hubPeerId,
+            parentPeerId: selfId,
+            hop: 1,
+            fanout: true,
+            hub: true,
+            maxChildren: cap,
+            children: new Set(),
+            pendingChildren: new Set(),
+            congested: false,
+            congestedUntil: 0
+        })
+        return { ok: true, hop: 1 }
+    }
+
+    function findHubCandidate(viewerId, { isFullNode = () => false, exclude = new Set() } = {}) {
+        pruneExpired()
+        const topo = getTopo()
+        if (!topo || !viewerId || viewerId === selfId) return null
+        const kinds = topo.kinds ?? topo.linkKinds
+        const peerList = new Set([
+            ...(Array.isArray(topo.links?.[selfId]) ? topo.links[selfId] : []),
+            ...Object.keys(kinds?.[selfId] ?? {})
+        ])
+        const candidates = []
+        for (const H of peerList) {
+            if (H === selfId || H === viewerId) continue
+            if (exclude.has(H)) continue
+            if (nodes.has(H)) continue
+            if (isFullNode(H) !== true) continue
+            if (isIdlePeer(topo, H)) continue
+            if (ledger.isOwnSharing(H)) continue
+            if (isProbation(viewerId, H) || isProbation(selfId, H)) continue
+            if (!hasSymmetricMesh(topo, selfId, H)) continue
+            if (!hasSymmetricMesh(topo, H, viewerId)) continue
+            candidates.push(H)
+        }
+        if (candidates.length === 0) return null
+        candidates.sort((a, b) => {
+            const degDiff = meshDegree(topo, b) - meshDegree(topo, a)
+            if (degDiff !== 0) return degDiff
+            return a.localeCompare(b)
+        })
+        return candidates[0]
+    }
+
+    function recordHubFailure(hubPeerId) {
+        pruneExpired()
+        setProbation(selfId, hubPeerId, O.parentFailBackoffMs)
+    }
+
+    function planWatch(viewerId, { fanout = 0, maxChildren = 0, redirectCount = 0, circuit = false } = {}) {
         pruneExpired()
         if (typeof viewerId !== 'string' || !viewerId || viewerId === selfId) {
             return { action: 'reject', reason: 'refused' }
@@ -375,7 +442,7 @@ export function createScreenFanout({
         // If viewer was already active, detach it cleanly before re-planning.
         if (nodes.has(viewerId)) detachSubtree(viewerId)
 
-        if (nodes.size + pending.size >= O.maxViewers) {
+        if (countViewerNodes() + pending.size >= O.maxViewers) {
             return { action: 'reject', reason: 'full' }
         }
 
@@ -392,7 +459,7 @@ export function createScreenFanout({
             return attachDirect(viewerId, true, cap)
         }
 
-        if (countDirectViewers() < O.maxDirectViewers) {
+        if (!circuit && countDirectViewers() < O.maxDirectViewers) {
             return attachDirect(viewerId, true, cap)
         }
 
@@ -465,6 +532,7 @@ export function createScreenFanout({
         const t = now()
         if (Number.isInteger(report.maxChildren)) {
             parent.maxChildren = clampInt(report.maxChildren, 0, O.maxChildrenPerNode, parent.maxChildren)
+            ledger.setNodeCap(parentPeerId, parent.maxChildren)
         }
         if (typeof report.congested === 'boolean') {
             if (report.congested) {
@@ -512,6 +580,7 @@ export function createScreenFanout({
                 parentPeerId,
                 hop,
                 fanout: childFanout,
+                hub: false,
                 maxChildren: childCap,
                 children: new Set(),
                 pendingChildren: new Set(),
@@ -626,6 +695,7 @@ export function createScreenFanout({
                 parentPeerId: n.parentPeerId,
                 hop: n.hop,
                 fanout: n.fanout,
+                hub: Boolean(n.hub),
                 maxChildren: n.maxChildren,
                 children: [...n.children],
                 pendingChildren: [...n.pendingChildren],
@@ -643,6 +713,9 @@ export function createScreenFanout({
 
     return {
         planWatch,
+        attachHub,
+        findHubCandidate,
+        recordHubFailure,
         handleReport,
         onPeerLeft,
         recordParentFailure,

@@ -28,6 +28,10 @@ Build:
 
 ## Unreleased
 
+- Non-watching full-node fanout hubs (`HUB_OFFER` / `HUB_ACCEPT` / `HUB_STOP` lifecycle in `src/network/screen-share.mjs` and `src/network/screen-fanout.mjs`) with automatic teardown at 0 children and an opt-in Settings toggle (`Relay shares when not watching`, default off).
+  - `127.0.0.1`: `node --test test/screen-fanout.test.mjs test/screen-fanout-streams.test.mjs test/screen-hub.test.mjs test/settings-menu.test.mjs test/preload-bridge.test.mjs` (47/47 pass) and `npm test` (1340 pass, 0 fail, 18 skipped).
+  - `this PC`: clean Electron app smoke start (`node tools/app-smoke-check.mjs`) with fresh `--profile` and fake `APPDATA`.
+
 - **Faster `npm test` scheduling and bounded in-file concurrency**:
   - Added `tools/run-tests.mjs` and wired `"test": "node tools/run-tests.mjs"` in `package.json` to run `test/*.test.mjs` directly (skipping empty `test/helpers/*.mjs` spawns), schedule the top 4 slow files first and interleave the remaining slow files with fast unit files, and set an adaptive `--test-concurrency` default (`20` on 16-thread PCs). Added unit tests in `test/run-tests.test.mjs`.
   - Enabled bounded in-file concurrency (`concurrency: 3..4`) in `test/friend-refresh.test.mjs`, `test/multi-share.test.mjs`, `test/transfer-resume-restart.test.mjs`, and `test/transfer-resume.test.mjs`, and added disjoint `FILE_PORT_BLOCKS` entries in `test/helpers/friends.mjs`.

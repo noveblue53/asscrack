@@ -664,6 +664,7 @@
         else if (item.id === 'view-idle') window.idlePeer?.enter();
         else if (item.id === 'view-close-idle') window.idlePeer?.toggleClose();
         else if (item.id === 'view-screen-forwarding') window.screenForwarding?.toggle();
+        else if (item.id === 'view-screen-hub-forwarding') window.screenForwarding?.toggleHub();
         else if (item.id === 'view-quit') window.appShell ? window.appShell.quit() : window.asscrack.quit();
         else if (item.id === 'view-shortcuts') window.appShell?.openShortcuts();
         else if (item.id === 'view-whats-new') void window.whatsNew?.open();

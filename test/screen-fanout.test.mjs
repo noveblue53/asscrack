@@ -371,3 +371,68 @@ test('global slot accounting: maxShares=3 ledger enforces per-node cap and own-s
     assert.equal(ledger.availableSlots('p1'), 1)
     assert.equal(ledger.registerShare('share-4'), true)
 })
+
+test('attachHub registers hop-1 hub without consuming maxViewers and redirects circuit viewers', () => {
+    let t = 1000
+    const topo = makeFullMeshTopology(['S', 'H', 'V1', 'V2'], {
+        relayPairs: [['S', 'V1'], ['S', 'V2'], ['V1', 'V2']]
+    })
+    const fanout = createScreenFanout({
+        selfId: 'S',
+        shareId: 's1',
+        getTopology: () => topo,
+        now: () => t,
+        options: { maxViewers: 2, maxDirectViewers: 2 }
+    })
+
+    // attachHub places H at hop 1 with hub: true, not counted against maxViewers = 2
+    assert.deepEqual(fanout.attachHub('H', { maxChildren: 2 }), { ok: true, hop: 1 })
+    assert.equal(fanout.snapshot().nodes.H.hub, true)
+
+    // Circuit viewers V1 and V2 both redirect to H even though maxDirectViewers = 2
+    const d1 = fanout.planWatch('V1', { fanout: 1, maxChildren: 0, circuit: true })
+    assert.equal(d1.action, 'redirect')
+    assert.equal(d1.parentPeerId, 'H')
+    assert.equal(d1.hop, 2)
+    assert.equal(fanout.handleReport('H', { event: 'child-joined', childPeerId: 'V1', childMaxChildren: 0 }).ok, true)
+
+    const d2 = fanout.planWatch('V2', { fanout: 1, maxChildren: 0, circuit: true })
+    assert.equal(d2.action, 'redirect')
+    assert.equal(d2.parentPeerId, 'H')
+    assert.equal(d2.hop, 2)
+    assert.equal(fanout.handleReport('H', { event: 'child-joined', childPeerId: 'V2', childMaxChildren: 0 }).ok, true)
+
+    // Now 2 real viewers (V1, V2) are active -> V3 is rejected as 'full' (H did not consume a viewer slot)
+    const d3 = fanout.planWatch('V3', { fanout: 1, maxChildren: 0, circuit: true })
+    assert.deepEqual(d3, { action: 'reject', reason: 'full' })
+})
+
+test('findHubCandidate requires full node, symmetric mesh, not idle/sharing, and respects recordHubFailure probation', () => {
+    let t = 1000
+    const topo = makeFullMeshTopology(['S', 'H1', 'H2', 'H3', 'V1'], {
+        relayPairs: [['S', 'H3'], ['S', 'V1']],
+        idlePeers: ['H2']
+    })
+    const ledger = createGlobalSlotLedger({ maxShares: 3, defaultCap: 2 })
+    const fanout = createScreenFanout({
+        selfId: 'S',
+        shareId: 's1',
+        getTopology: () => topo,
+        now: () => t,
+        slotLedger: ledger
+    })
+    const fullNodes = new Set(['H1', 'H2', 'H3'])
+
+    // H2 is idle, H3 is relayed from S -> only H1 is eligible
+    assert.equal(fanout.findHubCandidate('V1', { isFullNode: id => fullNodes.has(id) }), 'H1')
+
+    // recordHubFailure puts H1 on probation for parentFailBackoffMs (30000 ms)
+    fanout.recordHubFailure('H1')
+    assert.equal(fanout.findHubCandidate('V1', { isFullNode: id => fullNodes.has(id) }), null)
+
+    // After probation expires, H1 is eligible again unless ownSharing
+    t += 30001
+    assert.equal(fanout.findHubCandidate('V1', { isFullNode: id => fullNodes.has(id) }), 'H1')
+    ledger.setOwnSharing('H1', true)
+    assert.equal(fanout.findHubCandidate('V1', { isFullNode: id => fullNodes.has(id) }), null)
+})

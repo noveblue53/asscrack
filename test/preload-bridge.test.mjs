@@ -410,13 +410,15 @@ test('the screen forwarding calls send the IPC channel and events cleanly', asyn
     await b.api.getScreenForwarding();
     await b.api.setScreenForwarding(false);
     await b.api.setScreenForwarding('3');
+    await b.api.setScreenHubForwarding(true);
     assert.deepEqual(b.invoked, [
         ['asscrack:screen-forwarding'],
         ['asscrack:set-screen-forwarding', false],
-        ['asscrack:set-screen-forwarding', 3]
+        ['asscrack:set-screen-forwarding', 3],
+        ['asscrack:set-screen-hub-forwarding', true]
     ]);
     const got = [];
     b.api.onScreenForwarding(value => got.push(value));
-    b.emit('asscrack:screen-forwarding', { maxChildren: 0, effectiveMaxChildren: 0, idle: false });
-    assert.deepEqual(got, [{ maxChildren: 0, effectiveMaxChildren: 0, idle: false }]);
+    b.emit('asscrack:screen-forwarding', { maxChildren: 0, effectiveMaxChildren: 0, hubForwarding: true, idle: false });
+    assert.deepEqual(got, [{ maxChildren: 0, effectiveMaxChildren: 0, hubForwarding: true, idle: false }]);
 });

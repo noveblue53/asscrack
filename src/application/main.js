@@ -536,18 +536,22 @@ const screenForwardingPreference = path.join(app.getPath('userData'), 'screen-fo
 const clampForwardingCap = value => (Number.isInteger(value) ? Math.max(0, Math.min(8, value)) : 2);
 let screenForwardingCap = 2;
 let lastNonZeroForwardingCap = 2;
+let screenHubForwarding = false;
 try {
     const saved = JSON.parse(readFileSync(screenForwardingPreference, 'utf8'));
     if (saved && typeof saved === 'object') {
         screenForwardingCap = clampForwardingCap(saved.maxChildren);
         const savedLast = clampForwardingCap(saved.lastNonZero);
         lastNonZeroForwardingCap = savedLast > 0 ? savedLast : 2;
+        screenHubForwarding = saved.hubForwarding === true;
     }
 } catch { /* new profile */ }
 const effectiveScreenForwardingCap = () => (idlePeer ? 0 : screenForwardingCap);
+const effectiveScreenHubForwarding = () => (!idlePeer && screenHubForwarding);
 const screenForwardingState = () => ({
     maxChildren: screenForwardingCap,
     effectiveMaxChildren: effectiveScreenForwardingCap(),
+    hubForwarding: screenHubForwarding,
     idle: idlePeer
 });
 // Gap E8: the flag file of the first close to the tray of this profile.
@@ -675,6 +679,7 @@ function restoreRoomWindow() {
         idlePeer = false;
         node?.setIdle(false);
         node?.setScreenForwarding?.(effectiveScreenForwardingCap());
+        node?.setScreenHubForwarding?.(effectiveScreenHubForwarding());
         friendLinks.setAvailability({ idle: false });
         sendToWindow('asscrack:idle-peer', idleState());
         sendToWindow('asscrack:screen-forwarding', screenForwardingState());
@@ -786,6 +791,15 @@ function enterIdlePeer() {
     return true;
 }
 
+function saveScreenForwardingPrefs() {
+    writeFileSync(screenForwardingPreference + '.tmp', JSON.stringify({
+        maxChildren: screenForwardingCap,
+        lastNonZero: lastNonZeroForwardingCap,
+        hubForwarding: screenHubForwarding
+    }));
+    renameSync(screenForwardingPreference + '.tmp', screenForwardingPreference);
+}
+
 function setScreenForwarding(value) {
     let next;
     if (typeof value === 'boolean') {
@@ -796,10 +810,18 @@ function setScreenForwarding(value) {
         throw new TypeError('Expected a screen forwarding setting');
     }
     if (next > 0) lastNonZeroForwardingCap = next;
-    writeFileSync(screenForwardingPreference + '.tmp', JSON.stringify({ maxChildren: next, lastNonZero: lastNonZeroForwardingCap }));
-    renameSync(screenForwardingPreference + '.tmp', screenForwardingPreference);
     screenForwardingCap = next;
+    saveScreenForwardingPrefs();
     node?.setScreenForwarding?.(effectiveScreenForwardingCap());
+    sendToWindow('asscrack:screen-forwarding', screenForwardingState());
+    return screenForwardingState();
+}
+
+function setScreenHubForwarding(enabled) {
+    if (typeof enabled !== 'boolean') throw new TypeError('Expected a screen hub forwarding setting');
+    screenHubForwarding = enabled;
+    saveScreenForwardingPrefs();
+    node?.setScreenHubForwarding?.(effectiveScreenHubForwarding());
     sendToWindow('asscrack:screen-forwarding', screenForwardingState());
     return screenForwardingState();
 }
@@ -874,6 +896,7 @@ handleRoomIpc('asscrack:enter-idle-peer', enterIdlePeer);
 handleRoomIpc('asscrack:close-to-tray', (_event, enabled) => setCloseToTray(enabled));
 handleRoomIpc('asscrack:screen-forwarding', screenForwardingState);
 handleRoomIpc('asscrack:set-screen-forwarding', (_event, value) => setScreenForwarding(value));
+handleRoomIpc('asscrack:set-screen-hub-forwarding', (_event, value) => setScreenHubForwarding(value));
 onRoomIpc('asscrack:quit', () => app.quit());
 
 // Gap E3: the values of the About dialog.
@@ -1239,7 +1262,7 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
         options.knock = { isFriend: deviceId => friendLinks.isFriend(deviceId) };
         // Room music: the YouTube source of this computer when it is the DJ (music-source.mjs).
         options.musicResolve = request => music.resolve(request);
-        options.screen = { ...options.screen, maxChildren: effectiveScreenForwardingCap() };
+        options.screen = { ...options.screen, maxChildren: effectiveScreenForwardingCap(), hubForwarding: effectiveScreenHubForwarding() };
         try {
             node = await createAsscrackNode(options);
         } catch (err) {

@@ -871,6 +871,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         openPeers: () => [...sessions.keys()].filter(filePeerAllowed),
         getTopology: topology,
         onTopologyChanged: emitTopology,
+        isFullNode: peerId => peerId === selfId ? selfFull : peerFull.get(peerId) === true,
         idle: () => selfIdle,
         canShare: () => !membership || membership.admitted(),
         onOwnStop: reason => screenAudio?.stopOwn(reason),
