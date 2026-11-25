@@ -19,13 +19,17 @@ function choose(room, type) {
     room.el('room-type').dispatchEvent(new room.Event('change'));
 }
 
-test('login starts with protected internet, asks for explicit UPnP and suppresses it for LAN and a typed address', async () => {
+test('login starts with protected internet, asks for explicit UPnP on create and join, and suppresses it for LAN and a typed address', async () => {
     const options = [];
-    for (const [type, typedAddress, checked] of [['new', '', false], ['new', '', true], ['new', '127.0.0.1:9000', true], ['lan', '', true]]) {
+    for (const [type, typedAddress, checked] of [['new', '', false], ['new', '', true], ['new', '127.0.0.1:9000', true], ['join', '', false], ['join', '', true], ['join', '127.0.0.1:9000', true], ['lan', '', true]]) {
         const room = await loadRoomWindow({ elements: loginControls });
         room.window.asscrack.login = async value => { options.push(value); return { room: 'test', internet: type !== 'lan' }; };
         assert.equal(room.el('room-type').value, 'new');
         choose(room, type);
+        if (type === 'join') {
+            room.el('invite-input').value = 'asscrack2:device-bound';
+            room.el('invite-input').dispatchEvent(new room.Event('input'));
+        }
         room.el('public-address').value = typedAddress;
         room.el('public-address').dispatchEvent(new room.Event('input'));
         room.el('allow-upnp').checked = checked;
@@ -34,7 +38,9 @@ test('login starts with protected internet, asks for explicit UPnP and suppresse
         await room.login('John');
     }
     assert.deepEqual(options.map(value => [value.type, value.allowUpnp, value.publicAddress]), [
-        ['new', false, undefined], ['new', true, undefined], ['new', false, '127.0.0.1:9000'], ['lan', undefined, undefined]
+        ['new', false, undefined], ['new', true, undefined], ['new', false, '127.0.0.1:9000'],
+        ['join', false, undefined], ['join', true, undefined], ['join', false, '127.0.0.1:9000'],
+        ['lan', undefined, undefined]
     ]);
 });
 

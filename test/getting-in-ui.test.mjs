@@ -13,7 +13,8 @@ const accessControls = [
     { id: 'reach-box', children: [{ id: 'reach-note', tag: 'p' }, { id: 'reach-upnp', tag: 'button' }, { id: 'reach-reason', tag: 'p' }] },
     { id: 'member-invite-form', tag: 'form' }, { id: 'member-device-id', tag: 'input' },
     { id: 'member-can-host', tag: 'input' }, { id: 'member-invite-create', tag: 'button' },
-    { id: 'invite-code-label' }, { id: 'room-members-section' }, { id: 'room-members', tag: 'ul' }, { id: 'waiting-peer' }
+    { id: 'invite-code-label' }, { id: 'room-members-section' }, { id: 'room-members', tag: 'ul' }, { id: 'waiting-peer' },
+    { id: 'map-upnp-box', children: [{ id: 'map-upnp', tag: 'button' }, { id: 'map-upnp-note', tag: 'span' }] }
 ];
 const savedControls = [
     { id: 'save-room-fields', children: [
@@ -86,6 +87,38 @@ test('a LAN room has no reach note and permits a device invite', async () => {
 test('a member that is not the owner gets no reach note', async () => {
     const { room } = await startRoom({ reach: { state: 'none', reason: null, proven: false }, owner: false });
     assert.equal(room.el('reach-box').hidden, true);
+});
+
+test('a member in an internet room can open a port with UPnP from the Network map panel', async () => {
+    const { room, state } = await startRoom({
+        reach: { state: 'none', reason: null, proven: false },
+        owner: false
+    });
+    assert.equal(room.el('map-upnp-box').hidden, false);
+    assert.equal(room.el('map-upnp').textContent, 'Open port (UPnP)');
+    assert.equal(room.el('map-upnp-note').hidden, true);
+    let calls = 0;
+    room.window.asscrack.enableUpnp = async () => {
+        calls++;
+        state.reach = { state: 'upnp-wait', reason: null, proven: false };
+        return { started: true, reach: state.reach };
+    };
+    room.el('map-upnp').click();
+    await settle();
+    assert.equal(calls, 1);
+    assert.equal(room.el('map-upnp').textContent, 'Opening port…');
+    assert.equal(room.el('map-upnp').disabled, true);
+    state.reach = { state: 'upnp-failed', reason: 'no-gateway', proven: false };
+    room.handlers.onUpnp({ state: 'none', reason: 'no-gateway' });
+    await settle();
+    assert.equal(room.el('map-upnp').disabled, false);
+    assert.equal(room.el('map-upnp').textContent, 'Try UPnP again');
+    assert.equal(room.el('map-upnp-note').hidden, false);
+    assert.equal(room.el('map-upnp-note').textContent, 'Router didn\'t respond.');
+    state.reach = { state: 'ready', reason: null, proven: false };
+    room.handlers.onUpnp({ state: 'mapped' });
+    await settle();
+    assert.equal(room.el('map-upnp-box').hidden, true);
 });
 
 test('the UPnP button calls enableUpnp and the panel shows the wait text', async () => {

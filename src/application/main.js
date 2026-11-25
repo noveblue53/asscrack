@@ -1485,7 +1485,7 @@ async function login(options, { name, room, type, invite, friendInvite, publicAd
         options.membership = createRoomMembership({ identity: getAdmissionIdentity(), room: options.room, roomKey: options.roomKey, lan });
     } else throw new Error('Choose how to open the room.');
     if (publicAddress !== undefined && (typeof publicAddress !== 'string' || publicAddress.length > 32)) throw new Error('Enter a valid public address.');
-    const result = await startRoom(options, { publicAddress: publicAddress?.trim(), allowUpnp: type === 'new' && allowUpnp === true, lan });
+    const result = await startRoom(options, { publicAddress: publicAddress?.trim(), allowUpnp: type !== 'lan' && allowUpnp === true, lan });
     return afterRoomStart(result, { invite: typedInvite, userName: options.name, save, keepHistory: keepHistory !== false });
 }
 
