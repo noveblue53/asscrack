@@ -13,7 +13,10 @@
   <!-- The player in its own window (music-popout.mjs). music-ui.js fills it, as the music bar of the room window;
        music-viz.js draws the large visualizer from the levels of the room window. The titles come from the DJ. -->
   <section id="music-bar" data-mode="window" aria-label="Music">
-    <canvas id="music-spectrum" class="music-led" width="400" height="160" aria-hidden="true"></canvas>
+    <div class="music-viz-wrap">
+      <canvas id="music-spectrum" class="music-led" width="400" height="160" aria-hidden="true"></canvas>
+      <button id="music-viz-mode" type="button" class="music-viz-pill" title="Switch visualizer">LED Bars</button>
+    </div>
     <canvas id="music-vu" class="music-led" width="120" height="160" aria-hidden="true" hidden></canvas>
     <div class="music-now">
       <span class="music-dot" aria-hidden="true"></span>

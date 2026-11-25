@@ -7,6 +7,17 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased
+
+### Clickable visualizer mode cycling (`gemini/viz-modes`)
+
+- Add four clickable visualizer modes to the music player: LED bars, phosphor oscilloscope, dual analog VU needles, and retro starfield with plasma.
+- Click the visualizer canvas or the mode pill to cycle through modes; save the selected mode in local storage and synchronize it between the inline bar and the popout window.
+- Results:
+  - **127.0.0.1**: `node --test test/music-viz.test.mjs test/music-popout.test.mjs` — 25 pass, 0 fail.
+  - **127.0.0.1**: `npm test` — 1261 pass, 1 fail (pre-existing `%20` URL-encoding bug in `test/windows-identity.test.mjs` when run from a path with spaces), 18 skipped.
+  - **this PC**: fresh `--profile` Electron run with fake `APPDATA` cycled through all 4 modes with 0 console errors and 0 uncaught exceptions.
+
 ## 1.0.6 (2026-11-23): profile pictures, several screen shares, friend status, the Settings menu and What's new
 
 Release 1.0.6 is the sixth update of 1.0.0. A 1.0.0, 1.0.1, 1.0.2, 1.0.3, 1.0.4 or 1.0.5 app gets it with the signed

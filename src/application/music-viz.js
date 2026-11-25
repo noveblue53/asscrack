@@ -15,7 +15,9 @@
     const bar = byId('music-bar');
     const spectrumCanvas = byId('music-spectrum');
     const vuCanvas = byId('music-vu');
+    const modePill = byId('music-viz-mode');
     if (!api || !vc || !window.music || !bar || !spectrumCanvas || !vuCanvas) return;
+    const vizWrap = spectrumCanvas.parentElement?.classList?.contains('music-viz-wrap') ? spectrumCanvas.parentElement : null;
     const windowMode = bar.dataset.mode === 'window';
 
     let view = null;
@@ -26,8 +28,12 @@
     let edgesKey = '';
     let bins = null;
     let samples = null;
+    let waveSamples = null;
     let vu = [0, 0];
     let vuAt = 0;
+    let analogVu = [0, 0];
+    let analogAt = 0;
+    let starAt = 0;
     let last = null;
     let pullAt = 0;
     // The pop-out window: the room window answered null (no music on this PC, for example while deafened). The loop
@@ -35,6 +41,27 @@
     let roomSilent = false;
     const bandPeaks = vc.createPeaks(vc.BANDS);
     const vuPeaks = vc.createPeaks(2);
+    const analogPeaks = vc.createPeaks(2);
+    const starfield = vc.createStarfield(48);
+
+    const readStoredVizMode = () => {
+        if (typeof window.music.vizMode === 'function') return vc.normalizeVizMode(window.music.vizMode());
+        try {
+            return vc.normalizeVizMode(typeof localStorage !== 'undefined' ? localStorage.getItem(vc.VIZ_MODE_KEY) : null);
+        } catch {
+            return 'bars';
+        }
+    };
+    let vizMode = readStoredVizMode();
+
+    function syncModeUi() {
+        const label = vc.vizModeLabel(vizMode);
+        if (modePill) {
+            modePill.textContent = label;
+            modePill.title = 'Switch visualizer';
+        }
+        spectrumCanvas.title = `${label} — click to switch`;
+    }
 
     const mode = () => {
         const value = window.music.settings?.()?.visualizer;
@@ -45,7 +72,7 @@
 
     // ---- The levels (the room window) ----
 
-    // need: { spectrum, vu }. Gives { bands, left, right, playing } or null with no audio.
+    // need: { spectrum, vu, scope }. Gives { bands, left, right, wave, playing } or null with no audio.
     function readLevels(now, need) {
         const tap = window.music.tap?.();
         if (!tap) return null;
@@ -71,7 +98,16 @@
             vu = [vc.release(vu[0], left, ms), vc.release(vu[1], right, ms)];
             vuAt = now;
         }
-        return { bands, left: vu[0], right: vu[1], playing: tap.playing === true };
+        let wave = null;
+        if (need.scope) {
+            const source = typeof tap.spectrum?.getFloatTimeDomainData === 'function' ? tap.spectrum : tap.left;
+            if (source && typeof source.getFloatTimeDomainData === 'function') {
+                if (!waveSamples || waveSamples.length !== source.fftSize) waveSamples = new Float32Array(source.fftSize);
+                source.getFloatTimeDomainData(waveSamples);
+                wave = vc.sampleWaveform(waveSamples, 64);
+            }
+        }
+        return { bands, left: vu[0], right: vu[1], wave, playing: tap.playing === true };
     }
 
     // ---- Drawing ----
@@ -89,6 +125,25 @@
     function drawSpectrum(levels, now) {
         const s = surface(spectrumCanvas);
         if (!s) return;
+        if (vizMode === 'scope') {
+            const wave = levels.wave ?? vc.synthesizeWaveform(levels.bands, levels.left, levels.right, now, 64);
+            vc.drawOscilloscope(s.ctx, s.width, s.height, wave);
+            return;
+        }
+        if (vizMode === 'analog-vu') {
+            const dt = analogAt ? Math.max(0, now - analogAt) : 33;
+            analogAt = now;
+            analogVu = [vc.smoothNeedle(analogVu[0], levels.left, dt), vc.smoothNeedle(analogVu[1], levels.right, dt)];
+            const peaks = analogPeaks.update(analogVu, now);
+            vc.drawAnalogVu(s.ctx, s.width, s.height, analogVu[0], analogVu[1], peaks[0], peaks[1]);
+            return;
+        }
+        if (vizMode === 'starfield') {
+            const dt = starAt ? Math.max(0, now - starAt) : 33;
+            starAt = now;
+            vc.drawStarfieldPlasma(s.ctx, s.width, s.height, starfield, levels.bands, now, dt);
+            return;
+        }
         const peaks = bandPeaks.update(levels.bands, now);
         vc.drawColumns(s.ctx, s.width, s.height, levels.bands.map((level, i) => ({ level, peak: peaks[i] })), vc.SEGMENTS);
     }
@@ -109,12 +164,17 @@
     }
 
     // No music or a stop: the LEDs go dark.
-    const silent = () => ({ bands: new Array(vc.BANDS).fill(0), left: 0, right: 0 });
+    const silent = () => ({ bands: new Array(vc.BANDS).fill(0), left: 0, right: 0, wave: new Array(64).fill(0) });
     function clear() {
         bandPeaks.reset();
         vuPeaks.reset();
+        analogPeaks.reset();
+        starfield.reset();
         vu = [0, 0];
         vuAt = 0;
+        analogVu = [0, 0];
+        analogAt = 0;
+        starAt = 0;
         last = null;
         if (!spectrumCanvas.hidden && spectrumCanvas.clientWidth) drawSpectrum(silent(), 0);
         if (!vuCanvas.hidden && vuCanvas.clientWidth) drawVu(silent(), 0);
@@ -126,12 +186,37 @@
         if (windowMode) {
             spectrumCanvas.hidden = m !== 'spectrum';
             vuCanvas.hidden = m !== 'vu';
+            if (modePill) modePill.hidden = spectrumCanvas.hidden;
+            if (vizWrap) vizWrap.hidden = spectrumCanvas.hidden;
             return;
         }
         const strip = collapsed();
         spectrumCanvas.hidden = m !== 'spectrum' || strip;
         vuCanvas.hidden = m === 'off' || !(strip || m === 'vu');
+        if (modePill) modePill.hidden = spectrumCanvas.hidden;
+        if (vizWrap) vizWrap.hidden = spectrumCanvas.hidden;
     }
+
+    function applyVizMode(next, { persist = true } = {}) {
+        const normalized = vc.normalizeVizMode(next);
+        if (persist) {
+            if (typeof window.music.setVizMode === 'function') window.music.setVizMode(normalized);
+            else {
+                try {
+                    if (typeof localStorage !== 'undefined') localStorage.setItem(vc.VIZ_MODE_KEY, normalized);
+                } catch { /* storage unavailable */ }
+            }
+        }
+        vizMode = normalized;
+        analogAt = 0;
+        starAt = 0;
+        syncModeUi();
+        if (!spectrumCanvas.hidden && spectrumCanvas.clientWidth) {
+            drawSpectrum(last ?? silent(), typeof performance !== 'undefined' ? performance.now() : 0);
+        }
+    }
+
+    const cycleVizMode = () => applyVizMode(vc.nextVizMode(vizMode));
 
     // ---- The loop ----
 
@@ -163,7 +248,11 @@
                 }
                 return;
             }
-            const levels = readLevels(now, { spectrum: target === 'spectrum', vu: target === 'vu' });
+            const levels = readLevels(now, {
+                spectrum: target === 'spectrum' && (vizMode === 'bars' || vizMode === 'starfield'),
+                vu: target === 'vu' || (target === 'spectrum' && vizMode === 'analog-vu'),
+                scope: target === 'spectrum' && vizMode === 'scope'
+            });
             draw(target, levels ?? silent(), now);
         },
         stopped: clear
@@ -196,7 +285,7 @@
         // The pop-out window asks for one frame: the levels of its mode. null: no music on this PC.
         api.onMusicVizPull?.(() => {
             const m = mode();
-            const levels = m === 'off' ? null : readLevels(performance.now(), { spectrum: m === 'spectrum', vu: m === 'vu' });
+            const levels = m === 'off' ? null : readLevels(performance.now(), { spectrum: m === 'spectrum', vu: true });
             api.sendMusicViz?.(levels?.playing ? vc.encodeFrame(levels.bands, levels.left, levels.right) : null);
         });
         api.onMusicRoomShown?.(shown => {
@@ -205,6 +294,15 @@
         });
     }
 
+    spectrumCanvas.addEventListener('click', cycleVizMode);
+    modePill?.addEventListener('click', event => {
+        event.stopPropagation();
+        cycleVizMode();
+    });
+    window.addEventListener('storage', event => {
+        if (event.key === vc.VIZ_MODE_KEY) applyVizMode(event.newValue, { persist: false });
+    });
+
     api.onMusic?.(next => {
         view = next ?? null;
         // A new track or the end of a pause: ask again at once.
@@ -212,7 +310,13 @@
         refresh();
     });
     Promise.resolve(api.getMusic?.()).then(value => { if (value && !view) { view = value; refresh(); } }).catch(() => {});
-    window.music.onChange?.(refresh);
+    window.music.onChange?.(() => {
+        if (typeof window.music.vizMode === 'function') {
+            const next = vc.normalizeVizMode(window.music.vizMode());
+            if (next !== vizMode) applyVizMode(next, { persist: false });
+        }
+        refresh();
+    });
     bar.addEventListener('musiclayout', refresh);
     document.addEventListener('visibilitychange', refresh);
     window.addEventListener('resize', () => { if (!loop.running()) clear(); });
@@ -222,14 +326,16 @@
         if (windowMode && roomSilent && wanted()) api.musicVizPull?.();
         else refresh();
     }, 1000);
+    syncModeUi();
     refresh();
 
     // For the checks: the loop state and the last levels (rounded).
     window.musicViz = {
-        state: () => ({ running: loop.running(), frames: loop.frames(), target: decide(), mode: mode(), roomShown,
+        state: () => ({ running: loop.running(), frames: loop.frames(), target: decide(), mode: mode(), vizMode, roomShown,
             page: document.visibilityState,
             spectrumShown: !spectrumCanvas.hidden, vuShown: !vuCanvas.hidden,
             last: last ? { bands: last.bands.map(v => Math.round(v * 100) / 100), left: Math.round(last.left * 100) / 100,
-                right: Math.round(last.right * 100) / 100 } : null })
+                right: Math.round(last.right * 100) / 100 } : null }),
+        cycleMode: cycleVizMode
     };
 })();
