@@ -66,6 +66,17 @@ Each result has one of these labels:
 Results:
 - `127.0.0.1`: `node --test test/app-events.test.mjs test/map-traffic.test.mjs test/nodemap.test.mjs test/preload-bridge.test.mjs` (45/45 passed). Full `npm test` run prior to the `test/app-events.test.mjs` assertion update: 1256 passed, 18 skipped, 2 failed (`test/app-events.test.mjs` fixed afterward, and pre-existing `test/windows-identity.test.mjs` failure on `origin/main`).
 - `this PC`: fresh `--profile` launch (`work-orders/nodemap-live-traffic/runs/run1/profile`, fake `APPDATA` `work-orders/nodemap-live-traffic/runs/run1/fake-appdata`) with zero console/runtime errors, all 4 traffic pulse kinds rendered when open, and 0 pulses when closed.
+### The friend chat window
+
+- The message list of a friend chat fills the window again. Before, the list was a thin strip when it was empty and
+  "Show older messages" was hidden. With many messages, the status line covered the top of the composer.
+- Cause: a hidden item takes no grid row, thus the list was in the wrong row. Each item now names its row.
+
+Results:
+- `test/friend-chat-layout.test.mjs` (new, a hidden Electron window, this PC): 8 states. It fails with the 1.0.6 style
+  sheet and passes with the fix.
+- `npm test` (127.0.0.1): 1275 tests, 1257 pass, 0 fail, 18 skipped.
+- Not done: the start of the full app. A game was in use on this PC.
 
 ## 1.0.6 (2026-11-23): profile pictures, several screen shares, friend status, the Settings menu and What's new
 
