@@ -1,4 +1,4 @@
-import test from 'node:test'
+import test, { describe } from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash, randomBytes } from 'node:crypto'
 import { createReadStream } from 'node:fs'
@@ -142,6 +142,7 @@ async function sendAndPause(a, b, size, name = 'large.bin') {
     return { file, offer, streams, partial: b.log.paused[0] }
 }
 
+describe('transfer resume', { concurrency: 4 }, () => {
 test('Pause keeps the partial and Resume sends only the remainder on the same route (127.0.0.1)', { timeout: 60000 }, async () => {
     const ctx = { nodes: [], dirs: [] }
     try {
@@ -547,4 +548,5 @@ test('a paused partial survives a restart of the receiver and a new offer of the
     } finally {
         await cleanup(ctx)
     }
+})
 })

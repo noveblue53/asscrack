@@ -28,6 +28,11 @@ Build:
 
 ## Unreleased
 
+- **Faster `npm test` scheduling and bounded in-file concurrency**:
+  - Added `tools/run-tests.mjs` and wired `"test": "node tools/run-tests.mjs"` in `package.json` to run `test/*.test.mjs` directly (skipping empty `test/helpers/*.mjs` spawns), schedule the top 4 slow files first and interleave the remaining slow files with fast unit files, and set an adaptive `--test-concurrency` default (`20` on 16-thread PCs). Added unit tests in `test/run-tests.test.mjs`.
+  - Enabled bounded in-file concurrency (`concurrency: 3..4`) in `test/friend-refresh.test.mjs`, `test/multi-share.test.mjs`, `test/transfer-resume-restart.test.mjs`, and `test/transfer-resume.test.mjs`, and added disjoint `FILE_PORT_BLOCKS` entries in `test/helpers/friends.mjs`.
+  - **127.0.0.1**: baseline `cmd /c start "" /belownormal /b /wait cmd /c "npm test"` — `64.38 s` (`1357` tests including `10` empty helper files, `1339` pass, `0` fail, `18` skipped); optimized 3-run `npm test` — `50.68 s`, `50.28 s`, `51.97 s` (`1353` tests, `1335` pass, `0` fail, `18` skipped); `node --test test/run-tests.test.mjs` — `6` tests, `6` pass, `0` fail.
+
 - **Companion screen audio fanout (Session 5)**: routed `/asscrack/screen-audio/1.0.0` through the active video fanout parent (`src/network/screen-audio.mjs`, `src/network/screen-share.mjs`, `src/network/node.mjs`, `src/application/screen-view.js`), implemented the Session 1 audio-mute rule for forwarding parents (keep upstream open while active audio children listen, suppress local playback when muted, close upstream when idle, and open on demand), added parent-disconnect audio failover without `screen-audio-ended`, and raised `SCREEN_AUDIO_DEFAULTS` limits (`maxListeners: 24`, `opensPerRoom: 192`).
   - **127.0.0.1**: `node --test test/screen-audio.test.mjs test/screen-fanout-streams.test.mjs test/screen-ui.test.mjs` (`44` tests, `44` pass, `0` fail).
   - **127.0.0.1**: `cmd /c start "" /belownormal /b /wait cmd /c "npm test"` (`1357` tests, `1339` pass, `0` fail, `18` skipped, `63.90 s`).

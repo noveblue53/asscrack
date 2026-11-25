@@ -1,7 +1,7 @@
 // 1.0.6: the address refresh of the friend links (friend-refresh.mjs, friend-links.mjs). 127.0.0.1 on this PC, real friend
 // nodes and a real archive in a temp folder for each side; not a LAN result. A has no inbound address (listen: [], a PC
 // behind NAT). B starts again on new ports: the saved addresses of A for B are old, and B cannot dial A. No mDNS.
-import test from 'node:test';
+import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -89,6 +89,7 @@ async function trio(t, { optsA = {}, optsB = {}, optsC = {}, friendsAC = true } 
     return { A, B, C, linksA, linksC, get linksB() { return linksB; }, ab, bc, ac, journal, restartB };
 }
 
+describe('friend refresh', { concurrency: 3 }, () => {
 test('refresh lines: the tag hides the device ID; each reader refuses a bad line', () => {
     const device = 'd'.repeat(43);
     const tag = whereTag('n'.repeat(22), device);
@@ -186,4 +187,5 @@ test('127.0.0.1 trust and limits: no answer for a device that is not a friend, n
     assert.equal(s.journal.c.some(e => e.result === 'forwarded'), false, 'no forward for an unknown device');
     assert.equal(s.journal.a.some(e => e.event === 'addrs' && e.source === 'ask'), false, 'A ignores an answer it did not ask for');
     assert.equal(s.journal.a.some(e => e.event === 'try' && e.via === 'ask'), false);
+});
 });

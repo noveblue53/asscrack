@@ -1,7 +1,7 @@
 // Multi-person screen share, step 1 (1.0.6): several members share at the same time, at most SCREEN_DEFAULTS.maxShares
 // shares in a room, each viewer watches one share and switches. The wire format of 1.0.1 to 1.0.5 does not change.
 // Real libp2p nodes on 127.0.0.1 (127.0.0.1 results on one computer, not LAN results).
-import { test } from 'node:test'
+import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
@@ -89,6 +89,7 @@ const ownEnds = nodes => {
     return ended
 }
 
+describe('multi-share', { concurrency: 4 }, () => {
 test('the share limit of a room is 3', () => {
     assert.equal(SCREEN_DEFAULTS.maxShares, 3)
 })
@@ -314,4 +315,5 @@ test('journal: the screen events carry the share ID and the peer ID, no name', {
         { share: a.shareId, peer: A.peerId, reason: undefined }])
     const text = JSON.stringify([...sharer, ...viewer])
     for (const name of ['Sharer Ann', 'Sharer Bo', 'Viewer Cy']) assert.ok(!text.includes(name), `no name in the journal (${name})`)
+})
 })

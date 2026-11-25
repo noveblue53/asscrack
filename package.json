@@ -10,7 +10,7 @@
     "install:clean": "npm ci --ignore-scripts && node node_modules/electron/install.js && node src/network/libp2p-relay-fix.mjs",
     "start": "electron .",
     "dev": "electron . --dev",
-    "test": "node --test",
+    "test": "node tools/run-tests.mjs",
     "dist": "electron-builder --win portable --publish never -c.productName=\"ASSCRACK Portable\" -c.executableName=ASSCRACK",
     "dist:installer": "electron-builder --win nsis --publish never",
     "icon": "electron build/make-icon.cjs"

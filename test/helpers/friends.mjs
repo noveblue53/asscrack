@@ -30,7 +30,10 @@ const FILE_PORT_BLOCKS = Object.freeze({
     'friend-requests.test.mjs': 30000,
     'friends-offline.test.mjs': 32000,
     'peer-addrs.test.mjs': 34000,
-    'private-messages.test.mjs': 36000
+    'private-messages.test.mjs': 36000,
+    'friend-refresh.test.mjs': 40000,
+    'friend-journal.test.mjs': 42000,
+    'friend-presence.test.mjs': 44000
 });
 const callerBlock = FILE_PORT_BLOCKS[path.basename(process.argv[1] || '')];
 const portBlockBase = callerBlock ?? 38000;
