@@ -69,13 +69,17 @@
         id: 'nm-arrow', viewBox: '0 0 10 10', refX: 7, refY: 5, markerWidth: 4.5, markerHeight: 4.5, orient: 'auto'
     });
     arrow.append(svgEl('path', { d: 'M0 0.5 L10 5 L0 9.5 z', fill: '#e07c00' }));
+    const screenArrow = svgEl('marker', {
+        id: 'nm-screen-arrow', viewBox: '0 0 10 10', refX: 7, refY: 5, markerWidth: 4.5, markerHeight: 4.5, orient: 'auto'
+    });
+    screenArrow.append(svgEl('path', { d: 'M0 0.5 L10 5 L0 9.5 z', fill: '#06b6d4' }));
     function pulseGradient(id, core, edge) {
         const g = svgEl('radialGradient', { id, cx: 0.5, cy: 0.5, r: 0.5 });
         g.append(stop(0, core, 1), stop(0.5, edge, 0.85), stop(1, edge, 0));
         return g;
     }
     defs.append(
-        gloss, shade, gold, arrow,
+        gloss, shade, gold, arrow, screenArrow,
         pulseGradient('nm-pulse-voice', '#d9ffd0', '#35d41a'),
         pulseGradient('nm-pulse-music', '#fff3c4', '#f59e0b'),
         pulseGradient('nm-pulse-screen', '#d6fbff', '#06b6d4'),
@@ -186,11 +190,19 @@
         for (const item of Array.isArray(state?.screenEdges) ? state.screenEdges : []) {
             const from = text(item?.from);
             const to = text(item?.to);
+            const sharer = text(item?.sharer) || null;
             if (!from || !to || from === to || !seen.has(from) || !seen.has(to)) continue;
             const key = `${from}|${to}`;
             if (screenKeys.has(key)) continue;
             screenKeys.add(key);
-            screenEdges.push({ from, to });
+            screenEdges.push({ from, to, sharer });
+        }
+        for (const edge of screenEdges) {
+            const forwarded = edge.sharer ? edge.from !== edge.sharer : screenEdges.some(e => e.to === edge.from);
+            if (forwarded) {
+                const node = byId.get(edge.from);
+                if (node) node.forwardingCount = (node.forwardingCount || 0) + 1;
+            }
         }
         return { host: seen.has(host) ? host : null, nodes: list, chatEdges, voice, transfers, screenEdges };
     }
@@ -264,6 +276,7 @@
         if (data.idle) facts.push('Idle peer');
         if (data.host) facts.push('Host (voice relay)');
         if (data.fullNode) facts.push('Full node (can relay)');
+        if (data.forwardingCount > 0) facts.push('Forwarding to ' + data.forwardingCount);
         if (data.linkToYou) facts.push('Chat link to you · ' + data.linkToYou);
         if (data.inVoice) facts.push((data.speaking ? 'speaks now' : data.muted ? 'in voice (muted)' : 'in voice') + (data.channel ? ' · ' + data.channel : ''));
         else facts.push('not in voice');
@@ -324,9 +337,13 @@
         for (const id of state.voice) wanted.set(`voice|${id}`, {
             kind: 'voice', from: id, to: state.host, lane: 0, title: 'Voice membership'
         });
-        for (const edge of state.screenEdges) wanted.set(`screen|${edge.from}|${edge.to}`, {
-            kind: 'screen', from: edge.from, to: edge.to, lane: 0, layer: 'voice', title: 'Screen share'
-        });
+        for (const edge of state.screenEdges) {
+            const forwarded = edge.sharer ? edge.from !== edge.sharer : state.screenEdges.some(e => e.to === edge.from);
+            wanted.set(`screen|${edge.from}|${edge.to}`, {
+                kind: 'screen', from: edge.from, to: edge.to, lane: 0, layer: 'voice',
+                title: forwarded ? 'Screen share (forwarded)' : 'Screen share'
+            });
+        }
         // Transfers between the same two nodes get different curves.
         const lanes = new Map();
         for (const transfer of state.transfers) {
@@ -356,6 +373,7 @@
                 'data-to': data.to
             });
             if (data.kind === 'transfer') element.setAttribute('marker-end', 'url(#nm-arrow)');
+            else if (data.kind === 'screen') element.setAttribute('marker-end', 'url(#nm-screen-arrow)');
             const title = data.title ? svgEl('title') : null;
             if (title) {
                 title.textContent = data.title;
@@ -419,6 +437,20 @@
         if (!a || !b) return;
         const element = edge.element;
         if (edge.kind !== 'transfer') {
+            if (edge.kind === 'screen') {
+                const dx = b.x - a.x;
+                const dy = b.y - a.y;
+                const length = Math.hypot(dx, dy);
+                if (length > NODE_R * 2 + 9) {
+                    const ux = dx / length;
+                    const uy = dy / length;
+                    element.setAttribute('x1', round(a.x + ux * (NODE_R + 3)));
+                    element.setAttribute('y1', round(a.y + uy * (NODE_R + 3)));
+                    element.setAttribute('x2', round(b.x - ux * (NODE_R + 6)));
+                    element.setAttribute('y2', round(b.y - uy * (NODE_R + 6)));
+                    return;
+                }
+            }
             element.setAttribute('x1', round(a.x));
             element.setAttribute('y1', round(a.y));
             element.setAttribute('x2', round(b.x));
@@ -546,6 +578,7 @@
             voice: state.nodes.some(node => node.inVoice),
             speaking: state.nodes.some(node => node.speaking),
             file: state.transfers.length > 0,
+            screen: state.screenEdges.length > 0,
         };
         for (const key of legend.children) key.hidden = !shown[key.dataset.legend];
         legend.hidden = !Object.values(shown).some(Boolean);

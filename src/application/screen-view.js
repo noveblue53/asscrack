@@ -330,15 +330,22 @@
         else if (decoder.state === 'configured') decoder.reset();
         decoder.configure({ codec: 'vp8', codedWidth: w.config.width, codedHeight: w.config.height, optimizeForLatency: true });
     }
+    function renderInfo(w) {
+        if (!info || !w?.config) return;
+        const base = `${w.config.width} x ${w.config.height}${w.config.fps ? `, ${w.config.fps} fps` : ''}`;
+        const via = w.parentPeerId && w.parentPeerId !== w.peerId ? ` · via ${nameOf(w.parentPeerId)}` : '';
+        info.textContent = base + via;
+    }
     // Section 2.9: the first CONFIG and each later CONFIG have the same checks. The canvas size is the coded size.
     function applyConfig(w, config, shareId = w.shareId) {
         totals.configs++;
         const result = check.checkConfig({ codec: 'vp8', ...config, shareId }, w.shareId);
         if (!result.ok) { failWatch(w); return; }
         w.config = { width: config.width, height: config.height, fps: Number.isInteger(config.fps) ? config.fps : null };
+        w.parentPeerId = typeof config?.parentPeerId === 'string' && config.parentPeerId ? config.parentPeerId : null;
         canvas.width = w.config.width;
         canvas.height = w.config.height;
-        if (info) info.textContent = `${w.config.width} x ${w.config.height}${w.config.fps ? `, ${w.config.fps} fps` : ''}`;
+        renderInfo(w);
         w.gate.config();
         try { configureDecoder(w); } catch { failWatch(w); return; }
         setNote('');
@@ -486,7 +493,10 @@
     });
     api.onScreenConfig?.(config => {
         const w = watch;
-        if (w && w.config && config?.peerId === w.peerId && (!config.shareId || config.shareId === w.shareId)) applyConfig(w, config);
+        if (w && w.config && config?.peerId === w.peerId && (!config.shareId || config.shareId === w.shareId)) {
+            applyConfig(w, config);
+            if (w.hasAudio && !audioStreaming) syncAudio();
+        }
     });
     api.onScreenFrame?.(onFrame);
     api.onScreenEnded?.(data => {
@@ -521,7 +531,10 @@
         renderBanner();
     });
     api.onPeerJoined?.(() => queueMicrotask(markLines));
-    api.onPeerName?.(() => queueMicrotask(renderBanner));
+    api.onPeerName?.(() => queueMicrotask(() => {
+        renderBanner();
+        if (watch) renderInfo(watch);
+    }));
     api.onIdlePeer?.(state => {
         idle = state?.idle === true;
         if (idle) {
@@ -550,7 +563,8 @@
         canWatch: peerId => shares.has(peerId) && !idle && !(watch && watch.peerId === peerId),
         watch: peerId => watchPeer(peerId),
         onVoiceStateChanged: () => syncAudio(),
-        stats: () => ({ ...totals, watching: watch?.peerId ?? null, watchingShare: watch?.shareId ?? null, config: watch?.config ?? null,
+        stats: () => ({ ...totals, watching: watch?.peerId ?? null, watchingShare: watch?.shareId ?? null,
+            parentPeerId: watch?.parentPeerId ?? null, config: watch?.config ?? null,
             lost: lost !== null, shares: shares.size, switcher: Boolean(switcher && !switcher.hidden), stage: !stage.hidden,
             banner: !banner.hidden, note: note?.textContent ?? '', notice: notice?.textContent ?? '',
             audioStreaming, audioControlsVisible: Boolean(audioControls && !audioControls.hidden) })

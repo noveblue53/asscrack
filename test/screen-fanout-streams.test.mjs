@@ -327,4 +327,55 @@ test('verified token rejection: forged or expired fanout token receives END refu
     assert.equal(B.screenStats().watching.forwarder.children, 0)
 })
 
+test('setScreenForwarding(0) sheds active children, respects Idle Peer, and topology().screenEdges propagates Sharer -> Forwarder -> Viewer', async t => {
+    const { nodes: [A, B, C, D] } = await meshRoom(t, 4, {
+        0: { screen: { maxDirectViewers: 1, maxChildren: 2 } },
+        1: { screen: { maxDirectViewers: 1, maxChildren: 2 } },
+        2: { screen: { maxDirectViewers: 1, maxChildren: 2 } },
+        3: { screen: { maxDirectViewers: 1, maxChildren: 2 } }
+    })
+    const bConfigs = []
+    const cConfigs = []
+    B.events.on('screen-config', c => bConfigs.push(c))
+    C.events.on('screen-config', c => cConfigs.push(c))
+
+    const enc = fakeEncoder(A)
+    t.after(enc.stop)
+    const { shareId } = await A.startScreenShare({ preset: 'standard', width: 640, height: 360 })
+    await waitFor(() => B.screenState().peers[A.peerId]?.shareId === shareId &&
+        C.screenState().peers[A.peerId]?.shareId === shareId &&
+        D.screenState().peers[A.peerId]?.shareId === shareId, 3000, 'all peers see share')
+
+    const bWatch = await B.watchScreen(A.peerId)
+    assert.equal(bWatch.parentPeerId, A.peerId)
+    assert.equal(bWatch.hop, 1)
+    assert.equal(bConfigs.at(-1).parentPeerId, A.peerId)
+
+    const cWatch = await C.watchScreen(A.peerId)
+    assert.equal(cWatch.parentPeerId, B.peerId)
+    assert.equal(cWatch.hop, 2)
+    assert.equal(cConfigs.at(-1).parentPeerId, B.peerId)
+
+    // Non-watching observer D receives Sharer -> Forwarder -> Viewer via room control state.
+    await waitFor(() => {
+        const edges = D.topology().screenEdges
+        return edges.some(e => e.from === A.peerId && e.to === B.peerId && e.sharer === A.peerId) &&
+            edges.some(e => e.from === B.peerId && e.to === C.peerId && e.sharer === A.peerId)
+    }, 3000, 'observer D sees Sharer -> Forwarder -> Viewer screenEdges')
+
+    // Opting out of forwarding on B sheds C and sets effective maxChildren = 0.
+    const fwdOff = B.setScreenForwarding(0)
+    assert.deepEqual(fwdOff, { maxChildren: 0, effectiveMaxChildren: 0 })
+    await waitFor(() => B.screenStats().watching.forwarder.children === 0, 3000, 'B sheds child C')
+    assert.equal(B.screenStats().watching.forwarder.maxChildren, 0)
+
+    // Restoring forwarding cap while Idle Peer keeps effectiveMaxChildren at 0.
+    B.setIdle(true)
+    const whileIdle = B.setScreenForwarding(2)
+    assert.deepEqual(whileIdle, { maxChildren: 2, effectiveMaxChildren: 0 })
+    B.setIdle(false)
+    const afterIdle = B.setScreenForwarding(2)
+    assert.deepEqual(afterIdle, { maxChildren: 2, effectiveMaxChildren: 2 })
+})
+
 })

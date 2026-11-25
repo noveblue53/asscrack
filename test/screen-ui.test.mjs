@@ -1016,3 +1016,28 @@ test('W5: decoder queue overflows reset to a keyframe without killing the stream
     assert.equal(f.el('screen-stage').hidden, true);
     assert.equal(f.el('screen-notice').textContent, 'Can\'t play this share on this PC.');
 });
+
+test('W5: stage info shows "via <peer>" when watching through a forwarder and updates on rename or reparent', async () => {
+    const f = load();
+    await flush();
+    f.context.peerNames.set('peer-f', 'Bob');
+    f.emit('onScreenState', { peerId: 'peer-a', sharing: true, shareId: SHARE, preset: 'auto' });
+    f.el('screen-watch').click();
+    await flush();
+    f.api.pendingWatch.resolve({ shareId: SHARE, parentPeerId: 'peer-f', hop: 2, width: 1280, height: 720, fps: 30 });
+    await flush();
+    assert.equal(f.el('screen-stage-info').textContent, '1280 x 720, 30 fps · via Bob');
+    assert.equal(f.window.screenView.stats().parentPeerId, 'peer-f');
+
+    // Peer rename updates "via <peer>" live.
+    f.context.peerNames.set('peer-f', 'Bobby');
+    f.emit('onPeerName', { peerId: 'peer-f', name: 'Bobby' });
+    await flush();
+    assert.equal(f.el('screen-stage-info').textContent, '1280 x 720, 30 fps · via Bobby');
+
+    // Seamless reparent to direct (parentPeerId === peerId) removes "via".
+    f.emit('onScreenConfig', { peerId: 'peer-a', shareId: SHARE, parentPeerId: 'peer-a', hop: 1, width: 1920, height: 1080, fps: 60 });
+    await flush();
+    assert.equal(f.el('screen-stage-info').textContent, '1920 x 1080, 60 fps');
+    assert.equal(f.window.screenView.stats().parentPeerId, 'peer-a');
+});

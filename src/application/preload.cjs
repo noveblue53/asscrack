@@ -361,6 +361,9 @@ contextBridge.exposeInMainWorld('asscrack', {
     requestScreenKey: () => ipcRenderer.send('asscrack:screen-keyreq'),
     getScreenState: () => ipcRenderer.invoke('asscrack:screen-state'),
     onScreenState: listen('asscrack:screen-state'),
+    getScreenForwarding: () => ipcRenderer.invoke('asscrack:screen-forwarding'),
+    setScreenForwarding: value => ipcRenderer.invoke('asscrack:set-screen-forwarding', typeof value === 'boolean' ? value : Number(value)),
+    onScreenForwarding: listen('asscrack:screen-forwarding'),
     // 1.0.4: { active, paused, reason } of the guard of a window share that uses the screen.
     onScreenGuard: listen('asscrack:screen-guard'),
     onScreenViewers: listen('asscrack:screen-viewers'),

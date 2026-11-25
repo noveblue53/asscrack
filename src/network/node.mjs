@@ -465,7 +465,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             all[peerId] = [...list]
             kinds[peerId] = { ...(linkKinds.get(peerId) ?? {}) }
         }
-        return { self: selfId, links: all, kinds, selfIdle, idlePeers: [...idlePeers] }
+        return { self: selfId, links: all, kinds, selfIdle, idlePeers: [...idlePeers], screenEdges: screen.screenEdges() }
     }
 
     function emitTopology() {
@@ -870,15 +870,19 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         broadcast: line => { for (const [peerId, session] of sessions) if (memberAllowed(peerId)) session.send(line) },
         openPeers: () => [...sessions.keys()].filter(filePeerAllowed),
         getTopology: topology,
+        onTopologyChanged: emitTopology,
         idle: () => selfIdle,
         canShare: () => !membership || membership.admitted(),
         onOwnStop: reason => screenAudio?.stopOwn(reason),
-        onUnwatch: reason => screenAudio?.api.unwatchScreenAudio(reason === 'switched' ? 'switched' : 'unwatched'),
+        onUnwatch: reason => screenAudio?.onVideoUnwatch(reason),
+        onWatchParentChanged: info => screenAudio?.onVideoParentChanged(info),
+        onForwarderChildLeft: (childId, shareId) => screenAudio?.onForwarderChildLeft(childId, shareId),
         options: screenOptions
     })
     screenAudio = createScreenAudio({
         events, allowed: filePeerAllowed, connectionFor: peerId => sessionConns.get(peerId) ?? null,
         getOwnShare: () => screen.getOwnShare(), getPeerShare: peerId => screen.getPeerShare(peerId),
+        getVideoWatch: () => screen.getVideoWatch(), isForwarderChild: (peerId, shareId) => screen.isForwarderChild(peerId, shareId),
         idle: () => selfIdle
     })
 

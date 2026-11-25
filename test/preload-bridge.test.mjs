@@ -404,3 +404,19 @@ test('the What\'s new calls send their IPC channel with no argument', () => {
     b.api.whatsNewDone('1.0.5');
     assert.deepEqual(b.invoked, [['asscrack:whats-new'], ['asscrack:whats-new-done']]);
 });
+
+test('the screen forwarding calls send the IPC channel and events cleanly', async () => {
+    const b = loadBridge();
+    await b.api.getScreenForwarding();
+    await b.api.setScreenForwarding(false);
+    await b.api.setScreenForwarding('3');
+    assert.deepEqual(b.invoked, [
+        ['asscrack:screen-forwarding'],
+        ['asscrack:set-screen-forwarding', false],
+        ['asscrack:set-screen-forwarding', 3]
+    ]);
+    const got = [];
+    b.api.onScreenForwarding(value => got.push(value));
+    b.emit('asscrack:screen-forwarding', { maxChildren: 0, effectiveMaxChildren: 0, idle: false });
+    assert.deepEqual(got, [{ maxChildren: 0, effectiveMaxChildren: 0, idle: false }]);
+});

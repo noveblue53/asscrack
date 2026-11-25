@@ -532,6 +532,24 @@ const closePreference = path.join(app.getPath('userData'), 'close-to-idle.json')
 let closeToTray = true;
 try { closeToTray = JSON.parse(readFileSync(closePreference, 'utf8')) !== false; } catch { /* new profile */ }
 const idleState = () => ({ idle: idlePeer, closeToTray });
+const screenForwardingPreference = path.join(app.getPath('userData'), 'screen-forwarding.json');
+const clampForwardingCap = value => (Number.isInteger(value) ? Math.max(0, Math.min(8, value)) : 2);
+let screenForwardingCap = 2;
+let lastNonZeroForwardingCap = 2;
+try {
+    const saved = JSON.parse(readFileSync(screenForwardingPreference, 'utf8'));
+    if (saved && typeof saved === 'object') {
+        screenForwardingCap = clampForwardingCap(saved.maxChildren);
+        const savedLast = clampForwardingCap(saved.lastNonZero);
+        lastNonZeroForwardingCap = savedLast > 0 ? savedLast : 2;
+    }
+} catch { /* new profile */ }
+const effectiveScreenForwardingCap = () => (idlePeer ? 0 : screenForwardingCap);
+const screenForwardingState = () => ({
+    maxChildren: screenForwardingCap,
+    effectiveMaxChildren: effectiveScreenForwardingCap(),
+    idle: idlePeer
+});
 // Gap E8: the flag file of the first close to the tray of this profile.
 const trayHintFile = path.join(app.getPath('userData'), 'tray-hint.json');
 // P9B: start at sign-in (start-at-sign-in.mjs). Only the installed build has it. The start entry starts this profile.
@@ -656,8 +674,10 @@ function restoreRoomWindow() {
     if (idlePeer) {
         idlePeer = false;
         node?.setIdle(false);
+        node?.setScreenForwarding?.(effectiveScreenForwardingCap());
         friendLinks.setAvailability({ idle: false });
         sendToWindow('asscrack:idle-peer', idleState());
+        sendToWindow('asscrack:screen-forwarding', screenForwardingState());
         node?.refreshRoutes();
     }
     if (mainWindow.isMinimized()) mainWindow.restore();
@@ -750,6 +770,7 @@ function enterIdlePeer() {
         friendLinks.setAvailability({ idle: true });
         updatePttHook(() => pttHook.setInVoice(false));
         sendToWindow('asscrack:idle-peer', idleState());
+        sendToWindow('asscrack:screen-forwarding', screenForwardingState());
     }
     mainWindow.hide();
     updateTray();
@@ -763,6 +784,24 @@ function enterIdlePeer() {
     if (firstClose) showTrayBalloon(leftVoice ? 'You left voice. ' + hint : hint);
     else if (leftVoice) showTrayBalloon('You left voice. Still in the room.');
     return true;
+}
+
+function setScreenForwarding(value) {
+    let next;
+    if (typeof value === 'boolean') {
+        next = value ? lastNonZeroForwardingCap : 0;
+    } else if (typeof value === 'number' && Number.isInteger(value)) {
+        next = clampForwardingCap(value);
+    } else {
+        throw new TypeError('Expected a screen forwarding setting');
+    }
+    if (next > 0) lastNonZeroForwardingCap = next;
+    writeFileSync(screenForwardingPreference + '.tmp', JSON.stringify({ maxChildren: next, lastNonZero: lastNonZeroForwardingCap }));
+    renameSync(screenForwardingPreference + '.tmp', screenForwardingPreference);
+    screenForwardingCap = next;
+    node?.setScreenForwarding?.(effectiveScreenForwardingCap());
+    sendToWindow('asscrack:screen-forwarding', screenForwardingState());
+    return screenForwardingState();
 }
 
 function setCloseToTray(enabled) {
@@ -833,6 +872,8 @@ handleRoomIpc('asscrack:set-startup', (_event, choice) => setStartup(choice));
 handleRoomIpc('asscrack:idle-peer', idleState);
 handleRoomIpc('asscrack:enter-idle-peer', enterIdlePeer);
 handleRoomIpc('asscrack:close-to-tray', (_event, enabled) => setCloseToTray(enabled));
+handleRoomIpc('asscrack:screen-forwarding', screenForwardingState);
+handleRoomIpc('asscrack:set-screen-forwarding', (_event, value) => setScreenForwarding(value));
 onRoomIpc('asscrack:quit', () => app.quit());
 
 // Gap E3: the values of the About dialog.
@@ -1198,6 +1239,7 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
         options.knock = { isFriend: deviceId => friendLinks.isFriend(deviceId) };
         // Room music: the YouTube source of this computer when it is the DJ (music-source.mjs).
         options.musicResolve = request => music.resolve(request);
+        options.screen = { ...options.screen, maxChildren: effectiveScreenForwardingCap() };
         try {
             node = await createAsscrackNode(options);
         } catch (err) {

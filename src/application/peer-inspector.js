@@ -22,6 +22,7 @@
     const rate = byId('peer-audio-rate');
     let members = [];
     let transfers = [];
+    let screenEdges = [];
     let selected = null;
     let choicesSignature = '';
     let previous = null;
@@ -142,6 +143,19 @@
         if (id) void refreshEvents(eventsVersion);
     }
 
+    function forwardingCountOf(id, member) {
+        let count = 0;
+        for (const edge of screenEdges) {
+            if (edge.from !== id) continue;
+            const forwarded = edge.sharer ? edge.sharer !== id : screenEdges.some(e => e.to === id);
+            if (forwarded) count++;
+        }
+        if (count === 0 && Number.isInteger(member?.forwardingCount) && member.forwardingCount > 0) {
+            return member.forwardingCount;
+        }
+        return count;
+    }
+
     function details() {
         const member = members.find(item => item.id === selected);
         summary.hidden = !selected;
@@ -157,6 +171,8 @@
         if (member.idle) lines.push('Idle peer');
         if (member.host) lines.push('Host');
         if (member.fullNode) lines.push('Full node');
+        const forwardingCount = forwardingCountOf(member.id, member);
+        if (forwardingCount > 0) lines.push('Forwarding to ' + forwardingCount);
         link.textContent = member.self ? 'This PC' : member.linkToYou || 'Unknown';
         voice.textContent = member.speaking ? 'Speaking' : member.muted ? 'In voice · muted' : member.inVoice ? 'In voice' : 'Out of voice';
         const outgoing = transfers.filter(item => item.to === selected).length;
@@ -248,6 +264,7 @@
         update(state) {
             members = state.nodes;
             transfers = state.transfers;
+            screenEdges = Array.isArray(state.screenEdges) ? state.screenEdges : [];
             if (panel.hidden) return;
             markRoster();
             if (!choices.hidden) renderChoices();

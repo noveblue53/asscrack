@@ -2749,6 +2749,7 @@ messagePanel.addEventListener('dragleave', e => {
 
 let topologyLinks = {}; // peer ID -> the peer IDs that it has a chat session with
 let topologyKinds = {}; // peer ID -> { peer ID: 'relay' | 'mesh' }, the link kinds that each peer reports
+let topologyScreenEdges = []; // active screen share forwarding edges: [{ from, to, sharer }]
 let fullNodeSelf = false; // true when this computer is a full node (getFullNode)
 let fullNodePeers = new Set(); // the peer IDs of the full nodes (getFullNode, full-node events)
 let topologySelf = null;
@@ -2757,6 +2758,7 @@ function setTopology(data) {
     if (data === null || typeof data !== 'object') return;
     if (data.links !== null && typeof data.links === 'object') topologyLinks = data.links;
     if (data.kinds !== null && typeof data.kinds === 'object') topologyKinds = data.kinds;
+    if (Array.isArray(data.screenEdges)) topologyScreenEdges = data.screenEdges;
     if (typeof data.self === 'string') topologySelf = data.self;
     idlePeerIds = new Set(Array.isArray(data.idlePeers) ? data.idlePeers : []);
     selfIdle = data.selfIdle === true;
@@ -2816,7 +2818,7 @@ function updateNodeMap() {
             active.push(entry.direction === 'send' ? { id, from: self, to: peerId } : { id, from: peerId, to: self });
         }
     }
-    window.nodeMap.update({ self, host: hostId, nodes, links: topologyLinks, kinds: topologyKinds, transfers: active });
+    window.nodeMap.update({ self, host: hostId, nodes, links: topologyLinks, kinds: topologyKinds, transfers: active, screenEdges: topologyScreenEdges });
 }
 
 window.asscrack.onTopology(setTopology);
@@ -3378,4 +3380,41 @@ document.addEventListener('keydown', e => {
     };
     api.onIdlePeer?.(state => { updates++; apply(state); });
     api.getIdlePeer?.().then(state => { if (!updates) apply(state); }).catch(() => {});
+}
+
+// Screen share forwarding preference (Settings -> System -> Forward screen shares).
+{
+    const api = window.asscrack;
+    const setting = document.getElementById('view-screen-forwarding');
+    let state = { maxChildren: 2, effectiveMaxChildren: 2, idle: false };
+    let updates = 0;
+    function apply(next) {
+        if (!next || typeof next.maxChildren !== 'number') return;
+        state = {
+            maxChildren: next.maxChildren,
+            effectiveMaxChildren: typeof next.effectiveMaxChildren === 'number' ? next.effectiveMaxChildren : next.maxChildren,
+            idle: next.idle === true
+        };
+        if (setting) {
+            setting.setAttribute('aria-checked', String(state.maxChildren > 0));
+            setting.title = state.idle
+                ? 'Paused while Idle Peer'
+                : state.maxChildren > 0
+                    ? `Relay watched screen shares (max ${state.maxChildren})`
+                    : 'Opted out of forwarding';
+        }
+    }
+    window.screenForwarding = {
+        state: () => ({ ...state }),
+        toggle: async () => {
+            try { apply(await api.setScreenForwarding?.(state.maxChildren === 0)); }
+            catch { status.textContent = 'Couldn\'t save this setting.'; }
+        },
+        setCap: async maxChildren => {
+            try { apply(await api.setScreenForwarding?.(maxChildren)); }
+            catch { status.textContent = 'Couldn\'t save this setting.'; }
+        }
+    };
+    api.onScreenForwarding?.(next => { updates++; apply(next); });
+    api.getScreenForwarding?.().then(next => { if (!updates) apply(next); }).catch(() => {});
 }

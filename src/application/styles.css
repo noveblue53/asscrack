@@ -1266,6 +1266,23 @@ body.map-open #node-map:not([data-paused]) .nm-node.speaking .nm-pulse {
   border-right: 0;
 }
 
+.sw-screen {
+  position: relative;
+  width: 16px;
+  margin-right: 5px;
+  border-top: 2px dashed #06b6d4;
+}
+
+.sw-screen::after {
+  content: '';
+  position: absolute;
+  top: -5px;
+  right: -6px;
+  border: 4px solid transparent;
+  border-left: 6px solid #06b6d4;
+  border-right: 0;
+}
+
 /* ---- Transfer table ---- */
 
 #transfer-panel {

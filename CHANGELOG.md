@@ -28,6 +28,15 @@ Build:
 
 ## Unreleased
 
+- **Screen share forwarding UI, settings, stage, inspector, and network map (Session 6)**:
+  - Added Settings -> System -> `Forward screen shares` opt-out toggle (`#view-screen-forwarding`, persisted in `screen-forwarding.json`, wired to `node.setScreenForwarding(maxChildren)` with `maxChildren = 0` on opt-out and respecting Idle Peer).
+  - Updated `#screen-stage-info` in `src/application/screen-view.js` to show `· via <peer>` when watching through a forwarder (`parentPeerId !== peerId`), updating live on peer rename and reparenting.
+  - Updated `src/application/peer-inspector.js` to show `Forwarding to N` in `#peer-detail-facts` for active forwarders.
+  - Updated `src/network/screen-share.mjs`, `src/network/node.mjs`, `src/application/renderer.js`, and `src/application/nodemap.js` to propagate active `screenEdges` (`Sharer → Forwarder → Viewer`) via room `screen-fanout` `tree` control lines and render them with cyan directional arrows and legend key.
+  - **127.0.0.1**: `node --test test/screen-fanout-streams.test.mjs test/screen-ui.test.mjs test/peer-inspector.test.mjs test/nodemap.test.mjs test/settings-menu.test.mjs test/login-menu.test.mjs test/preload-bridge.test.mjs` (`65` tests, `65` pass, `0` fail).
+  - **127.0.0.1**: `cmd /c start "" /belownormal /b /wait npm test` (`1357` tests, `1339` pass, `0` fail, `18` skipped, `64.07 s`).
+  - **this PC**: `node tools/app-smoke-check.mjs --run-dir "D:\Github Repos\asscrack-gemini\work-orders\screen-forwarding-ui\runs\smoke"` passed on CDP port `9500` in `2896 ms` (`domReady: true`, `0` console/log/stderr/stdout errors, `hasToggle: true`, `toggleChecked: "true"`, `hasLegend: true`, `hasApi: true`).
+
 - **Screen share video fanout streams and 24-viewer limits (Session 4)**: wired `src/network/screen-fanout.mjs` and `src/network/screen-forwarder.mjs` into `src/network/screen-share.mjs` and `src/network/node.mjs` with `/asscrack/screen-fanout/1.0.0`, `SCREEN_TYPE.REDIRECT` (`7`) with ephemeral Ed25519 redirect tokens, internal seamless reparenting without `screen-ended`, `screen-fanout` child/capacity reporting to the sharer, and raised limits (`maxViewers: 24`, `opensPerPeer: 24`, `opensPerRoom: 192`, `maxInboundStreams: 32`, `circuitRelayServer.reservations.maxReservations: 32`). Added 127.0.0.1 multi-node integration tests in `test/screen-fanout-streams.test.mjs`.
   - **127.0.0.1**: `node --test test/screen-fanout-streams.test.mjs` (`7` tests, `7` pass, `0` fail).
   - **127.0.0.1**: `cmd /c start "" /belownormal /b /wait npm test` (`1347` tests, `1329` pass, `0` fail, `18` skipped, `63.86 s`).

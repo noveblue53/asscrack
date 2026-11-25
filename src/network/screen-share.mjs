@@ -161,16 +161,21 @@ function allViewerIds(share) {
 // connection of the chat session. sendLine(peerId, line) and broadcast(line): control lines on the chat sessions.
 // openPeers(): the peers with an open session. idle(): Idle Peer. canShare(): the device can share (protected room).
 export function createScreenShare({ libp2p, selfId, events, allowed, connectionFor, sendLine, broadcast, openPeers,
-    getTopology = () => null, voiceBackpressure = () => false,
-    idle = () => false, canShare = () => true, onOwnStop = () => {}, onUnwatch = () => {}, options = {} }) {
+    getTopology = () => null, onTopologyChanged = () => {}, voiceBackpressure = () => false,
+    idle = () => false, canShare = () => true, onOwnStop = () => {}, onUnwatch = () => {},
+    onWatchParentChanged = () => {}, onForwarderChildLeft = () => {}, options = {} }) {
     const O = { ...SCREEN_DEFAULTS, ...options }
     const clock = () => performance.now()
     const allowOpen = roomRateLimit(O.opensPerPeer, O.opensPerRoom)
     const allowLine = roomRateLimit(O.linesPerPeer, O.linesPerRoom)
     const allowFanoutLine = roomRateLimit(O.fanoutLinesPerPeer, O.fanoutLinesPerRoom)
+    const clampMaxChildren = n => (Number.isInteger(n) ? Math.max(0, Math.min(FANOUT_DEFAULTS.maxChildrenPerNode, n)) : FANOUT_DEFAULTS.defaultGlobalMaxChildren)
+    let configuredMaxChildren = clampMaxChildren(O.maxChildren)
+    const effectiveMaxChildren = () => (idle() || own || (watch && watch.hop >= FANOUT_DEFAULTS.maxHop)) ? 0 : configuredMaxChildren
     const slotLedger = createGlobalSlotLedger({ maxShares: O.maxShares, defaultCap: O.maxChildren })
     // One entry for each member: a member has at most one share. at: the time of the first line of this share ID.
     const peers = new Map() // peerId -> { shareId, preset, audio, fanoutPub, at }
+    const peerTrees = new Map() // sharerPeerId -> [{ from, to, sharer }]
     // The open time of the session of each peer (opened). A share line on a session that opened after the own start can
     // come from an old share: its age is not known.
     const sessionOpenedAt = new Map()
@@ -236,6 +241,40 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
             events.emit('screen-encoder', view)
         }
     }
+    function ownTreeEdges() {
+        if (!own) return []
+        const seen = new Set()
+        const edges = []
+        const add = (from, to) => {
+            if (!from || !to || from === to) return
+            const key = `${from}|${to}`
+            if (seen.has(key)) return
+            seen.add(key)
+            edges.push([from, to])
+        }
+        if (own.fanout) {
+            for (const [id, node] of Object.entries(own.fanout.snapshot().nodes)) {
+                add(node.parentPeerId, id)
+            }
+        }
+        for (const peerId of own.viewers.keys()) add(selfId, peerId)
+        edges.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0))
+        return edges.slice(0, O.maxViewers)
+    }
+    function broadcastTree() {
+        if (!own) return
+        const line = JSON.stringify({
+            type: 'screen-fanout',
+            v: 1,
+            shareId: own.shareId,
+            event: 'tree',
+            edges: ownTreeEdges()
+        })
+        if (line === own.lastTree) return
+        own.lastTree = line
+        broadcast(line)
+        onTopologyChanged()
+    }
     function emitViewers() {
         const view = viewersView()
         const text = JSON.stringify(view)
@@ -264,12 +303,15 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
         // Section 2.9: a viewer that is not permitted now (for example a revoked device) loses the stream.
         for (const [peerId, v] of [...own.viewers]) if (!allowed(peerId)) endViewer(peerId, 'refused', v.stream)
         if (own.fanout) {
+            let pruned = false
             for (const peerId of Object.keys(own.fanout.snapshot().nodes)) {
                 if (!allowed(peerId)) {
                     own.fanout.onPeerLeft(peerId)
                     own.dirty = true
+                    pruned = true
                 }
             }
+            if (pruned) broadcastTree()
         }
         own.rate.evaluate()
         own.dirty = true
@@ -317,6 +359,7 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
             own.rate.flush(peerId, endRecord(reason))
             if (reason !== 'replaced') own.fanout?.onPeerLeft(peerId)
             own.dirty = true
+            broadcastTree()
         } else {
             try { stream?.send(endRecord(reason)) } catch { /* closed */ }
         }
@@ -367,7 +410,7 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
                     maxViewers: O.maxViewers,
                     maxDirectViewers: O.maxDirectViewers,
                     maxShares: O.maxShares,
-                    defaultGlobalMaxChildren: O.maxChildren,
+                    defaultGlobalMaxChildren: configuredMaxChildren,
                     ...O.fanoutOptions
                 }
             })
@@ -382,7 +425,7 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
                 congested: watch.forwarder.isCongested()
             })
         }
-        own = { shareId, quality: preset, audio: withAudio, fanoutKey, fanoutPub, fanout, viewers: new Map(), pending: new Set(), dirty: true, lastEncoder: null, lastViewers: null, rate: null,
+        own = { shareId, quality: preset, audio: withAudio, fanoutKey, fanoutPub, fanout, viewers: new Map(), pending: new Set(), dirty: true, lastEncoder: null, lastViewers: null, lastTree: null, rate: null,
             startedAt: clock() }
         const share = own
         own.rate = createScreenRate({ quality: preset, source, now: clock, params: O.rate, configRecord,
@@ -420,7 +463,7 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
         slotLedger.setOwnSharing(selfId, false)
         own = null
         if (watch?.forwarder && watch.hop < FANOUT_DEFAULTS.maxHop) {
-            watch.forwarder.setMaxChildren(O.maxChildren)
+            watch.forwarder.setMaxChildren(effectiveMaxChildren())
             sendFanoutReport(watch, {
                 event: 'capacity',
                 children: watch.forwarder.childCount(),
@@ -430,6 +473,7 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
         }
         onOwnStop(why)
         broadcast(screenLine())
+        onTopologyChanged()
         console.info(`EVENT screen share stopped reason=${why}`)
         // 1.0.6: the events of a stop carry the ID of the share that stopped.
         events.emit('screen-state', { peerId: selfId, own: true, sharing: false, shareId: share.shareId, preset: null, audio: false })
@@ -513,6 +557,7 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
                 share.dirty = true
                 state = 'watching'
                 emitViewers()
+                broadcastTree()
                 return
             }
             if (own !== share || share.viewers.get(peerId)?.stream !== stream) return
@@ -534,14 +579,39 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
                     share.rate.removeViewer(peerId)
                     share.fanout?.onPeerLeft(peerId)
                     share.dirty = true
-                    if (own === share) emitViewers()
+                    if (own === share) {
+                        emitViewers()
+                        broadcastTree()
+                    }
                 }
             })
     }
 
     function handleFanoutLine(peerId, control) {
-        if (!own?.fanout || !allowFanoutLine(peerId) || !allowed(peerId)) return
-        if (control?.v !== 1 || control.shareId !== own.shareId || !FANOUT_EVENTS.has(control.event)) return
+        if (!allowFanoutLine(peerId) || !allowed(peerId) || control?.v !== 1) return
+        if (control.event === 'tree') {
+            if (peers.get(peerId)?.shareId !== control.shareId) return
+            if (!Array.isArray(control.edges) || control.edges.length > O.maxViewers) return
+            const seen = new Set()
+            const next = []
+            for (const item of control.edges) {
+                if (!Array.isArray(item) || item.length !== 2) return
+                const [from, to] = item
+                if (typeof from !== 'string' || from.length < 1 || from.length > 128) return
+                if (typeof to !== 'string' || to.length < 1 || to.length > 128 || from === to) return
+                const key = `${from}|${to}`
+                if (seen.has(key)) continue
+                seen.add(key)
+                next.push({ from, to, sharer: peerId })
+            }
+            const prev = peerTrees.get(peerId)
+            if (JSON.stringify(prev ?? []) !== JSON.stringify(next)) {
+                peerTrees.set(peerId, next)
+                onTopologyChanged()
+            }
+            return
+        }
+        if (!own?.fanout || control.shareId !== own.shareId || !FANOUT_EVENTS.has(control.event)) return
         if (control.childPeerId !== undefined && (typeof control.childPeerId !== 'string' || control.childPeerId.length < 1 || control.childPeerId.length > 128)) return
         if (control.maxChildren !== undefined && (!Number.isInteger(control.maxChildren) || control.maxChildren < 0 || control.maxChildren > 8)) return
         if (control.congested !== undefined && typeof control.congested !== 'boolean') return
@@ -550,6 +620,7 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
         if (res.ok) {
             own.dirty = true
             emitViewers()
+            broadcastTree()
         }
     }
 
@@ -593,7 +664,9 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
         const entry = w.forwarderChildren.get(childId)
         if (!entry) return
         w.forwarderChildren.delete(childId)
+        onForwarderChildLeft(childId, w.shareId)
         closeStream(entry.stream)
+        onTopologyChanged()
     }
 
     function finishWatch(w, reason) {
@@ -617,6 +690,7 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
         if (watch === w) {
             watch = null
             onUnwatch(reason)
+            onTopologyChanged()
         }
         // 1.0.6: each end of a watch, also a stop or a switch of the user (no screen-ended event for those two).
         events.emit('screen-watch', { event: 'end', peerId: w.peerId, shareId: w.shareId, reason, frames: w.frames })
@@ -660,10 +734,11 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
                 for (const [childId, entry] of [...w.forwarderChildren]) {
                     w.forwarder.removeChild(childId, 'stopped')
                     w.forwarderChildren.delete(childId)
+                    onForwarderChildLeft(childId, w.shareId)
                     closeStream(entry.stream)
                 }
             } else {
-                w.forwarder.setMaxChildren(own ? 0 : O.maxChildren)
+                w.forwarder.setMaxChildren(effectiveMaxChildren())
             }
         }
         const connection = connectionFor(targetPeerId)
@@ -698,7 +773,7 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
             shareId: w.shareId,
             ...(O.fanout !== false ? {
                 fanout: 1,
-                maxChildren: own ? 0 : O.maxChildren,
+                maxChildren: effectiveMaxChildren(),
                 ...(w.redirectCount > 0 ? { redirectCount: w.redirectCount } : {}),
                 ...(w.failedParent ? { failedParent: w.failedParent } : {})
             } : {})
@@ -747,11 +822,16 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
                 w.failedParent = null
                 clearTimeout(w.timer)
                 w.config = { width: value.width, height: value.height, fps: value.fps ?? null }
-                events.emit('screen-config', { peerId: w.peerId, shareId: w.shareId, ...w.config })
+                events.emit('screen-config', { peerId: w.peerId, shareId: w.shareId, parentPeerId: w.parentPeerId, hop: w.hop, ...w.config })
                 w.forwarder?.onConfig(body)
+                if (w.confirmedParentPeerId !== targetPeerId) {
+                    w.confirmedParentPeerId = targetPeerId
+                    onWatchParentChanged({ peerId: w.peerId, shareId: w.shareId, parentPeerId: targetPeerId, hop })
+                }
+                onTopologyChanged()
                 if (first) {
                     events.emit('screen-watch', { event: 'start', peerId: w.peerId, shareId: w.shareId })
-                    w.resolve({ shareId: w.shareId, ...w.config })
+                    w.resolve({ shareId: w.shareId, parentPeerId: w.parentPeerId, hop: w.hop, ...w.config })
                 }
             } else if (type === TYPE.FRAME) {
                 if (!w.configured) throw new Error('FRAME before CONFIG')
@@ -819,7 +899,7 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
         const connection = connectionFor(peerId)
         if (!connection) throw new Error('No session with this member.')
         const w = {
-            peerId, shareId: share.shareId, parentPeerId: peerId, hop: 1,
+            peerId, shareId: share.shareId, parentPeerId: peerId, confirmedParentPeerId: null, hop: 1,
             stream: null, streamGen: 0, configured: false, done: false,
             reparenting: false, reparentStartedAt: null, reparentAttempts: 0, reparentTimer: null,
             redirectCount: 0, failedParent: null, lastKeyRequest: -Infinity,
@@ -835,7 +915,7 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
                 onKeyRequest: () => sendUpstreamKeyReq(w),
                 onShed: childId => closeForwarderChild(w, childId),
                 onReport: report => sendFanoutReport(w, report),
-                params: { maxChildren: own ? 0 : O.maxChildren, ...O.forwarderParams }
+                params: { maxChildren: effectiveMaxChildren(), ...O.forwarderParams }
             })
             w.forwarderPaceTimer = setInterval(() => w.forwarder?.tick(), O.paceTickMs)
             w.forwarderEvalTimer = setInterval(() => w.forwarder?.evaluate(), O.evalMs)
@@ -904,6 +984,7 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
                 if (prev && prev.stream !== stream) closeStream(prev.stream)
                 w.forwarderChildren.set(peerId, { stream })
                 state = 'watching'
+                onTopologyChanged()
                 return
             }
             if (watch !== w || w.done || w.forwarderChildren.get(peerId)?.stream !== stream) return
@@ -919,6 +1000,8 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
                 if (w.forwarderChildren.get(peerId)?.stream === stream) {
                     w.forwarderChildren.delete(peerId)
                     w.forwarder?.removeChild(peerId, 'stopped')
+                    onForwarderChildLeft(peerId, w.shareId)
+                    onTopologyChanged()
                 }
             })
     }
@@ -972,6 +1055,7 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
             // One entry for each member: a new share ID of a member replaces its old share (one event, L11).
             const openedAt = sessionOpenedAt.get(peerId)
             const unknownAge = own && openedAt !== undefined && openedAt >= own.startedAt
+            if (old?.shareId !== control.shareId && peerTrees.delete(peerId)) onTopologyChanged()
             peers.set(peerId, { shareId: control.shareId, preset, audio, fanoutPub,
                 at: old?.shareId === control.shareId ? old.at : unknownAge ? -Infinity : clock() })
             events.emit('screen-state', { peerId, sharing: true, shareId: control.shareId, preset, audio })
@@ -979,6 +1063,7 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
             checkLimit(peerId)
         } else {
             slotLedger.setOwnSharing(peerId, false)
+            if (peerTrees.delete(peerId)) onTopologyChanged()
             if (old) {
                 peers.delete(peerId)
                 events.emit('screen-state', { peerId, sharing: false, shareId: old.shareId, preset: null, audio: false })
@@ -987,34 +1072,46 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
     }
     function opened(peerId) {
         sessionOpenedAt.set(peerId, clock())
-        if (own) sendLine(peerId, screenLine())
+        if (own) {
+            sendLine(peerId, screenLine())
+            if (own.lastTree) sendLine(peerId, own.lastTree)
+        }
         checkIsolated()
     }
     function peerLeft(peerId) {
         sessionOpenedAt.delete(peerId)
         slotLedger.setOwnSharing(peerId, false)
         slotLedger.releaseAllForPeer(peerId)
+        const hadTree = peerTrees.delete(peerId)
         const old = peers.get(peerId)
         if (peers.delete(peerId)) events.emit('screen-state', { peerId, sharing: false, shareId: old.shareId, preset: null, audio: false })
         const v = own?.viewers.get(peerId)
+        let treeChanged = false
         if (v) {
             own.viewers.delete(peerId)
             own.rate.removeViewer(peerId)
             own.dirty = true
             abortStream(v.stream, 'peer left')
+            treeChanged = true
         }
         if (own?.fanout) {
             const { removed } = own.fanout.onPeerLeft(peerId)
             if (removed) {
                 own.dirty = true
                 emitViewers()
+                treeChanged = true
             }
         }
+        if (treeChanged) broadcastTree()
         const fc = watch?.forwarderChildren?.get(peerId)
         if (fc) {
             watch.forwarderChildren.delete(peerId)
             watch.forwarder?.removeChild(peerId, 'stopped')
+            onForwarderChildLeft(peerId, watch.shareId)
             abortStream(fc.stream, 'peer left')
+            onTopologyChanged()
+        } else if (hadTree) {
+            onTopologyChanged()
         }
         checkIsolated()
     }
@@ -1022,6 +1119,54 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
         if (!value) return
         stopScreenShare('idle')
         unwatchScreen()
+    }
+    function setScreenForwarding(maxChildren) {
+        configuredMaxChildren = clampMaxChildren(maxChildren)
+        const eff = effectiveMaxChildren()
+        if (watch?.forwarder) {
+            watch.forwarder.setMaxChildren(eff)
+            const entries = [...watch.forwarderChildren.entries()]
+            let shedAny = false
+            for (let i = entries.length - 1; i >= eff; i--) {
+                const [childId, entry] = entries[i]
+                watch.forwarder.removeChild(childId, 'stopped')
+                watch.forwarderChildren.delete(childId)
+                onForwarderChildLeft(childId, watch.shareId)
+                closeStream(entry.stream)
+                shedAny = true
+            }
+            sendFanoutReport(watch, {
+                event: 'capacity',
+                children: watch.forwarder.childCount(),
+                maxChildren: watch.forwarder.maxChildren(),
+                congested: watch.forwarder.isCongested()
+            })
+            if (shedAny) onTopologyChanged()
+        }
+        return { maxChildren: configuredMaxChildren, effectiveMaxChildren: eff }
+    }
+    function screenEdges() {
+        const seen = new Set()
+        const out = []
+        const add = (from, to, sharer) => {
+            if (!from || !to || from === to) return
+            const key = `${from}|${to}`
+            if (seen.has(key)) return
+            seen.add(key)
+            out.push({ from, to, sharer })
+        }
+        if (own) {
+            for (const [from, to] of ownTreeEdges()) add(from, to, selfId)
+        }
+        for (const [sharer, list] of peerTrees) {
+            if (!peers.has(sharer)) continue
+            for (const edge of list) add(edge.from, edge.to, sharer)
+        }
+        if (watch && !watch.done) {
+            if (watch.configured && watch.parentPeerId) add(watch.parentPeerId, selfId, watch.peerId)
+            for (const childId of watch.forwarderChildren.keys()) add(selfId, childId, watch.peerId)
+        }
+        return out
     }
     async function stop() {
         if (stopped) return
@@ -1041,6 +1186,7 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
             peers: Object.fromEntries([...peers].map(([peerId, value]) => [peerId, { shareId: value.shareId, preset: value.preset, audio: value.audio === true }])),
             watching: watch?.peerId ?? null,
             watchingShare: watch?.shareId ?? null,
+            watchingParent: watch?.parentPeerId ?? null,
             maxShares: O.maxShares
         }
     }
@@ -1059,16 +1205,19 @@ export function createScreenShare({ libp2p, selfId, events, allowed, connectionF
 
     return {
         handleStream, handleFanoutStream, handleLine, handleFanoutLine, opened, peerLeft, setIdle, stop,
+        screenEdges,
         getOwnShare: () => (own ? { shareId: own.shareId, audio: own.audio } : null),
         getPeerShare: peerId => {
             const p = peers.get(peerId)
             return p ? { shareId: p.shareId, audio: p.audio === true } : null
         },
+        getVideoWatch: () => (watch && !watch.done ? { peerId: watch.peerId, shareId: watch.shareId, parentPeerId: watch.parentPeerId, hop: watch.hop } : null),
+        isForwarderChild: (peerId, shareId) => Boolean(watch && !watch.done && watch.shareId === shareId && watch.forwarderChildren.has(peerId)),
         // A test hook of rule A9 and A7 (W1 check 13a, W5 check 8a).
         testRate: () => own?.rate ?? null,
         api: {
             startScreenShare, stopScreenShare, sendScreenFrame, reportScreenEncoder, setScreenSize,
-            watchScreen, unwatchScreen, requestScreenKey, screenState, screenStats
+            watchScreen, unwatchScreen, requestScreenKey, setScreenForwarding, screenState, screenStats
         }
     }
 }

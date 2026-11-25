@@ -70,3 +70,31 @@ test('peer details disambiguate names and sample received voice only while inspe
     assert.ok(transfersShown)
     assert.equal(document.activeElement, el('transfer-panel'))
 })
+
+test('peer details show Forwarding to N for active screen forwarders only', () => {
+    const ids = ['peer-details', 'peer-search', 'peer-search-field', 'peer-choices', 'peer-detail-name',
+        'peer-detail-facts', 'peer-audio-rate', 'peer-detail-link', 'peer-detail-voice', 'peer-readings', 'map-panel',
+        'peer-detail-close', 'peer-detail-activity', 'peer-activity-summary', 'peer-events-status', 'peer-recent-events',
+        'peer-detail-map', 'peer-detail-show', 'map-close', 'map-toggle', 'transfer-panel', 'peers']
+    const { window, document } = createDom(ids.map(id => ({ id, hidden: id === 'peer-details' })))
+    const el = id => document.getElementById(id)
+    el('map-toggle').addEventListener('click', () => document.body.classList.toggle('map-open'))
+    const source = readFileSync(new URL('../src/application/peer-inspector.js', import.meta.url), 'utf8')
+    runInNewContext(source, { window, document, performance: { now: () => 100 },
+        setInterval: () => 1, clearInterval() {}, setTimeout: () => 1, clearTimeout() {} })
+    window.peerInspector.update({
+        nodes: [{ id: 's', name: 'Sharer' }, { id: 'f', name: 'Fwd' }, { id: 'v1', name: 'V1' }, { id: 'v2', name: 'V2' }],
+        transfers: [],
+        screenEdges: [
+            { from: 's', to: 'f', sharer: 's' },
+            { from: 'f', to: 'v1', sharer: 's' },
+            { from: 'f', to: 'v2', sharer: 's' }
+        ]
+    })
+    assert.equal(window.peerInspector.open('f'), true)
+    assert.match(el('peer-detail-facts').textContent, /Forwarding to 2/)
+    assert.equal(window.peerInspector.open('s'), true)
+    assert.doesNotMatch(el('peer-detail-facts').textContent, /Forwarding to/)
+    assert.equal(window.peerInspector.open('v1'), true)
+    assert.doesNotMatch(el('peer-detail-facts').textContent, /Forwarding to/)
+})

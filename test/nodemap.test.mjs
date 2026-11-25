@@ -178,3 +178,35 @@ test('map polls traffic at 4 Hz only when open and renders proportional color-co
     assert.equal(pollCalls, beforeCalls)
     assert.equal(intervalFn, null)
 })
+
+test('map renders active forwarding edges (Sharer -> Forwarder -> Viewer) with arrows, legend, and node facts', () => {
+    const { document, window } = createDom([{ id: 'node-map' }, { id: 'map-legend', children:
+        ['relay', 'direct', 'relayed', 'unknown', 'full', 'voice', 'speaking', 'file', 'screen'].map(key => ({ id: key })) }])
+    const legend = document.getElementById('map-legend')
+    for (const key of legend.children) key.dataset.legend = key.id
+    document.createElementNS = (_, name) => document.createElement(name)
+    window.matchMedia = () => ({ matches: true })
+    class ResizeObserver { observe() {} }
+    const source = readFileSync(new URL('../src/application/nodemap.js', import.meta.url), 'utf8')
+    runInNewContext(source, { document, window, ResizeObserver, setTimeout: () => 1, clearTimeout() {} })
+    window.nodeMap.update({
+        self: 's', host: 's',
+        nodes: [{ id: 's', name: 'Sharer' }, { id: 'f', name: 'Forwarder' }, { id: 'v', name: 'Viewer' }],
+        links: {},
+        screenEdges: [
+            { from: 's', to: 'f', sharer: 's' },
+            { from: 'f', to: 'v', sharer: 's' }
+        ]
+    })
+    const directEdge = document.querySelector('[data-kind="screen"][data-from="s"][data-to="f"]')
+    const fwdEdge = document.querySelector('[data-kind="screen"][data-from="f"][data-to="v"]')
+    assert.ok(directEdge, 'sharer -> forwarder edge rendered')
+    assert.ok(fwdEdge, 'forwarder -> viewer edge rendered')
+    assert.equal(directEdge.getAttribute('marker-end'), 'url(#nm-screen-arrow)')
+    assert.equal(fwdEdge.getAttribute('marker-end'), 'url(#nm-screen-arrow)')
+    assert.equal(directEdge.textContent, 'Screen share')
+    assert.equal(fwdEdge.textContent, 'Screen share (forwarded)')
+    assert.equal(legend.querySelector('[data-legend="screen"]').hidden, false)
+    assert.match(document.querySelector('[data-node="f"]').textContent, /Forwarding to 1/)
+    assert.doesNotMatch(document.querySelector('[data-node="s"]').textContent, /Forwarding to/)
+})

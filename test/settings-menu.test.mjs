@@ -22,7 +22,7 @@ const GROUPS = [
     ['Chat', ['view-previews', 'view-clear-previews']],
     ['Status', ['view-availability', 'view-avatar', 'view-typing']],
     ['Sound & voice', ['view-attention', 'view-voice-settings', 'view-voice', 'detach-voice']],
-    ['System', ['view-startup', 'view-close-idle', 'view-system-buttons', 'view-updates']],
+    ['System', ['view-startup', 'view-close-idle', 'view-screen-forwarding', 'view-system-buttons', 'view-updates']],
     ['Help', ['view-shortcuts', 'view-diag', 'view-whats-new', 'view-about']]
 ];
 
@@ -142,4 +142,16 @@ test('a key that moves the focus scrolls the focused line into the menu box (the
     assert.deepEqual(scrolled.at(-1), ['view-idle', 'nearest']);
     r.key('Home');
     assert.deepEqual(scrolled.at(-1), ['view-theme', 'nearest']);
+});
+
+test('clicking Forward screen shares toggles window.screenForwarding', () => {
+    let toggled = 0;
+    const r = room({
+        globals: {
+            screenForwarding: { toggle: () => { toggled++; } }
+        }
+    });
+    r.toggle.click();
+    r.document.getElementById('view-screen-forwarding').click();
+    assert.equal(toggled, 1);
 });
