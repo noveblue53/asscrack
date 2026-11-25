@@ -41,6 +41,9 @@ Build:
   - **127.0.0.1**: `node --test test/screen-fanout.test.mjs` (`8` tests, `8` pass, `0` fail).
   - **127.0.0.1**: `cmd /c start "" /belownormal /b /wait npm test` (`1323` tests, `1305` pass, `0` fail, `18` skipped, `66.07 s`).
 
+- **Screen share forwarder per-child pacer and congestion detector (Session 3)**: added pure `src/network/screen-forwarder.mjs` and unit tests in `test/screen-forwarder.test.mjs` covering `CONFIG` caching, `CONFIG` + keyframe gating, non-blocking per-child queues with record-boundary-safe drops, slow-child isolation vs. forwarder uplink saturation, coalesced/rate-limited `KEYREQ` propagation, and periodic `allowed(childPeerId)` revocation cutoff.
+  - **127.0.0.1**: `node --test test/screen-forwarder.test.mjs` (`8` tests, `8` pass, `0` fail).
+
 ## 1.0.7 (2026-11-25): screen share audio, music visualizer modes, shade mode, network map pulses and screen rate fixes
 
 Release 1.0.7 is the seventh update of 1.0.0. A 1.0.0, 1.0.1, 1.0.2, 1.0.3, 1.0.4, 1.0.5 or 1.0.6 app gets it with
