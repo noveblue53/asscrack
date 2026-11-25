@@ -135,6 +135,27 @@ if (dataFolder.dir) {
 // What's new (release-notes.mjs): a file of an older version in the data folder, before this run writes to it.
 const oldProfile = !moveOffer && hadOldProfile(app.getPath('userData'));
 
+if (process.argv.includes('--quic-probe')) {
+    const outIndex = process.argv.indexOf('--quic-probe-out');
+    const outPath = outIndex !== -1 ? process.argv[outIndex + 1] : null;
+    app.whenReady().then(async () => {
+        let report;
+        try {
+            const { runLoopbackProbe } = await import('../network/quic-dcutr-prototype.mjs');
+            report = await runLoopbackProbe({ timeoutMs: 4000 });
+        } catch (err) {
+            report = { ok: false, error: err?.stack || err?.message || String(err) };
+        }
+        const json = `${JSON.stringify(report, null, 2)}\n`;
+        if (outPath) {
+            mkdirSync(path.dirname(outPath), { recursive: true });
+            writeFileSync(outPath, json, 'utf8');
+        }
+        process.stdout.write(json);
+        app.exit(report.ok ? 0 : 1);
+    });
+} else {
+
 // Single instance lock (F1, goal 7): only for the packaged build with the default user data folder. Electron keys the
 // lock on the user data folder. The check scripts start 2 or more copies with --profile, and npm start has no lock.
 // A second start of the same copy shows the window of the first copy and exits.
@@ -2831,3 +2852,4 @@ app.whenReady().then(async () => {
     if (startIdle) beginStartAtSignIn();
     void updates.startup();
 });
+}

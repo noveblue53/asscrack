@@ -28,6 +28,11 @@ Build:
 
 ## Unreleased
 
+- **QUIC + DCUtR prototype gate (`gemini/quic-dcutr-prototype`)**:
+  - Added `@chainsafe/libp2p-quic@2.1.6` and `@libp2p/dcutr@3.0.33` on an isolated prototype branch (`main` untouched), plus `src/network/quic-dcutr-prototype.mjs`, `test/quic-dcutr-prototype.test.mjs`, `--quic-probe` in `src/application/main.js`, and `tools/quic-dcutr-bench.mjs` for 2-NAT bilateral testing.
+  - `this PC`: `npm run install:clean` succeeded without VC++ build tools; `npm run dist` automatically unpacked `libp2p-quic.win32-x64-msvc.node` into `app.asar.unpacked`; `ASSCRACK.exe --quic-probe` passed under `onlyLoadAppFromAsar: true` and `enableEmbeddedAsarIntegrityValidation: true` (`ok: true`, `directQuicOk: true`, `echoOk: true`); `node tools/app-smoke-check.mjs` passed (`0` errors).
+  - `127.0.0.1`: `node --test test/quic-dcutr-prototype.test.mjs` (`4` pass, `0` fail) and `npm test` (`1375` tests, `1357` pass, `0` fail, `18` skipped). Measured `portReused: false` (`QuicTransport` uses a separate outbound `napi.Client` socket from the listener port), and `dcutrUpgrade.upgraded: false` on loopback (private address filter).
+
 - **Auto UPnP by default and NAT-PMP fallback**:
   - Set `Open port (UPnP)` to checked by default on Create and Join for internet rooms, added a global Settings toggle (`Open port automatically`, persisted in `auto-upnp.json`), and kept background UPnP failures silent in `#map-upnp-box` until the user clicks `Open port (UPnP)`.
   - Added zero-dependency NAT-PMP fallback (`@silentbot1/nat-api/lib/pmp/index.js` + `default-gateway`) in `src/network/port-mapper.mjs` when UPnP `externalIp()` or `portMapping()` fails, with `.unref()` call timeouts and safe socket error handling.
