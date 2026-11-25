@@ -14,6 +14,8 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { createAsscrackNode } from '../src/network/node.mjs';
 import { newRoomKey } from '../src/network/invite.mjs';
+import { SCREEN_AUDIO_DEFAULTS, SCREEN_AUDIO_PROTOCOL, SCREEN_AUDIO_TYPE } from '../src/network/screen-audio.mjs';
+import { readRecords, record, SCREEN_END } from '../src/network/screen-share.mjs';
 import {
     AUDIO_BLOCK_BYTES, AUDIO_BLOCK_FRAMES, createScreenAudioCapture, PCM_MAGIC,
     processLoopbackSupported, READY_MAGIC
@@ -400,4 +402,206 @@ test('screen-audio UI: viewer loads per-sharer prefs, mutes/unmutes/deafens by c
 
     // Clean up waitTimer interval
     document.getElementById('screen-unwatch').dispatchEvent(new Event('click'));
+});
+
+async function meshRoom(t, count) {
+    const room = `audio-fanout-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const roomKey = newRoomKey();
+    const nodes = [];
+    t.after(() => Promise.allSettled(nodes.map(n => n.stop())));
+    for (let i = 0; i < count; i++) {
+        nodes.push(await createAsscrackNode({ room, roomKey, listen: LOCAL, discovery: false, fullNode: false, ...fast }));
+    }
+    const localAddr = n => n.getMultiaddrs().find(m => m.startsWith('/ip4/127.0.0.1/') && !m.includes('p2p-circuit'));
+    for (let i = 1; i < count; i++) {
+        for (let j = 0; j < i; j++) await nodes[i].connect(localAddr(nodes[j]));
+    }
+    await waitUntil(() => nodes.every(n => nodes.every(m => m === n || n.peers().includes(m.peerId))), 20000);
+    await waitUntil(() => {
+        const topo = nodes[0].topology();
+        return nodes.every(n => nodes.every(m => m === n || topo.kinds?.[n.peerId]?.[m.peerId] === 'mesh'));
+    }, 10000);
+    return nodes;
+}
+
+function fakeEncoder(node) {
+    const tiers = new Map();
+    node.events.on('screen-encoder', e => {
+        for (const t of e.tiers) {
+            const known = tiers.get(t.tier);
+            if (!known || known.preset !== t.preset) {
+                tiers.set(t.tier, { preset: t.preset, key: true });
+                node.setScreenSize({ tier: t.tier, width: t.width, height: t.height });
+            }
+            if (t.keyFrame) tiers.get(t.tier).key = true;
+        }
+    });
+    const start = Date.now();
+    const timer = setInterval(() => {
+        for (const [tier, s] of tiers) {
+            const key = s.key;
+            s.key = false;
+            node.sendScreenFrame({ tier, key, timestampMs: Date.now() - start, data: Uint8Array.of(0x00, 0x01, 0x02, 0x03) });
+        }
+    }, 100);
+    return { stop: () => clearInterval(timer) };
+}
+
+test('screen-audio limits: maxListeners is 24 and opensPerRoom supports 24-viewer fanout', () => {
+    assert.equal(SCREEN_AUDIO_DEFAULTS.maxListeners, 24);
+    assert.ok(SCREEN_AUDIO_DEFAULTS.opensPerRoom >= 192);
+});
+
+test('screen-audio fanout (127.0.0.1): routes through video parent and rejects non-child LISTEN', { timeout: 30000 }, async t => {
+    const [A, B, C, D, E] = await meshRoom(t, 5);
+    const enc = fakeEncoder(A);
+    t.after(() => enc.stop());
+    const { shareId } = A.startScreenShare({ preset: 'standard', width: 1280, height: 720, audio: true });
+    await waitUntil(() => [B, C, D, E].every(n => n.screenState().peers[A.peerId]?.audio === true), 5000);
+
+    await B.watchScreen(A.peerId);
+    await C.watchScreen(A.peerId);
+    await D.watchScreen(A.peerId);
+    assert.equal(B.screenStats().watching.parentPeerId, A.peerId);
+    assert.equal(C.screenStats().watching.parentPeerId, B.peerId);
+    assert.equal(D.screenStats().watching.parentPeerId, B.peerId);
+
+    await B.watchScreenAudio(A.peerId);
+    await C.watchScreenAudio(A.peerId);
+    await D.watchScreenAudio(A.peerId);
+
+    await waitUntil(() =>
+        A.screenAudioStats().listeners.length === 1 &&
+        B.screenAudioStats().forwardedListeners.length === 2, 5000);
+
+    assert.deepEqual(A.screenAudioStats().listeners, [B.peerId]);
+    assert.equal(C.screenAudioStats().watching.parentPeerId, B.peerId);
+    assert.equal(D.screenAudioStats().watching.parentPeerId, B.peerId);
+    assert.deepEqual(new Set(B.screenAudioStats().forwardedListeners), new Set([C.peerId, D.peerId]));
+
+    // Non-child E attempting to open screen-audio LISTEN directly to B is refused.
+    const connEB = E.libp2p.getConnections().find(c => c.remotePeer.toString() === B.peerId);
+    const badStream = await connEB.newStream(SCREEN_AUDIO_PROTOCOL, { runOnTransientConnection: true });
+    const badRecords = [];
+    const doneBad = readRecords(badStream.source, (type, body) => badRecords.push({ type, code: body[0] }), 256).catch(() => {});
+    badStream.send(record(SCREEN_AUDIO_TYPE.LISTEN, Buffer.from(JSON.stringify({ v: 1, shareId }))));
+    await waitUntil(() => badRecords.length > 0, 5000);
+    await doneBad;
+    assert.equal(badRecords[0].type, SCREEN_AUDIO_TYPE.END);
+    assert.equal(badRecords[0].code, SCREEN_END.refused);
+
+    // Sharer sends an Opus frame; B, C, and D all receive it with sharer peerId and exact bytes.
+    const opusBytes = Uint8Array.of(0xf8, 0xaa, 0xbb, 0xcc);
+    const pB = waitFor(B.events, 'screen-audio-frame', f => f.peerId === A.peerId && f.shareId === shareId);
+    const pC = waitFor(C.events, 'screen-audio-frame', f => f.peerId === A.peerId && f.shareId === shareId);
+    const pD = waitFor(D.events, 'screen-audio-frame', f => f.peerId === A.peerId && f.shareId === shareId);
+    assert.equal(A.sendScreenAudioFrame(opusBytes), true);
+    const [fB, fC, fD] = await Promise.all([pB, pC, pD]);
+    for (const f of [fB, fC, fD]) {
+        assert.equal(f.seq, 1);
+        assert.deepEqual([...f.data], [...opusBytes]);
+    }
+});
+
+test('screen-audio parent mute rule (127.0.0.1): keeps upstream open for active child, closes when idle, opens on demand', { timeout: 30000 }, async t => {
+    const [A, B, C] = await meshRoom(t, 3);
+    const enc = fakeEncoder(A);
+    t.after(() => enc.stop());
+    const { shareId } = A.startScreenShare({ preset: 'standard', width: 1280, height: 720, audio: true });
+    await waitUntil(() => [B, C].every(n => n.screenState().peers[A.peerId]?.audio === true), 5000);
+
+    await B.watchScreen(A.peerId);
+    await C.watchScreen(A.peerId);
+    assert.equal(C.screenStats().watching.parentPeerId, B.peerId);
+
+    await B.watchScreenAudio(A.peerId);
+    await C.watchScreenAudio(A.peerId);
+    await waitUntil(() => B.screenAudioStats().forwardedListeners.includes(C.peerId), 5000);
+
+    // 1. Parent B mutes locally while child C is listening: upstream to A stays open, B suppresses local playback.
+    let bFrames = 0;
+    B.events.on('screen-audio-frame', () => { bFrames++; });
+    assert.equal(B.unwatchScreenAudio(), true);
+    assert.equal(B.screenAudioStats().watching.localListening, false);
+    assert.deepEqual(A.screenAudioStats().listeners, [B.peerId]);
+
+    const cFrame1 = waitFor(C.events, 'screen-audio-frame', f => f.peerId === A.peerId && f.shareId === shareId);
+    assert.equal(A.sendScreenAudioFrame(Uint8Array.of(0xf8, 0x11, 0x22)), true);
+    const got1 = await cFrame1;
+    assert.deepEqual([...got1.data], [0xf8, 0x11, 0x22]);
+    assert.equal(bFrames, 0, 'muted parent B suppresses local screen-audio-frame');
+
+    // 2. Last audio child C mutes: B closes upstream audio stream to A.
+    assert.equal(C.unwatchScreenAudio(), true);
+    await waitUntil(() => A.screenAudioStats().listeners.length === 0 && B.screenAudioStats().watching === null, 5000);
+
+    // 3. While B is still muted, C unmutes: B opens upstream audio on demand and forwards to C without local playback.
+    await C.watchScreenAudio(A.peerId);
+    await waitUntil(() =>
+        A.screenAudioStats().listeners.includes(B.peerId) &&
+        B.screenAudioStats().watching?.localListening === false &&
+        B.screenAudioStats().forwardedListeners.includes(C.peerId), 5000);
+
+    const cFrame2 = waitFor(C.events, 'screen-audio-frame', f => f.peerId === A.peerId && f.shareId === shareId);
+    assert.equal(A.sendScreenAudioFrame(Uint8Array.of(0xf8, 0x33, 0x44)), true);
+    const got2 = await cFrame2;
+    assert.deepEqual([...got2.data], [0xf8, 0x33, 0x44]);
+    assert.equal(bFrames, 0, 'on-demand forwarder B still suppresses local playback while muted');
+
+    // 4. B unmutes: reuses existing upstream stream and receives local frames again.
+    await B.watchScreenAudio(A.peerId);
+    assert.equal(B.screenAudioStats().watching.localListening, true);
+    const bFrame3 = waitFor(B.events, 'screen-audio-frame', f => f.peerId === A.peerId && f.shareId === shareId);
+    const cFrame3 = waitFor(C.events, 'screen-audio-frame', f => f.peerId === A.peerId && f.shareId === shareId);
+    assert.equal(A.sendScreenAudioFrame(Uint8Array.of(0xf8, 0x55, 0x66)), true);
+    await Promise.all([bFrame3, cFrame3]);
+});
+
+test('screen-audio parent-disconnect failover (127.0.0.1): children reparent audio without screen-audio-ended', { timeout: 30000 }, async t => {
+    const [A, B, C, D] = await meshRoom(t, 4);
+    const enc = fakeEncoder(A);
+    t.after(() => enc.stop());
+    const { shareId } = A.startScreenShare({ preset: 'standard', width: 1280, height: 720, audio: true });
+    await waitUntil(() => [B, C, D].every(n => n.screenState().peers[A.peerId]?.audio === true), 5000);
+
+    await B.watchScreen(A.peerId);
+    await C.watchScreen(A.peerId);
+    await D.watchScreen(A.peerId);
+    assert.equal(C.screenStats().watching.parentPeerId, B.peerId);
+    assert.equal(D.screenStats().watching.parentPeerId, B.peerId);
+
+    await B.watchScreenAudio(A.peerId);
+    await C.watchScreenAudio(A.peerId);
+    await D.watchScreenAudio(A.peerId);
+    await waitUntil(() => B.screenAudioStats().forwardedListeners.length === 2, 5000);
+
+    const cEnded = [];
+    const dEnded = [];
+    C.events.on('screen-audio-ended', e => cEnded.push(e));
+    D.events.on('screen-audio-ended', e => dEnded.push(e));
+
+    const pC1 = waitFor(C.events, 'screen-audio-frame', f => f.peerId === A.peerId && f.shareId === shareId);
+    const pD1 = waitFor(D.events, 'screen-audio-frame', f => f.peerId === A.peerId && f.shareId === shareId);
+    assert.equal(A.sendScreenAudioFrame(Uint8Array.of(0xf8, 0x01)), true);
+    await Promise.all([pC1, pD1]);
+
+    // Disconnect parent B mid-stream.
+    await B.stop();
+
+    await waitUntil(() =>
+        C.screenStats().watching?.parentPeerId !== B.peerId &&
+        D.screenStats().watching?.parentPeerId !== B.peerId &&
+        C.screenAudioStats().watching?.parentPeerId === C.screenStats().watching?.parentPeerId &&
+        D.screenAudioStats().watching?.parentPeerId === D.screenStats().watching?.parentPeerId &&
+        A.screenAudioStats().listeners.length >= 1, 15000);
+
+    assert.equal(cEnded.length, 0, 'C did not emit screen-audio-ended on parent disconnect');
+    assert.equal(dEnded.length, 0, 'D did not emit screen-audio-ended on parent disconnect');
+
+    const pC2 = waitFor(C.events, 'screen-audio-frame', f => f.peerId === A.peerId && f.shareId === shareId && f.seq >= 2);
+    const pD2 = waitFor(D.events, 'screen-audio-frame', f => f.peerId === A.peerId && f.shareId === shareId && f.seq >= 2);
+    assert.equal(A.sendScreenAudioFrame(Uint8Array.of(0xf8, 0x02, 0x03)), true);
+    const [fC2, fD2] = await Promise.all([pC2, pD2]);
+    assert.deepEqual([...fC2.data], [0xf8, 0x02, 0x03]);
+    assert.deepEqual([...fD2.data], [0xf8, 0x02, 0x03]);
 });

@@ -28,6 +28,10 @@ Build:
 
 ## Unreleased
 
+- **Companion screen audio fanout (Session 5)**: routed `/asscrack/screen-audio/1.0.0` through the active video fanout parent (`src/network/screen-audio.mjs`, `src/network/screen-share.mjs`, `src/network/node.mjs`, `src/application/screen-view.js`), implemented the Session 1 audio-mute rule for forwarding parents (keep upstream open while active audio children listen, suppress local playback when muted, close upstream when idle, and open on demand), added parent-disconnect audio failover without `screen-audio-ended`, and raised `SCREEN_AUDIO_DEFAULTS` limits (`maxListeners: 24`, `opensPerRoom: 192`).
+  - **127.0.0.1**: `node --test test/screen-audio.test.mjs test/screen-fanout-streams.test.mjs test/screen-ui.test.mjs` (`44` tests, `44` pass, `0` fail).
+  - **127.0.0.1**: `cmd /c start "" /belownormal /b /wait cmd /c "npm test"` (`1357` tests, `1339` pass, `0` fail, `18` skipped, `63.90 s`).
+
 - **Screen share forwarding UI, settings, stage, inspector, and network map (Session 6)**:
   - Added Settings -> System -> `Forward screen shares` opt-out toggle (`#view-screen-forwarding`, persisted in `screen-forwarding.json`, wired to `node.setScreenForwarding(maxChildren)` with `maxChildren = 0` on opt-out and respecting Idle Peer).
   - Updated `#screen-stage-info` in `src/application/screen-view.js` to show `· via <peer>` when watching through a forwarder (`parentPeerId !== peerId`), updating live on peer rename and reparenting.
