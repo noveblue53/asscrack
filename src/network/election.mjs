@@ -11,6 +11,8 @@
 //   onLost({ peerId, term, reason })  called when this member loses the host (rule 5; diagnostics, 1.0.1). reason:
 //                         'timeout' (no heartbeat), 'closed' (the session of the host closed) or 'not-allowed'
 //   isFullNode(peerId)    true when that peer accepts incoming TCP; the rank puts full nodes first, then the lower peer ID
+//   hostAllowed(peerId)   optional predicate; only peers passing hostAllowed (canHost / hostGrant) are eligible for
+//                         room-host and voice-host election (a circuit-relay full node without hostAllowed is skipped)
 export function createElection({
     selfId,
     sendTo,
@@ -57,7 +59,7 @@ export function createElection({
         broadcast(announcement())
     }
 
-    // Rank: a full node comes before a node that is not a full node.
+    // Rank: among hostAllowed peers, a full node comes before a node that is not a full node.
     // Inside each group, the lower peer ID comes first.
     function lowest(ids) {
         let best = null

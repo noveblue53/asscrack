@@ -1,6 +1,10 @@
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
+import { createServer } from 'node:net'
+import { once } from 'node:events'
 import { createAsscrackNode } from '../src/network/node.mjs'
+import { newRoomKey, readInvite } from '../src/network/invite.mjs'
+import { createDeviceIdentity, createRoomMembership, restoreRoomMembership } from '../src/network/room-membership.mjs'
 
 const LOCAL = ['/ip4/127.0.0.1/tcp/0']
 
@@ -129,6 +133,66 @@ test("'auto' without allowPrivateFullNode gives no full node on 127.0.0.1", { ti
         assert.equal(N.fullNode(), false)
         assert.equal(P.fullNode(), false)
         assert.deepEqual(N.fullNodes(), [])
+    } finally {
+        await stopAll(nodes)
+    }
+})
+
+test('protected non-host admitted member becomes a circuit-relay Full Node without host or voice-host eligibility', { timeout: 35000 }, async () => {
+    const room = `any-relay-${Date.now()}`
+    const roomKey = newRoomKey()
+    const socket = createServer().listen(0, '127.0.0.1')
+    await once(socket, 'listening')
+    const ownerAddr = `/ip4/127.0.0.1/tcp/${socket.address().port}`
+    await new Promise(resolve => socket.close(resolve))
+
+    const nodes = []
+    try {
+        const owner = await createAsscrackNode({
+            room, roomKey,
+            membership: createRoomMembership({ identity: createDeviceIdentity(), room, roomKey }),
+            listen: [ownerAddr], announce: [ownerAddr], discovery: false,
+            fullNode: true, allowPrivateFullNode: true, ...fast
+        })
+        nodes.push(owner)
+
+        async function joinMember(canHost, extra) {
+            const identity = createDeviceIdentity()
+            const invite = readInvite(owner.createMemberInvite(identity.id, { canHost }))
+            const member = restoreRoomMembership({ identity, room, roomKey, descriptor: invite.membership })
+            const node = await createAsscrackNode({ room, roomKey, membership: member, discovery: false, ...fast, ...extra })
+            nodes.push(node)
+            await node.connect(ownerAddr)
+            await waitFor(() => node.peers().includes(owner.peerId) && owner.peers().includes(node.peerId), 10000, 'admitted')
+            return node
+        }
+
+        const relayMember = await joinMember(false, { listen: LOCAL, fullNode: 'auto', allowPrivateFullNode: true })
+        await waitFor(() => relayMember.fullNode() === true && owner.fullNodes().includes(relayMember.peerId), 10000, 'relayMember becomes Full Node')
+        assert.equal(relayMember.canRelay(), true)
+        assert.equal(relayMember.memberState().canHost, false)
+
+        const a = await joinMember(false, { relayOnly: true, fullNode: false, allowPrivateFullNode: true })
+        const b = await joinMember(false, { relayOnly: true, fullNode: false, allowPrivateFullNode: true })
+        await waitFor(() => a.fullNodes().includes(relayMember.peerId) && b.fullNodes().includes(relayMember.peerId), 10000, 'A and B see relayMember as Full Node')
+        await waitFor(() => a.topology().kinds[a.peerId]?.[relayMember.peerId] === 'mesh' &&
+            b.topology().kinds[b.peerId]?.[relayMember.peerId] === 'mesh', 10000, 'A and B upgraded to direct TCP with relayMember')
+
+        // Stop the owner so relayMember is the only Full Node in the room.
+        await owner.stop()
+        await waitFor(() => !a.peers().includes(owner.peerId) && !b.peers().includes(owner.peerId), 10000, 'owner left')
+
+        // A and B still chat through relayMember's circuit relay, and relayMember is NOT elected host.
+        await waitFor(() => a.peers().includes(b.peerId) && b.peers().includes(a.peerId), 15000, 'A-B session through relayMember')
+        const gotB = []
+        b.events.on('message', m => gotB.push(m))
+        a.send('via non-host relay')
+        await waitFor(() => gotB.some(m => m.text === 'via non-host relay'), 10000, 'B receives message via relayMember')
+
+        await new Promise(r => setTimeout(r, 800))
+        assert.equal(relayMember.isHost(), false)
+        assert.notEqual(a.host()?.peerId, relayMember.peerId)
+        assert.notEqual(b.host()?.peerId, relayMember.peerId)
     } finally {
         await stopAll(nodes)
     }

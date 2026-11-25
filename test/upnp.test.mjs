@@ -337,7 +337,7 @@ test('enableUpnp() is false for a LAN room, a typed address, fullNode not auto a
     }
 })
 
-test('enableUpnp() maps a port for a non-host member without granting relay/full-node role', { timeout: 15000 }, async () => {
+test('enableUpnp() maps a port for an unadmitted non-host member without activating full-node or host role', { timeout: 15000 }, async () => {
     const igd = await startIgd({ externalIp: PUBLIC_IP })
     const { newRoomKey, readInvite } = await import('../src/network/invite.mjs')
     const { createDeviceIdentity, createRoomMembership, restoreRoomMembership } = await import('../src/network/room-membership.mjs')
@@ -357,7 +357,8 @@ test('enableUpnp() maps a port for a non-host member without granting relay/full
     try {
         const events = upnpEvents(member)
         assert.equal(member.fullNode(), false)
-        assert.equal(member.libp2p.services.relay, undefined)
+        assert.equal(member.canRelay(), false)
+        assert.equal(member.memberState().canHost, false)
         assert.equal(member.enableUpnp(), true)
         assert.equal(member.upnpPending(), true)
         await waitFor(() => events.length === 1)
@@ -366,7 +367,8 @@ test('enableUpnp() maps a port for a non-host member without granting relay/full
         assert.equal(member.upnpPending(), false)
         assert.deepEqual(member.publicAddrs(), [`/ip4/${PUBLIC_IP}/tcp/${port}`])
         assert.equal(member.fullNode(), false)
-        assert.equal(member.libp2p.services.relay, undefined)
+        assert.equal(member.canRelay(), false)
+        assert.equal(member.memberState().canHost, false)
     } finally {
         await Promise.allSettled([member.stop(), owner.stop()])
         await igd.close()
@@ -401,13 +403,13 @@ test('non-host member directAddrs upgrades a relayed session to a direct TCP con
     const memberA = await createAsscrackNode({
         room: 'u15', roomKey,
         membership: restoreRoomMembership({ identity: aId, room: 'u15', roomKey, descriptor: aInvite.membership }),
-        listen: LISTEN, discovery: false, upnp: false, allowPrivateFullNode: true
+        listen: LISTEN, discovery: false, upnp: false, fullNode: false, allowPrivateFullNode: true
     })
     const memberB = await createAsscrackNode({
         room: 'u15', roomKey,
         membership: restoreRoomMembership({ identity: bId, room: 'u15', roomKey, descriptor: bInvite.membership }),
         listen: [`/ip4/127.0.0.1/tcp/${bPort}`], announce: [`/ip4/127.0.0.1/tcp/${bPort}`],
-        discovery: false, upnp: false, allowPrivateFullNode: true
+        discovery: false, upnp: false, fullNode: false, allowPrivateFullNode: true
     })
     try {
         const leftA = []

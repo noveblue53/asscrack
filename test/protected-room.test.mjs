@@ -123,7 +123,7 @@ test('127.0.0.1 protected nodes enforce admission, role, revocation, and authori
     await waitFor(() => alternate.voiceStats().streams === 0, 'leaving voice closes authorized streams')
 })
 
-test('only an admitted device granted the Internet relay role can act as a full node', { timeout: 25000 }, async t => {
+test('any admitted non-host member in an Internet room can act as a circuit-relay Full Node without host eligibility', { timeout: 25000 }, async t => {
     const roomKey = newRoomKey()
     const membership = createRoomMembership({ identity: createDeviceIdentity(), room, roomKey })
     const socket = createServer().listen(0, '127.0.0.1')
@@ -138,38 +138,48 @@ test('only an admitted device granted the Internet relay role can act as a full 
         nodes.push(node)
         return node
     }
-    const owner = await start({ membership, name: 'Owner', listen: [ownerAddress], announce: [ownerAddress], fullNode: true })
+    const owner = await start({ membership, name: 'Owner', listen: [ownerAddress], announce: [ownerAddress], fullNode: true, allowPrivateFullNode: true })
     async function issue(name, canHost, options) {
         const identity = createDeviceIdentity()
         const invitation = readInvite(owner.createMemberInvite(identity.id, { canHost }))
         const member = restoreRoomMembership({ identity, room, roomKey, descriptor: invitation.membership })
         return start({ membership: member, name, ...options })
     }
-    const ordinary = await issue('Participant', false, { fullNode: true })
+    const ordinary = await issue('Participant', false, { fullNode: true, allowPrivateFullNode: true })
     let routerChecks = 0
     const automatic = await issue('Another participant', false, {
         fullNode: 'auto', allowPrivateFullNode: true, upnp: true,
         upnpClient: { async externalIp() { routerChecks++; return '100.64.0.1' } }
     })
+    assert.equal(ordinary.fullNode(), false, 'unadmitted non-host member is not a full node')
     await ordinary.connect(localAddress(owner))
     await automatic.connect(localAddress(owner))
-    await waitFor(() => ordinary.topology().kinds[ordinary.peerId][automatic.peerId] === 'relay', 'ordinary members use the owner circuit')
     await waitFor(() => routerChecks === 1, 'non-host member can run UPnP discovery')
-    assert.equal(ordinary.fullNode(), false)
-    assert.equal(automatic.fullNode(), false)
-    assert.equal(ordinary.libp2p.services.relay, undefined)
-    assert.equal(automatic.libp2p.services.relay, undefined)
+    await waitFor(() => ordinary.fullNode() === true && automatic.fullNode() === true, 'admitted non-host members activate as full nodes')
+    assert.equal(ordinary.memberState().canHost, false)
+    assert.equal(automatic.memberState().canHost, false)
+    assert.ok(ordinary.libp2p.services.relay !== undefined)
+    assert.ok(automatic.libp2p.services.relay !== undefined)
     assert.equal(routerChecks, 1)
 
-    const trusted = await issue('Trusted alternate', true, { fullNode: true })
-    assert.equal(trusted.fullNode(), false, 'a signed invitation alone does not activate a relay')
-    await trusted.connect(localAddress(owner))
-    await waitFor(() => trusted.fullNode() && owner.fullNodes().includes(trusted.peerId), 'live admission activates the alternate')
+    const relayOnlyMember = await issue('Relay only', false, { relayOnly: true, fullNode: 'auto', allowPrivateFullNode: true })
+    await relayOnlyMember.connect(localAddress(owner))
+    await waitFor(() => relayOnlyMember.peers().includes(owner.peerId), 'relayOnly member admitted')
+    assert.equal(relayOnlyMember.fullNode(), false)
+    assert.equal(relayOnlyMember.canRelay(), false)
 
-    const presence = once(owner.events, 'presence')
-    assert.equal(ordinary.sendTo(owner.peerId, { type: 'node', fullNode: true, addrs: [ownerAddress] }), true)
-    ordinary.setPresence({ state: 'dnd', note: 'Role check complete' })
-    assert.equal((await presence)[0].peerId, ordinary.peerId)
-    assert.deepEqual(owner.fullNodes(), [trusted.peerId])
-    assert.ok(!Object.hasOwn(owner.knownFullNodes(), ordinary.peerId))
+    const trusted = await issue('Trusted alternate', true, { fullNode: false, allowPrivateFullNode: true })
+    await trusted.connect(localAddress(owner))
+    await waitFor(() => trusted.peers().includes(owner.peerId), 'trusted alternate admitted')
+    assert.equal(trusted.fullNode(), false)
+    await waitFor(() => owner.fullNodes().includes(ordinary.peerId) && owner.fullNodes().includes(automatic.peerId), 'owner sees non-host full nodes')
+    await trusted.connect(localAddress(automatic))
+    await waitFor(() => trusted.peers().includes(automatic.peerId) && automatic.peers().includes(trusted.peerId), 'trusted connected to automatic')
+
+    // When owner stops, only trusted (canHost: true) can take over as host — never ordinary or automatic.
+    await owner.stop()
+    nodes.shift()
+    await waitFor(() => trusted.isHost() && automatic.host()?.peerId === trusted.peerId, 'only canHost alternate takes over')
+    assert.equal(ordinary.isHost(), false)
+    assert.equal(automatic.isHost(), false)
 })

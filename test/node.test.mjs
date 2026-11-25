@@ -4,7 +4,11 @@ import { randomBytes } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 import { pushable } from 'it-pushable'
 import { multiaddr } from '@multiformats/multiaddr'
+import { createServer } from 'node:net'
+import { once } from 'node:events'
 import { createAsscrackNode, CHAT_PROTOCOL, roomServiceTag } from '../src/network/node.mjs'
+import { newRoomKey, readInvite } from '../src/network/invite.mjs'
+import { createDeviceIdentity, createRoomMembership, restoreRoomMembership } from '../src/network/room-membership.mjs'
 
 const uniqueRoom = prefix => `${prefix}-${process.pid}-${Date.now()}-${randomBytes(4).toString('hex')}`
 
@@ -352,4 +356,89 @@ test('a links line that is not valid causes no topology change and no warning', 
         await b.stop()
         await a.stop()
     }
+})
+
+test('admitted non-host member with open port becomes a Full Node without host eligibility; LAN/relayOnly/revoked cannot', { timeout: 25000 }, async t => {
+    const room = uniqueRoom('any-member-relay')
+    const roomKey = newRoomKey()
+    const socket = createServer().listen(0, '127.0.0.1')
+    await once(socket, 'listening')
+    const ownerAddr = `/ip4/127.0.0.1/tcp/${socket.address().port}`
+    await new Promise(resolve => socket.close(resolve))
+
+    const nodes = []
+    t.after(() => Promise.allSettled(nodes.map(n => n.stop())))
+    const timing = { discovery: false, heartbeatInterval: 100, hostTimeout: 700, electionDelay: 350 }
+
+    const ownerMembership = createRoomMembership({ identity: createDeviceIdentity(), room, roomKey })
+    const owner = await createAsscrackNode({
+        room, roomKey, membership: ownerMembership, listen: [ownerAddr], announce: [ownerAddr],
+        fullNode: true, allowPrivateFullNode: true, ...timing
+    })
+    nodes.push(owner)
+
+    const memberId = createDeviceIdentity()
+    const invite = readInvite(owner.createMemberInvite(memberId.id, { canHost: false }))
+    const memberMembership = restoreRoomMembership({ identity: memberId, room, roomKey, descriptor: invite.membership })
+    const member = await createAsscrackNode({
+        room, roomKey, membership: memberMembership, listen: ['/ip4/127.0.0.1/tcp/0'],
+        fullNode: 'auto', allowPrivateFullNode: true, ...timing
+    })
+    nodes.push(member)
+
+    // Before admission: canRelay() is false and fullNode() is false.
+    assert.equal(member.canRelay(), false)
+    assert.equal(member.fullNode(), false)
+
+    await member.connect(ownerAddr)
+    await waitFor(() => member.peers().includes(owner.peerId) && owner.peers().includes(member.peerId))
+    await waitFor(() => member.fullNode() === true && owner.fullNodes().includes(member.peerId))
+
+    assert.equal(member.canRelay(), true)
+    assert.equal(member.memberState().canHost, false)
+    await waitFor(() => member.host()?.peerId === owner.peerId && owner.isHost())
+    assert.equal(member.isHost(), false)
+
+    // Forged host announcement from non-host Full Node is ignored.
+    assert.equal(member.sendTo(owner.peerId, { type: 'host', host: member.peerId, term: 99 }), true)
+    await delay(200)
+    assert.equal(owner.host()?.peerId, owner.peerId)
+    assert.equal(member.isHost(), false)
+
+    // relayOnly non-host member cannot relay or become a Full Node.
+    const relayOnlyId = createDeviceIdentity()
+    const relayOnlyInvite = readInvite(owner.createMemberInvite(relayOnlyId.id, { canHost: false }))
+    const relayOnlyMember = await createAsscrackNode({
+        room, roomKey,
+        membership: restoreRoomMembership({ identity: relayOnlyId, room, roomKey, descriptor: relayOnlyInvite.membership }),
+        relayOnly: true, allowPrivateFullNode: true, ...timing
+    })
+    nodes.push(relayOnlyMember)
+    await relayOnlyMember.connect(ownerAddr)
+    await waitFor(() => relayOnlyMember.peers().includes(owner.peerId))
+    assert.equal(relayOnlyMember.canRelay(), false)
+    assert.equal(relayOnlyMember.fullNode(), false)
+
+    // LAN non-host member cannot relay or become a Full Node.
+    const lanOwner = await createAsscrackNode({
+        room, roomKey, membership: createRoomMembership({ identity: createDeviceIdentity(), room, roomKey, lan: true }),
+        listen: ['/ip4/127.0.0.1/tcp/0'], ...timing
+    })
+    nodes.push(lanOwner)
+    const lanId = createDeviceIdentity()
+    const lanInvite = readInvite(lanOwner.createMemberInvite(lanId.id, { canHost: false }))
+    const lanMember = await createAsscrackNode({
+        room, roomKey,
+        membership: restoreRoomMembership({ identity: lanId, room, roomKey, descriptor: lanInvite.membership }),
+        listen: ['/ip4/127.0.0.1/tcp/0'], allowPrivateFullNode: true, ...timing
+    })
+    nodes.push(lanMember)
+    await lanMember.connect(lanOwner.getMultiaddrs()[0])
+    await waitFor(() => lanMember.peers().includes(lanOwner.peerId))
+    assert.equal(lanMember.canRelay(), false)
+    assert.equal(lanMember.fullNode(), false)
+
+    // Revocation disables canRelay() and fullNode() on the non-host Full Node.
+    assert.equal(owner.revokeMember(memberId.id), true)
+    await waitFor(() => !member.canRelay() && !member.fullNode())
 })
