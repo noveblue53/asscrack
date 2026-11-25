@@ -284,7 +284,7 @@ test('the row buttons and the menus call the same action functions', async () =>
 
 test('nodemap.js highlights a node by peer ID with a data attribute', async () => {
     const source = await read('nodemap.js');
-    assert.ok(source.includes('window.nodeMap = { update, highlight, select }'));
+    assert.ok(source.includes('window.nodeMap = { update, highlight, select, setOpen, feedTraffic }'));
     assert.ok(source.includes("node.group.setAttribute('data-highlight', 'true')"));
     assert.ok(source.includes('highlight() { return false; }'));
 });
