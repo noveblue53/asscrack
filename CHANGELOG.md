@@ -7,6 +7,19 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased
+
+### Music pop-out shade mode and pin toggle
+
+- The music pop-out window has a custom title bar with a shade button and a pin button.
+- The shade button (or a double-click on the title bar) collapses the window to a 48 px bar. The bar shows a scrolling title, a small visualizer, playback buttons, and volume.
+- The pin button sets the window to stay above other windows.
+- `music-window-state.json` saves the shade state, the pin state, and the shade bounds between runs. `music-window.json` keeps the full-window bounds.
+- Results:
+  - `node --test test/music-popout.test.mjs test/music-viz.test.mjs`: 22 tests, 22 pass, 0 fail (127.0.0.1).
+  - `npm test`: 1277 tests, 1258 pass, 1 fail, 18 skipped (127.0.0.1). The 1 failure is in `test/windows-identity.test.mjs` because the path has a space (`%20` in `URL.pathname`). It also fails on the base commit.
+  - Live Electron run with `--profile` and fake `APPDATA`: full mode, 48 px shade mode, marquee scroll, pin toggle, and reopened state pass with 0 console errors and 0 clipping (this PC).
+
 ## 1.0.6 (2026-11-23): profile pictures, several screen shares, friend status, the Settings menu and What's new
 
 Release 1.0.6 is the sixth update of 1.0.0. A 1.0.0, 1.0.1, 1.0.2, 1.0.3, 1.0.4 or 1.0.5 app gets it with the signed

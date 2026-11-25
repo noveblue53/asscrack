@@ -27,5 +27,14 @@ contextBridge.exposeInMainWorld('asscrack', {
     onMusicSettings: listen('asscrack:music-window-settings-changed'),
     // The visualizer: ask the room window for one frame; the frame comes back (18 bytes, or null).
     musicVizPull: () => ipcRenderer.send('asscrack:music-window-viz-pull'),
-    onMusicViz: listen('asscrack:music-window-viz')
+    onMusicViz: listen('asscrack:music-window-viz'),
+    getMusicWindowState: () => ipcRenderer.invoke('asscrack:music-window-ui-state'),
+    setMusicWindowState: patch => {
+        const clean = {};
+        if (patch && typeof patch.shaded === 'boolean') clean.shaded = patch.shaded;
+        if (patch && typeof patch.pinned === 'boolean') clean.pinned = patch.pinned;
+        return ipcRenderer.invoke('asscrack:music-window-set-ui-state', clean);
+    },
+    onMusicWindowState: listen('asscrack:music-window-ui-state-changed'),
+    musicWindowAction: action => ipcRenderer.invoke('asscrack:music-window-action', text(action))
 });
