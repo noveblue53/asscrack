@@ -336,3 +336,101 @@ test('enableUpnp() is false for a LAN room, a typed address, fullNode not auto a
         await Promise.allSettled(nodes.map(node => node.stop()))
     }
 })
+
+test('enableUpnp() maps a port for a non-host member without granting relay/full-node role', { timeout: 15000 }, async () => {
+    const igd = await startIgd({ externalIp: PUBLIC_IP })
+    const { newRoomKey, readInvite } = await import('../src/network/invite.mjs')
+    const { createDeviceIdentity, createRoomMembership, restoreRoomMembership } = await import('../src/network/room-membership.mjs')
+    const roomKey = newRoomKey()
+    const ownerMembership = createRoomMembership({ identity: createDeviceIdentity(), room: 'u14', roomKey })
+    const owner = await createAsscrackNode({
+        room: 'u14', roomKey, membership: ownerMembership, listen: LISTEN, discovery: false,
+        announce: ['/ip4/203.0.113.20/tcp/47000']
+    })
+    const memberId = createDeviceIdentity()
+    const invite = readInvite(owner.createMemberInvite(memberId.id, { canHost: false }))
+    const memberMembership = restoreRoomMembership({ identity: memberId, room: 'u14', roomKey, descriptor: invite.membership })
+    const member = await createAsscrackNode({
+        room: 'u14', roomKey, membership: memberMembership, listen: LISTEN, discovery: false,
+        upnp: false, upnpClient: fakeClient(igd.port)
+    })
+    try {
+        const events = upnpEvents(member)
+        assert.equal(member.fullNode(), false)
+        assert.equal(member.libp2p.services.relay, undefined)
+        assert.equal(member.enableUpnp(), true)
+        assert.equal(member.upnpPending(), true)
+        await waitFor(() => events.length === 1)
+        assert.equal(events[0].state, 'mapped')
+        const port = portOf(member)
+        assert.equal(member.upnpPending(), false)
+        assert.deepEqual(member.publicAddrs(), [`/ip4/${PUBLIC_IP}/tcp/${port}`])
+        assert.equal(member.fullNode(), false)
+        assert.equal(member.libp2p.services.relay, undefined)
+    } finally {
+        await Promise.allSettled([member.stop(), owner.stop()])
+        await igd.close()
+    }
+})
+
+test('non-host member directAddrs upgrades a relayed session to a direct TCP connection', { timeout: 20000 }, async () => {
+    const net = await import('node:net')
+    const freePort = () => new Promise((resolve, reject) => {
+        const srv = net.createServer()
+        srv.once('error', reject)
+        srv.listen(0, '127.0.0.1', () => {
+            const { port } = srv.address()
+            srv.close(err => (err ? reject(err) : resolve(port)))
+        })
+    })
+    const { newRoomKey, readInvite } = await import('../src/network/invite.mjs')
+    const { createDeviceIdentity, createRoomMembership, restoreRoomMembership } = await import('../src/network/room-membership.mjs')
+    const roomKey = newRoomKey()
+    const oPort = await freePort()
+    const bPort = await freePort()
+    const ownerMembership = createRoomMembership({ identity: createDeviceIdentity(), room: 'u15', roomKey })
+    const owner = await createAsscrackNode({
+        room: 'u15', roomKey, membership: ownerMembership, discovery: false,
+        listen: [`/ip4/127.0.0.1/tcp/${oPort}`], announce: [`/ip4/127.0.0.1/tcp/${oPort}`],
+        fullNode: true, allowPrivateFullNode: true
+    })
+    const aId = createDeviceIdentity()
+    const bId = createDeviceIdentity()
+    const aInvite = readInvite(owner.createMemberInvite(aId.id, { canHost: false }))
+    const bInvite = readInvite(owner.createMemberInvite(bId.id, { canHost: false }))
+    const memberA = await createAsscrackNode({
+        room: 'u15', roomKey,
+        membership: restoreRoomMembership({ identity: aId, room: 'u15', roomKey, descriptor: aInvite.membership }),
+        listen: LISTEN, discovery: false, upnp: false, allowPrivateFullNode: true
+    })
+    const memberB = await createAsscrackNode({
+        room: 'u15', roomKey,
+        membership: restoreRoomMembership({ identity: bId, room: 'u15', roomKey, descriptor: bInvite.membership }),
+        listen: [`/ip4/127.0.0.1/tcp/${bPort}`], announce: [`/ip4/127.0.0.1/tcp/${bPort}`],
+        discovery: false, upnp: false, allowPrivateFullNode: true
+    })
+    try {
+        const leftA = []
+        const leftB = []
+        const receivedB = []
+        memberA.events.on('peer-left', e => leftA.push(e))
+        memberB.events.on('peer-left', e => leftB.push(e))
+        memberB.events.on('message', m => receivedB.push(m))
+
+        await memberA.connect(`/ip4/127.0.0.1/tcp/${oPort}/p2p/${owner.peerId}`)
+        await memberB.connect(`/ip4/127.0.0.1/tcp/${oPort}/p2p/${owner.peerId}`)
+
+        await waitFor(() => memberA.topology().kinds?.[memberA.peerId]?.[memberB.peerId] === 'mesh' &&
+            memberB.topology().kinds?.[memberB.peerId]?.[memberA.peerId] === 'mesh', 15000)
+
+        assert.equal(memberA.fullNode(), false)
+        assert.equal(memberB.fullNode(), false)
+        assert.deepEqual(leftA, [])
+        assert.deepEqual(leftB, [])
+
+        memberA.send('hello direct')
+        await waitFor(() => receivedB.some(m => m.text === 'hello direct'))
+    } finally {
+        await Promise.allSettled([memberA.stop(), memberB.stop(), owner.stop()])
+    }
+})

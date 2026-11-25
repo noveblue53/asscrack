@@ -234,10 +234,11 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             reservations: { maxReservations: 15, defaultDataLimit: RELAY_LINK_BYTES, defaultDurationLimit: RELAY_LINK_DURATION }
         })
     }
-    // UPnP (opt-in): only for a node that can become a full node by the dial-back. With upnp false, the module is
-    // not loaded: no UPnP service, no SSDP and no timer.
-    // let: enableUpnp() can turn UPnP on for a running node (an owner can repair the reach of the room).
-    let useUpnp = upnp === true && fullNode === 'auto' && !relayOnly && hasRelayRole
+    // UPnP (opt-in): for any node in an internet room that can listen on TCP without a typed announce address.
+    // let: enableUpnp() can turn UPnP on for a running node.
+    const canUseUpnp = !membership?.lan && !relayOnly && fullNode === 'auto' && announce.length === 0
+    const upnpAllowed = () => canUseUpnp && (!membership || !membership.revoked(membership.id))
+    let useUpnp = upnp === true && canUseUpnp
     if (useUpnp) {
         if (!Number.isInteger(upnpLeaseSeconds) || upnpLeaseSeconds < 1 || upnpLeaseSeconds > 0xffffffff) {
             throw new TypeError('upnpLeaseSeconds must be a positive unsigned 32-bit integer')
@@ -1004,10 +1005,17 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         for (const [peerId, remotePeer] of waiting) retryAfterAdmission(peerId, remotePeer)
     }
 
+    function isRelayedConn(conn) {
+        return Boolean(conn?.remoteAddr?.toString().includes('/p2p-circuit'))
+    }
+
     // Cross race rule: two chat streams to one peer can exist when both peers open one at the same time. Both ends
     // keep the stream that the lower peer ID opened. Returns true when the new stream replaces the old session.
-    function newStreamWins(old, initiator, peerId) {
+    function newStreamWins(old, initiator, peerId, connection) {
         if (endedSessions.has(old)) return true
+        if (old === sessions.get(peerId) && connection && !isRelayedConn(connection) && isRelayedConn(sessionConns.get(peerId))) {
+            return true
+        }
         const oldInitiator = chatInitiator.get(old)
         const lower = selfId < peerId ? selfId : peerId
         return oldInitiator !== undefined && initiator !== oldInitiator && initiator === lower
@@ -1030,7 +1038,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         connection ??= node.getConnections().find(c => c.streams.includes(stream))
         const oldSession = sessions.get(peerId)
         const oldPending = pendingChats.get(peerId)
-        if ((oldSession && !newStreamWins(oldSession, initiator, peerId)) ||
+        if ((oldSession && !newStreamWins(oldSession, initiator, peerId, connection)) ||
             (oldPending && !newStreamWins(oldPending, initiator, peerId))) {
             stream.abort(new Error('Chat session already exists for this peer'))
             return
@@ -1067,7 +1075,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             if (pendingChats.get(peerId) === session) pendingChats.delete(peerId)
             // An open session to the peer stays until this proof. Replace it if this stream still wins.
             const old = sessions.get(peerId)
-            if (old && !newStreamWins(old, initiator, peerId)) return reject('chat session already exists')
+            if (old && !newStreamWins(old, initiator, peerId, connection)) return reject('chat session already exists')
             if (membership) {
                 if (!membership.admitted() || membership.revoked(authenticatedMember.deviceId)) return reject('device no longer admitted')
                 memberPeers.set(peerId, authenticatedMember)
@@ -1217,6 +1225,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                                 emitTopology()
                             }
                             setPeerFull(peerId, control.fullNode, control.fullNode ? peerAddrList(control.addrs) : null)
+                            const direct = !control.fullNode ? peerAddrList(control.directAddrs) : null
+                            if (direct) dialDirectPeer(peerId, direct)
                         }
                     }
                     // L9 (P10a): no 'signal' line. The window had no listener for it, and each line went to the window IPC.
@@ -1648,7 +1658,14 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
 
     // Legacy peers consume fullNode and addrs and ignore the optional participation flag.
     function nodeLine() {
-        return JSON.stringify({ type: 'node', fullNode: selfFull, addrs: selfFull ? publicAddrs() : undefined, idle: selfIdle })
+        const pub = publicAddrs()
+        return JSON.stringify({
+            type: 'node',
+            fullNode: selfFull,
+            addrs: selfFull ? pub : undefined,
+            directAddrs: !selfFull && pub.length > 0 ? pub : undefined,
+            idle: selfIdle
+        })
     }
 
     // The public addresses of this node: the announce addresses, else the dial-back address of a full node.
@@ -1885,6 +1902,30 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         })().finally(() => dialing.delete(peerId))
     }
 
+    function dialDirectPeer(peerId, addrs) {
+        if (stopped || relayOnly || !addrs.length || dialing.has(peerId)) return
+        if (!sessions.has(peerId) || !isRelayedConn(sessionConns.get(peerId))) return
+        dialing.add(peerId)
+        ;(async () => {
+            for (const a of addrs) {
+                if (stopped || !sessions.has(peerId) || !isRelayedConn(sessionConns.get(peerId))) return
+                const target = a.includes('/p2p/') ? a : `${a}/p2p/${peerId}`
+                const started = Date.now()
+                try {
+                    const conn = await node.dial(multiaddr(target))
+                    if (isRelayedConn(conn) || conn.remotePeer.toString() !== peerId) continue
+                    await openChat(conn, peerId, { upgrade: true })
+                    const pending = pendingSettled.get(pendingChats.get(peerId))
+                    if (pending) await pending
+                    dialResult({ peer: peerId, addr: target, via: 'direct', started })
+                    return
+                } catch (err) {
+                    dialFailed({ peer: peerId, addr: target, via: 'direct', err, started })
+                }
+            }
+        })().finally(() => dialing.delete(peerId))
+    }
+
     function setSelfFull(value) {
         if (value && !canRelay()) return
         if (selfFull === value) return
@@ -2104,8 +2145,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     // Each outbound chat stream opens here. node.dial() can give a connection that exists already, and the session
     // can open on another path while the dial is in flight. A second chat stream on one connection gets the limit
     // error (maxOutboundStreams 1). Thus open at most one outbound chat stream for each peer at a time.
-    function openChat(conn, peerId) {
-        if (sessions.has(peerId) || pendingChats.has(peerId)) return Promise.resolve()
+    function openChat(conn, peerId, { upgrade = false } = {}) {
+        const canUpgrade = upgrade && sessions.has(peerId) && isRelayedConn(sessionConns.get(peerId)) && !isRelayedConn(conn)
+        if ((sessions.has(peerId) && !canUpgrade) || pendingChats.has(peerId)) return Promise.resolve()
         const busy = opening.get(peerId)
         if (busy) return busy
         const task = (async () => {
@@ -2114,7 +2156,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 stream = await conn.newStream(chatProtocol, { runOnTransientConnection: true })
             } catch (err) {
                 // The session opened on another path: that is not a failure.
-                if (sessions.has(peerId) || pendingChats.has(peerId)) return
+                if ((sessions.has(peerId) && !(upgrade && isRelayedConn(sessionConns.get(peerId)))) || pendingChats.has(peerId)) return
                 throw err
             }
             attachChat(stream, peerId, conn, selfId)
@@ -2210,12 +2252,12 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         }
     }
     function scheduleUpnpRenewal(state) {
-        if (stopped || !canRelay() || upnpState !== state) return
+        if (stopped || !upnpAllowed() || upnpState !== state) return
         const client = upnpClient
         // Node timers take a signed 32-bit millisecond delay.
         const interval = Math.min(upnpLeaseSeconds * 500, 0x7fffffff)
         upnpRenewTimer = setTimeout(() => {
-            if (stopped || !canRelay() || upnpState !== state) return
+            if (stopped || !upnpAllowed() || upnpState !== state) return
             const renew = async () => {
                 await client.map(state.opts)
                 // stop() bounds its wait for a router reply. Undo a renewal that completed after unmap.
@@ -2230,7 +2272,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         upnpRenewTimer.unref()
     }
     function runUpnp() {
-        if (!useUpnp || !canRelay() || stopped || upnpPhase !== 'idle') return
+        if (!useUpnp || !upnpAllowed() || stopped || upnpPhase !== 'idle') return
         upnpPhase = 'discovery'
         let timedOut = false
         const work = (async () => {
@@ -2238,7 +2280,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             if (port === null) throw Object.assign(new Error('no TCP listen port'), { upnpReason: 'router-error' })
             if (!upnpClient) {
                 const { createPortMapper } = await import('./port-mapper.mjs')
-                if (stopped || timedOut || !canRelay()) return
+                if (stopped || timedOut || !upnpAllowed()) return
                 upnpClient = createPortMapper()
             }
             const client = upnpClient
@@ -2250,7 +2292,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 const noGateway = /discover gateway|^timeout$/i.test(err?.message ?? '') || err?.name === 'TimeoutError'
                 throw Object.assign(err, { upnpReason: noGateway ? 'no-gateway' : 'router-error' })
             }
-            if (stopped || timedOut || !canRelay()) return
+            if (stopped || timedOut || !upnpAllowed()) return
             if (isPrivateIp(ip)) {
                 upnpLog({ state: 'none', reason: 'private-ip', error: `external IP ${ip} is private` })
                 return
@@ -2260,13 +2302,15 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             upnpPhase = 'map'
             await client.map(opts)
             const state = { ip, port, local: local ?? 'auto', opts }
-            if (stopped || timedOut || !canRelay()) {
+            if (stopped || timedOut || !upnpAllowed()) {
                 await upnpUnmap(state)
                 return
             }
             upnpState = state
             scheduleUpnpRenewal(state)
             upnpLog({ state: 'mapped', ip, port, local: state.local })
+            const line = nodeLine()
+            for (const session of sessions.values()) session.send(line)
             // Sessions that exist already: ask again for a dial-back on the mapped port.
             for (const peerId of [...sessions.keys()]) checkFullNode(peerId)
         })()
@@ -2286,9 +2330,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             .finally(() => { clearTimeout(timer); upnpPhase = 'done' })
     }
     // Turn UPnP on for a running node, or try again after a task that ended with no mapping. false when UPnP cannot
-    // apply: a LAN room, a relay-only node, fullNode not 'auto', a typed announce address, no relay role, or a stopped node.
+    // apply: a LAN room, a relay-only node, fullNode not 'auto', a typed announce address, revoked member, or a stopped node.
     function enableUpnp() {
-        if (stopped || !key || membership?.lan || relayOnly || fullNode !== 'auto' || announce.length > 0 || !hasRelayRole) return false
+        if (stopped || !key || !upnpAllowed()) return false
         if (!Number.isInteger(upnpLeaseSeconds) || upnpLeaseSeconds < 1 || upnpLeaseSeconds > 0xffffffff) return false
         useUpnp = true
         if (upnpPhase === 'done' && !upnpState) upnpPhase = 'idle'
@@ -2505,7 +2549,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         topology,
         fullNode: () => selfFull,
         // True while the UPnP task can still give a mapped address (from the start until the result or the timeout).
-        upnpPending: () => useUpnp && canRelay() && upnpPhase !== 'done' && !stopped,
+        upnpPending: () => useUpnp && upnpAllowed() && upnpPhase !== 'done' && !stopped,
         enableUpnp,
         roomKey: () => key ? key.toString('base64url') : null,
         publicAddrs,

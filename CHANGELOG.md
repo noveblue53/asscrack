@@ -28,6 +28,15 @@ Build:
 
 ## Unreleased
 
+### Allow UPnP and direct P2P upgrades for non-host members
+
+- Decouple UPnP eligibility (`canUseUpnp`, `upnpAllowed`) from `hasRelayRole` / `canRelay()` in `src/network/node.mjs` so non-host members (`canHost: false`) in protected internet rooms can open a port via UPnP without gaining `fullNode` or `services.relay` roles.
+- Broadcast `directAddrs` in `nodeLine()` when a non-host node has a public/UPnP address, add `dialDirectPeer()`, and allow direct TCP connections to upgrade existing relayed sessions (`newStreamWins`, `openChat(..., { upgrade: true })`).
+- Add non-host UPnP and relayed-to-direct upgrade tests in `test/upnp.test.mjs`, and update `test/protected-room.test.mjs` to match non-host UPnP discovery while still asserting no relay/full-node role.
+- Results:
+  - **127.0.0.1**: `node --test test/protected-room.test.mjs test/upnp.test.mjs` — `18` tests, `18` pass, `0` fail (`10.51 s`).
+  - **127.0.0.1**: `npm test` — `1332` tests, `1314` pass, `0` fail, `18` skipped (`68.23 s`).
+
 - **Screen share fanout tree coordinator (Session 2)**: added pure `src/network/screen-fanout.mjs` (`createScreenFanout`, `createGlobalSlotLedger`, `FANOUT_DEFAULTS`) with zero libp2p dependencies and unit tests in `test/screen-fanout.test.mjs` covering breadth-first least-loaded `'mesh'` placement, hop/loop/`maxRedirects` guards, parent failure probation, reparenting on disconnect/leave/`SHED`/`CONGESTED`, 1.0.1–1.0.6 pass-through, and global per-node slot accounting across `maxShares = 3`.
   - **127.0.0.1**: `node --test test/screen-fanout.test.mjs` (`8` tests, `8` pass, `0` fail).
   - **127.0.0.1**: `cmd /c start "" /belownormal /b /wait npm test` (`1323` tests, `1305` pass, `0` fail, `18` skipped, `66.07 s`).

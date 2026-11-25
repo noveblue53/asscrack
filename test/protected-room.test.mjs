@@ -149,17 +149,17 @@ test('only an admitted device granted the Internet relay role can act as a full 
     let routerChecks = 0
     const automatic = await issue('Another participant', false, {
         fullNode: 'auto', allowPrivateFullNode: true, upnp: true,
-        upnpClient: { async externalIp() { routerChecks++; return '198.51.100.11' } }
+        upnpClient: { async externalIp() { routerChecks++; return '100.64.0.1' } }
     })
     await ordinary.connect(localAddress(owner))
     await automatic.connect(localAddress(owner))
     await waitFor(() => ordinary.topology().kinds[ordinary.peerId][automatic.peerId] === 'relay', 'ordinary members use the owner circuit')
+    await waitFor(() => routerChecks === 1, 'non-host member can run UPnP discovery')
     assert.equal(ordinary.fullNode(), false)
     assert.equal(automatic.fullNode(), false)
     assert.equal(ordinary.libp2p.services.relay, undefined)
     assert.equal(automatic.libp2p.services.relay, undefined)
-    assert.equal(automatic.upnpPending(), false)
-    assert.equal(routerChecks, 0)
+    assert.equal(routerChecks, 1)
 
     const trusted = await issue('Trusted alternate', true, { fullNode: true })
     assert.equal(trusted.fullNode(), false, 'a signed invitation alone does not activate a relay')
