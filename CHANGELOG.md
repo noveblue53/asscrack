@@ -27,6 +27,16 @@ Each result has one of these labels:
   - **127.0.0.1**: `npm test` — `1313` tests, `1295` pass, `0` fail, `18` skipped (`66.34 s`).
   - **this PC**: `node tools/app-smoke-check.mjs --run-dir "D:\Github Repos\asscrack-gemini\work-orders\join-and-map-upnp\runs\smoke" --check-no-dev-shortcut` — passed on CDP port `9500` in `3634 ms` (`domReady: true`, `0` errors, `devShortcutAbsent: true`, `devClsidAbsent: true`).
 
+### Live voice oscilloscopes
+
+- Tap local capture (`AnalyserNode` with `fftSize = 64` + `onBlock` fallback) and decoded per-origin remote PCM in `src/application/voice.js` via `window.voice.meterSnapshot()`.
+- Add a shared 30 fps `createMeterLoop`, phosphor oscilloscope renderer (`drawMiniOscilloscope`), and 5-segment LED reduced-motion fallback (`drawLedBar`) in `src/application/voice-panel.js` and `src/application/voice-panel.css`, paused automatically when hidden or silent.
+- Render compact live oscilloscope canvases (`canvas.vc-meter`) next to active speakers in the user's own voice channel (`src/application/voice-channels-ui.js`, `src/application/voice-channels.css`).
+- Results:
+  - **127.0.0.1**: `node --test test/voice-meters.test.mjs` — `4` pass, `0` fail.
+  - **127.0.0.1**: `cmd /c start "" /belownormal /b /wait npm test` — `1316` tests, `1298` pass, `0` fail, `18` skipped (`64.10 s`).
+  - **this PC**: `node tools/app-smoke-check.mjs --run-dir "D:\Github Repos\asscrack-gemini\work-orders\voice-meters\runs\smoke" --check-no-dev-shortcut --eval "..."` — passed on CDP port `9500` in `3029 ms` (`domReady: true`, `0` errors, `hasMeterSnapshot: true`, `hasVoiceMeters: true`, `hasScopeCanvas: true`, `runningAtRest: false`, `devShortcutAbsent: true`, `devClsidAbsent: true`).
+
 ## 1.0.7 (2026-11-25): screen share audio, music visualizer modes, shade mode, network map pulses and screen rate fixes
 
 Release 1.0.7 is the seventh update of 1.0.0. A 1.0.0, 1.0.1, 1.0.2, 1.0.3, 1.0.4, 1.0.5 or 1.0.6 app gets it with
