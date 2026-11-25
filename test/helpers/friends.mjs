@@ -1,6 +1,7 @@
 // G7a test helpers: two protected room nodes on 127.0.0.1, a real archive in a temp folder for each side, and a
 // friend-links instance for each side. No Electron.
 import assert from 'node:assert/strict';
+import { randomInt } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -19,15 +20,32 @@ export async function waitFor(check, description, ms = 20000) {
     assert.ok(check(), description);
 }
 
-// A free TCP port range start for the friend ports of one test (the suite runs files in parallel).
-export const randomBasePort = () => 20000 + Math.floor(Math.random() * 400) * 100;
+// Disjoint TCP port blocks below Windows ephemeral range (49152+) and 47200 so parallel friend files never collide.
+const FILE_PORT_BLOCKS = Object.freeze({
+    'device-marks.test.mjs': 20000,
+    'friend-auto-allow.test.mjs': 22000,
+    'friend-invite.test.mjs': 24000,
+    'friend-knock-node.test.mjs': 26000,
+    'friend-links.test.mjs': 28000,
+    'friend-requests.test.mjs': 30000,
+    'friends-offline.test.mjs': 32000,
+    'peer-addrs.test.mjs': 34000,
+    'private-messages.test.mjs': 36000
+});
+const callerBlock = FILE_PORT_BLOCKS[path.basename(process.argv[1] || '')];
+const portBlockBase = callerBlock ?? 38000;
+const portSlots = callerBlock !== undefined ? 20 : 90;
+let nextPortSlot = randomInt(portSlots);
+export const randomBasePort = () => portBlockBase + ((nextPortSlot++ % portSlots) * 100);
 
 // A profile: the device identity, the archive folder and the saved rooms of one side.
 export function makeProfile(t, label, dir = fs.mkdtempSync(path.join(os.tmpdir(), `friends-${label}-`))) {
     const rooms = createSavedRooms({ dir: path.join(dir, 'saved-rooms'), protector: fakeProtector,
         forgetHints: row => { for (const f of Object.values(hintFiles(dir)(row.name, row.roomKey))) fs.rmSync(f, { force: true }); } });
     const identity = createDeviceIdentity();
-    return { dir, rooms, identity, hints: hintFiles(dir) };
+    const profile = { dir, rooms, identity, hints: hintFiles(dir) };
+    t?.after?.(() => { try { profile.rooms?.close(); } catch {} });
+    return profile;
 }
 
 export const hintFiles = dir => (room, roomKey) => {

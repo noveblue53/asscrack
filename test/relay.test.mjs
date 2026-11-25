@@ -1,4 +1,4 @@
-import { test } from 'node:test'
+import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createAsscrackNode } from '../src/network/node.mjs'
 
@@ -25,6 +25,8 @@ async function stopAll(nodes) {
 
 const fast = { heartbeatInterval: 200, hostTimeout: 1000, electionDelay: 500 }
 
+describe('relay', { concurrency: true }, () => {
+
 test('two relay-only nodes chat through a full node, beyond the default relay data limit', { timeout: 60000 }, async () => {
     const room = `relay-${Date.now()}`
     const nodes = []
@@ -32,9 +34,11 @@ test('two relay-only nodes chat through a full node, beyond the default relay da
         // R must not have the lowest peer ID. Make new nodes until that is true.
         let R, A, B
         for (let i = 0; i < 20; i++) {
-            R = await createAsscrackNode({ room, listen: LOCAL, discovery: false, fullNode: true, ...fast })
-            A = await createAsscrackNode({ room, relayOnly: true, fullNode: false, ...fast })
-            B = await createAsscrackNode({ room, relayOnly: true, fullNode: false, ...fast })
+            ;[R, A, B] = await Promise.all([
+                createAsscrackNode({ room, listen: LOCAL, discovery: false, fullNode: true, ...fast }),
+                createAsscrackNode({ room, relayOnly: true, fullNode: false, ...fast }),
+                createAsscrackNode({ room, relayOnly: true, fullNode: false, ...fast })
+            ])
             if (R.peerId > A.peerId || R.peerId > B.peerId) break
             await stopAll([R, A, B])
         }
@@ -114,10 +118,11 @@ test("'auto' without allowPrivateFullNode gives no full node on 127.0.0.1", { ti
     const room = `auto-priv-${Date.now()}`
     const nodes = []
     try {
-        const N = await createAsscrackNode({ room, listen: LOCAL, discovery: false, ...fast })
-        nodes.push(N)
-        const P = await createAsscrackNode({ room, listen: LOCAL, discovery: false, ...fast })
-        nodes.push(P)
+        const [N, P] = await Promise.all([
+            createAsscrackNode({ room, listen: LOCAL, discovery: false, ...fast }),
+            createAsscrackNode({ room, listen: LOCAL, discovery: false, ...fast })
+        ])
+        nodes.push(N, P)
         await P.connect(localAddr(N))
         await waitFor(() => N.peers().includes(P.peerId) && P.peers().includes(N.peerId), 5000, 'session')
         await new Promise(r => setTimeout(r, 1500))
@@ -127,4 +132,6 @@ test("'auto' without allowPrivateFullNode gives no full node on 127.0.0.1", { ti
     } finally {
         await stopAll(nodes)
     }
+})
+
 })

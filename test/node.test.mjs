@@ -1,9 +1,12 @@
-import test from 'node:test'
+import test, { describe } from 'node:test'
 import assert from 'node:assert/strict'
+import { randomBytes } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 import { pushable } from 'it-pushable'
 import { multiaddr } from '@multiformats/multiaddr'
-import { createAsscrackNode, CHAT_PROTOCOL } from '../src/network/node.mjs'
+import { createAsscrackNode, CHAT_PROTOCOL, roomServiceTag } from '../src/network/node.mjs'
+
+const uniqueRoom = prefix => `${prefix}-${process.pid}-${Date.now()}-${randomBytes(4).toString('hex')}`
 
 async function waitFor(check) {
     for (let attempt = 0; attempt < 100; attempt++) {
@@ -71,8 +74,18 @@ test('two nodes chat through createAsscrackNode', { timeout: 15000 }, async () =
     }
 })
 
+function fullMesh(topology, ids) {
+    if (topology === null) return false
+    return ids.every(id => {
+        const list = topology.links[id]
+        return Array.isArray(list) && ids.filter(other => other !== id).every(other => list.includes(other))
+    })
+}
+
+describe('mDNS discovery', { concurrency: true }, () => {
+
 test('two nodes in one room connect through mDNS discovery', { timeout: 30000 }, async () => {
-    const opts = { room: 'auto-test', listen: ['/ip4/0.0.0.0/tcp/0'], discovery: true, discoveryInterval: 1000 }
+    const opts = { room: uniqueRoom('auto-test'), listen: ['/ip4/0.0.0.0/tcp/0'], discovery: true, discoveryInterval: 1000 }
     const a = await createAsscrackNode(opts)
     const b = await createAsscrackNode(opts)
     try {
@@ -99,8 +112,11 @@ test('two nodes in one room connect through mDNS discovery', { timeout: 30000 },
 
 test('nodes in different rooms do not connect', { timeout: 15000 }, async () => {
     const base = { listen: ['/ip4/0.0.0.0/tcp/0'], discovery: true, discoveryInterval: 1000 }
-    const a = await createAsscrackNode({ ...base, room: 'room-one' })
-    const b = await createAsscrackNode({ ...base, room: 'room-two' })
+    const roomOne = uniqueRoom('room-one')
+    const roomTwo = uniqueRoom('room-two')
+    assert.notEqual(roomServiceTag(roomOne), roomServiceTag(roomTwo))
+    const a = await createAsscrackNode({ ...base, room: roomOne })
+    const b = await createAsscrackNode({ ...base, room: roomTwo })
     try {
         await delay(5000)
         assert.deepEqual(a.peers(), [])
@@ -109,6 +125,40 @@ test('nodes in different rooms do not connect', { timeout: 15000 }, async () => 
         await b.stop()
         await a.stop()
     }
+})
+
+test('three nodes in one room send links lines and show the full mesh, then the stopped node goes', { timeout: 40000 }, async () => {
+    const opts = { room: uniqueRoom('topology-test'), listen: ['/ip4/0.0.0.0/tcp/0'], discovery: true, discoveryInterval: 1000 }
+    const nodes = [await createAsscrackNode(opts), await createAsscrackNode(opts), await createAsscrackNode(opts)]
+    const last = new Map(nodes.map(n => [n, null]))
+    for (const n of nodes) n.events.on('topology', t => last.set(n, t))
+    let stopped = false
+    try {
+        const ids = nodes.map(n => n.peerId)
+        const deadline = Date.now() + 25000
+        while (!nodes.every(n => fullMesh(last.get(n), ids)) && Date.now() < deadline) await delay(50)
+        for (const n of nodes) {
+            assert.ok(fullMesh(last.get(n), ids), `No full mesh topology event on ${n.peerId}`)
+            assert.equal(last.get(n).self, n.peerId)
+            assert.deepEqual(n.topology(), last.get(n))
+        }
+
+        const [gone, ...rest] = nodes
+        await gone.stop()
+        stopped = true
+        const restIds = rest.map(n => n.peerId)
+        const noGone = t => t !== null && !Object.hasOwn(t.links, gone.peerId) &&
+            restIds.every(id => Array.isArray(t.links[id]) && !t.links[id].includes(gone.peerId)) &&
+            fullMesh(t, restIds)
+        await waitFor(() => rest.every(n => noGone(last.get(n))))
+        for (const n of rest) assert.deepEqual(n.topology(), last.get(n))
+    } finally {
+        if (!stopped) await nodes[0].stop()
+        await nodes[1].stop()
+        await nodes[2].stop()
+    }
+})
+
 })
 
 test('structured messages carry the sender name, text and time in both directions', { timeout: 15000 }, async () => {
@@ -259,46 +309,6 @@ test('the host and the member log the history that they send and apply', { timeo
         if (member) await member.stop()
         await second.stop()
         await first.stop()
-    }
-})
-
-function fullMesh(topology, ids) {
-    if (topology === null) return false
-    return ids.every(id => {
-        const list = topology.links[id]
-        return Array.isArray(list) && ids.filter(other => other !== id).every(other => list.includes(other))
-    })
-}
-
-test('three nodes in one room send links lines and show the full mesh, then the stopped node goes', { timeout: 40000 }, async () => {
-    const opts = { room: 'topology-test', listen: ['/ip4/0.0.0.0/tcp/0'], discovery: true, discoveryInterval: 1000 }
-    const nodes = [await createAsscrackNode(opts), await createAsscrackNode(opts), await createAsscrackNode(opts)]
-    const last = new Map(nodes.map(n => [n, null]))
-    for (const n of nodes) n.events.on('topology', t => last.set(n, t))
-    let stopped = false
-    try {
-        const ids = nodes.map(n => n.peerId)
-        const deadline = Date.now() + 25000
-        while (!nodes.every(n => fullMesh(last.get(n), ids)) && Date.now() < deadline) await delay(50)
-        for (const n of nodes) {
-            assert.ok(fullMesh(last.get(n), ids), `No full mesh topology event on ${n.peerId}`)
-            assert.equal(last.get(n).self, n.peerId)
-            assert.deepEqual(n.topology(), last.get(n))
-        }
-
-        const [gone, ...rest] = nodes
-        await gone.stop()
-        stopped = true
-        const restIds = rest.map(n => n.peerId)
-        const noGone = t => t !== null && !Object.hasOwn(t.links, gone.peerId) &&
-            restIds.every(id => Array.isArray(t.links[id]) && !t.links[id].includes(gone.peerId)) &&
-            fullMesh(t, restIds)
-        await waitFor(() => rest.every(n => noGone(last.get(n))))
-        for (const n of rest) assert.deepEqual(n.topology(), last.get(n))
-    } finally {
-        if (!stopped) await nodes[0].stop()
-        await nodes[1].stop()
-        await nodes[2].stop()
     }
 })
 

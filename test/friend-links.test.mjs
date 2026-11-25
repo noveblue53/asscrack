@@ -1,5 +1,5 @@
 // G7a check 3: the friend links with a real archive in a temp folder (127.0.0.1 and mDNS on this PC).
-import test from 'node:test';
+import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { readFileSync } from 'node:fs';
@@ -46,6 +46,8 @@ for (const way of ['stored addresses', 'mDNS']) {
         assert.notEqual(linksB.friend(friendB).lastSeen, null);
     });
 }
+
+describe('friend links', { concurrency: 4 }, () => {
 
 test('127.0.0.1 remove deletes the room, the row and the hint files; the other side shows removed-you', async t => {
     const A = makeProfile(t, 'a'), B = makeProfile(t, 'b');
@@ -146,4 +148,6 @@ test('127.0.0.1 a friend port in use: the friend node starts on port 0 with one 
         [`Friend port ${port + 50} is in use (EADDRINUSE). Start again with port 0`]);
     assert.ok(!linksB.nodeOf(friendB).getMultiaddrs().some(a => a.includes(`/tcp/${port + 50}`)));
     await waitFor(() => linksA.friend(friendA).state === 'online' && linksB.friend(friendB).state === 'online', 'online');
+});
+
 });

@@ -222,3 +222,31 @@ test('the curated log lines lose the push-to-talk key, and a repeated text is jo
     t = 10_000;
     assert.equal(dedupe('Voice frame send failed: x'), 'Voice frame send failed: x (and 49 more)');
 });
+
+test('await flush() followed by flushSync() waits for an in-flight async append and keeps all lines', async t => {
+    const dir = tempDir(t);
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    const slow = {
+        ...fs,
+        promises: {
+            ...fs.promises,
+            appendFile: async (...args) => {
+                await gate;
+                return fs.promises.appendFile(...args);
+            }
+        }
+    };
+    const j = createJournal({ dir, fsx: slow, flushMs: 5000 });
+    t.after(() => j.close());
+    j.write('ready', { ms: 1 });
+    const inFlight = j.flush();
+    // flushSync() alone cannot wait for an in-flight async flush (the 1 s timer race in diag-knock).
+    j.flushSync();
+    assert.deepEqual(readLines(dir), []);
+    j.write('ready', { ms: 2 });
+    release();
+    await inFlight;
+    j.flushSync();
+    assert.deepEqual(readLines(dir).map(l => l.ms), [1, 2]);
+});

@@ -37,6 +37,7 @@ test('127.0.0.1: no chat text, name, file name, key, invite or raw address in th
         const dir = mkdtempSync(path.join(tmpdir(), 'asscrack-canary-'));
         t.after(() => rmSync(dir, { recursive: true, force: true }));
         const journal = createJournal({ dir, budgets: { default: [1e6, 0] } });
+        t.after(() => journal.close());
         journalNodeEvents((type, fn) => node.events.on(type, fn), (type, fields) => journal.write(type, fields), node.peerId);
         journals.set(node, { dir, journal });
     };
@@ -75,6 +76,7 @@ test('127.0.0.1: no chat text, name, file name, key, invite or raw address in th
     const ask = member.askDiagnostics(owner.peerId);
     assert.equal(ask.ok, true);
     await waitFor(() => prompts.length === 1, 'prompt');
+    await ownerJ.flush();
     ownerJ.flushSync();
     const own = await buildBundle({ diagDir: journals.get(owner).dir, system: { version: 'test' } });
     const bundleFile = path.join(owner.dir, 'out.zip');
@@ -87,6 +89,7 @@ test('127.0.0.1: no chat text, name, file name, key, invite or raw address in th
         ['room key', roomKey], ['invite', invite], ['invite body', invite.split(':')[1].slice(0, 40)], ['address', '127.0.0.1']];
     let scanned = 0;
     for (const { dir, journal } of journals.values()) {
+        await journal.flush();
         journal.flushSync();
         const lines = readdirSync(dir).filter(n => n.endsWith('.jsonl')).flatMap(n => readFileSync(path.join(dir, n), 'utf8').split('\n').filter(Boolean));
         // The journal has the events (the test is not empty).

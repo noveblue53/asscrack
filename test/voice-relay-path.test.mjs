@@ -1,4 +1,4 @@
-import { test } from 'node:test'
+import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createAsscrackNode } from '../src/network/node.mjs'
 import { newRoomKey } from '../src/network/invite.mjs'
@@ -57,6 +57,8 @@ async function sendAndCheck(A, B, gotB, label) {
     console.log(`127.0.0.1 voice latency ${label}: median ${percentile(lat, 0.5).toFixed(2)} ms, ` +
         `p95 ${percentile(lat, 0.95).toFixed(2)} ms, frames ${fromA.length}`)
 }
+
+describe('voice relay path', { concurrency: true }, () => {
 
 test('keyed room: voice from relay-only A through full node R (host) to relay-only B', { timeout: 60000 }, async () => {
     const room = `voice-${Date.now()}`
@@ -171,4 +173,6 @@ test('keyed room: a node with a wrong key cannot send voice frames through the h
     } finally {
         await stopAll(nodes)
     }
+})
+
 })

@@ -1,9 +1,10 @@
 // easy-join part 2: knock and approve with real libp2p nodes on 127.0.0.1 (owner, relaying member, knocker). These
 // are 127.0.0.1 results, not internet results and not LAN results.
 import assert from 'node:assert/strict'
+import { randomBytes } from 'node:crypto'
 import { once } from 'node:events'
 import { createServer } from 'node:net'
-import { test } from 'node:test'
+import { describe, test } from 'node:test'
 import { setTimeout as delay } from 'node:timers/promises'
 import { createAsscrackNode, keyedServiceTag } from '../src/network/node.mjs'
 import { newRoomKey, readRoomCode } from '../src/network/invite.mjs'
@@ -70,6 +71,8 @@ async function knockWith(owner, code, answer, { identity = createDeviceIdentity(
         owner.events.off('knocks', onKnocks)
     }
 }
+
+describe('knock node', { concurrency: 4 }, () => {
 
 test('127.0.0.1 knock through a relaying member: Allow gives a device invite with no host rights, then the normal admission and chat', { timeout: 60000 }, async t => {
     const { roomKey, owner, member, start } = await setup(t)
@@ -225,10 +228,11 @@ async function freePort() {
 
 test('127.0.0.1 knock with an old room code after a restart of the owner (new peer ID): mDNS in a LAN room, the address with no peer ID in an internet room', { timeout: 60000 }, async t => {
     for (const lan of [true, false]) {
+        const iterRoom = `${room}-${process.pid}-${randomBytes(4).toString('hex')}`
         const roomKey = newRoomKey()
         const ownerDevice = createDeviceIdentity()
         const saved = []
-        const first = createRoomMembership({ identity: ownerDevice, room, roomKey, lan })
+        const first = createRoomMembership({ identity: ownerDevice, room: iterRoom, roomKey, lan })
         first.setPersistence(snapshot => saved.push(snapshot))
         const nodes = new Set()
         t.after(() => Promise.allSettled([...nodes].map(node => node.stop())))
@@ -237,7 +241,7 @@ test('127.0.0.1 knock with an old room code after a restart of the owner (new pe
         // LAN: mDNS on (the room tag). Internet: a public address on a fixed port (the announce address).
         const options = lan ? { discovery: true, discoveryInterval: 500 } : { announce: [address] }
         const start = async membership => {
-            const node = await createAsscrackNode({ room, roomKey, membership, name: 'Owner', ...timing, ...options,
+            const node = await createAsscrackNode({ room: iterRoom, roomKey, membership, name: 'Owner', ...timing, ...options,
                 listen: [address], fullNode: false, knock: true })
             nodes.add(node)
             return node
@@ -248,13 +252,15 @@ test('127.0.0.1 knock with an old room code after a restart of the owner (new pe
         await before.stop()
         nodes.delete(before)
         // The restart: the saved membership (with the code ID), a new peer ID and, in a LAN room, a new port.
-        const restored = restoreRoomMembership({ identity: ownerDevice, room, roomKey, descriptor: saved.at(-1) })
+        const restored = restoreRoomMembership({ identity: ownerDevice, room: iterRoom, roomKey, descriptor: saved.at(-1) })
         const after = await start(restored)
         assert.notEqual(after.peerId, oldPeer)
         assert.equal(readRoomCode(code).ownerPeer, oldPeer)
-        const { outcome, prompts, identity } = await knockWith(after, code, true, { serviceTag: lan ? keyedServiceTag(room, roomKey) : null })
+        const { outcome, prompts, identity } = await knockWith(after, code, true, { serviceTag: lan ? keyedServiceTag(iterRoom, roomKey) : null })
         assert.equal(outcome.result, 'allowed', `${lan ? 'LAN' : 'internet'} room: the old code finds the owner`)
         assert.equal(prompts.length, 1)
         assert.equal(checkAllowedInvite(readRoomCode(code), identity, outcome.invite).membership.grant.canHost, false)
     }
+})
+
 })

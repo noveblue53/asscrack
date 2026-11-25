@@ -28,7 +28,8 @@ async function waitFor(predicate, description, tries = 500) {
     assert.fail(description)
 }
 
-function journalLines(dir, journal) {
+async function journalLines(dir, journal) {
+    await journal.flush()
     journal.flushSync()
     return readdirSync(dir).filter(name => name.endsWith('.jsonl'))
         .flatMap(name => readFileSync(path.join(dir, name), 'utf8').split('\n').filter(Boolean)).map(line => JSON.parse(line))
@@ -45,6 +46,7 @@ test('127.0.0.1: the knock steps of the owner go into the journal with no name, 
     const dir = mkdtempSync(path.join(tmpdir(), 'asscrack-diag-knock-'))
     t.after(() => rmSync(dir, { recursive: true, force: true }))
     const journal = createJournal({ dir, budgets: { default: [1e6, 0] } })
+    t.after(() => journal.close())
     journalNodeEvents((type, fn) => owner.events.on(type, fn), (type, fields) => journal.write(type, fields), owner.peerId)
     const raw = []
     owner.events.on('knock-event', data => raw.push(data))
@@ -79,7 +81,7 @@ test('127.0.0.1: the knock steps of the owner go into the journal with no name, 
     assert.deepEqual(await knockOnce(true), { result: 'refused', reason: 'old-code' })
     await waitFor(() => raw.length >= 7, 'seven knock events')
 
-    const knocks = journalLines(dir, journal).filter(line => line.type === 'knock')
+    const knocks = (await journalLines(dir, journal)).filter(line => line.type === 'knock')
     const steps = knocks.map(line => `${line.event}${line.cause ? `:${line.cause}` : ''}`)
     assert.deepEqual(steps, ['received', 'allowed', 'received', 'denied', 'refused:cool-down', 'auto-allowed', 'refused:old-code'])
     for (const line of knocks) {
