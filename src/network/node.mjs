@@ -27,7 +27,7 @@ import { createVoiceChannels, GENERAL_VOICE_CHANNEL } from './voice-channels.mjs
 import { createRoomTopic } from './room-topic.mjs'
 import { createHistory, HISTORY_LIMIT, MAX_MESSAGE_BYTES, validHistoryItem } from './history.mjs'
 import { createFileTransfer, FILE_PROTOCOLS } from './file-transfer.mjs'
-import { createScreenShare, SCREEN_PROTOCOL } from './screen-share.mjs'
+import { createScreenShare, SCREEN_FANOUT_PROTOCOL, SCREEN_PROTOCOL } from './screen-share.mjs'
 import { createScreenAudio, SCREEN_AUDIO_PROTOCOL } from './screen-audio.mjs'
 import { createVoiceRelay, VOICE_PROTOCOL, VOICE_DIRECT_PROTOCOL } from './voice-relay.mjs'
 import { createRoomMusic, MUSIC_DIRECT_PROTOCOL, MUSIC_LIMITS, MUSIC_PROTOCOL } from './music.mjs'
@@ -229,9 +229,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         assertRelayFixed()
         services.relay = circuitRelayServer({
             hopTimeout: PROOF_TIMEOUT_MS,
-            maxInboundHopStreams: 16,
-            maxOutboundStopStreams: 32,
-            reservations: { maxReservations: 15, defaultDataLimit: RELAY_LINK_BYTES, defaultDurationLimit: RELAY_LINK_DURATION }
+            maxInboundHopStreams: 32,
+            maxOutboundStopStreams: 64,
+            reservations: { maxReservations: 32, defaultDataLimit: RELAY_LINK_BYTES, defaultDurationLimit: RELAY_LINK_DURATION }
         })
     }
     // UPnP (opt-in): for any node in an internet room that can listen on TCP without a typed announce address.
@@ -868,7 +868,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         libp2p: node, selfId, events, allowed: filePeerAllowed, connectionFor: peerId => sessionConns.get(peerId) ?? null,
         sendLine: (peerId, line) => filePeerAllowed(peerId) && sessions.get(peerId).send(line),
         broadcast: line => { for (const [peerId, session] of sessions) if (memberAllowed(peerId)) session.send(line) },
-        openPeers: () => [...sessions.keys()].filter(filePeerAllowed), idle: () => selfIdle,
+        openPeers: () => [...sessions.keys()].filter(filePeerAllowed),
+        getTopology: topology,
+        idle: () => selfIdle,
         canShare: () => !membership || membership.admitted(),
         onOwnStop: reason => screenAudio?.stopOwn(reason),
         onUnwatch: reason => screenAudio?.api.unwatchScreenAudio(reason === 'switched' ? 'switched' : 'unwatched'),
@@ -1281,6 +1283,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                         if (sessions.get(peerId) === session) handleRoster(peerId, control)
                     } else if (control.type === 'screen') {
                         if (sessions.get(peerId) === session) screen.handleLine(peerId, control)
+                    } else if (control.type === 'screen-fanout') {
+                        if (sessions.get(peerId) === session) screen.handleFanoutLine(peerId, control)
                     } else if (control.type === 'typing') {
                         if (sessions.get(peerId) === session && control.v === 1 && typeof control.active === 'boolean') {
                             typing.received(peerId, control.active)
@@ -1522,9 +1526,11 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         runOnTransientConnection: true, maxInboundStreams: 4, maxOutboundStreams: 4
     })
     await node.handle(SCREEN_PROTOCOL, data => screen.handleStream(data),
-        { runOnTransientConnection: true, maxInboundStreams: 8, maxOutboundStreams: 2 })
+        { runOnTransientConnection: true, maxInboundStreams: 32, maxOutboundStreams: 4 })
+    await node.handle(SCREEN_FANOUT_PROTOCOL, data => screen.handleFanoutStream(data),
+        { runOnTransientConnection: true, maxInboundStreams: 16, maxOutboundStreams: 4 })
     await node.handle(SCREEN_AUDIO_PROTOCOL, data => screenAudio.handleStream(data),
-        { runOnTransientConnection: true, maxInboundStreams: 8, maxOutboundStreams: 2 })
+        { runOnTransientConnection: true, maxInboundStreams: 32, maxOutboundStreams: 4 })
 
     // In a keyed room, answer a dial-back only for a peer with an open session. The proof of the peer can
     // arrive a short time after the request, so wait for the session for a short time.

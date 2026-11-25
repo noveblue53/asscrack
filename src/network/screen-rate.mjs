@@ -3,7 +3,7 @@
 // and evaluate() each 500 ms. Each viewer has a `send(bytes)` function (false: wait for `onDrain()`).
 // The reference for the Auto rules is the prototype scratch/proto/auto-proto.mjs of the design.
 
-export const SCREEN_TYPE = Object.freeze({ WATCH: 1, CONFIG: 2, FRAME: 3, ACK: 4, KEYREQ: 5, END: 6 })
+export const SCREEN_TYPE = Object.freeze({ WATCH: 1, CONFIG: 2, FRAME: 3, ACK: 4, KEYREQ: 5, END: 6, REDIRECT: 7 })
 export const FRAME_HEAD_BYTES = 9
 export const MAX_SCREEN_FRAME_BYTES = 1024 * 1024
 

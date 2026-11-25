@@ -28,6 +28,10 @@ Build:
 
 ## Unreleased
 
+- **Screen share video fanout streams and 24-viewer limits (Session 4)**: wired `src/network/screen-fanout.mjs` and `src/network/screen-forwarder.mjs` into `src/network/screen-share.mjs` and `src/network/node.mjs` with `/asscrack/screen-fanout/1.0.0`, `SCREEN_TYPE.REDIRECT` (`7`) with ephemeral Ed25519 redirect tokens, internal seamless reparenting without `screen-ended`, `screen-fanout` child/capacity reporting to the sharer, and raised limits (`maxViewers: 24`, `opensPerPeer: 24`, `opensPerRoom: 192`, `maxInboundStreams: 32`, `circuitRelayServer.reservations.maxReservations: 32`). Added 127.0.0.1 multi-node integration tests in `test/screen-fanout-streams.test.mjs`.
+  - **127.0.0.1**: `node --test test/screen-fanout-streams.test.mjs` (`7` tests, `7` pass, `0` fail).
+  - **127.0.0.1**: `cmd /c start "" /belownormal /b /wait npm test` (`1347` tests, `1329` pass, `0` fail, `18` skipped, `63.86 s`).
+
 ### Allow UPnP and direct P2P upgrades for non-host members
 
 - Decouple UPnP eligibility (`canUseUpnp`, `upnpAllowed`) from `hasRelayRole` / `canRelay()` in `src/network/node.mjs` so non-host members (`canHost: false`) in protected internet rooms can open a port via UPnP without gaining `fullNode` or `services.relay` roles.
