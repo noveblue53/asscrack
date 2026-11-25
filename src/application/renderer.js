@@ -101,6 +101,7 @@ function setMapOpen(open) {
     if (!open) window.peerInspector?.close();
     mapToggle.setAttribute('aria-expanded', String(open));
     mapPanel.setAttribute('aria-hidden', String(!open));
+    window.nodeMap?.setOpen?.(open);
 }
 
 mapToggle.addEventListener('click', () => setMapOpen(!document.body.classList.contains('map-open')));

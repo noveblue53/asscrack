@@ -153,8 +153,8 @@ test('the task timeout gives reason timeout', { timeout: 15000 }, async () => {
 // The child process: the node:test runner can have its own uncaughtException listener.
 const url = p => pathToFileURL(path.resolve(import.meta.dirname, p)).href
 const CHILD_ROUTER_ERROR = `
-import { createAsscrackNode } from '${url('../src/network/node.mjs')}'
-import { startIgd, fakeClient } from '${url('./helpers/fake-igd.mjs')}'
+import { createAsscrackNode } from ${JSON.stringify(url('../src/network/node.mjs'))}
+import { startIgd, fakeClient } from ${JSON.stringify(url('./helpers/fake-igd.mjs'))}
 let seen
 const line = new Promise(r => { seen = r })
 const igd = await startIgd({ externalIp: '${PUBLIC_IP}', addStatus: 500 })

@@ -116,8 +116,10 @@ function compare(before, after) {
 }
 
 function startLauncher(exe, tag) {
+    const env = { ...process.env, TEMP: tempDir, TMP: tempDir };
+    delete env.ELECTRON_RUN_AS_NODE;
     const child = spawn(exe, ['--log-dir', path.join(tempDir, `logs-${tag}`)], {
-        env: { ...process.env, TEMP: tempDir, TMP: tempDir },
+        env,
         stdio: 'ignore',
         windowsHide: false
     });

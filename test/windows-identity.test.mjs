@@ -20,7 +20,7 @@ test('each kind of build gets its own identity', () => {
     assert.equal(kind({ installed: true }), 'installed');
     assert.equal(kind({ portableFile: 'D:\\Games\\ASSCRACK-1.0.3-portable.exe' }), 'portable');
     assert.equal(kind({ isPackaged: false }), 'dev');
-    assert.equal(kind({ isPackaged: false, profile: true }), 'dev');
+    assert.equal(kind({ isPackaged: false, profile: true }), 'test');
     assert.equal(kind({ profile: true, installed: true }), 'test');
     assert.equal(kind({ profile: true, portableFile: 'D:\\x.exe' }), 'test');
     // A packaged exe that is not installed and not portable (for example win-unpacked) has the product name ASSCRACK.
@@ -34,6 +34,31 @@ test('each kind of build gets its own identity', () => {
     assert.equal(new Set(own.map(id => id.clsid.toUpperCase())).size, 3);
     assert.equal(new Set(own.map(id => id.shortcut.toLowerCase())).size, 3);
     assert.equal(WINDOWS_IDENTITIES.test.toasts, false);
+});
+
+test('any start with --profile uses the test identity and never enables desktop toasts', () => {
+    for (const isPackaged of [false, true]) {
+        for (const portableFile of [null, 'D:\\ASSCRACK-portable.exe']) {
+            for (const installed of [false, true]) {
+                const id = windowsIdentity({ isPackaged, profile: true, portableFile, installed });
+                assert.equal(id.kind, 'test');
+                assert.equal(id.toasts, false);
+                assert.equal(id.shortcut, null);
+            }
+        }
+    }
+    const dev = windowsIdentity({ isPackaged: false, profile: false, portableFile: null, installed: false });
+    assert.equal(dev.kind, 'dev');
+    assert.equal(dev.toasts, true);
+    assert.equal(dev.shortcut, 'Electron');
+    const inst = windowsIdentity({ isPackaged: true, profile: false, portableFile: null, installed: true });
+    assert.equal(inst.kind, 'installed');
+    assert.equal(inst.toasts, true);
+    assert.equal(inst.shortcut, INSTALLED_LNK);
+    const port = windowsIdentity({ isPackaged: true, profile: false, portableFile: 'D:\\p.exe', installed: false });
+    assert.equal(port.kind, 'portable');
+    assert.equal(port.toasts, true);
+    assert.equal(port.shortcut, PORTABLE_PRODUCT_NAME);
 });
 
 test('a dev start or a start with --profile never uses the installed AUMID, CLSID or shortcut', () => {
@@ -75,8 +100,8 @@ test('the product names of the builds give three different shortcut names', () =
 });
 
 test('the ProductName of electron.exe gives the dev shortcut name', { skip: process.platform !== 'win32' }, () => {
-    const exe = path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/(\w:)/, '$1')), '..', 'node_modules', 'electron', 'dist', 'electron.exe');
-    const name = execFileSync('powershell.exe', ['-NoProfile', '-Command', `(Get-Item -LiteralPath '${exe}').VersionInfo.ProductName`],
+    const exe = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'node_modules', 'electron', 'dist', 'electron.exe');
+    const name = execFileSync('powershell.exe', ['-NoProfile', '-Command', `(Get-Item -LiteralPath '${exe.replace(/'/g, "''")}').VersionInfo.ProductName`],
         { encoding: 'utf8', windowsHide: true }).trim();
     assert.equal(name, WINDOWS_IDENTITIES.dev.shortcut);
 });

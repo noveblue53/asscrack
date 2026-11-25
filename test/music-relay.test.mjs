@@ -1,6 +1,6 @@
 // Room music on real nodes (127.0.0.1, not a LAN result): the music stream of the DJ goes on its own relay
 // (MUSIC_PROTOCOL), separate from voice. The host cost with 3 listeners and no direct streams, and with direct streams.
-import { test } from 'node:test'
+import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createAsscrackNode } from '../src/network/node.mjs'
 import { newRoomKey } from '../src/network/invite.mjs'
@@ -66,6 +66,8 @@ async function play(D, frames = FRAMES) {
     }
 }
 
+describe('music relay', { concurrency: true }, () => {
+
 test('music: the DJ stream goes on the music relay only; a non-DJ sends no music; a deafened member and a member out of voice get none',
     { timeout: 120000 }, async () => {
         const nodes = []
@@ -115,7 +117,7 @@ test('music relay cost: 3 listeners, with and without direct streams (127.0.0.1)
             await waitFor(() => H.musicStats().streams === 4, 15000, 'four music streams on H')
             if (direct) await waitFor(() => D.musicStats().directStreams === 3, 15000, 'three direct music streams of D')
             D.music.addLocal([{ title: 'test.ogg', local: 'k1' }])
-            await sleep(800)
+            await waitFor(() => [A, B, C].every(n => n.music.state().dj === D.peerId), 5000, 'listeners see the DJ')
             const before = H.musicStats().forwarded
             const t0 = performance.now()
             await play(D)
@@ -138,4 +140,6 @@ test('music relay cost: 3 listeners, with and without direct streams (127.0.0.1)
         }
     }
     assert.equal(rows.length, 2)
+})
+
 })

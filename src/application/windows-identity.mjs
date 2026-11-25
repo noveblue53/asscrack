@@ -12,10 +12,11 @@
 // - portable: ASSCRACK Portable.lnk ("npm run dist" sets this product name), com.asscrack.portable. Electron points
 //   it to the unpack folder, which Windows deletes at exit. repairPortableIdentity then points the shortcut and the
 //   LocalServer32 value to PORTABLE_EXECUTABLE_FILE (the .exe that the user starts).
-// - dev (electron ., also with --profile): Electron.lnk (the ProductName of electron.exe), com.asscrack.dev.
-// - test (a packaged build with --profile, or a packaged build that is not installed and not portable): the
-//   ProductName of its exe can be ASSCRACK, and the presenter then writes the shortcut and the CLSID key of an
-//   installed copy. Thus this kind never makes the presenter: no desktop notifications.
+// - dev (electron . without --profile): Electron.lnk (the ProductName of electron.exe), com.asscrack.dev.
+// - test (any start with --profile, dev or packaged, or a packaged build that is not installed and not portable): the
+//   ProductName of its exe can be ASSCRACK or Electron, and the presenter then writes a Start menu shortcut and a
+//   CLSID key. Thus this kind never makes the presenter: no desktop notifications, no Start menu shortcut, no toast
+//   CLSID key.
 import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { WINDOWS_APP_ID, WINDOWS_TOAST_ID } from './attention.mjs';
@@ -33,8 +34,8 @@ export const WINDOWS_IDENTITIES = Object.freeze({
 
 // profile: true for a start with --profile. portableFile: PORTABLE_EXECUTABLE_FILE. installed: isInstalledBuild().
 export function windowsIdentity({ isPackaged, profile, portableFile, installed }) {
-    if (isPackaged !== true) return WINDOWS_IDENTITIES.dev;
     if (profile) return WINDOWS_IDENTITIES.test;
+    if (isPackaged !== true) return WINDOWS_IDENTITIES.dev;
     if (portableFile) return WINDOWS_IDENTITIES.portable;
     if (installed) return WINDOWS_IDENTITIES.installed;
     return WINDOWS_IDENTITIES.test;

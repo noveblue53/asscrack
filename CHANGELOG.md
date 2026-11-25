@@ -7,6 +7,66 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased
+
+### Integrated `gemini/107-prep` verification
+
+- Combined the five `gemini/*` 1.0.7 candidate branches (`gemini/viz-modes`, `gemini/music-shade-mode`, `gemini/nodemap-live-traffic`, `gemini/no-dev-shortcut`, and `gemini/test-speed-and-reliability`), hid `.music-viz-pill` and sized `.music-viz-wrap` in 48 px shade mode (`src/application/music-window.css`), and kept both `--profile` identity tests and Windows space-in-path fixes (`test/windows-identity.test.mjs`).
+- Results:
+  - **127.0.0.1**: `cmd /c start "" /belownormal /b /wait npm test` — `1293` tests, `1275` pass, `0` fail, `18` skipped (`63.81 s`).
+  - **this PC**: `node tools/app-smoke-check.mjs --run-dir "D:\Github Repos\asscrack-gemini\work-orders\107-prep\runs\smoke" --check-no-dev-shortcut` — passed on CDP port `9500` in `3035 ms` with `domReady: true`, `0` console/log/stderr/stdout errors, `devShortcutAbsent: true`, and `devClsidAbsent: true`.
+
+### Test suite reliability, speed, and pre-release smoke check
+
+- **mDNS room isolation (`127.0.0.1`):** Use unique room names per test in `test/node.test.mjs`, `test/knock-node.test.mjs`, and `test/connect-race.test.mjs`. Parallel `node --test test/node.test.mjs` runs do not connect across worker processes (`10` pass, `0` fail in two parallel runs).
+- **Deterministic journal flush (`127.0.0.1`):** Flush pending async writes in `test/diag-knock.test.mjs`, `test/diag-failover.test.mjs`, `test/diag-screen.test.mjs`, `test/diag-canary.test.mjs`, and `test/diag-dial.test.mjs` before `flushSync()`. Add a regression test in `test/journal.test.mjs`.
+- **Windows paths and environment (`127.0.0.1`):** Fix `URL.pathname` encoding in `test/windows-identity.test.mjs` and `test/upnp.test.mjs` so checkouts with spaces pass. Clear `ELECTRON_RUN_AS_NODE` before `tools/second-start-check.mjs` starts Electron (`21` pass, `0` fail with `ELECTRON_RUN_AS_NODE=1`).
+- **Disjoint friend test port blocks (`127.0.0.1`):** Assign disjoint port blocks in `20000-46900` across the `9` friend test files and close `profile.rooms` in `test/helpers/friends.mjs` cleanup hooks. Five consecutive runs across all `9` friend test files passed (`58` pass, `0` fail).
+- **Intra-file concurrency (`127.0.0.1`):** Run independent tests and loops concurrently across `18` test files while keeping assertions, timeouts, frame counts, and file sizes unchanged. Five consecutive runs of `test/transfer-resume.test.mjs` and `test/transfer-resume-restart.test.mjs` passed (`18` pass, `0` fail).
+- **Pre-release smoke check helper (`this PC`):** Add `tools/app-smoke-check.mjs` (zero new dependencies) and `6` unit tests in `test/app-smoke-check.test.mjs`. The helper starts Electron with a new `--profile`, fake `APPDATA`, no `ELECTRON_RUN_AS_NODE`, and a free CDP port in `9500-9599`. It checks DOM readiness, error output, and `--check-no-dev-shortcut`, then stops the child by PID.
+- **Checks (`127.0.0.1` and `this PC`):**
+  - Low-priority `npm test` (3 runs on `origin/main` `05fa933`, `127.0.0.1`): `89.54 s`, `85.87 s`, and `89.34 s` (mean `88.25 s`, `1174` pass, `1` fail on `test/windows-identity.test.mjs`, `18` skipped).
+  - Low-priority `npm test` (3 runs on branch tip `54742ed`, `127.0.0.1`): `57.45 s`, `57.90 s`, and `57.69 s` (mean `57.68 s`, `1182` pass, `0` fail, `18` skipped).
+  - Live app start (`node tools/app-smoke-check.mjs --check-no-dev-shortcut`, `this PC`): passed in `2813 ms` on port `9500` with `0` console or process errors, no `Electron.lnk`, and no dev CLSID.
+
+### No Start menu shortcut or dev CLSID on dev runs with --profile
+
+- A dev start with `--profile` now uses the `test` identity in `src/application/windows-identity.mjs` instead of `dev`.
+- Because `test` keeps desktop notifications off, Electron does not make `Electron.lnk` or the dev toast CLSID key `HKCU\Software\Classes\CLSID\{AB0DC94C-048E-4960-8BA8-F5ED6ED4DC12}`.
+- A dev start with no `--profile`, the installed build, and the portable build keep their identities and notifications.
+- **127.0.0.1**: `test/windows-identity.test.mjs` has 8 tests. On `origin/main` (`05fa933`), the 2 updated/new `--profile` tests fail (`'dev' !== 'test'`) and the `electron.exe` product name test fails because `URL.pathname` keeps `%20` in a folder path with a space. After the fix in `src/application/windows-identity.mjs` and the `fileURLToPath` fix in `test/windows-identity.test.mjs`, all 8 pass.
+- **127.0.0.1**: `npm test` ran 1194 tests: 1176 pass, 0 fail, 18 skipped. One earlier `npm test` run before the `fileURLToPath` fix had 1 fail in `test/node.test.mjs` (`nodes in different rooms do not connect`). That file passed 10 of 10 alone and the full run passed after.
+- **this PC**: one dev start with `--profile`, a fake `APPDATA`, and CDP port `9500` enabled `chatAlert` through `setAttentionSettings` with 0 console errors and 0 terminal error lines. The log showed `notification identity test: no desktop notifications`. No `Electron.lnk` and no dev CLSID key existed after the run.
+
+### Clickable visualizer mode cycling (`gemini/viz-modes`)
+
+- Add four clickable visualizer modes to the music player: LED bars, phosphor oscilloscope, dual analog VU needles, and retro starfield with plasma.
+- Click the visualizer canvas or the mode pill to cycle through modes; save the selected mode in local storage and synchronize it between the inline bar and the popout window.
+- Results:
+  - **127.0.0.1**: `node --test test/music-viz.test.mjs test/music-popout.test.mjs` — 25 pass, 0 fail.
+  - **127.0.0.1**: `npm test` — 1261 pass, 1 fail (pre-existing `%20` URL-encoding bug in `test/windows-identity.test.mjs` when run from a path with spaces), 18 skipped.
+  - **this PC**: fresh `--profile` Electron run with fake `APPDATA` cycled through all 4 modes with 0 console errors and 0 uncaught exceptions.
+
+### Music pop-out shade mode and pin toggle
+
+- The music pop-out window has a custom title bar with a shade button and a pin button.
+- The shade button (or a double-click on the title bar) collapses the window to a 48 px bar. The bar shows a scrolling title, a small visualizer, playback buttons, and volume.
+- The pin button sets the window to stay above other windows.
+- `music-window-state.json` saves the shade state, the pin state, and the shade bounds between runs. `music-window.json` keeps the full-window bounds.
+- Results:
+  - `node --test test/music-popout.test.mjs test/music-viz.test.mjs`: 22 tests, 22 pass, 0 fail (127.0.0.1).
+  - `npm test`: 1277 tests, 1258 pass, 1 fail, 18 skipped (127.0.0.1). The 1 failure is in `test/windows-identity.test.mjs` because the path has a space (`%20` in `URL.pathname`). It also fails on the base commit.
+  - Live Electron run with `--profile` and fake `APPDATA`: full mode, 48 px shade mode, marquee scroll, pin toggle, and reopened state pass with 0 console errors and 0 clipping (this PC).
+
+### Live traffic pulses on the network map
+
+- `src/application/nodemap.js` polls `asscrack:map-traffic` at 4 Hz (`250 ms`) only while the network map is open (and not hidden or reduced-motion), and animates color-coded glowing pulses along active P2P edges (green for voice, amber for music, cyan for screen share including fanout-ready edges, purple for file transfers) at a rate proportional to traffic activity. Zero timers, IPC calls, or animation frames run when the map is closed.
+- `src/application/map-traffic.mjs`, `src/application/main.js`, and `src/application/preload.cjs` expose lightweight monotonic per-peer traffic counters from `voiceStats()`, `musicStats()`, `screenStats()`, `activeTransfers()`, and live frame/transfer events.
+
+Results:
+- `127.0.0.1`: `node --test test/app-events.test.mjs test/map-traffic.test.mjs test/nodemap.test.mjs test/preload-bridge.test.mjs` (45/45 passed). Full `npm test` run prior to the `test/app-events.test.mjs` assertion update: 1256 passed, 18 skipped, 2 failed (`test/app-events.test.mjs` fixed afterward, and pre-existing `test/windows-identity.test.mjs` failure on `origin/main`).
+- `this PC`: fresh `--profile` launch (`work-orders/nodemap-live-traffic/runs/run1/profile`, fake `APPDATA` `work-orders/nodemap-live-traffic/runs/run1/fake-appdata`) with zero console/runtime errors, all 4 traffic pulse kinds rendered when open, and 0 pulses when closed.
+
 ## 1.0.6 (2026-11-23): profile pictures, several screen shares, friend status, the Settings menu and What's new
 
 Release 1.0.6 is the sixth update of 1.0.0. A 1.0.0, 1.0.1, 1.0.2, 1.0.3, 1.0.4 or 1.0.5 app gets it with the signed
@@ -410,7 +470,6 @@ Checks (127.0.0.1 and this PC only):
   updaters accepts (127.0.0.1). The test fails on `369054a` (no 1.0.6 entry). Until the version commit, the release
   check test fails with "The newest entry is 1.0.6, not 1.0.5." on purpose: the build must not have a version that is
   older than the newest notes.
-
 ## 1.0.5 (2026-11-23): times for the join and leave lines, the music visualizer and the installs badge
 
 Release 1.0.5 is the fifth update of 1.0.0. A 1.0.0, 1.0.1, 1.0.2, 1.0.3 or 1.0.4 app gets it with the signed update

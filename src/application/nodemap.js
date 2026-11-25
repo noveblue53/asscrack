@@ -39,7 +39,7 @@
     const container = document.getElementById('node-map');
     const legend = document.getElementById('map-legend');
     if (!container) {
-        window.nodeMap = { update() {}, highlight() { return false; }, select() {} };
+        window.nodeMap = { update() {}, highlight() { return false; }, select() {}, setOpen() {}, feedTraffic() {} };
         return;
     }
 
@@ -69,12 +69,24 @@
         id: 'nm-arrow', viewBox: '0 0 10 10', refX: 7, refY: 5, markerWidth: 4.5, markerHeight: 4.5, orient: 'auto'
     });
     arrow.append(svgEl('path', { d: 'M0 0.5 L10 5 L0 9.5 z', fill: '#e07c00' }));
-    defs.append(gloss, shade, gold, arrow);
+    function pulseGradient(id, core, edge) {
+        const g = svgEl('radialGradient', { id, cx: 0.5, cy: 0.5, r: 0.5 });
+        g.append(stop(0, core, 1), stop(0.5, edge, 0.85), stop(1, edge, 0));
+        return g;
+    }
+    defs.append(
+        gloss, shade, gold, arrow,
+        pulseGradient('nm-pulse-voice', '#d9ffd0', '#35d41a'),
+        pulseGradient('nm-pulse-music', '#fff3c4', '#f59e0b'),
+        pulseGradient('nm-pulse-screen', '#d6fbff', '#06b6d4'),
+        pulseGradient('nm-pulse-transfer', '#f0dbff', '#a855f7')
+    );
     const meshLayer = svgEl('g', { class: 'nm-layer-mesh' });
     const voiceLayer = svgEl('g', { class: 'nm-layer-voice' });
     const transferLayer = svgEl('g', { class: 'nm-layer-transfer' });
+    const trafficLayer = svgEl('g', { class: 'nm-layer-traffic' });
     const nodeLayer = svgEl('g', { class: 'nm-layer-nodes' });
-    svg.append(defs, meshLayer, voiceLayer, transferLayer, nodeLayer);
+    svg.append(defs, meshLayer, voiceLayer, transferLayer, trafficLayer, nodeLayer);
     container.replaceChildren(svg);
 
     const layers = { mesh: meshLayer, voice: voiceLayer, transfer: transferLayer };
@@ -169,7 +181,18 @@
             if (edge.from === self) byId.get(edge.to).linkToYou = edge.title;
             if (edge.to === self) byId.get(edge.from).linkToYou = edge.title;
         }
-        return { host: seen.has(host) ? host : null, nodes: list, chatEdges, voice, transfers };
+        const screenEdges = [];
+        const screenKeys = new Set();
+        for (const item of Array.isArray(state?.screenEdges) ? state.screenEdges : []) {
+            const from = text(item?.from);
+            const to = text(item?.to);
+            if (!from || !to || from === to || !seen.has(from) || !seen.has(to)) continue;
+            const key = `${from}|${to}`;
+            if (screenKeys.has(key)) continue;
+            screenKeys.add(key);
+            screenEdges.push({ from, to });
+        }
+        return { host: seen.has(host) ? host : null, nodes: list, chatEdges, voice, transfers, screenEdges };
     }
 
     // ---- Nodes ----
@@ -300,6 +323,9 @@
         }
         for (const id of state.voice) wanted.set(`voice|${id}`, {
             kind: 'voice', from: id, to: state.host, lane: 0, title: 'Voice membership'
+        });
+        for (const edge of state.screenEdges) wanted.set(`screen|${edge.from}|${edge.to}`, {
+            kind: 'screen', from: edge.from, to: edge.to, lane: 0, layer: 'voice', title: 'Screen share'
         });
         // Transfers between the same two nodes get different curves.
         const lanes = new Map();
@@ -547,6 +573,224 @@
         layout(false);
     }).observe(container);
 
+    // ---- Live traffic pulses ----
+
+    const POLL_MS = 250;
+    const MAX_PULSES = 64;
+    const TRAFFIC_STYLE = {
+        voice: { durationMs: 750, r: 6 },
+        music: { durationMs: 750, r: 6 },
+        screen: { durationMs: 650, r: 6.5 },
+        transfer: { durationMs: 900, r: 6.5 }
+    };
+
+    let mapOpen = Boolean(document.body?.classList?.contains('map-open'));
+    let pollTimer = 0;
+    let pollInFlight = false;
+    let lastPollAt = 0;
+    const prevCounters = new Map();
+    const pulses = [];
+    let pulseFrame = 0;
+
+    function nowMs() {
+        return typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+    }
+
+    function trafficActive() {
+        return mapOpen && !noMotion();
+    }
+
+    function clearPulses() {
+        if (pulseFrame !== 0 && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(pulseFrame);
+        pulseFrame = 0;
+        for (const pulse of pulses) pulse.element.remove();
+        pulses.length = 0;
+    }
+
+    function stopPolling() {
+        if (pollTimer !== 0 && typeof clearInterval === 'function') clearInterval(pollTimer);
+        pollTimer = 0;
+        pollInFlight = false;
+        lastPollAt = 0;
+        prevCounters.clear();
+        clearPulses();
+    }
+
+    function syncPolling() {
+        if (!trafficActive()) {
+            stopPolling();
+            return;
+        }
+        if (pollTimer === 0 && typeof setInterval === 'function') {
+            void pollTraffic();
+            pollTimer = setInterval(pollTraffic, POLL_MS);
+        }
+    }
+
+    async function pollTraffic() {
+        if (!trafficActive() || pollInFlight) return;
+        const getTraffic = window.asscrack?.getMapTraffic;
+        if (typeof getTraffic !== 'function') return;
+        pollInFlight = true;
+        try {
+            const snapshot = await getTraffic();
+            if (trafficActive() && snapshot) feedTraffic(snapshot);
+        } catch {
+            // Ignore transient IPC errors while closing or leaving room.
+        } finally {
+            pollInFlight = false;
+        }
+    }
+
+    function pulseCountFor(kind, rate) {
+        if (kind === 'transfer') {
+            return Math.min(3, Math.max(1, 1 + Math.floor(Math.log10(Math.max(1, rate / 16384)))));
+        }
+        return Math.min(3, Math.max(1, Math.round(rate / (kind === 'screen' ? 20 : 25))));
+    }
+
+    function findTransferEdge(from, to) {
+        for (const edge of edges.values()) {
+            if (edge.kind === 'transfer' && edge.from === from && edge.to === to) return edge;
+        }
+        return null;
+    }
+
+    function pulsePosition(pulse, p) {
+        const a = nodes.get(pulse.from);
+        const b = nodes.get(pulse.to);
+        if (!a || !b) return null;
+        if (pulse.kind === 'transfer') {
+            const edge = findTransferEdge(pulse.from, pulse.to);
+            if (edge) {
+                const dx = b.x - a.x;
+                const dy = b.y - a.y;
+                const length = Math.hypot(dx, dy) || 1;
+                const bend = 16 + 10 * edge.lane;
+                const controlX = (a.x + b.x) / 2 - (dy / length) * bend;
+                const controlY = (a.y + b.y) / 2 + (dx / length) * bend;
+                const startLength = Math.hypot(controlX - a.x, controlY - a.y) || 1;
+                const endLength = Math.hypot(controlX - b.x, controlY - b.y) || 1;
+                const startX = a.x + ((controlX - a.x) / startLength) * (NODE_R + 3);
+                const startY = a.y + ((controlY - a.y) / startLength) * (NODE_R + 3);
+                const endX = b.x + ((controlX - b.x) / endLength) * (NODE_R + 6);
+                const endY = b.y + ((controlY - b.y) / endLength) * (NODE_R + 6);
+                const u = 1 - p;
+                return {
+                    x: u * u * startX + 2 * u * p * controlX + p * p * endX,
+                    y: u * u * startY + 2 * u * p * controlY + p * p * endY
+                };
+            }
+        }
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const length = Math.hypot(dx, dy);
+        if (length <= NODE_R * 2) return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        const ux = dx / length;
+        const uy = dy / length;
+        const dist = NODE_R + (length - NODE_R * 2) * p;
+        return { x: a.x + ux * dist, y: a.y + uy * dist };
+    }
+
+    function stepPulses(now) {
+        pulseFrame = 0;
+        if (!trafficActive()) {
+            clearPulses();
+            return;
+        }
+        for (let i = pulses.length - 1; i >= 0; i--) {
+            const pulse = pulses[i];
+            const p = (now - pulse.bornAt) / pulse.durationMs;
+            if (p < 0) {
+                pulse.element.setAttribute('opacity', '0');
+                continue;
+            }
+            if (p >= 1) {
+                pulse.element.remove();
+                pulses.splice(i, 1);
+                continue;
+            }
+            const pos = pulsePosition(pulse, p);
+            if (!pos) {
+                pulse.element.remove();
+                pulses.splice(i, 1);
+                continue;
+            }
+            const opacity = p < 0.12 ? p / 0.12 : p > 0.85 ? (1 - p) / 0.15 : 1;
+            pulse.element.setAttribute('cx', round(pos.x));
+            pulse.element.setAttribute('cy', round(pos.y));
+            pulse.element.setAttribute('opacity', String(Math.round(opacity * 100) / 100));
+        }
+        if (pulses.length > 0 && typeof requestAnimationFrame === 'function') {
+            pulseFrame = requestAnimationFrame(stepPulses);
+        }
+    }
+
+    function startPulseLoop() {
+        if (pulseFrame === 0 && pulses.length > 0 && typeof requestAnimationFrame === 'function') {
+            pulseFrame = requestAnimationFrame(stepPulses);
+        }
+    }
+
+    function feedTraffic(snapshot, now = nowMs()) {
+        if (!trafficActive() || !snapshot || !Array.isArray(snapshot.edges)) return;
+        const dtSec = lastPollAt > 0 ? Math.min(2, Math.max(0.1, (now - lastPollAt) / 1000)) : POLL_MS / 1000;
+        lastPollAt = now;
+        const seenKeys = new Set();
+        for (const edge of snapshot.edges) {
+            const kind = edge?.kind;
+            const style = TRAFFIC_STYLE[kind];
+            const from = text(edge?.from);
+            const to = text(edge?.to);
+            const count = Number(edge?.count);
+            if (!style || !from || !to || from === to || !nodes.has(from) || !nodes.has(to) || !Number.isFinite(count) || count < 0) {
+                continue;
+            }
+            const key = `${kind}|${from}|${to}`;
+            seenKeys.add(key);
+            if (!prevCounters.has(key)) {
+                prevCounters.set(key, count);
+                continue;
+            }
+            const prev = prevCounters.get(key);
+            prevCounters.set(key, count);
+            const delta = count - prev;
+            if (delta <= 0) continue;
+            const n = pulseCountFor(kind, delta / dtSec);
+            for (let i = 0; i < n; i++) {
+                if (pulses.length >= MAX_PULSES) break;
+                const element = svgEl('circle', {
+                    class: `nm-traffic-pulse nm-traffic-${kind}`,
+                    'data-traffic-kind': kind,
+                    'data-from': from,
+                    'data-to': to,
+                    r: style.r,
+                    fill: `url(#nm-pulse-${kind})`,
+                    'pointer-events': 'none',
+                    opacity: '0'
+                });
+                trafficLayer.append(element);
+                pulses.push({
+                    kind,
+                    from,
+                    to,
+                    bornAt: now + (i * POLL_MS) / n,
+                    durationMs: style.durationMs,
+                    element
+                });
+            }
+        }
+        for (const key of prevCounters.keys()) {
+            if (!seenKeys.has(key)) prevCounters.delete(key);
+        }
+        startPulseLoop();
+    }
+
+    function setOpen(open) {
+        mapOpen = Boolean(open);
+        syncPolling();
+    }
+
     // No motion in a hidden page: the nodes go to the target positions and the pulse stops (styles.css).
     function showPageState() {
         if (document.hidden) {
@@ -555,9 +799,11 @@
         } else {
             container.removeAttribute('data-paused');
         }
+        syncPolling();
     }
     document.addEventListener('visibilitychange', showPageState);
+    reducedMotion.addEventListener?.('change', syncPolling);
     showPageState();
 
-    window.nodeMap = { update, highlight, select };
+    window.nodeMap = { update, highlight, select, setOpen, feedTraffic };
 })();

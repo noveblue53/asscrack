@@ -11,7 +11,7 @@ const sources = Object.fromEntries(await Promise.all(['music-core.js', 'music-ui
     .map(async name => [name, await readFile(app(name), 'utf8')])));
 const settle = async () => { for (let i = 0; i < 5; i++) await new Promise(resolve => setTimeout(resolve, 0)); };
 
-const coreContext = { window: {}, Math, Number, Array, Uint8Array, Object };
+const coreContext = { window: {}, Math, Number, Array, Uint8Array, Float32Array, Object };
 vm.createContext(coreContext);
 vm.runInContext(sources['music-viz-core.js'], coreContext, { filename: 'music-viz-core.js' });
 const vc = coreContext.window.musicVizCore;
@@ -180,9 +180,13 @@ const BAR_IDS = ['music-title', 'music-meta', 'music-pause', 'music-skip', 'musi
     'music-queue-toggle', 'music-queue-panel', 'music-count', 'music-add-form', 'music-link', 'music-files', 'music-folder',
     'music-folder-list', 'music-queue', 'music-status', 'music-visualizer'];
 
-function load({ windowMode = false, settings = {}, playing = true, view: start } = {}) {
+function load({ windowMode = false, settings = {}, playing = true, view: start, storageInit = {} } = {}) {
     const layout = [{ id: 'music-bar', hidden: !windowMode, children: [
-        { id: 'music-spectrum', tag: 'canvas' }, { id: 'music-vu', tag: 'canvas', hidden: true },
+        { id: 'music-viz-wrap', tag: 'div', classes: ['music-viz-wrap'], children: [
+            { id: 'music-spectrum', tag: 'canvas' },
+            { id: 'music-viz-mode', tag: 'button' }
+        ] },
+        { id: 'music-vu', tag: 'canvas', hidden: true },
         ...BAR_IDS.map(id => ({ id, tag: id === 'music-add-form' ? 'form' : 'div' })),
         ...(windowMode ? [] : [{ id: 'music-collapse', tag: 'button' }, { id: 'music-popout', tag: 'button' }])] },
     ...(windowMode ? [] : [{ id: 'music-mark', tag: 'button', hidden: true }, { id: 'view-music', tag: 'li' }, { id: 'status', tag: 'p' }])];
@@ -195,9 +199,35 @@ function load({ windowMode = false, settings = {}, playing = true, view: start }
         const canvas = el(id);
         canvas.clientWidth = 150;
         canvas.clientHeight = id === 'music-vu' ? 24 : 46;
-        canvas.getContext = () => ({ clearRect() { draws[id]++; }, fillRect() {}, fillStyle: '' });
+        canvas.getContext = () => ({
+            clearRect() { draws[id]++; },
+            fillRect() {},
+            beginPath() {},
+            moveTo() {},
+            lineTo() {},
+            stroke() {},
+            arc() {},
+            fill() {},
+            fillText() {},
+            save() {},
+            restore() {},
+            fillStyle: '',
+            strokeStyle: '',
+            lineWidth: 1,
+            lineJoin: 'miter',
+            lineCap: 'butt',
+            font: ''
+        });
     }
+    const store = new Map(Object.entries(storageInit));
+    const localStorage = {
+        getItem: k => (store.has(k) ? store.get(k) : null),
+        setItem: (k, v) => store.set(k, String(v)),
+        removeItem: k => store.delete(k)
+    };
+    window.localStorage = localStorage;
     let s = { volume: 60, ducking: true, visualizer: 'spectrum', collapsed: false, hidden: false, popout: false, ...settings };
+    let vizMode = store.get(vc.VIZ_MODE_KEY) || 'bars';
     const changes = [];
     const fire = () => changes.forEach(fn => fn());
     const tapState = { playing };
@@ -206,8 +236,15 @@ function load({ windowMode = false, settings = {}, playing = true, view: start }
     window.music = {
         settings: () => ({ ...s }),
         async setSettings(patch) { s = { ...s, ...patch }; fire(); return s; },
+        vizMode: () => vizMode,
+        setVizMode: next => {
+            vizMode = next || 'bars';
+            localStorage.setItem(vc.VIZ_MODE_KEY, vizMode);
+            fire();
+            return vizMode;
+        },
         onChange: fn => changes.push(fn),
-        tap: () => (tapState.playing === null ? null : { spectrum: { ...analyser(0), fftSize: 2048 }, left: analyser(0.5), right: analyser(0.1),
+        tap: () => (tapState.playing === null ? null : { spectrum: { ...analyser(0.25), fftSize: 2048 }, left: analyser(0.5), right: analyser(0.1),
             sampleRate: 48000, playing: tapState.playing })
     };
     const hooks = {};
@@ -225,14 +262,14 @@ function load({ windowMode = false, settings = {}, playing = true, view: start }
     let frames = [];
     let clock = 0;
     const intervals = [];
-    const context = { window, document, Event, console, Promise, Math, Number, String, Object, Array, JSON, Uint8Array,
+    const context = { window, document, Event, localStorage, console, Promise, Math, Number, String, Object, Array, JSON, Uint8Array,
         Float32Array, setTimeout, clearTimeout, setInterval: fn => intervals.push(fn), performance: { now: () => clock },
         requestAnimationFrame: fn => { frames.push(fn); return frames.length; }, cancelAnimationFrame: () => { frames = []; } };
     vm.createContext(context);
     for (const name of ['music-core.js', 'music-ui.js', 'music-viz-core.js', 'music-viz.js']) vm.runInContext(sources[name], context, { filename: name });
     const tick = (ms = 34) => { clock += ms; const run = frames; frames = []; run.forEach(fn => fn()); };
     const setView = next => { view = next; hooks.music(next); };
-    return { el, window, document, hooks, calls, draws, tick, tapState, setView, settings: () => s, viz: () => window.musicViz.state(),
+    return { el, window, document, localStorage, store, hooks, calls, draws, tick, tapState, setView, settings: () => s, viz: () => window.musicViz.state(),
         frames: () => frames.length, second: () => intervals.forEach(fn => fn()) };
 }
 
@@ -464,4 +501,185 @@ test('pop-out window: no music on this PC (a null answer, for example while deaf
     assert.equal(win.viz().running, false);
     win.setView({ inVoice: true, dj: 'p1', self: 'p2', now: { id: 'b', title: 'Song B' }, paused: false, queue: [] });
     assert.equal(win.viz().running, true);
+});
+
+// ---- Clickable visualizer modes (bars -> scope -> analog-vu -> starfield) ----
+
+test('visualizer modes: normalize, cycle order, and labels', () => {
+    assert.deepEqual(Array.from(vc.VIZ_MODES), ['bars', 'scope', 'analog-vu', 'starfield']);
+    assert.equal(vc.normalizeVizMode('scope'), 'scope');
+    assert.equal(vc.normalizeVizMode('unknown'), 'bars');
+    assert.equal(vc.normalizeVizMode(null), 'bars');
+    assert.equal(vc.nextVizMode('bars'), 'scope');
+    assert.equal(vc.nextVizMode('scope'), 'analog-vu');
+    assert.equal(vc.nextVizMode('analog-vu'), 'starfield');
+    assert.equal(vc.nextVizMode('starfield'), 'bars');
+    assert.equal(vc.vizModeLabel('bars'), 'LED Bars');
+    assert.equal(vc.vizModeLabel('scope'), 'Scope');
+    assert.equal(vc.vizModeLabel('analog-vu'), 'Analog VU');
+    assert.equal(vc.vizModeLabel('starfield'), 'Starfield');
+});
+
+test('oscilloscope: zero-crossing trigger, synthesis, and CRT trace drawing', () => {
+    const empty = vc.sampleWaveform(null, 16);
+    assert.equal(empty.length, 16);
+    assert.ok(empty.every(v => v === 0));
+
+    const buf = new Float32Array(128);
+    for (let i = 0; i < buf.length; i++) buf[i] = Math.sin((i - 10) * 0.25);
+    const wave = vc.sampleWaveform(buf, 32);
+    assert.equal(wave.length, 32);
+    assert.ok(wave[0] > 0, 'starts at rising zero crossing');
+    assert.ok(wave.every(v => v >= -1 && v <= 1));
+
+    const silentSynth = vc.synthesizeWaveform(new Array(16).fill(0), 0, 0, 100, 32);
+    assert.ok(silentSynth.every(v => v === 0));
+    const activeSynth = vc.synthesizeWaveform(new Array(16).fill(0.6), 0.5, 0.5, 500, 32);
+    assert.equal(activeSynth.length, 32);
+    assert.ok(activeSynth.some(v => Math.abs(v) > 0.05));
+
+    const ops = [];
+    const ctx = {
+        strokeStyle: '', lineWidth: 1, lineJoin: '', lineCap: '',
+        clearRect: () => ops.push('clear'),
+        beginPath: () => ops.push('begin'),
+        moveTo: (x, y) => ops.push(['move', x, y]),
+        lineTo: (x, y) => ops.push(['line', x, y]),
+        stroke: () => ops.push('stroke')
+    };
+    vc.drawOscilloscope(ctx, 160, 48, activeSynth);
+    assert.equal(ops[0], 'clear');
+    assert.equal(ops.filter(x => x === 'stroke').length, 3, 'graticule + glow + core');
+});
+
+test('analog VU: needle angle, ballistic smoothing, and dual meter drawing', () => {
+    assert.ok(vc.vuNeedleAngle(0) < vc.vuNeedleAngle(0.5));
+    assert.ok(vc.vuNeedleAngle(0.5) < vc.vuNeedleAngle(1));
+
+    const rising = vc.smoothNeedle(0.1, 0.9, 50);
+    const falling = vc.smoothNeedle(0.9, 0.1, 50);
+    assert.ok(rising > 0.1 && rising <= 0.9);
+    assert.ok(falling < 0.9 && falling >= 0.1);
+    assert.ok((rising - 0.1) > (0.9 - falling), 'rises faster than it falls');
+
+    const ops = [];
+    const ctx = {
+        fillStyle: '', strokeStyle: '', lineWidth: 1, font: '',
+        clearRect: () => ops.push('clear'),
+        fillRect: () => ops.push('rect'),
+        beginPath: () => ops.push('begin'),
+        moveTo: () => ops.push('move'),
+        lineTo: () => ops.push('line'),
+        arc: () => ops.push('arc'),
+        stroke: () => ops.push('stroke'),
+        fill: () => ops.push('fill'),
+        fillText: (t) => ops.push(['text', t])
+    };
+    vc.drawAnalogVu(ctx, 160, 48, 0.6, 0.4, 0.8, 0.5);
+    assert.equal(ops[0], 'clear');
+    assert.deepEqual(ops.filter(x => Array.isArray(x) && x[0] === 'text'), [['text', 'L'], ['text', 'R']]);
+});
+
+test('starfield & plasma: band energies, deterministic starfield, plasma colors, and drawing', () => {
+    const e = vc.bandEnergies([...Array(4).fill(0.8), ...Array(6).fill(0.4), ...Array(6).fill(0.2)]);
+    assert.ok(Math.abs(e.bass - 0.8) < 1e-9);
+    assert.ok(Math.abs(e.mid - 0.4) < 1e-9);
+    assert.ok(Math.abs(e.treble - 0.2) < 1e-9);
+    assert.ok(e.energy > 0.5 && e.energy < 0.6);
+
+    const sf1 = vc.createStarfield(16);
+    const sf2 = vc.createStarfield(16);
+    const s1 = sf1.step(33, 0.5, 0.6);
+    const s2 = sf2.step(33, 0.5, 0.6);
+    assert.equal(s1.length, 16);
+    assert.deepEqual(s1, s2, 'deterministic starfield');
+    sf1.reset();
+    assert.deepEqual(sf1.step(33, 0.5, 0.6), s2, 'reset restores initial state');
+
+    const color = vc.plasmaColor(0.5, 0.5, 1.2, 0.6, 0.4, 0.2);
+    assert.match(color, /^rgb\(\d+, \d+, \d+\)$/);
+
+    const ops = [];
+    const ctx = {
+        fillStyle: '', strokeStyle: '', lineWidth: 1,
+        clearRect: () => ops.push('clear'),
+        fillRect: () => ops.push('rect'),
+        beginPath: () => ops.push('begin'),
+        moveTo: () => ops.push('move'),
+        lineTo: () => ops.push('line'),
+        stroke: () => ops.push('stroke')
+    };
+    vc.drawStarfieldPlasma(ctx, 150, 46, sf1, new Array(16).fill(0.5), 1000, 33);
+    assert.equal(ops[0], 'clear');
+    assert.ok(ops.filter(x => x === 'rect').length >= 72, 'plasma grid cells + stars');
+});
+
+test('mode cycling: click canvas or pill cycles all 4 modes, persists, restores, and syncs across windows', async () => {
+    const room = load();
+    await settle();
+    assert.equal(room.viz().vizMode, 'bars');
+    assert.equal(room.el('music-viz-mode').textContent, 'LED Bars');
+
+    room.el('music-spectrum').click();
+    assert.equal(room.viz().vizMode, 'scope');
+    assert.equal(room.el('music-viz-mode').textContent, 'Scope');
+    assert.equal(room.store.get(vc.VIZ_MODE_KEY), 'scope');
+
+    room.el('music-viz-mode').click();
+    assert.equal(room.viz().vizMode, 'analog-vu');
+    assert.equal(room.el('music-viz-mode').textContent, 'Analog VU');
+
+    room.el('music-spectrum').click();
+    assert.equal(room.viz().vizMode, 'starfield');
+    assert.equal(room.el('music-viz-mode').textContent, 'Starfield');
+
+    room.el('music-spectrum').click();
+    assert.equal(room.viz().vizMode, 'bars');
+    assert.equal(room.el('music-viz-mode').textContent, 'LED Bars');
+
+    // Persisted mode is restored on reload.
+    room.el('music-spectrum').click();
+    const reloaded = load({ storageInit: { [vc.VIZ_MODE_KEY]: 'analog-vu' } });
+    await settle();
+    assert.equal(reloaded.viz().vizMode, 'analog-vu');
+    assert.equal(reloaded.el('music-viz-mode').textContent, 'Analog VU');
+
+    // Cross-window storage event updates mode without re-persisting.
+    const { Event } = createDom();
+    const storageEvent = new Event('storage');
+    storageEvent.key = vc.VIZ_MODE_KEY;
+    storageEvent.newValue = 'starfield';
+    reloaded.window._fire(storageEvent, false);
+    assert.equal(reloaded.viz().vizMode, 'starfield');
+    assert.equal(reloaded.el('music-viz-mode').textContent, 'Starfield');
+});
+
+test('popout window: receives both bands and VU levels, and music-window.js syncs vizMode', async () => {
+    const room = load();
+    await settle();
+    room.hooks.pull();
+    const sent = room.calls.filter(c => c[0] === 'viz').at(-1)[1];
+    assert.equal(sent.length, 18);
+    assert.ok(sent[0] > 150, 'bands included');
+    assert.ok(sent[16] > sent[17], 'stereo VU levels included for analog-vu in popout');
+
+    // Verify music-window.js exposes vizMode / setVizMode and syncs storage events.
+    const winSource = await readFile(app('music-window.js'), 'utf8');
+    const { document, window, Event } = createDom([]);
+    const store = new Map([[vc.VIZ_MODE_KEY, 'scope']]);
+    const localStorage = { getItem: k => store.get(k) ?? null, setItem: (k, v) => store.set(k, String(v)) };
+    window.localStorage = localStorage;
+    window.asscrack = { onMusicSettings: () => {}, getMusicSettings: async () => ({ volume: 60, ducking: true, visualizer: 'spectrum' }) };
+    const ctx = { window, document, localStorage, console, Promise, Object };
+    vm.createContext(ctx);
+    vm.runInContext(winSource, ctx, { filename: 'music-window.js' });
+    await settle();
+    assert.equal(window.music.vizMode(), 'scope');
+    window.music.setVizMode('starfield');
+    assert.equal(store.get(vc.VIZ_MODE_KEY), 'starfield');
+    const ev = new Event('storage');
+    ev.key = vc.VIZ_MODE_KEY;
+    ev.newValue = 'analog-vu';
+    window._fire(ev, false);
+    assert.equal(window.music.vizMode(), 'analog-vu');
 });

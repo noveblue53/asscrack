@@ -1,4 +1,4 @@
-import { test } from 'node:test'
+import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createAsscrackNode } from '../src/network/node.mjs'
 import { newRoomKey } from '../src/network/invite.mjs'
@@ -64,6 +64,8 @@ async function twoRelayRoom(nodes, memberCount, observeMember = () => {}) {
 function allPairs(members) {
     return members.every(a => members.every(b => a === b || a.peers().includes(b.peerId)))
 }
+
+describe('relay spread', { concurrency: true }, () => {
 
 test('spread: the member sessions use both full nodes as relays', { timeout: 60000 }, async () => {
     const nodes = []
@@ -229,4 +231,6 @@ test('127.0.0.1: two restricted members recover two-way voice and chat through t
         console.log(`127.0.0.1 ${1 - i}->${i}: first fresh frame ${Math.round(fresh[0].at - loss)} ms after stop began; ` +
             `${fresh.length} fresh frames over ${Math.round(fresh.at(-1).at - fresh[0].at)} ms, ${chat[i].length} fresh live chat lines`)
     }
+})
+
 })

@@ -97,11 +97,13 @@ test('each on* function of the bridge gives the data of its event to the callbac
 test('the topology and the transfer calls send the IPC channel and the arguments that the main process expects', async () => {
     const b = loadBridge();
     assert.deepEqual(await b.api.getTopology(), { channel: 'asscrack:topology' });
+    assert.deepEqual(await b.api.getMapTraffic(), { channel: 'asscrack:map-traffic' });
     b.api.cancelFile('offer-1', 'peer-2');
     b.api.acceptFile('offer-1');
     b.api.refuseFile('offer-1');
     assert.deepEqual(b.invoked, [
         ['asscrack:topology'],
+        ['asscrack:map-traffic'],
         ['asscrack:cancel-file', 'offer-1', 'peer-2'],
         ['asscrack:accept-file', 'offer-1'],
         ['asscrack:refuse-file', 'offer-1']

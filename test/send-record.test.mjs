@@ -1,4 +1,4 @@
-import test from 'node:test'
+import test, { describe } from 'node:test'
 import assert from 'node:assert/strict'
 import { setTimeout as delay } from 'node:timers/promises'
 import { createAsscrackNode } from '../src/network/node.mjs'
@@ -22,6 +22,8 @@ async function pair() {
     await waitFor(() => a.peers().length === 1 && b.peers().length === 1)
     return { a, b, messagesB }
 }
+
+describe('send record', { concurrency: true }, () => {
 
 test('sendRecord gives the same id, from, text and time as the received message', { timeout: 15000 }, async () => {
     const { a, b, messagesB } = await pair()
@@ -131,4 +133,6 @@ test('send still returns the session count', { timeout: 15000 }, async () => {
         await b.stop()
         await a.stop()
     }
+})
+
 })

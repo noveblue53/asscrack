@@ -1,6 +1,7 @@
 import { app, BrowserWindow, Menu, Notification, nativeImage, protocol, Tray, screen, powerMonitor, clipboard, crashReporter, desktopCapturer, dialog, ipcMain, safeStorage, session, shell } from 'electron';
 import { createRoomMedia } from './room-media.mjs';
 import { createRoomIpc } from './room-ipc.mjs';
+import { createMapTraffic } from './map-traffic.mjs';
 import { createImageDecoder } from './image-decoder.mjs';
 import { createMusicEval } from './music-eval.mjs';
 import { attachMusic } from './music-ipc.mjs';
@@ -337,6 +338,7 @@ let mainWindow = null;
 let voiceMonitor = null;
 let node = null;
 let readRoomActivity = () => [];
+const mapTraffic = createMapTraffic();
 
 const roomIpc = createRoomIpc(ipcMain, event => isDesktopFrame(mainWindow, event.sender, event.senderFrame, ROOM_PAGE));
 function handleRoomIpc(channel, handler) {
@@ -1124,6 +1126,7 @@ let onLive = () => {};
 async function startRoom(options, { publicAddress = '', allowUpnp = false, reopen = false, lan = false } = {}) {
     if (loginStarted) throw new Error('Already logged in');
     loginStarted = true;
+    mapTraffic.reset();
     try {
         try {
             downloadScratch ??= createDownloadScratch(options.downloadDir, downloadOwner(app.getPath('userData'), app.getPath('userData')));
@@ -1301,11 +1304,15 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
     onLive('music', data => { sendToWindow('asscrack:music', data); musicPopout.view(data); });
     onLive('music-notice', data => { sendToWindow('asscrack:music-notice', data); musicPopout.notice(data); });
     onLive('music-track', data => music.trackDone(data));
-    onLive('music-frame', data => { if (!idlePeer) sendToWindow('asscrack:music-frame', data); });
+    onLive('music-frame', data => {
+        mapTraffic.recordMusicFrame(data?.origin);
+        if (!idlePeer) sendToWindow('asscrack:music-frame', data);
+    });
     // P8b: the screen share events (design section 4, IPC).
     forwardScreenEvents(onLive);
     for (const type of EVENTS) {
         onLive(type, data => {
+            if (type === 'voice-frame') mapTraffic.recordVoiceFrame(data?.origin);
             if (type === 'channels') savedRooms?.persistChannels(data.added);
             // G6: the archive gets the signed catalog. The window gets the view only.
             if (type === 'voice-channels') {
@@ -1320,6 +1327,10 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
             if (type === 'connection' || type === 'dial-failed' || (idlePeer && type === 'voice-frame')) return;
             // Diagnostics: the transfer of a bundle is not a row of Transfers (the diagnostics bar shows it).
             if (type.startsWith('file-') && node.isDiagOffer?.(data?.offerId)) return;
+            if (type === 'file-progress') mapTraffic.recordFileProgress(data, node.peerId);
+            else if (type === 'file-done' || type === 'file-failed' || type === 'file-cancelled' || type === 'file-paused') {
+                mapTraffic.recordFileEnd(data);
+            }
             if (type === 'file-done' && data?.direction === 'receive') {
                 const { path: localPath, ...event } = data;
                 const savedName = typeof localPath === 'string' ? path.basename(localPath) : null;
@@ -2225,6 +2236,10 @@ handleRoomIpc('asscrack:topology', () => {
     return node ? node.topology() : null;
 });
 
+handleRoomIpc('asscrack:map-traffic', () => {
+    return mapTraffic.snapshot(node);
+});
+
 handleRoomIpc('asscrack:refresh-shelf', () => node?.refreshShelf());
 // L8: the folders that the room never gets a file from: the profile (archive, key files, logs, partials), the
 // default profile, and the folder of the release key. The window cannot prove the choice of the user (a drop).
@@ -2482,6 +2497,7 @@ function leaveRoom() {
     resetScreen(current);
     leaving = stopNodeWithin(current).then(() => {
         if (node === current) node = null;
+        mapTraffic.reset();
         readRoomActivity = () => [];
         receivedFiles.clear();
         restoringDownloads.clear();

@@ -1,4 +1,4 @@
-import test, { mock } from 'node:test'
+import test, { describe, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { setTimeout as delay } from 'node:timers/promises'
 import { createAsscrackNode } from '../src/network/node.mjs'
@@ -7,9 +7,7 @@ import { createElection } from '../src/network/election.mjs'
 const base = { room: 'election', listen: ['/ip4/127.0.0.1/tcp/0'], discovery: false }
 
 async function makeNodes(count, extra = {}) {
-    const nodes = []
-    for (let i = 0; i < count; i++) nodes.push(await createAsscrackNode({ ...base, ...extra }))
-    return nodes
+    return Promise.all(Array.from({ length: count }, () => createAsscrackNode({ ...base, ...extra })))
 }
 
 async function connectPair(a, b) {
@@ -50,6 +48,8 @@ async function stopAll(nodes) {
 function elapsed(start, label) {
     console.log(`${label}: ${Date.now() - start} ms`)
 }
+
+describe('election network (127.0.0.1)', { concurrency: true }, () => {
 
 test('a+b: 3 nodes elect one host, and a 4th node does not change it', { timeout: 30000 }, async () => {
     const nodes = await makeNodes(3)
@@ -202,6 +202,22 @@ test('127.0.0.1: an isolated member rejoins the full host without changing its t
     assert.deepEqual(changes.get(a), [])
     assert.deepEqual(changes.get(b), [])
     assert.deepEqual(changes.get(c), [null, a.peerId])
+})
+
+test('L6: 127.0.0.1: a live line in a legacy room shows the name of the session, not its from field', { timeout: 20000 }, async () => {
+    const roomKey = (await import('../src/network/invite.mjs')).newRoomKey()
+    const bob = await createAsscrackNode({ ...base, roomKey, name: 'Bob' })
+    const mallory = await createAsscrackNode({ ...base, roomKey, name: 'Mallory' })
+    try {
+        await connectPair(bob, mallory)
+        assert.equal(mallory.sendTo(bob.peerId, { from: 'Alice', text: 'I am Alice', time: Date.now() }), true)
+        await waitUntil(() => bob.history().some(m => m.text === 'I am Alice'), 5000)
+        assert.equal(bob.history().find(m => m.text === 'I am Alice').from, 'Mallory')
+    } finally {
+        await stopAll([bob, mallory])
+    }
+})
+
 })
 
 // Unit tests of the rank (createElection with fake timers and fake send functions).
@@ -380,18 +396,4 @@ test('L6: a legacy election refuses a host line for another ID and a term that i
     // A member does not send the announcement of another host on a new session.
     e.sessionOpened('x')
     assert.deepEqual(sent.filter(([peer]) => peer === 'x'), [])
-})
-
-test('L6: 127.0.0.1: a live line in a legacy room shows the name of the session, not its from field', { timeout: 20000 }, async () => {
-    const roomKey = (await import('../src/network/invite.mjs')).newRoomKey()
-    const bob = await createAsscrackNode({ ...base, roomKey, name: 'Bob' })
-    const mallory = await createAsscrackNode({ ...base, roomKey, name: 'Mallory' })
-    try {
-        await connectPair(bob, mallory)
-        assert.equal(mallory.sendTo(bob.peerId, { from: 'Alice', text: 'I am Alice', time: Date.now() }), true)
-        await waitUntil(() => bob.history().some(m => m.text === 'I am Alice'), 5000)
-        assert.equal(bob.history().find(m => m.text === 'I am Alice').from, 'Mallory')
-    } finally {
-        await stopAll([bob, mallory])
-    }
 })

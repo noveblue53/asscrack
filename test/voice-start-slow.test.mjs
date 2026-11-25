@@ -72,8 +72,7 @@ async function oneRun() {
 }
 
 test('voice start with a slow stream open: one stream, frames from the start, no gap (127.0.0.1)', { timeout: 120000 }, async () => {
-    const runs = []
-    for (let i = 0; i < 5; i++) runs.push(await oneRun())
+    const runs = await Promise.all(Array.from({ length: 5 }, () => oneRun()))
     const starts = runs.map(r => r.startMs).sort((x, y) => x - y)
     const median = starts[Math.floor(starts.length / 2)]
     console.log(`voice start slow open (127.0.0.1): median ${median.toFixed(1)} ms, runs ${runs.map(r => `${r.startMs.toFixed(1)} ms first seq ${r.firstSeq} got ${r.seqs.length}/${r.sent} opens ${r.opens}`).join('; ')}`)
