@@ -29,6 +29,15 @@ Each result has one of these labels:
   - `npm test`: 1277 tests, 1258 pass, 1 fail, 18 skipped (127.0.0.1). The 1 failure is in `test/windows-identity.test.mjs` because the path has a space (`%20` in `URL.pathname`). It also fails on the base commit.
   - Live Electron run with `--profile` and fake `APPDATA`: full mode, 48 px shade mode, marquee scroll, pin toggle, and reopened state pass with 0 console errors and 0 clipping (this PC).
 
+### Live traffic pulses on the network map
+
+- `src/application/nodemap.js` polls `asscrack:map-traffic` at 4 Hz (`250 ms`) only while the network map is open (and not hidden or reduced-motion), and animates color-coded glowing pulses along active P2P edges (green for voice, amber for music, cyan for screen share including fanout-ready edges, purple for file transfers) at a rate proportional to traffic activity. Zero timers, IPC calls, or animation frames run when the map is closed.
+- `src/application/map-traffic.mjs`, `src/application/main.js`, and `src/application/preload.cjs` expose lightweight monotonic per-peer traffic counters from `voiceStats()`, `musicStats()`, `screenStats()`, `activeTransfers()`, and live frame/transfer events.
+
+Results:
+- `127.0.0.1`: `node --test test/app-events.test.mjs test/map-traffic.test.mjs test/nodemap.test.mjs test/preload-bridge.test.mjs` (45/45 passed). Full `npm test` run prior to the `test/app-events.test.mjs` assertion update: 1256 passed, 18 skipped, 2 failed (`test/app-events.test.mjs` fixed afterward, and pre-existing `test/windows-identity.test.mjs` failure on `origin/main`).
+- `this PC`: fresh `--profile` launch (`work-orders/nodemap-live-traffic/runs/run1/profile`, fake `APPDATA` `work-orders/nodemap-live-traffic/runs/run1/fake-appdata`) with zero console/runtime errors, all 4 traffic pulse kinds rendered when open, and 0 pulses when closed.
+
 ## 1.0.6 (2026-11-23): profile pictures, several screen shares, friend status, the Settings menu and What's new
 
 Release 1.0.6 is the sixth update of 1.0.0. A 1.0.0, 1.0.1, 1.0.2, 1.0.3, 1.0.4 or 1.0.5 app gets it with the signed

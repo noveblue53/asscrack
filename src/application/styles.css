@@ -1059,6 +1059,19 @@ body.map-open #map-panel {
   stroke-dasharray: 7 5;
 }
 
+/* A screen share forwarding edge (fanout-ready). */
+.nm-edge-screen {
+  stroke: #06b6d4;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-dasharray: 6 4;
+  opacity: 0.78;
+}
+
+.nm-traffic-pulse {
+  pointer-events: none;
+}
+
 /* A node: the same glossy ball as the buddy icon, with the name color. */
 .nm-body {
   animation: nm-in 220ms var(--ease);

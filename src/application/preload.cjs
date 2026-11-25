@@ -285,6 +285,7 @@ contextBridge.exposeInMainWorld('asscrack', {
     onPeerName: listen('asscrack:peer-name'),
     onTopology: listen('asscrack:topology'),
     getTopology: () => ipcRenderer.invoke('asscrack:topology'),
+    getMapTraffic: () => ipcRenderer.invoke('asscrack:map-traffic'),
     offerFile: async (file, recipientId) => {
         const filePath = webUtils.getPathForFile(file);
         if (!filePath) throw new Error('The file has no path');
