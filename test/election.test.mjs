@@ -397,3 +397,60 @@ test('L6: a legacy election refuses a host line for another ID and a term that i
     e.sessionOpened('x')
     assert.deepEqual(sent.filter(([peer]) => peer === 'x'), [])
 })
+
+test('rank: a full node without hostAllowed is never elected in firstElection, failover, or announcement', () => {
+    mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] })
+    try {
+        // 'f' is a full node with the lowest ID, but hostAllowed('f') is false.
+        // 'h' is not a full node, and hostAllowed('h') is true.
+        const ids = ['f', 'h', 'm']
+        const units = ids.map(id => {
+            const sent = []
+            let open = ids.filter(x => x !== id)
+            const e = createElection({
+                selfId: id,
+                sendTo: (p, l) => sent.push([p, l]),
+                broadcast: l => sent.push(['*', l]),
+                openPeers: () => open,
+                isFullNode: x => x === 'f',
+                hostAllowed: x => x === 'h' || x === 'a'
+            })
+            e.start()
+            return { id, e, sent, setOpen: v => { open = v } }
+        })
+        units.forEach((u, i) => ids.forEach(p => { if (p !== ids[i]) u.e.sessionOpened(p) }))
+        mock.timers.tick(3500)
+        assert.equal(units[0].e.isHost(), false, 'non-hostAllowed full node f is not elected')
+        assert.equal(units[1].e.isHost(), true, 'hostAllowed non-full-node h is elected')
+        assert.equal(units[2].e.isHost(), false)
+
+        // Forged host announcement from non-hostAllowed full node f is rejected.
+        units[1].e.handleAnnouncement('f', { host: 'f', term: 99 })
+        assert.equal(units[1].e.host().peerId, 'h')
+
+        // On failover from 'a', 'h' takes over while 'f' (full node, lower ID) is skipped.
+        const sentH = []
+        let openH = ['a', 'f']
+        const hFailover = createElection({
+            selfId: 'h',
+            sendTo: (p, l) => sentH.push([p, l]),
+            broadcast: l => sentH.push(['*', l]),
+            openPeers: () => openH,
+            isFullNode: x => x === 'f',
+            hostAllowed: x => x === 'h' || x === 'a'
+        })
+        hFailover.start()
+        hFailover.sessionOpened('a')
+        hFailover.sessionOpened('f')
+        hFailover.handleAnnouncement('a', { host: 'a', term: 1 })
+        openH = ['f']
+        hFailover.sessionClosed('a')
+        assert.equal(hFailover.isHost(), true)
+        assert.deepEqual(hFailover.host(), { peerId: 'h', term: 2 })
+
+        for (const u of units) u.e.stop()
+        hFailover.stop()
+    } finally {
+        mock.timers.reset()
+    }
+})

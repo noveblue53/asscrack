@@ -217,13 +217,13 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         [`/ip4/${key ? '0.0.0.0' : '127.0.0.1'}/tcp/${port}`]))
     if (!key && !listen) discovery = false
     if (relayOnly) discovery = false
-    const hasRelayRole = !membership || (!membership.lan && membership.hostGrant && !relayOnly)
-    const canRelay = () => hasRelayRole && (!membership || membership.canHost())
+    const hasRelayRole = !relayOnly && (!membership || !membership.lan)
+    const canRelay = () => hasRelayRole && (!membership || (membership.admitted() && !membership.revoked(membership.id)))
     // Rule 1: the current full-node state of this node.
     let selfFull = fullNode === true && canRelay()
     // Rule 3: a node that can become a full node runs the relay server. The gater refuses each reservation
     // when this node is not a full node, or when the peer is not allowed (allowReservation).
-    const canBeFull = hasRelayRole && (fullNode === true || (fullNode === 'auto' && !relayOnly))
+    const canBeFull = hasRelayRole && (fullNode === true || fullNode === 'auto')
     const services = { identify: identify() }
     if (canBeFull) {
         assertRelayFixed()
@@ -374,7 +374,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     allowReservation = peerId => selfFull && canRelay() && !endingReservations.has(peerId) &&
         sessions.has(peerId) && memberAllowed(peerId)
     allowRelay = peerId => sessions.has(peerId) && peerFull.get(peerId) === true &&
-        (!membership || (!membership.lan && hostAllowed(peerId)))
+        (!membership || (!membership.lan && memberAllowed(peerId)))
 
     // easy-join part 2: the relay rule of a knock. A relay cannot see the protocol in a circuit. Thus it lets a source
     // that is not admitted open a circuit only when the destination is the owner peer of the room (a proved session of
@@ -1844,7 +1844,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     // when the live session for the actual remote identity has passed the room proof.
     async function openHintChat(conn) {
         const id = conn.remotePeer.toString()
-        await openChat(conn, id)
+        await openChat(conn, id, { upgrade: true })
         const pending = pendingSettled.get(pendingChats.get(id))
         if (pending) await pending
         if (!sessions.has(id)) {
@@ -1949,7 +1949,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     }
 
     function setPeerFull(peerId, value, addrs = null) {
-        if (membership && (membership.lan || !hostAllowed(peerId))) value = false
+        if (membership && (membership.lan || !memberAllowed(peerId))) value = false
         const old = peerFull.get(peerId) === true
         peerFull.set(peerId, value)
         if (old !== value) events.emit('full-node', { peerId, fullNode: value })
@@ -2558,6 +2558,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         peers: () => [...sessions.keys()],
         peerNames: () => Object.fromEntries([...names].filter(([peerId]) => sessions.has(peerId))),
         topology,
+        canRelay,
         fullNode: () => selfFull,
         // True while the UPnP task can still give a mapped address (from the start until the result or the timeout).
         upnpPending: () => useUpnp && upnpAllowed() && upnpPhase !== 'done' && !stopped,

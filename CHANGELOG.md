@@ -28,6 +28,12 @@ Build:
 
 ## Unreleased
 
+- **Any-member circuit relay Full Nodes (Session 1)**:
+  - Separated `canRelay()` (any admitted, non-revoked, non-LAN, non-`relayOnly` member) from `canHost()` (`hostGrant`, still required for room-host and voice-host election) in `src/network/node.mjs` and `src/network/election.mjs`.
+  - Updated `openHintChat` in `src/network/node.mjs` to pass `{ upgrade: true }` so existing relayed sessions upgrade to direct TCP when a member promotes to a Full Node.
+  - Added and updated coverage in `test/node.test.mjs`, `test/relay.test.mjs`, `test/room-membership.test.mjs`, `test/protected-room.test.mjs`, `test/election.test.mjs`, and `test/upnp.test.mjs`.
+  - **127.0.0.1**: `node --test test/node.test.mjs test/relay.test.mjs test/room-membership.test.mjs test/protected-room.test.mjs test/election.test.mjs test/upnp.test.mjs` (`51` tests, `51` pass, `0` fail, `0` skipped); `npm test` (`1362` tests, `1344` pass, `0` fail, `18` skipped, `52.12 s`).
+
 - Non-watching full-node fanout hubs (`HUB_OFFER` / `HUB_ACCEPT` / `HUB_STOP` lifecycle in `src/network/screen-share.mjs` and `src/network/screen-fanout.mjs`) with automatic teardown at 0 children and an opt-in Settings toggle (`Relay shares when not watching`, default off).
   - `127.0.0.1`: `node --test test/screen-fanout.test.mjs test/screen-fanout-streams.test.mjs test/screen-hub.test.mjs test/settings-menu.test.mjs test/preload-bridge.test.mjs` (47/47 pass) and `npm test` (1340 pass, 0 fail, 18 skipped).
   - `this PC`: clean Electron app smoke start (`node tools/app-smoke-check.mjs`) with fresh `--profile` and fake `APPDATA`.
