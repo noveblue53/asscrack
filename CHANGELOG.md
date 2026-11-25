@@ -26,6 +26,12 @@ Build:
 - The notes and the date of `update.json` come from the 1.0.8 entry of `src/application/release-notes.json`.
 - Verification (`127.0.0.1` / `this PC`): feature unit tests, `test/release-notes.test.mjs`, `ASSCRACK_RELEASE=1 test/update-release.test.mjs`, and `node tools/sign-update.mjs --check-release`.
 
+## Unreleased
+
+- **Screen share fanout tree coordinator (Session 2)**: added pure `src/network/screen-fanout.mjs` (`createScreenFanout`, `createGlobalSlotLedger`, `FANOUT_DEFAULTS`) with zero libp2p dependencies and unit tests in `test/screen-fanout.test.mjs` covering breadth-first least-loaded `'mesh'` placement, hop/loop/`maxRedirects` guards, parent failure probation, reparenting on disconnect/leave/`SHED`/`CONGESTED`, 1.0.1–1.0.6 pass-through, and global per-node slot accounting across `maxShares = 3`.
+  - **127.0.0.1**: `node --test test/screen-fanout.test.mjs` (`8` tests, `8` pass, `0` fail).
+  - **127.0.0.1**: `cmd /c start "" /belownormal /b /wait npm test` (`1323` tests, `1305` pass, `0` fail, `18` skipped, `66.07 s`).
+
 ## 1.0.7 (2026-11-25): screen share audio, music visualizer modes, shade mode, network map pulses and screen rate fixes
 
 Release 1.0.7 is the seventh update of 1.0.0. A 1.0.0, 1.0.1, 1.0.2, 1.0.3, 1.0.4, 1.0.5 or 1.0.6 app gets it with
