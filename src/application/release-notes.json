@@ -1,5 +1,15 @@
 [
   {
+    "version": "1.0.8",
+    "date": "2026-11-25",
+    "notes": [
+      "- Retro themes: pick Winamp Slate & Amber, CRT Phosphor Green, or Classic mIRC in Settings > Theme, with an optional CRT glow and scanlines toggle.",
+      "- Live voice oscilloscopes: see a live phosphor waveform next to active speakers in voice channels and in the voice settings meter.",
+      "- UPnP when joining and in the network map: open a port with UPnP when joining a room, and toggle UPnP directly from the network map.",
+      "- Fixed: screen share audio permission prompts and video decoder queue overflows during screen sharing."
+    ]
+  },
+  {
     "version": "1.0.7",
     "date": "2026-11-25",
     "notes": [

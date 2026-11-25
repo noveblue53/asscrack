@@ -7,39 +7,24 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
-## Unreleased
+## 1.0.8 (2026-11-25): retro themes, voice oscilloscopes, join UPnP and screen audio fixes
 
-### Fix screen-share loopback audio permission and viewer decoder overflow
+Release 1.0.8 is the eighth update of 1.0.0. A 1.0.0 through 1.0.7 app gets it with the signed update
+(Settings, About ASSCRACK, Check now). Since 1.0.7, the app has these new items:
 
-- Allow `['video', 'audio']` in `display-capture` permission requests in `src/application/desktop-boundary.mjs` when `src/application/screen-sources.mjs` has a pending `'loopback'` audio selection (`hasPendingAudio()`), fixing `NotAllowedError` on Windows builds below 20348 when Share audio is enabled.
-- Separate `VideoDecoder` queue overflows (`decodeQueueSize > 8`) from fatal codec errors in `src/application/screen-view.js` so slow-PC decode backlogs reset to the next keyframe instead of tripping the 5-in-60s fatal limit and stopping the stream.
-- Results:
-  - **127.0.0.1**: `node --test test/desktop-boundary.test.mjs test/screen-ui.test.mjs test/screen-audio.test.mjs` — `37` pass, `0` fail.
-  - **127.0.0.1**: `npm test` — `1314` tests, `1296` pass, `0` fail, `18` skipped (`66.22 s`).
-  - **this PC**: `node tools/app-smoke-check.mjs --run-dir "D:\Github Repos\asscrack-gemini\work-orders\screen-audio-and-decode-fixes\runs\smoke" --check-no-dev-shortcut` — passed on CDP port `9500` in `2942 ms` (`domReady: true`, `0` errors, `devShortcutAbsent: true`, `devClsidAbsent: true`).
+- Retro character skins (`Winamp Slate & Amber`, `CRT Phosphor Green`, `Classic mIRC`) and an optional pure-CSS CRT glow & scanlines toggle (`pointer-events: none`, `prefers-reduced-motion` aware).
+- Live voice oscilloscopes next to active speakers in voice channels and in the voice settings meter, with 5-segment LED fallback for reduced motion.
+- UPnP port forwarding option when joining a room with an invite code and directly from the Network map panel (`#map-upnp-box`).
+- Fixed screen-share loopback audio permission (`display-capture` `['video', 'audio']` on Windows builds below 20348) and `VideoDecoder` queue overflow recovery.
 
-### Allow UPnP on room join and in the Network map panel
-
-- Show and honor **Open port (UPnP)** (`#upnp-field` / `#allow-upnp`) on the login screen for **Join with invite code** (`src/application/renderer.js`, `src/application/main.js`), not only room creation.
-- Add `#map-upnp-box` (**Open port (UPnP)** / **Try UPnP again** and router status) inside the Network map panel (`src/application/index.html`, `src/application/styles.css`, `src/application/renderer.js`) so any non-full-node member in an internet room can open a port after joining.
-- Results:
-  - **127.0.0.1**: `node --test test/room-admission-ui.test.mjs test/getting-in-ui.test.mjs test/upnp.test.mjs` — `44` pass, `0` fail.
-  - **127.0.0.1**: `npm test` — `1313` tests, `1295` pass, `0` fail, `18` skipped (`66.34 s`).
-  - **this PC**: `node tools/app-smoke-check.mjs --run-dir "D:\Github Repos\asscrack-gemini\work-orders\join-and-map-upnp\runs\smoke" --check-no-dev-shortcut` — passed on CDP port `9500` in `3634 ms` (`domReady: true`, `0` errors, `devShortcutAbsent: true`, `devClsidAbsent: true`).
-
-### Live voice oscilloscopes
-
-- Tap local capture (`AnalyserNode` with `fftSize = 64` + `onBlock` fallback) and decoded per-origin remote PCM in `src/application/voice.js` via `window.voice.meterSnapshot()`.
-- Add a shared 30 fps `createMeterLoop`, phosphor oscilloscope renderer (`drawMiniOscilloscope`), and 5-segment LED reduced-motion fallback (`drawLedBar`) in `src/application/voice-panel.js` and `src/application/voice-panel.css`, paused automatically when hidden or silent.
-- Render compact live oscilloscope canvases (`canvas.vc-meter`) next to active speakers in the user's own voice channel (`src/application/voice-channels-ui.js`, `src/application/voice-channels.css`).
-- Results:
-  - **127.0.0.1**: `node --test test/voice-meters.test.mjs` — `4` pass, `0` fail.
-  - **127.0.0.1**: `cmd /c start "" /belownormal /b /wait npm test` — `1316` tests, `1298` pass, `0` fail, `18` skipped (`64.10 s`).
-  - **this PC**: `node tools/app-smoke-check.mjs --run-dir "D:\Github Repos\asscrack-gemini\work-orders\voice-meters\runs\smoke" --check-no-dev-shortcut --eval "..."` — passed on CDP port `9500` in `3029 ms` (`domReady: true`, `0` errors, `hasMeterSnapshot: true`, `hasVoiceMeters: true`, `hasScopeCanvas: true`, `runningAtRest: false`, `devShortcutAbsent: true`, `devClsidAbsent: true`).
-
-### Retro character skins (`src/application/themes.js`, `src/application/themes.css`, `src/application/index.html`, `src/application/window-frame.css`): added Winamp Slate & Amber, CRT Phosphor Green, and Classic mIRC to the theme gallery, plus a pure-CSS CRT glow & scanlines toggle (`pointer-events: none`, `prefers-reduced-motion` aware) and voice/live-badge contrast polish.
-  - Result (`127.0.0.1`, unit tests): `node --test test/themes.test.mjs test/danger-button.test.mjs test/settings-menu.test.mjs` — 14/14 passed; `npm test` — 1303/1323 passed, 18 skipped, 2 transient timeouts in `test/music-relay.test.mjs` (passed 2/2 in isolation).
-  - Result (`this PC`, Electron `--profile` smoke check): switched all 9 themes and toggled CRT scanlines on/off with 0 console errors and 0 page errors.
+Build:
+- `npm run dist` makes `ASSCRACK-1.0.8-portable.exe` (product name "ASSCRACK Portable"). `npm run dist:installer`
+  makes `ASSCRACK-1.0.8-setup.exe` (product name "ASSCRACK").
+- The release has six files: the two files above, their download copies `ASSCRACK-1.0.8-update.exe` and
+  `ASSCRACK-1.0.8-portable-update.exe` (the same bytes), `update.json` and `update.json.sig`. See
+  `docs/RELEASE_UPDATES.md`.
+- The notes and the date of `update.json` come from the 1.0.8 entry of `src/application/release-notes.json`.
+- Verification (`127.0.0.1` / `this PC`): feature unit tests, `test/release-notes.test.mjs`, `ASSCRACK_RELEASE=1 test/update-release.test.mjs`, and `node tools/sign-update.mjs --check-release`.
 
 ## 1.0.7 (2026-11-25): screen share audio, music visualizer modes, shade mode, network map pulses and screen rate fixes
 
