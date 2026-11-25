@@ -30,7 +30,7 @@ import { createHistory, HISTORY_LIMIT, MAX_MESSAGE_BYTES, validHistoryItem } fro
 import { createFileTransfer, FILE_PROTOCOLS } from './file-transfer.mjs'
 import { createScreenShare, SCREEN_FANOUT_PROTOCOL, SCREEN_PROTOCOL } from './screen-share.mjs'
 import { createScreenAudio, SCREEN_AUDIO_PROTOCOL } from './screen-audio.mjs'
-import { createVoiceRelay, VOICE_PROTOCOL, VOICE_DIRECT_PROTOCOL } from './voice-relay.mjs'
+import { createVoiceRelay, MAX_VOICE_RELAYS, pickVoiceRelay, VOICE_PROTOCOL, VOICE_DIRECT_PROTOCOL } from './voice-relay.mjs'
 import { createRoomMusic, MUSIC_DIRECT_PROTOCOL, MUSIC_LIMITS, MUSIC_PROTOCOL } from './music.mjs'
 import { makeInvite, makeMemberInvite, makeRoomCode, validAddr, validPeerId } from './invite.mjs'
 import { createKnockDesk, KNOCK_PROTOCOL } from './knock.mjs'
@@ -38,7 +38,7 @@ import { knockChannel } from './knock-stream.mjs'
 import { DIALBACK_PROTOCOL, handleDialback, requestDialback, isGlobalUnicastIpv6, isPrivateIp, observedIp, peerAddrAllowed, tcpTarget } from './fullnode.mjs'
 
 export { FILE_PROTOCOL, safeFileName } from './file-transfer.mjs'
-export { VOICE_PROTOCOL, VOICE_DIRECT_PROTOCOL } from './voice-relay.mjs'
+export { pickVoiceRelay, VOICE_PROTOCOL, VOICE_DIRECT_PROTOCOL } from './voice-relay.mjs'
 
 export const CHAT_PROTOCOL = '/asscrack/chat/receive'
 const PROTECTED_CHAT_PROTOCOL = '/asscrack/chat/2.0.0'
@@ -201,6 +201,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     // app), or throws an error with kind 'refused' or 'unavailable'. musicDirect: false for the relay cost check only
     // (the host forwards all music frames).
     musicResolve = undefined, musicDirect = true,
+    // Sharded 1-hop voice relays across Full Nodes (set false to emulate 1.0.9 peers in tests).
+    voiceSharding = true,
     // P9C: the update hub of the app (update-spread.mjs), or null: no update lines.
     updates = null,
     // Profile pictures (avatar.mjs): the picture hub of the app { own(), subscribe(fn) }, or null: no picture lines.
@@ -740,6 +742,44 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             self: f.host === selfId, hostMs: f.hostMs, voiceMs: f.voiceMs, chatMs: f.chatMs })
     }
 
+    const isVoiceRelaySelf = () => Boolean(voiceSharding) && selfFull && (!hostAllowed || hostAllowed(selfId))
+
+    function voiceRelayPool() {
+        const host = election.host()?.peerId
+        const validHost = host && (!hostAllowed || hostAllowed(host)) ? host : null
+        if (!voiceSharding) return validHost ? [validHost] : []
+        const set = new Set()
+        if (validHost) set.add(validHost)
+        if (isVoiceRelaySelf()) set.add(selfId)
+        for (const peerId of sessions.keys()) {
+            if (peerFull.get(peerId) === true && infoOf(peerId)?.voiceShard === true &&
+                !isRelayedConn(sessionConns.get(peerId)) && (!hostAllowed || hostAllowed(peerId))) {
+                set.add(peerId)
+            }
+        }
+        const sorted = [...set].sort()
+        if (sorted.length <= MAX_VOICE_RELAYS) return sorted
+        const capped = sorted.slice(0, MAX_VOICE_RELAYS)
+        if (validHost && !capped.includes(validHost)) {
+            capped[MAX_VOICE_RELAYS - 1] = validHost
+            capped.sort()
+        }
+        return capped
+    }
+
+    function hasLegacyVoicePeerInChannel() {
+        if (!voiceSharding) return true
+        const direct = voiceRelay ? voiceRelay.directList() : []
+        for (const peerId of peerVoice.keys()) {
+            if (!sessions.has(peerId)) continue
+            if (channelOfPeer(peerId) !== voiceState.channel) continue
+            if (peerDeafened.has(peerId)) continue
+            if (direct.includes(peerId)) continue
+            if (infoOf(peerId)?.voiceShard !== true) return true
+        }
+        return false
+    }
+
     voiceRelay = createVoiceRelay({
         libp2p: node,
         selfId: node.peerId.toString(),
@@ -747,6 +787,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             const peerId = election.host()?.peerId
             return peerId && (!hostAllowed || hostAllowed(peerId)) ? peerId : null
         },
+        relayPool: voiceRelayPool,
+        canRelay: () => election.isHost() || isVoiceRelaySelf(),
+        preferHostOnly: hasLegacyVoicePeerInChannel,
         protectedRoom: Boolean(membership),
         channelOf: channelOfPeer,
         selfChannel: () => voiceState.channel,
@@ -932,11 +975,13 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         info.peerSid = typeof control.sid === 'string' && SID.test(control.sid) ? control.sid : null
         info.diag = control.diag === 1
         info.clock = control.clock === 1
+        info.voiceShard = control.voiceShard === 1
         if (sessions.get(peerId) === session) helloKnown(peerId, info)
     }
     function helloKnown(peerId, info) {
         events.emit('session-ids', { peerId, sid: info.sid, peerSid: info.peerSid ?? undefined, clock: info.clock, diag: info.diag })
         if (info.clock) sendClock(peerId)
+        if (info.voiceShard) voiceRelay?.hostChanged()
     }
     const attachments = createAttachments({
         self: node.peerId.toString(), sessions, connections: () => node.getConnections(), files, events, previewProvider, storedPreview, sendRecord,
@@ -1324,14 +1369,15 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             }
         })
         chatInitiator.set(session, initiator)
-        sessionInfo.set(session, { sid, peerSid: null, diag: false, clock: false })
+        sessionInfo.set(session, { sid, peerSid: null, diag: false, clock: false, voiceShard: false })
         if (open) {
             openSession(session, peerId, connection, true, oldSession)
             return
         }
         pendingSettled.set(session, new Promise(resolve => { settle = resolve }))
         pendingChats.set(peerId, session)
-        session.send(JSON.stringify(membership ? { type: 'hello', nonce, sid, diag: 1, clock: 1 } : { type: 'hello', name: senderName, nonce, sid, diag: 1, clock: 1 }))
+        const helloFields = voiceSharding ? { diag: 1, clock: 1, voiceShard: 1 } : { diag: 1, clock: 1 }
+        session.send(JSON.stringify(membership ? { type: 'hello', nonce, sid, ...helloFields } : { type: 'hello', name: senderName, nonce, sid, ...helloFields }))
         timer = setTimeout(() => reject(`no valid proof in ${PROOF_TIMEOUT_MS} ms`), PROOF_TIMEOUT_MS)
         session.done.catch(() => {}).finally(() => {
             clearTimeout(timer)
@@ -1356,7 +1402,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             replaced.close()
         }
         const info = sessionInfo.get(session)
-        if (sendHello) session.send(JSON.stringify({ type: 'hello', name: senderName, sid: info?.sid, diag: 1, clock: 1 }))
+        const helloFields = voiceSharding ? { diag: 1, clock: 1, voiceShard: 1 } : { diag: 1, clock: 1 }
+        if (sendHello) session.send(JSON.stringify({ type: 'hello', name: senderName, sid: info?.sid, ...helloFields }))
         channels.opened(peerId)
         const voiceCatalog = voiceChannels.opened()
         if (voiceCatalog && memberAllowed(peerId)) session.send(JSON.stringify(voiceCatalog))
@@ -1387,6 +1434,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         events.emit('connection', opened)
         if (info?.peerSid) helloKnown(peerId, info)
         election.sessionOpened(peerId)
+        if (voiceState.inVoice || peerFull.get(peerId) === true) voiceRelay?.hostChanged()
         topic.sessionOpened(peerId)
         if (election.isHost()) sendHistoryTo(peerId, session)
         if (voiceState.inVoice) session.send(voiceLine())
@@ -1466,13 +1514,15 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         attachChat(stream, peerId, connection, peerId)
     }, { maxInboundStreams: 1, maxOutboundStreams: 1, runOnTransientConnection: true })
 
-    async function voiceAuthorized(data, direct) {
+    async function voiceAuthorized(data, direct, { sharded = false } = {}) {
         const peerId = data.connection.remotePeer.toString()
         const session = sessions.get(peerId)
         if (!session || !memberAllowed(peerId)) return false
         if (!membership) return true
-        const receiving = () => direct ? voiceState.inVoice && !election.isHost() : election.isHost()
-        // G6: a direct stream only from a peer in the own voice channel. The host forwards each channel.
+        const receiving = () => direct
+            ? (sharded ? voiceState.inVoice : (voiceState.inVoice && !election.isHost()))
+            : (election.isHost() || (sharded && isVoiceRelaySelf()))
+        // G6: a direct stream only from a peer in the own voice channel. The relay forwards each channel.
         const sender = () => peerVoice.has(peerId) && (!direct || channelOfPeer(peerId) === voiceState.channel)
         // The voice state arrives on chat and can follow the data stream briefly (also just after a move).
         for (let attempt = 0; attempt < 10 && receiving() && !sender(); attempt++) {
@@ -1482,9 +1532,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         return receiving() && sender()
     }
 
-    // Protected voice streams require the active host or a consenting direct listener.
+    // Protected voice streams require an active voice relay or a consenting direct listener.
     await node.handle(VOICE_PROTOCOL, async data => {
-        if (!await voiceAuthorized(data, false)) {
+        if (!await voiceAuthorized(data, false, { sharded: true })) {
             data.stream.abort?.(new Error('Voice is not authorized'))
             return
         }
@@ -1493,7 +1543,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
 
     // Direct voice frames only from a peer with an open session. The receiver never forwards them.
     await node.handle(VOICE_DIRECT_PROTOCOL, async data => {
-        if (!await voiceAuthorized(data, true)) {
+        if (!await voiceAuthorized(data, true, { sharded: true })) {
             data.stream.abort?.(new Error('Voice is not authorized'))
             return
         }
@@ -1947,6 +1997,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         if (!value) for (const peer of node.services.relay?.reservations?.keys() ?? []) revokeRelay(peer)
         console.info(`Full node: ${value}`)
         events.emit('full-node', { peerId: selfId, fullNode: value })
+        voiceRelay?.hostChanged()
         const line = nodeLine()
         for (const session of sessions.values()) session.send(line)
     }
@@ -1955,7 +2006,10 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         if (membership && (membership.lan || !memberAllowed(peerId))) value = false
         const old = peerFull.get(peerId) === true
         peerFull.set(peerId, value)
-        if (old !== value) events.emit('full-node', { peerId, fullNode: value })
+        if (old !== value) {
+            events.emit('full-node', { peerId, fullNode: value })
+            voiceRelay?.hostChanged()
+        }
         if (value && addrs) learnFullNode(peerId, addrs)
         if (value) reserveOn(peerId)
         scheduleRelayDials()
