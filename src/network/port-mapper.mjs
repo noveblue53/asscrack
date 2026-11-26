@@ -1,7 +1,65 @@
 // Use the UPnP transport directly, with NAT-PMP fallback when UPnP fails. The node owns the TCP lease and its renewal timer.
+import net from 'node:net'
+import { networkInterfaces } from 'node:os'
 import UPnP from '@silentbot1/nat-api/lib/upnp/index.js'
 import NatPMP from '@silentbot1/nat-api/lib/pmp/index.js'
 import { gateway4sync } from 'default-gateway'
+
+function ipv4ToInt(ip) {
+    if (!net.isIPv4(ip)) return null
+    const parts = ip.split('.').map(Number)
+    return ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0
+}
+
+function sameSubnet(ip, gateway, netmask) {
+    const a = ipv4ToInt(ip)
+    const b = ipv4ToInt(gateway)
+    const m = ipv4ToInt(netmask)
+    if (a === null || b === null || m === null) return false
+    return (a & m) === (b & m)
+}
+
+function isRfc1918(ip) {
+    if (!net.isIPv4(ip)) return false
+    const [a, b] = ip.split('.').map(Number)
+    return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
+}
+
+/**
+ * Pick the LAN IPv4 address for UPnP mapping, preferring the default-gateway interface/subnet over virtual VPN adapters.
+ */
+export function selectUpnpLocalIpv4({ interfaces = networkInterfaces(), defaultGateway } = {}) {
+    let gw = defaultGateway
+    if (gw === undefined) {
+        try { gw = gateway4sync() } catch { gw = null }
+    }
+
+    const entries = []
+    for (const [ifaceName, infos] of Object.entries(interfaces ?? {})) {
+        for (const info of infos ?? []) {
+            if (!info || info.internal || !(info.family === 'IPv4' || info.family === 4)) continue
+            entries.push({ ifaceName, address: info.address, netmask: info.netmask })
+        }
+    }
+    if (entries.length === 0) return undefined
+
+    const gwIface = gw?.int ?? gw?.interface ?? null
+    if (gwIface) {
+        const onIface = entries.filter(e => e.ifaceName === gwIface)
+        if (onIface.length > 0) {
+            const matched = gw?.gateway ? onIface.find(e => sameSubnet(e.address, gw.gateway, e.netmask)) : null
+            return (matched ?? onIface[0]).address
+        }
+    }
+
+    if (gw?.gateway && net.isIPv4(gw.gateway)) {
+        const bySubnet = entries.find(e => sameSubnet(e.address, gw.gateway, e.netmask))
+        if (bySubnet) return bySubnet.address
+    }
+
+    const rfc1918 = entries.find(e => isRfc1918(e.address))
+    return (rfc1918 ?? entries[0]).address
+}
 
 export function createPortMapper(client = new UPnP(), options = {}) {
     const pmpOption = options.pmp

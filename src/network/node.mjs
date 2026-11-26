@@ -37,6 +37,7 @@ import { makeInvite, makeMemberInvite, makeRoomCode, validAddr, validPeerId } fr
 import { createKnockDesk, KNOCK_PROTOCOL } from './knock.mjs'
 import { knockChannel } from './knock-stream.mjs'
 import { DIALBACK_PROTOCOL, handleDialback, requestDialback, isGlobalUnicastIpv6, isPrivateIp, observedIp, peerAddrAllowed, tcpTarget } from './fullnode.mjs'
+import { selectUpnpLocalIpv4 } from './port-mapper.mjs'
 
 export { FILE_PROTOCOL, FILE_SWARM_PROTOCOL, safeFileName } from './file-transfer.mjs'
 export { pickVoiceRelay, VOICE_PROTOCOL, VOICE_DIRECT_PROTOCOL } from './voice-relay.mjs'
@@ -2414,11 +2415,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         events.emit('upnp', fields)
     }
     function localIpv4() {
-        // The same rule as the library default (the first non-internal IPv4), here so that the log can show it.
-        for (const infos of Object.values(networkInterfaces())) {
-            for (const info of infos ?? []) if (!info.internal && (info.family === 'IPv4' || info.family === 4)) return info.address
-        }
-        return undefined
+        return selectUpnpLocalIpv4()
     }
     function withTimeout(promise, ms) {
         let timer
