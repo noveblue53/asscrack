@@ -732,3 +732,76 @@ test('selectUpnpLocalIpv4 prefers default gateway interface and subnet over virt
     }), '26.73.170.44')
     assert.equal(selectUpnpLocalIpv4({ interfaces: {}, defaultGateway: null }), undefined)
 })
+
+test('UPnP mapping retries dial-back even when a pre-UPnP dial-back is still in flight', { timeout: 20000 }, async () => {
+    const igd = await startIgd({ externalIp: PUBLIC_IP, addDelay: 250 })
+    const a = await createAsscrackNode({
+        room: 'db-inflight', listen: LISTEN, discovery: false,
+        upnp: true, upnpClient: fakeClient(igd.port), allowPrivateFullNode: true
+    })
+    const b = await createAsscrackNode({ room: 'db-inflight', listen: LISTEN, discovery: false, fullNode: false })
+    try {
+        let calls = 0
+        await b.libp2p.unhandle(DIALBACK_PROTOCOL)
+        await b.libp2p.handle(DIALBACK_PROTOCOL, async ({ stream }) => {
+            for await (const chunk of stream.source) {
+                if (Buffer.from(chunk.subarray()).includes(10)) break
+            }
+            calls++
+            if (calls === 1) {
+                await delay(600)
+                await stream.sink([new TextEncoder().encode(JSON.stringify({ ok: false }) + '\n')])
+            } else {
+                await stream.sink([new TextEncoder().encode(JSON.stringify({ ok: true, ip: PUBLIC_IP }) + '\n')])
+            }
+        }, { runOnTransientConnection: true })
+
+        await b.connect(a.getMultiaddrs()[0])
+        await waitFor(() => a.fullNode() === true, 10000)
+        assert.equal(a.dialbackState().state, 'ok')
+        assert.ok(calls >= 2, `expected at least 2 dial-back calls, got ${calls}`)
+    } finally {
+        await Promise.allSettled([a.stop(), b.stop()])
+        await igd.close()
+    }
+})
+
+test('dial-back falls back to another connected peer after a private-ip failure', { timeout: 20000 }, async () => {
+    const { newRoomKey } = await import('../src/network/invite.mjs')
+    const roomKey = newRoomKey()
+    const a = await createAsscrackNode({
+        room: 'db-fallback', roomKey, listen: LISTEN, discovery: false, upnp: false
+    })
+    const b = await createAsscrackNode({
+        room: 'db-fallback', roomKey, listen: LISTEN, discovery: false, fullNode: false
+    })
+    const c = await createAsscrackNode({
+        room: 'db-fallback', roomKey, listen: LISTEN, discovery: false, fullNode: false
+    })
+    try {
+        // Stub observedAddrs to empty so node.mjs uses the IP reported in the dial-back reply.
+        a.libp2p.components.addressManager.getObservedAddrs = () => []
+        await b.libp2p.unhandle(DIALBACK_PROTOCOL)
+        await b.libp2p.handle(DIALBACK_PROTOCOL, async ({ stream }) => {
+            for await (const chunk of stream.source) {
+                if (Buffer.from(chunk.subarray()).includes(10)) break
+            }
+            await delay(100)
+            await stream.sink([new TextEncoder().encode(JSON.stringify({ ok: true, ip: '192.168.1.50' }) + '\n')])
+        }, { runOnTransientConnection: true })
+        await c.libp2p.unhandle(DIALBACK_PROTOCOL)
+        await c.libp2p.handle(DIALBACK_PROTOCOL, async ({ stream }) => {
+            for await (const chunk of stream.source) {
+                if (Buffer.from(chunk.subarray()).includes(10)) break
+            }
+            await stream.sink([new TextEncoder().encode(JSON.stringify({ ok: true, ip: PUBLIC_IP }) + '\n')])
+        }, { runOnTransientConnection: true })
+
+        await b.connect(a.getMultiaddrs()[0])
+        await c.connect(a.getMultiaddrs()[0])
+        await waitFor(() => a.fullNode() === true, 10000)
+        assert.deepEqual(a.dialbackState(), { state: 'ok', reason: null })
+    } finally {
+        await Promise.allSettled([a.stop(), b.stop(), c.stop()])
+    }
+})

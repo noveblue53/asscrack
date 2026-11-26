@@ -1389,6 +1389,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                                 emitTopology()
                             }
                             scheduleRelayDials()
+                            dialListedFullNodes()
                         }
                     }
                     else if (control.type === 'node') {
@@ -1599,6 +1600,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 sessionConns.delete(peerId)
                 linkKinds.delete(peerId)
                 reserved.delete(peerId)
+                dialbackTried.ip4.delete(peerId)
+                dialbackTried.ip6.delete(peerId)
                 if (peerFull.get(peerId) === true) events.emit('full-node', { peerId, fullNode: false })
                 peerFull.delete(peerId)
                 names.delete(peerId)
@@ -2191,6 +2194,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
 
     // Rule 1, 'auto': ask a peer with a direct session to dial back to the listen port (per address family).
     const checkingFamilies = new Set()
+    const dialbackEpoch = { ip4: 0, ip6: 0 }
+    const dialbackTried = { ip4: new Set(), ip6: new Set() }
     let dialbackStatus = 'idle'
     let dialbackReason = null
     let lastDialbackFailReason = null
@@ -2208,19 +2213,32 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         }
         return fallback
     }
-    function checkFullNode(peerId) {
+    const isPublicTarget = t => (t.family === 'ip6' ? isGlobalUnicastIpv6(t.ip) : !isPrivateIp(t.ip))
+    function nextDialbackPeer(family) {
+        let fallback = null
+        for (const p of sessions.keys()) {
+            if (dialbackTried[family].has(p)) continue
+            const t = tcpTarget(sessionConns.get(p)?.remoteAddr)
+            if (!t || t.family !== family) continue
+            if (isPublicTarget(t)) return p
+            if (fallback === null) fallback = p
+        }
+        return fallback
+    }
+    function startDialback(family, peerId) {
         if (stopped || relayOnly) return
+        if (dialbackAddrs[family] || checkingFamilies.has(family)) return
         const conn = sessionConns.get(peerId)
         const targetInfo = conn ? tcpTarget(conn.remoteAddr) : null
-        if (!targetInfo) return
-        const family = targetInfo.family
-        if (dialbackAddrs[family] || checkingFamilies.has(family)) return
+        if (!targetInfo || targetInfo.family !== family) return
         const eligibleAutoFull = fullNode === 'auto' && canRelay()
         const eligibleDirectV6 = family === 'ip6' && !membership?.lan &&
             (!membership || (membership.admitted() && !membership.revoked(membership.id)))
         if (!eligibleAutoFull && !eligibleDirectV6) return
         const dialPort = family === 'ip6' ? listenPort('ip6') : (upnpState?.port ?? listenPort('ip4'))
         if (dialPort === null) return
+        const epoch = dialbackEpoch[family]
+        dialbackTried[family].add(peerId)
         checkingFamilies.add(family)
         if (eligibleAutoFull && !selfFull && dialbackStatus !== 'checking') {
             dialbackStatus = 'checking'
@@ -2235,6 +2253,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             .then(({ ok, ip }) => {
                 // Diagnostics: the reach attempt with its result (a negative answer is a failed dial-back).
                 dialResult({ peer: peerId, addr: target, via: 'dial-back', started, reason: ok ? undefined : 'no-dial-back' })
+                if (stopped || epoch !== dialbackEpoch[family]) return
                 const publicIp = observedIp(node, family) ??
                     (ip && (family === 'ip6' ? isIPv6(ip) : isIPv4(ip)) ? ip : null)
                 const ipOk = publicIp !== null && (allowPrivateFullNode ||
@@ -2258,17 +2277,48 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 }
             })
             .catch(err => {
-                if (eligibleAutoFull && !selfFull) lastDialbackFailReason = 'unreachable'
                 dialFailed({ peer: peerId, addr: target, via: 'dial-back', err, started })
+                if (stopped || epoch !== dialbackEpoch[family]) return
+                if (eligibleAutoFull && !selfFull) lastDialbackFailReason = 'unreachable'
             })
             .finally(() => {
                 checkingFamilies.delete(family)
+                if (!stopped && !dialbackAddrs[family]) {
+                    const next = nextDialbackPeer(family)
+                    if (next) {
+                        startDialback(family, next)
+                        return
+                    }
+                }
                 if (eligibleAutoFull && !selfFull && !stopped && checkingFamilies.size === 0 && dialbackStatus === 'checking') {
                     dialbackStatus = 'failed'
                     dialbackReason = lastDialbackFailReason ?? 'unreachable'
                     events.emit('dialback', { state: 'failed', reason: dialbackReason })
                 }
             })
+    }
+    function checkFullNode(peerId) {
+        if (stopped || relayOnly) return
+        const targetInfo = tcpTarget(sessionConns.get(peerId)?.remoteAddr)
+        if (!targetInfo) return
+        startDialback(targetInfo.family, peerId)
+    }
+    function resetDialback(family = null) {
+        const families = family ? [family] : ['ip4', 'ip6']
+        for (const f of families) {
+            dialbackEpoch[f]++
+            dialbackTried[f].clear()
+        }
+        if (!selfFull && checkingFamilies.size === 0) {
+            dialbackStatus = 'idle'
+            dialbackReason = null
+            lastDialbackFailReason = null
+        }
+        for (const f of families) {
+            if (checkingFamilies.has(f)) continue
+            const peer = nextDialbackPeer(f)
+            if (peer) startDialback(f, peer)
+        }
     }
 
     // Rule 4: reserve a slot on each full node with a session.
@@ -2323,7 +2373,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         const wanted = new Set()
         for (const [from, list] of links) {
             if (!sessions.has(from)) continue
-            for (const p of list) if (p !== selfId && !sessions.has(p) && !pendingChats.has(p) && selfId < p) wanted.add(p)
+            for (const p of list) if (p !== selfId && !sessions.has(p) && !pendingChats.has(p) && (selfId < p || selfFull)) wanted.add(p)
         }
         // Clear the hold time of each target that is not wanted now (for example, its session is open).
         for (const target of wantedSince.keys()) if (!wanted.has(target)) wantedSince.delete(target)
@@ -2595,15 +2645,12 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 return
             }
             upnpState = state
-            dialbackStatus = 'idle'
-            dialbackReason = null
-            lastDialbackFailReason = null
             scheduleUpnpRenewal(state)
             upnpLog({ state: 'mapped', ip, port, local: state.local })
             const line = nodeLine()
             for (const session of sessions.values()) session.send(line)
             // Sessions that exist already: ask again for a dial-back on the mapped port.
-            for (const peerId of [...sessions.keys()]) checkFullNode(peerId)
+            resetDialback('ip4')
         })()
         // A late rejection of the work after the timeout must not be unhandled.
         work.catch(() => {})
@@ -2627,10 +2674,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         if (!Number.isInteger(upnpLeaseSeconds) || upnpLeaseSeconds < 1 || upnpLeaseSeconds > 0xffffffff) return false
         useUpnp = true
         if (upnpState && !selfFull) {
-            dialbackStatus = 'idle'
-            dialbackReason = null
-            lastDialbackFailReason = null
-            for (const peerId of [...sessions.keys()]) checkFullNode(peerId)
+            resetDialback()
             return true
         }
         if (upnpPhase === 'done' && !upnpState) upnpPhase = 'idle'
@@ -2737,12 +2781,22 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         }
     }
     for (const peerId of hintIds()) dialFullNode(peerId)
+    function dialListedFullNodes() {
+        if (stopped || relayOnly) return
+        for (const [from, list] of links) {
+            if (!sessions.has(from)) continue
+            for (const p of list) {
+                if (p !== selfId && !sessions.has(p) && !pendingChats.has(p) && hintAddrs(p).length) dialFullNode(p)
+            }
+        }
+    }
     // Redial: a member with no session to a full node dials the known full nodes again.
     function refreshRoutes() {
         if (stopped) return
         // A reservation can become usable without any link change. After the fast retries,
         // let a still-wanted, exhausted target try once per ordinary redial interval.
         if ([...relayDialTries.values()].includes(RELAY_DIAL_TRIES)) relayDials(true)
+        dialListedFullNodes()
         if (selfFull && sessions.size) return
         if ([...sessions.keys()].some(id => peerFull.get(id) === true)) return
         for (const peerId of hintIds()) dialFullNode(peerId)
