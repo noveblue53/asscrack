@@ -234,6 +234,13 @@ export function createMobileBridge({
             const ext = await mapper.externalIp().catch(() => null);
             if (typeof ext === 'string' && net.isIP(ext)) {
                 externalIp = ext;
+                const cfg = auth.getConfig();
+                const sans = ['127.0.0.1', '::1', 'localhost', lanIp || '127.0.0.1', externalIp];
+                if (cfg.manualHost) sans.push(cfg.manualHost);
+                const updatedCert = ensureMobileCert(dir, { sans });
+                if (!updatedCert.reused && server && !stopping) {
+                    server.setSecureContext({ cert: updatedCert.certPem, key: updatedCert.keyPem });
+                }
             }
             upnpStatus = 'mapped';
             log('INFO', `Mobile bridge UPnP mapped port ${port}${externalIp ? ` (${externalIp})` : ''}`);

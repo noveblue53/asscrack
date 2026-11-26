@@ -15,6 +15,7 @@ Each result has one of these labels:
   - Wired the bridge into `src/application/main.js`, `preload.cjs`, `index.html`, `styles.css`, `layout.js`, `mobile-bridge-ui.js`, `renderer.js`, `whispers.js`, and `saved-rooms-ui.js` (off by default, saved fixed port, LAN/Remote QR & URLs, device list with Revoke / Revoke all).
   - Verified (`127.0.0.1`): `node --test test/mobile-cert.test.mjs test/mobile-qr.test.mjs test/mobile-auth.test.mjs test/mobile-bridge.test.mjs test/settings-menu.test.mjs` (`18` pass, `0` fail), `node --test test/login-menu.test.mjs test/preload-bridge.test.mjs` (`21` pass, `0` fail), full `npm test` (`1457` tests, `1438` pass, `18` skipped, `1` concurrent timing flake in `test/transfer-resume-restart.test.mjs` which passed `7/7` in isolation).
   - Verified (`this PC`): `node tools/app-smoke-check.mjs` (`ok: true`, `0` errors) and isolated loopback HTTPS mobile bridge smoke run with fresh `--profile` and fake `APPDATA` (`0` console/terminal errors).
+  - Verified (`internet`): Owner paired a phone over UPnP port `41000`, joined a room, and sent live messages.
 
 ## 1.0.10 (2026-11-26): server roles, voice/music/file scaling, UPnP fixes and history backfill
 

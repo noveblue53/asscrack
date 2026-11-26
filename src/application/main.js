@@ -2931,13 +2931,28 @@ function createAppMobileBridge() {
         },
         getMediaPreview: async ({ id, messageId }) => {
             const card = messageId ? getSavedRooms().messageCard(messageId) : null;
-            const descriptor = node?.attachmentDescriptor?.(id) ?? card?.descriptor ?? null;
-            if (descriptor) {
-                roomMedia.loadStored(descriptor);
+            const archived = card && sameAttachment(card.descriptor, { id }) ? card : null;
+            const descriptor = node?.attachmentDescriptor?.(id) ?? archived?.descriptor ?? null;
+            if (!descriptor) return null;
+            if (roomMedia.loadStored(descriptor)) {
                 const bytes = roomMedia.previewBytes(descriptor);
                 if (bytes?.length) return { bytes, mime: 'image/png' };
             }
-            return null;
+            const existing = roomMedia.previewBytes(descriptor);
+            if (existing?.length) return { bytes: existing, mime: 'image/png' };
+            if (!node || archived?.own || descriptor.source === node.peerId) return null;
+            const lineDevice = deviceOfLine(messageId);
+            const device = archived ? lineDevice : null;
+            const via = node.attachmentSourceOnline(descriptor) ? descriptor.source :
+                device ? node.peers().find(peer => node.deviceOf(peer) === device) ?? null : null;
+            if (!via) return null;
+            const version = mediaGeneration;
+            const current = node;
+            const result = await node.requestPreviewById(descriptor, { via, descriptor });
+            if (version !== mediaGeneration || node !== current || !result) return null;
+            await roomMedia.storePreview(result.descriptor, result.bytes);
+            const bytes = roomMedia.previewBytes(descriptor);
+            return bytes?.length ? { bytes, mime: 'image/png' } : null;
         },
         onStateChanged: state => sendToWindow('asscrack:mobile-bridge-changed', state)
     });

@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import https from 'node:https';
 import os from 'node:os';
@@ -103,7 +104,13 @@ test('mobile bridge: lifecycle, pairing, SSE, POST actions, media auth gating, r
         const started = await bridge.setEnabled(true);
         assert.equal(started.running, true);
         const port = started.port;
+        // Wait briefly for background UPnP discovery to update cert SANs with externalIp
+        for (let i = 0; i < 40 && bridge.getStatus().upnpStatus === 'mapping'; i++) {
+            await new Promise(r => setTimeout(r, 15));
+        }
         const certPem = JSON.parse(fs.readFileSync(path.join(dir, 'cert.json'), 'utf8')).certPem;
+        const x509 = new crypto.X509Certificate(certPem);
+        assert.match(x509.subjectAltName, /IP Address:203\.0\.113\.10/);
         const base = `https://127.0.0.1:${port}`;
 
         // Unauthenticated media & API requests must be rejected with 401
