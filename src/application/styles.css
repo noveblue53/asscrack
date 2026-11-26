@@ -1200,7 +1200,14 @@ body.map-open #node-map:not([data-paused]) .nm-node.speaking .nm-pulse {
 }
 #map-upnp-note {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--ink-soft);
+}
+#map-upnp-note[data-state="ok"] {
+  color: var(--go-dark);
+  font-weight: 600;
+}
+#map-upnp-note[data-state="warn"] {
+  color: var(--stop);
 }
 #map-legend {
   flex: none;

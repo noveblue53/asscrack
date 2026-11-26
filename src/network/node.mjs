@@ -2059,6 +2059,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         if (value && !canRelay()) return
         if (selfFull === value) return
         selfFull = value
+        dialbackStatus = value ? 'ok' : 'idle'
+        dialbackReason = null
+        lastDialbackFailReason = null
         if (!value) for (const peer of node.services.relay?.reservations?.keys() ?? []) revokeRelay(peer)
         console.info(`Full node: ${value}`)
         events.emit('full-node', { peerId: selfId, fullNode: value })
@@ -2082,6 +2085,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
 
     // Rule 1, 'auto': ask a peer with a direct session to dial back to the listen port (per address family).
     const checkingFamilies = new Set()
+    let dialbackStatus = 'idle'
+    let dialbackReason = null
+    let lastDialbackFailReason = null
     function listenPort(family = null) {
         let fallback = null
         for (const ma of node.getMultiaddrs()) {
@@ -2110,6 +2116,12 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         const dialPort = family === 'ip6' ? listenPort('ip6') : (upnpState?.port ?? listenPort('ip4'))
         if (dialPort === null) return
         checkingFamilies.add(family)
+        if (eligibleAutoFull && !selfFull && dialbackStatus !== 'checking') {
+            dialbackStatus = 'checking'
+            dialbackReason = null
+            lastDialbackFailReason = null
+            events.emit('dialback', { state: 'checking', reason: null })
+        }
         const started = Date.now()
         const target = conn.remoteAddr.toString()
         // With a UPnP mapping, the peer must dial the mapped public port.
@@ -2129,16 +2141,28 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                     console.info(`Dial-back (${family}) from ${peerId}: ok, IP ${publicIp}, full node ${eligibleAutoFull}`)
                     if (eligibleAutoFull && !selfFull && !stopped) {
                         setSelfFull(true)
+                        events.emit('dialback', { state: 'ok', reason: null })
                     } else if (isNew && !stopped) {
                         const line = nodeLine()
                         for (const session of sessions.values()) session.send(line)
                     }
                 } else {
+                    if (eligibleAutoFull && !selfFull) lastDialbackFailReason = ok ? 'private-ip' : 'unreachable'
                     console.info(`Dial-back (${family}) from ${peerId}: ${ok ? 'ok' : 'failed'}, IP ${publicIp}, full node false`)
                 }
             })
-            .catch(err => dialFailed({ peer: peerId, addr: target, via: 'dial-back', err, started }))
-            .finally(() => { checkingFamilies.delete(family) })
+            .catch(err => {
+                if (eligibleAutoFull && !selfFull) lastDialbackFailReason = 'unreachable'
+                dialFailed({ peer: peerId, addr: target, via: 'dial-back', err, started })
+            })
+            .finally(() => {
+                checkingFamilies.delete(family)
+                if (eligibleAutoFull && !selfFull && !stopped && checkingFamilies.size === 0 && dialbackStatus === 'checking') {
+                    dialbackStatus = 'failed'
+                    dialbackReason = lastDialbackFailReason ?? 'unreachable'
+                    events.emit('dialback', { state: 'failed', reason: dialbackReason })
+                }
+            })
     }
 
     // Rule 4: reserve a slot on each full node with a session.
@@ -2469,6 +2493,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 return
             }
             upnpState = state
+            dialbackStatus = 'idle'
+            dialbackReason = null
+            lastDialbackFailReason = null
             scheduleUpnpRenewal(state)
             upnpLog({ state: 'mapped', ip, port, local: state.local })
             const line = nodeLine()
@@ -2497,6 +2524,13 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         if (stopped || !key || !upnpAllowed()) return false
         if (!Number.isInteger(upnpLeaseSeconds) || upnpLeaseSeconds < 1 || upnpLeaseSeconds > 0xffffffff) return false
         useUpnp = true
+        if (upnpState && !selfFull) {
+            dialbackStatus = 'idle'
+            dialbackReason = null
+            lastDialbackFailReason = null
+            for (const peerId of [...sessions.keys()]) checkFullNode(peerId)
+            return true
+        }
         if (upnpPhase === 'done' && !upnpState) upnpPhase = 'idle'
         runUpnp()
         return true
@@ -2731,6 +2765,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         // True while the UPnP task can still give a mapped address (from the start until the result or the timeout).
         upnpPending: () => useUpnp && upnpAllowed() && upnpPhase !== 'done' && !stopped,
         enableUpnp,
+        dialbackState: () => ({ state: dialbackStatus, reason: dialbackStatus === 'failed' ? dialbackReason : null }),
         roomKey: () => key ? key.toString('base64url') : null,
         publicAddrs,
         knownFullNodes: () => Object.fromEntries([...hintIds()].map(id => [id, hintAddrs(id)])),

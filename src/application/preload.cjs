@@ -159,6 +159,7 @@ contextBridge.exposeInMainWorld('asscrack', {
     onFullNode: listen('asscrack:full-node'),
     onFullNodeAddrs: listen('asscrack:full-node-addrs'),
     onUpnp: listen('asscrack:upnp'),
+    onDialback: listen('asscrack:dialback'),
     copyText: text => ipcRenderer.invoke('asscrack:copy-text', text),
     // Gap D2: open a chat link in the system browser. The main process checks the URL (link-policy.mjs).
     openLink: href => ipcRenderer.invoke('asscrack:open-link', String(href)),

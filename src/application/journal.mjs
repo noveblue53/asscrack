@@ -173,7 +173,7 @@ export const EVENT_FIELDS = Object.freeze({
         end: oneOf('done', 'timeout', 'superseded'), inVoice: kinds.bool, self: kinds.bool, hostMs: kinds.int,
         voiceMs: kinds.int, chatMs: kinds.int },
     admission: { event: oneOf('admitted', 'refused', 'revoked', 'invite-made'), peer: kinds.peer, cause: kinds.code },
-    reach: { state: kinds.code, reason: kinds.code, proven: kinds.bool },
+    reach: { state: kinds.code, reason: kinds.code, proven: kinds.bool, dialback: kinds.code, dialbackReason: kinds.code },
     clock: { peer: kinds.peer, rttMs: kinds.int, offsetMs: kinds.int },
     'voice-state': { in: kinds.bool, muted: kinds.bool, deafened: kinds.bool, host: kinds.bool },
     'voice-device': { dir: oneOf('in', 'out'), ok: kinds.bool, kind: kinds.code, tag: kinds.id, fallback: kinds.bool,

@@ -115,10 +115,98 @@ test('a member in an internet room can open a port with UPnP from the Network ma
     assert.equal(room.el('map-upnp').textContent, 'Try UPnP again');
     assert.equal(room.el('map-upnp-note').hidden, false);
     assert.equal(room.el('map-upnp-note').textContent, 'Router didn\'t respond.');
-    state.reach = { state: 'ready', reason: null, proven: false };
+    state.reach = { state: 'ready', reason: null, proven: false, dialback: 'idle', dialbackReason: null };
     room.handlers.onUpnp({ state: 'mapped' });
     await settle();
-    assert.equal(room.el('map-upnp-box').hidden, true);
+    assert.equal(room.el('map-upnp-box').hidden, false);
+    assert.equal(room.el('map-upnp').hidden, true);
+    assert.equal(room.el('map-upnp-note').hidden, false);
+    assert.equal(room.el('map-upnp-note').textContent, 'Port opened. Checks when a peer joins.');
+});
+
+test('the Network map UPnP box stays hidden when already reachable without clicking Open port', async () => {
+    const readyRoom = await startRoom({
+        reach: { state: 'ready', reason: null, proven: false, dialback: 'idle', dialbackReason: null },
+        owner: false
+    });
+    assert.equal(readyRoom.room.el('map-upnp-box').hidden, true);
+
+    const fullRoom = await startRoom({
+        reach: { state: 'ready', reason: null, proven: true, dialback: 'ok', dialbackReason: null },
+        fullNode: { self: true, peers: [] },
+        owner: false
+    });
+    assert.equal(fullRoom.room.el('map-upnp-box').hidden, true);
+});
+
+test('the Network map panel shows dial-back checking, failure with Check again, and full node confirmation', async () => {
+    const { room, state } = await startRoom({
+        reach: { state: 'none', reason: null, proven: false, dialback: 'idle', dialbackReason: null },
+        owner: false
+    });
+    let calls = 0;
+    room.window.asscrack.enableUpnp = async () => {
+        calls++;
+        state.reach = state.reach.state === 'ready'
+            ? { state: 'ready', reason: null, proven: false, dialback: 'checking', dialbackReason: null }
+            : { state: 'upnp-wait', reason: null, proven: false, dialback: 'idle', dialbackReason: null };
+        return { started: true, reach: state.reach };
+    };
+    room.el('map-upnp').click();
+    await settle();
+    assert.equal(calls, 1);
+
+    state.reach = { state: 'ready', reason: null, proven: false, dialback: 'checking', dialbackReason: null };
+    room.handlers.onUpnp({ state: 'mapped' });
+    await settle();
+    assert.equal(room.el('map-upnp-box').hidden, false);
+    assert.equal(room.el('map-upnp').hidden, true);
+    assert.equal(room.el('map-upnp-note').textContent, 'Port opened. Checking full node…');
+
+    state.reach = { state: 'ready', reason: null, proven: false, dialback: 'failed', dialbackReason: 'unreachable' };
+    room.handlers.onDialback({ state: 'failed', reason: 'unreachable' });
+    await settle();
+    assert.equal(room.el('map-upnp').hidden, false);
+    assert.equal(room.el('map-upnp').textContent, 'Check again');
+    assert.equal(room.el('map-upnp-note').dataset.state, 'warn');
+    assert.equal(room.el('map-upnp-note').textContent, 'Port opened, but peers couldn\'t reach it. Not a full node.');
+
+    state.reach = { state: 'ready', reason: null, proven: false, dialback: 'failed', dialbackReason: 'private-ip' };
+    room.handlers.onDialback({ state: 'failed', reason: 'private-ip' });
+    await settle();
+    assert.equal(room.el('map-upnp-note').textContent, 'Port opened, but public IP couldn\'t be verified. Not a full node.');
+
+    room.el('map-upnp').click();
+    await settle();
+    assert.equal(calls, 2);
+    assert.equal(room.el('map-upnp-note').textContent, 'Port opened. Checking full node…');
+
+    state.reach = { state: 'ready', reason: null, proven: true, dialback: 'ok', dialbackReason: null };
+    room.window.asscrack.getFullNode = async () => ({ self: true, peers: [] });
+    room.handlers.onFullNode({ peerId: 'self-peer-id', fullNode: true });
+    await settle();
+    assert.equal(room.el('map-upnp-box').hidden, false);
+    assert.equal(room.el('map-upnp').hidden, true);
+    assert.equal(room.el('map-upnp-note').dataset.state, 'ok');
+    assert.equal(room.el('map-upnp-note').textContent, 'Port open — full node active.');
+});
+
+test('the Network map panel shows waiting for a direct peer when mapped with peers present', async () => {
+    const { room, state } = await startRoom({
+        reach: { state: 'none', reason: null, proven: false, dialback: 'idle', dialbackReason: null },
+        owner: false
+    });
+    room.handlers.onPeerName({ peerId: PEER, name: 'Bob' });
+    room.handlers.onPeerJoined({ peerId: PEER });
+    room.window.asscrack.enableUpnp = async () => {
+        state.reach = { state: 'ready', reason: null, proven: false, dialback: 'idle', dialbackReason: null };
+        return { started: true, reach: state.reach };
+    };
+    room.el('map-upnp').click();
+    await settle();
+    assert.equal(room.el('map-upnp-box').hidden, false);
+    assert.equal(room.el('map-upnp').hidden, true);
+    assert.equal(room.el('map-upnp-note').textContent, 'Port opened. Waiting for a direct peer to check.');
 });
 
 test('background UPnP failure stays silent in the Network map panel until the user clicks Open port (UPnP)', async () => {

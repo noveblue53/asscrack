@@ -648,3 +648,63 @@ test('NAT-PMP fallback: when UPnP succeeds or returns CGNAT IP, NAT-PMP factory 
         await igdCgnat.close()
     }
 })
+
+test('dialbackState() tracks checking, failed, and ok transitions and enableUpnp() re-checks when mapped', { timeout: 20000 }, async () => {
+    const igd = await startIgd({ externalIp: PUBLIC_IP })
+    const { newRoomKey } = await import('../src/network/invite.mjs')
+    const roomKey = newRoomKey()
+    const a = await createAsscrackNode({
+        room: 'db-fail', roomKey, listen: LISTEN, discovery: false,
+        upnp: false, upnpClient: fakeClient(igd.port)
+    })
+    const b = await createAsscrackNode({
+        room: 'db-fail', roomKey, listen: LISTEN, discovery: false, fullNode: false
+    })
+    try {
+        assert.deepEqual(a.dialbackState(), { state: 'idle', reason: null })
+        const dialbackEvents = []
+        a.events.on('dialback', e => dialbackEvents.push(e))
+        await b.connect(a.getMultiaddrs()[0])
+        await waitFor(() => a.dialbackState().state === 'failed')
+        assert.deepEqual(a.dialbackState(), { state: 'failed', reason: 'private-ip' })
+        assert.equal(a.fullNode(), false)
+        assert.ok(dialbackEvents.some(e => e.state === 'checking'))
+        assert.equal(dialbackEvents.at(-1).state, 'failed')
+
+        const upnpEv = upnpEvents(a)
+        assert.equal(a.enableUpnp(), true)
+        await waitFor(() => upnpEv.length === 1)
+        assert.equal(upnpEv[0].state, 'mapped')
+        await waitFor(() => a.dialbackState().state === 'failed')
+        const igdBefore = igd.log.length
+        const countBefore = dialbackEvents.length
+        // Calling enableUpnp() again while mapped re-triggers dial-back without another router request.
+        assert.equal(a.enableUpnp(), true)
+        await waitFor(() => dialbackEvents.length >= countBefore + 2)
+        assert.equal(igd.log.length, igdBefore)
+        assert.equal(a.dialbackState().state, 'failed')
+
+        const okRoomKey = newRoomKey()
+        const c2 = await createAsscrackNode({
+            room: 'db-ok-2', roomKey: okRoomKey, listen: LISTEN, discovery: false,
+            upnp: false, upnpClient: fakeClient(igd.port), allowPrivateFullNode: true
+        })
+        const d2 = await createAsscrackNode({
+            room: 'db-ok-2', roomKey: okRoomKey, listen: LISTEN, discovery: false, fullNode: false
+        })
+        try {
+            const c2Events = []
+            c2.events.on('dialback', e => c2Events.push(e))
+            await d2.connect(c2.getMultiaddrs()[0])
+            await waitFor(() => c2.fullNode() === true)
+            assert.deepEqual(c2.dialbackState(), { state: 'ok', reason: null })
+            assert.ok(c2Events.some(e => e.state === 'checking'))
+            assert.equal(c2Events.at(-1).state, 'ok')
+        } finally {
+            await Promise.allSettled([c2.stop(), d2.stop()])
+        }
+    } finally {
+        await Promise.allSettled([a.stop(), b.stop()])
+        await igd.close()
+    }
+})
