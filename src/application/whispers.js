@@ -304,6 +304,13 @@
         else if (!window.idlePeer?.isIdle()) { data.unread++; refreshContacts(); }
         window.roomAttention?.incoming({ kind: 'whisper', peerId, id });
     });
+    api.onMobileWhisperSent?.(({ peerId, text, id }) => {
+        if (!peerId) return;
+        const data = thread(peerId);
+        append(data, { id: id || `mobile-${Date.now()}`, text, mine: true });
+        if (selected === peerId && !pane.hidden) render();
+        refreshContacts();
+    });
     window.whispers = {
         open, close, command, isOpen: () => !pane.hidden, isViewing: id => !pane.hidden && selected === id,
         unreadCount: unreadTotal,

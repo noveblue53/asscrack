@@ -1,5 +1,6 @@
 import { app, BrowserWindow, Menu, Notification, nativeImage, protocol, Tray, screen, powerMonitor, clipboard, crashReporter, desktopCapturer, dialog, ipcMain, safeStorage, session, shell } from 'electron';
 import { createRoomMedia } from './room-media.mjs';
+import { createMobileBridge } from './mobile-bridge.mjs';
 import { createRoomIpc } from './room-ipc.mjs';
 import { createMapTraffic } from './map-traffic.mjs';
 import { createImageDecoder } from './image-decoder.mjs';
@@ -430,7 +431,10 @@ onRoomIpc('asscrack:music-viz', (_event, bytes) => musicPopout.viz(bytes));
 // 1.0.4: the thumbnails of a saved room that keeps history stay in its encrypted archive (the data folder), thus the
 // history shows them again after a quit, a Leave room or an update.
 const roomMedia = createRoomMedia({ decodeImage: (info, limit) => imageDecoder.decode(info, limit),
-    changed: id => sendToWindow('asscrack:media-changed', id),
+    changed: id => {
+        sendToWindow('asscrack:media-changed', id);
+        mobileBridge?.broadcast('media-changed', { id });
+    },
     store: { save: (d, png) => getSavedRooms().rememberThumbnail(d, png), load: d => getSavedRooms().getThumbnail(d) } });
 let mediaGeneration = 0;
 function clearRoomMedia() { mediaGeneration++; roomMedia.clear(); localOriginals.clear(); pendingSaves.clear(); }
@@ -526,6 +530,7 @@ let lastTooltip = null;
 let quitting = false;
 // The room name for the tray tooltip (gap E8), and the voice state of the window (asscrack:set-voice).
 let roomName = null;
+let roomUserName = '';
 let inVoice = false;
 // Gap A7: the running Leave room (a promise), or null.
 let leaving = null;
@@ -1251,6 +1256,8 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
         options.receiveWhisper = message => {
             if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isCrashed()) return false;
             sendToWindow('asscrack:whisper', message);
+            const peerName = node?.peerNames?.()?.[message?.peerId] ?? message?.peerId?.slice(0, 8) ?? 'Peer';
+            mobileBridge?.broadcast('whisper', { ...message, from: peerName, own: false });
             return true;
         };
         const fromSavedUpnpPort = options.savedUpnpPort === true;
@@ -1280,6 +1287,7 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
         const live = node;
         onLive = (type, listener) => live.events.on(type, data => { if (node === live) listener(data); });
         roomName = options.room;
+        roomUserName = options.name ?? '';
         lastUpnp = null;
         saveUpnpChoice = () => {};
         onLive('upnp', data => { lastUpnp = data ?? null; });
@@ -1362,7 +1370,15 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
     readRoomActivity = observeRoomActivity(node);
     // Typing goes straight to the window; transient controls never enter diagnostics or the archive.
     onLive('whisper-capability', data => sendToWindow('asscrack:whisper-capability', data));
-    onLive('typing', data => sendToWindow('asscrack:typing', data));
+    onLive('typing', data => {
+        sendToWindow('asscrack:typing', data);
+        if (data?.peerId) {
+            mobileBridge?.broadcast('typing', {
+                ...data,
+                name: node?.peerNames?.()?.[data.peerId] ?? data.peerId.slice(0, 8)
+            });
+        }
+    });
     // Ready check (milestone 9): straight to the window, not in the event log (the log must not get the text).
     onLive('ready', data => sendToWindow('asscrack:ready', data));
     // Room music: the view and the notices (titles: not in the event log), and the frames of the DJ (no decode here).
@@ -1405,6 +1421,24 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
             const shelfId = type === 'file-offer' ? node.shelfTransfer(data.peerId, data.offerId) : undefined;
             // L3 (P10a): the device marks of the names and the lines (peer-marks.mjs).
             sendToWindow(`asscrack:${type}`, withDeviceMarks(type, shelfId ? { ...data, shelfId } : data, node));
+            if (type === 'message') {
+                mobileBridge?.broadcast('message', {
+                    id: data.id,
+                    from: data.from,
+                    text: data.text,
+                    time: data.time,
+                    own: false,
+                    peerId: data.peerId ?? null,
+                    channelId: data.channelId || 'general',
+                    ...(data.attachment ? { attachment: data.attachment } : {})
+                });
+            } else if (type === 'channels') {
+                mobileBridge?.broadcast('channels', { channels: node?.channels?.()?.channels ?? [] });
+            } else if (type === 'topic') {
+                mobileBridge?.broadcast('topic', { topic: data?.topic ?? '' });
+            } else if (type === 'peer-joined' || type === 'peer-left' || type === 'peer-name' || type === 'presence' || type === 'host-changed') {
+                mobileBridge?.broadcast('members', { members: mobileMembersSnapshot() });
+            }
         });
     }
     // The node dials the invite nodes at start and again with the redial timer (option inviteNodes).
@@ -1482,6 +1516,7 @@ function afterRoomStart(result, { invite = null, userName, save = false, keepHis
     finally { retainRoomHints = null; }
     getSavedRooms().persistChannels(node.channels().channels);
     getSavedRooms().persistVoiceChannels(node.voiceChannelCatalog());
+    mobileBridge?.broadcast('room-opened', mobileStateSnapshot());
     return { ...result, ...saveInfo };
 }
 
@@ -2017,7 +2052,14 @@ handleRoomIpc('asscrack:send', (_event, text, channelId) => {
     if (!node) throw new Error('Not logged in');
     // Saved rooms (milestone 6): the window gets the record. An archive error does not stop the send.
     const record = node.sendRecord(text, channelId);
-    return archiveSend(record);
+    const saved = archiveSend(record);
+    mobileBridge?.broadcast('message', {
+        ...saved,
+        from: roomUserName || 'You',
+        own: true,
+        peerId: node.peerId
+    });
+    return saved;
 });
 
 function archiveSend(record) {
@@ -2155,6 +2197,7 @@ function forwardScreenEvents(onLiveEvent) {
             if (screenOwn) writeLog('EVENT', `screen share started preset ${data.preset}`);
         }
         sendToWindow('asscrack:screen-state', data);
+        mobileBridge?.broadcast('guard-changed', mobileRoomSwitchGuard());
     });
     onLiveEvent('screen-ended', data => {
         writeLog('EVENT', data?.own ? `screen share stopped reason ${data.reason}` : `screen watch ended reason ${data?.reason}`);
@@ -2164,6 +2207,7 @@ function forwardScreenEvents(onLiveEvent) {
         }
         // The journal lines of the screen events (with the share ID) come from diag-events.mjs (journalNodeEvents).
         sendToWindow('asscrack:screen-ended', data);
+        mobileBridge?.broadcast('guard-changed', mobileRoomSwitchGuard());
     });
     for (const type of ['screen-viewers', 'screen-encoder', 'screen-config', 'screen-audio-ended']) {
         onLiveEvent(type, data => sendToWindow(`asscrack:${type}`, data));
@@ -2194,6 +2238,7 @@ handleRoomIpc('asscrack:set-voice', (_event, state) => {
         host: node.host()?.peerId === node.peerId });
     updatePttHook(() => pttHook.setInVoice(inVoice));
     autoStatus.voice();
+    mobileBridge?.broadcast('guard-changed', mobileRoomSwitchGuard());
     return result;
 });
 
@@ -2693,6 +2738,7 @@ function leaveRoom() {
         saveUpnpChoice = () => {};
         onLive = () => {};
         roomName = null;
+        roomUserName = '';
         idlePeer = false;
         try { savedRooms?.leave(); } catch (err) { writeLog('WARN', `Saved rooms leave: ${err?.message ?? err}`); }
         // G7a: the friend links stay. Only the friend requests of the room end. G7b: on the login screen the
@@ -2701,6 +2747,7 @@ function leaveRoom() {
         friendLinks.setAvailability({ state: 'available', note: '', idle: false });
         loginStarted = false;
         updateTray();
+        mobileBridge?.broadcast('room-left', mobileStateSnapshot());
         return true;
     }).finally(() => { leaving = null; });
     return leaving;
@@ -2721,6 +2768,208 @@ handleRoomIpc('asscrack:leave-room-info', () => ({
     saved: savedRooms?.activeInfo() != null,
     owner: node?.memberState().owner === true
 }));
+
+let mobileBridge = null;
+
+function mobileRoomSwitchGuard() {
+    const screenState = node?.screenState?.();
+    const watching = Boolean(screenState?.watching);
+    const sharing = Boolean(screenOwn || screenState?.own);
+    if (inVoice) {
+        return {
+            roomSwitchBlocked: true,
+            blockReason: 'Room switching is blocked while desktop is in a voice call.'
+        };
+    }
+    if (sharing || watching) {
+        return {
+            roomSwitchBlocked: true,
+            blockReason: 'Room switching is blocked while desktop is in a screen share.'
+        };
+    }
+    return { roomSwitchBlocked: false, blockReason: null };
+}
+
+function mobileMembersSnapshot() {
+    if (!node) return [];
+    const names = node.peerNames?.() ?? {};
+    const peerPres = node.peerPresence?.() ?? {};
+    const hostId = node.host?.()?.peerId ?? null;
+    const out = [{
+        peerId: node.peerId,
+        name: roomUserName || 'You',
+        isHost: node.isHost?.() === true,
+        presence: node.presence?.() ?? { state: 'available', note: '' }
+    }];
+    for (const peerId of node.peers?.() ?? []) {
+        out.push({
+            peerId,
+            name: names[peerId] || peerId.slice(0, 8),
+            isHost: hostId === peerId,
+            presence: peerPres[peerId] ?? { state: 'available', note: '' }
+        });
+    }
+    return out;
+}
+
+function mobileMessagesSnapshot(channelId = null) {
+    if (!node) return [];
+    const byId = new Map();
+    const activeId = getSavedRooms().activeInfo()?.roomId ?? null;
+    if (activeId) {
+        for (const m of getSavedRooms().lines(activeId, { limit: 200, channelId })) {
+            if (!m?.id) continue;
+            byId.set(m.id, {
+                id: m.id,
+                from: m.from,
+                text: m.text,
+                time: m.time,
+                own: m.own === true,
+                peerId: m.peerId ?? null,
+                channelId: m.channelId || 'general',
+                ...(m.attachment ? { attachment: m.attachment } : {})
+            });
+        }
+    }
+    for (const m of node.history?.() ?? []) {
+        if (!m?.id || byId.has(m.id)) continue;
+        if (channelId && (m.channelId || 'general') !== channelId) continue;
+        byId.set(m.id, {
+            id: m.id,
+            from: m.from,
+            text: m.text,
+            time: m.time,
+            own: m.peerId === node.peerId,
+            peerId: m.peerId ?? null,
+            channelId: m.channelId || 'general',
+            ...(m.attachment ? { attachment: m.attachment } : {})
+        });
+    }
+    return [...byId.values()].sort((a, b) => (a.time || 0) - (b.time || 0)).slice(-200);
+}
+
+function mobileStateSnapshot() {
+    const rooms = (getSavedRooms().status().rooms ?? []).map(r => ({
+        roomId: r.roomId,
+        name: r.name,
+        userName: r.userName,
+        protected: r.protected === true
+    }));
+    const activeId = getSavedRooms().activeInfo()?.roomId ?? null;
+    const guard = mobileRoomSwitchGuard();
+    return {
+        savedRooms: rooms,
+        activeRoom: node ? {
+            roomId: activeId,
+            name: roomName ?? '',
+            topic: node.topic?.() ?? ''
+        } : null,
+        channels: node?.channels?.()?.channels ?? [{ id: 'general', name: 'general' }],
+        activeChannelId: 'general',
+        messages: mobileMessagesSnapshot(null),
+        members: mobileMembersSnapshot(),
+        selfPeerId: node?.peerId ?? null,
+        selfName: roomUserName || '',
+        ...guard
+    };
+}
+
+function createAppMobileBridge() {
+    return createMobileBridge({
+        dir: path.join(app.getPath('userData'), 'mobile-bridge'),
+        log: writeLog,
+        getState: mobileStateSnapshot,
+        getMessages: channelId => mobileMessagesSnapshot(channelId || 'general'),
+        openRoom: async roomId => {
+            const guard = mobileRoomSwitchGuard();
+            if (guard.roomSwitchBlocked) return { blocked: true, reason: guard.blockReason };
+            if (!validRoomId(roomId) || getSavedRooms().isFriendRoom(roomId)) throw new Error('Saved room not found');
+            const row = getSavedRooms().getRoom(roomId);
+            if (!row) throw new Error('Saved room not found');
+            if (node && getSavedRooms().activeInfo()?.roomId === roomId) return { ok: true };
+            const wasInRoom = Boolean(node);
+            if (wasInRoom) await leaveRoom();
+            if (mainWindow && !mainWindow.isDestroyed() && !quitting) {
+                if (wasInRoom) {
+                    await new Promise(resolve => {
+                        mainWindow.webContents.once('did-finish-load', resolve);
+                        mainWindow.webContents.reload();
+                    });
+                }
+                sendToWindow('asscrack:mobile-open-room', roomId);
+            }
+            return { ok: true };
+        },
+        leaveRoom: async () => {
+            const guard = mobileRoomSwitchGuard();
+            if (guard.roomSwitchBlocked) return { blocked: true, reason: guard.blockReason };
+            const left = await leaveRoom();
+            if (left && !quitting && mainWindow && !mainWindow.isDestroyed()) {
+                setImmediate(() => {
+                    if (mainWindow && !mainWindow.isDestroyed() && !quitting) mainWindow.webContents.reload();
+                });
+            }
+            return { ok: left };
+        },
+        sendMessage: ({ text, channelId }) => {
+            if (!node) throw new Error('Not in a room');
+            const record = node.sendRecord(text, channelId);
+            const saved = archiveSend(record);
+            const msg = { ...saved, from: roomUserName || 'You', own: true, peerId: node.peerId };
+            sendToWindow('asscrack:mobile-message-sent', msg);
+            mobileBridge?.broadcast('message', msg);
+            return saved;
+        },
+        sendWhisper: ({ peerId, text }) => {
+            if (!node) throw new Error('Not in a room');
+            const res = node.sendWhisper(peerId, text);
+            sendToWindow('asscrack:mobile-whisper-sent', { peerId, text, time: Date.now() });
+            return res;
+        },
+        sendTyping: active => {
+            node?.setTyping?.(active === true);
+        },
+        getMediaPreview: async ({ id, messageId }) => {
+            const card = messageId ? getSavedRooms().messageCard(messageId) : null;
+            const archived = card && sameAttachment(card.descriptor, { id }) ? card : null;
+            const descriptor = node?.attachmentDescriptor?.(id) ?? archived?.descriptor ?? null;
+            if (!descriptor) return null;
+            if (roomMedia.loadStored(descriptor)) {
+                const bytes = roomMedia.previewBytes(descriptor);
+                if (bytes?.length) return { bytes, mime: 'image/png' };
+            }
+            const existing = roomMedia.previewBytes(descriptor);
+            if (existing?.length) return { bytes: existing, mime: 'image/png' };
+            if (!node || archived?.own || descriptor.source === node.peerId) return null;
+            const lineDevice = deviceOfLine(messageId);
+            const device = archived ? lineDevice : null;
+            const via = node.attachmentSourceOnline(descriptor) ? descriptor.source :
+                device ? node.peers().find(peer => node.deviceOf(peer) === device) ?? null : null;
+            if (!via) return null;
+            const version = mediaGeneration;
+            const current = node;
+            const result = await node.requestPreviewById(descriptor, { via, descriptor });
+            if (version !== mediaGeneration || node !== current || !result) return null;
+            await roomMedia.storePreview(result.descriptor, result.bytes);
+            const bytes = roomMedia.previewBytes(descriptor);
+            return bytes?.length ? { bytes, mime: 'image/png' } : null;
+        },
+        onStateChanged: state => sendToWindow('asscrack:mobile-bridge-changed', state)
+    });
+}
+
+handleRoomIpc('asscrack:mobile-bridge-state', () => mobileBridge?.getStatus() ?? null);
+handleRoomIpc('asscrack:mobile-bridge-set-enabled', (_event, enabled) => mobileBridge?.setEnabled(enabled === true));
+handleRoomIpc('asscrack:mobile-bridge-set-config', (_event, patch) => mobileBridge?.setConfig(patch));
+handleRoomIpc('asscrack:mobile-bridge-pair', () => mobileBridge?.getPairingInfo() ?? null);
+handleRoomIpc('asscrack:mobile-bridge-revoke', (_event, id) => {
+    mobileBridge?.revokeDevice(id);
+    return mobileBridge?.getStatus() ?? null;
+});
+handleRoomIpc('asscrack:mobile-bridge-revoke-all', () => {
+    mobileBridge?.revokeAllDevices();
+    return mobileBridge?.getStatus() ?? null;
+});
 
 app.on('before-quit', event => {
     quitting = true;
@@ -2746,7 +2995,8 @@ app.on('before-quit', event => {
     };
     if (stopping) return;
     const friends = friendLinks.state() === 'open';
-    if (!node && !leaving && !friends) {
+    const bridgeRunning = Boolean(mobileBridge?.getStatus()?.running);
+    if (!node && !leaving && !friends && !bridgeRunning) {
         closeArchive();
         clipboardImages.clear();
         downloadScratch?.clear();
@@ -2757,7 +3007,11 @@ app.on('before-quit', event => {
     stopping = true;
     // A quit during Leave room waits for that stop: the node does not stop two times. The friend nodes stop at the
     // same time, in the same 3 s limit.
-    Promise.all([leaving ?? (node ? stopNodeWithin(node) : null), friends ? stopNodeWithin(friendLinks) : null]).finally(() => {
+    Promise.all([
+        leaving ?? (node ? stopNodeWithin(node) : null),
+        friends ? stopNodeWithin(friendLinks) : null,
+        bridgeRunning ? mobileBridge.stop().catch(() => {}) : null
+    ]).finally(() => {
         closeArchive();
         clipboardImages.clear();
         downloadScratch?.clear();
@@ -2857,6 +3111,8 @@ app.whenReady().then(async () => {
     // open() never rejects. A failure gives the state locked with the reason open-failed.
     await getSavedRooms().open();
     startFriendLinks();
+    mobileBridge = createAppMobileBridge();
+    await mobileBridge.init();
     createMainWindow();
     if (startIdle) beginStartAtSignIn();
     void updates.startup();

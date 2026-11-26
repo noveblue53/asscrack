@@ -638,6 +638,12 @@ window.asscrack.onPeerName(data => {
     refreshPeerMarks();
     if (roster) applyRoster(roster.named(data.peerId, data.name, Date.now(), personKey(data.peerId)));
 });
+window.asscrack.onMobileMessageSent?.(data => {
+    if (!data) return;
+    const state = window.reading.beforeChange();
+    addMessage(data.from || ownName, data.text, data.time ?? Date.now(), true, data.id ?? null, data.peerId ?? selfId ?? topologySelf, data.channelId ?? 'general', data.attachment);
+    window.reading.afterChange(state);
+});
 window.asscrack.onMessage(data => {
     const item = peerItems.get(data.peerId);
     if (item && data.from) setPeerName(item, data.from);

@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>ASSCRACK Mobile</title>
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main id="pair-screen" class="screen">
+    <form id="pair-form" class="pair-wrap">
+      <h1>Pair with Desktop</h1>
+      <p class="muted">Scan the QR code from Desktop Settings &rsaquo; Mobile browser, or paste the pairing token below.</p>
+      <input id="pair-token" type="password" placeholder="Pairing token" autocomplete="off" required>
+      <input id="pair-label" type="text" placeholder="Device name (optional)" maxlength="64">
+      <p id="pair-error" class="error-text" hidden></p>
+      <button id="pair-submit" type="submit" class="primary">Connect</button>
+    </form>
+  </main>
+
+  <main id="app-screen" class="screen" hidden>
+    <header class="topbar">
+      <button id="nav-btn" type="button" aria-label="Rooms and channels">Rooms</button>
+      <div class="topbar-title">
+        <strong id="room-title">No room open</strong>
+        <span id="channel-subtitle">Select a saved room</span>
+      </div>
+      <span id="conn-dot" class="conn-dot" title="Connection"></span>
+      <button id="members-btn" type="button" aria-label="Members">Peers (0)</button>
+    </header>
+
+    <div id="guard-banner" class="banner" hidden></div>
+
+    <div id="empty-room" class="empty-state">
+      <p>No room is open on desktop.</p>
+      <button id="empty-open-rooms" type="button" class="primary">Choose a saved room</button>
+    </div>
+
+    <ul id="messages" class="messages" role="log" hidden></ul>
+
+    <div id="typing-bar" class="typing-bar" hidden></div>
+
+    <div id="whisper-bar" class="whisper-target" hidden>
+      <span id="whisper-label"></span>
+      <button id="whisper-clear" type="button">Cancel</button>
+    </div>
+
+    <form id="composer" class="composer" hidden>
+      <input id="msg-input" type="text" placeholder="Message..." autocomplete="off" maxlength="4000">
+      <button id="send-btn" type="submit" class="primary">Send</button>
+    </form>
+  </main>
+
+  <div id="rooms-drawer" class="drawer-backdrop" hidden>
+    <aside class="drawer">
+      <div class="drawer-head">
+        <h2>Rooms &amp; Channels</h2>
+        <button id="rooms-close" type="button">Close</button>
+      </div>
+      <section>
+        <div class="drawer-head">
+          <span class="muted">Saved Rooms</span>
+          <button id="leave-room-btn" type="button" class="danger" hidden>Leave room</button>
+        </div>
+        <ul id="rooms-list" class="list-col"></ul>
+      </section>
+      <section id="channels-section" hidden>
+        <span class="muted">Text Channels</span>
+        <ul id="channels-list" class="list-col"></ul>
+      </section>
+      <section>
+        <button id="logout-btn" type="button" class="danger">Unpair this device</button>
+      </section>
+    </aside>
+  </div>
+
+  <div id="members-drawer" class="drawer-backdrop" hidden>
+    <aside class="drawer right">
+      <div class="drawer-head">
+        <h2>Members</h2>
+        <button id="members-close" type="button">Close</button>
+      </div>
+      <p class="muted">Tap a peer to send a whisper.</p>
+      <ul id="members-list" class="list-col"></ul>
+    </aside>
+  </div>
+
+  <div id="image-modal" class="image-modal" hidden>
+    <img id="image-modal-img" alt="Image preview">
+  </div>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
