@@ -805,3 +805,62 @@ test('dial-back falls back to another connected peer after a private-ip failure'
         await Promise.allSettled([a.stop(), b.stop(), c.stop()])
     }
 })
+
+test('upnpPending() is false inside synchronous upnp event listeners for all terminal outcomes', { timeout: 15000 }, async () => {
+    const igdPrivate = await startIgd({ externalIp: '100.64.1.5' })
+    const igdPublic = await startIgd({ externalIp: PUBLIC_IP })
+    const specs = [
+        {
+            label: 'private-ip',
+            expected: { state: 'none', reason: 'private-ip', pending: false },
+            opts: { room: 'u-pending-priv', listen: LISTEN, discovery: false, upnp: true, upnpClient: fakeClient(igdPrivate.port) }
+        },
+        {
+            label: 'no-gateway',
+            expected: { state: 'none', reason: 'no-gateway', pending: false },
+            opts: {
+                room: 'u-pending-gw', listen: LISTEN, discovery: false, upnp: true,
+                upnpClient: {
+                    externalIp: async () => { throw new Error('Could not discover gateway') },
+                    map: async () => {},
+                    unmap: async () => {},
+                    close: async () => {}
+                }
+            }
+        },
+        {
+            label: 'timeout',
+            expected: { state: 'none', reason: 'timeout', pending: false },
+            opts: {
+                room: 'u-pending-to', listen: LISTEN, discovery: false, upnp: true, upnpTimeout: 150,
+                upnpClient: {
+                    externalIp: () => new Promise(() => {}),
+                    map: async () => {},
+                    unmap: async () => {},
+                    close: async () => {}
+                }
+            }
+        },
+        {
+            label: 'mapped',
+            expected: { state: 'mapped', reason: undefined, pending: false },
+            opts: { room: 'u-pending-ok', listen: LISTEN, discovery: false, upnp: true, upnpClient: fakeClient(igdPublic.port) }
+        }
+    ]
+    const nodes = []
+    try {
+        for (const spec of specs) {
+            const node = await createAsscrackNode(spec.opts)
+            nodes.push(node)
+            const observed = []
+            node.events.on('upnp', ev => {
+                observed.push({ state: ev.state, reason: ev.reason, pending: node.upnpPending() })
+            })
+            await waitFor(() => observed.length === 1)
+            assert.deepEqual(observed[0], spec.expected, spec.label)
+        }
+    } finally {
+        await Promise.allSettled(nodes.map(n => n.stop()))
+        await Promise.allSettled([igdPrivate.close(), igdPublic.close()])
+    }
+})

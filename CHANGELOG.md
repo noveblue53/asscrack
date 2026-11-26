@@ -9,6 +9,11 @@ Each result has one of these labels:
 
 ## Unreleased
 
+- **Friends panel UPnP "Opening port…" state fix** (`src/network/node.mjs`, `test/upnp.test.mjs`):
+  - Marked `upnpPhase` as `'done'` before emitting the `'upnp'` event in all terminal paths of `runUpnp()` (`private-ip`, `mapped`, `timeout`, and router errors) so `upnpPending()` is already `false` when `friend-links.mjs` refreshes the Friends panel reachability state.
+  - Added a regression test in `test/upnp.test.mjs` covering `upnpPending()` inside synchronous `'upnp'` listeners for all four terminal outcomes.
+  - Verified (`127.0.0.1`): `node --test test/upnp.test.mjs test/friend-links.test.mjs` (`31` pass, `0` fail) and full `npm test` (`1461` tests, `1443` pass, `0` fail, `18` skipped).
+
 - **Phase 1 Mobile Browser Client (desktop-hosted HTTPS bridge + mobile web UI)** (`src/application/mobile-cert.mjs`, `src/application/mobile-qr.mjs`, `src/application/mobile-auth.mjs`, `src/application/mobile-bridge.mjs`, `src/mobile/`):
   - Added a zero-dependency `node:https` bridge with a persistent pure-JS ECDSA P-256 X.509 certificate (loopback, LAN, public IP, and manual SANs), pure-JS QR code SVG generator, single-use pairing tokens, hashed `HttpOnly; Secure; SameSite=Strict` per-device session cookies, IP rate limiting, UPnP port mapping (`src/network/port-mapper.mjs`), SSE live push (`GET /api/events`), and `fetch` POST actions.
   - Built the responsive mobile web UI in `src/mobile/` behind a Phase 2–ready `transport.js` adapter covering saved rooms, text channels, chat history/live messages, whispers, member presence, typing indicators, authenticated inline image previews (`src/application/room-media.mjs`), and a `409` room-switch guard while desktop is in voice or screen share.

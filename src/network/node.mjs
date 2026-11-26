@@ -2564,6 +2564,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     let upnpRenewTimer = null
     let upnpRenewTask = null
     let upnpPhase = 'idle' // 'idle', 'discovery', 'map', 'done'
+    let upnpRunId = 0
     function upnpLog(fields) {
         const { state, ...rest } = fields
         console.info(connText(`upnp ${state}`, rest))
@@ -2612,6 +2613,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     function runUpnp() {
         if (!useUpnp || !upnpAllowed() || stopped || upnpPhase !== 'idle') return
         upnpPhase = 'discovery'
+        const runId = ++upnpRunId
+        const finishPhase = () => { if (upnpRunId === runId) upnpPhase = 'done' }
         let timedOut = false
         const work = (async () => {
             const port = listenPort('ip4')
@@ -2632,6 +2635,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             }
             if (stopped || timedOut || !upnpAllowed()) return
             if (isPrivateIp(ip)) {
+                finishPhase()
                 upnpLog({ state: 'none', reason: 'private-ip', error: `external IP ${ip} is private` })
                 return
             }
@@ -2646,6 +2650,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             }
             upnpState = state
             scheduleUpnpRenewal(state)
+            finishPhase()
             upnpLog({ state: 'mapped', ip, port, local: state.local })
             const line = nodeLine()
             for (const session of sessions.values()) session.send(line)
@@ -2661,11 +2666,15 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         })
         upnpTask = Promise.race([work.then(() => 'done'), limit])
             .then(result => {
+                clearTimeout(timer)
+                finishPhase()
                 if (result === 'timeout' && !stopped) upnpLog({ state: 'none', reason: 'timeout', error: `no result after ${upnpTimeout} ms` })
             }, err => {
+                clearTimeout(timer)
+                finishPhase()
                 if (!stopped) upnpLog({ state: 'none', reason: err?.upnpReason ?? 'router-error', error: err?.message ?? String(err) })
             })
-            .finally(() => { clearTimeout(timer); upnpPhase = 'done' })
+            .finally(() => { clearTimeout(timer); finishPhase() })
     }
     // Turn UPnP on for a running node, or try again after a task that ended with no mapping. false when UPnP cannot
     // apply: a LAN room, a relay-only node, fullNode not 'auto', a typed announce address, revoked member, or a stopped node.
