@@ -198,4 +198,39 @@ test('protected non-host admitted member becomes a circuit-relay Full Node witho
     }
 })
 
+test('higher-ID full node reaches lower-ID relay-only peer through a shared relay', { timeout: 60000 }, async () => {
+    const room = `full-to-lower-${Date.now()}`
+    const nodes = []
+    try {
+        let R, F, A
+        for (let i = 0; i < 20; i++) {
+            ;[R, F, A] = await Promise.all([
+                createAsscrackNode({ room, listen: LOCAL, discovery: false, fullNode: true, ...fast }),
+                createAsscrackNode({ room, listen: LOCAL, discovery: false, fullNode: true, ...fast }),
+                createAsscrackNode({ room, relayOnly: true, fullNode: false, ...fast })
+            ])
+            if (F.peerId > A.peerId) break
+            await stopAll([R, F, A])
+        }
+        nodes.push(R, F, A)
+        assert.ok(F.peerId > A.peerId, 'F has a higher peer ID than A')
+
+        const rAddr = localAddr(R)
+        await A.connect(rAddr)
+        await F.connect(rAddr)
+
+        await waitFor(() => F.peers().includes(A.peerId) && A.peers().includes(F.peerId), 20000, 'F-A session through R')
+
+        const gotA = []
+        const gotF = []
+        A.events.on('message', m => gotA.push(m.text))
+        F.events.on('message', m => gotF.push(m.text))
+        F.send('hello from full node')
+        A.send('hello from lower peer')
+        await waitFor(() => gotA.includes('hello from full node') && gotF.includes('hello from lower peer'), 10000, 'two-way chat F<->A')
+    } finally {
+        await stopAll(nodes)
+    }
+})
+
 })
