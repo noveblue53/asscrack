@@ -61,6 +61,7 @@ const GUARD_TEXTS = [
     [/^Saved room not found/, 'Room not found.'],
     [/^(Already logged in|Invalid peer ID|Invalid offer ID|A local file is required|The file path is not an absolute path|The file has no path)/,
         'Something went wrong. Try again.'],
+    [/^This device is banned from the room/, 'That device is banned. Unban it first.'],
     [/^This device has been removed from the room/, 'You were removed from this room.'],
     [/^Named channels need a host/, 'Channels aren\'t available right now.'],
     [/^This channel is read-only/, 'This channel is read-only right now.'],
@@ -336,6 +337,12 @@ function makePeerLine(name, title, colorName = name, self = false) {
     } else {
         avatar.setAttribute('aria-label', 'Inspect ' + name);
         item.addEventListener('click', () => window.peerInspector?.open(title));
+        item.addEventListener('contextmenu', event => {
+            const actions = window.roomMembership?.contextActions?.(title) ?? [];
+            if (!actions.length) return;
+            event.preventDefault();
+            openMemberContextMenu(event.clientX, event.clientY, actions);
+        });
     }
     avatar.textContent = firstLetter(colorName);
     setNameColor(item, colorName);
@@ -356,6 +363,41 @@ function makePeerLine(name, title, colorName = name, self = false) {
     item.title = String(title);
     return item;
 }
+
+const memberContextMenu = document.getElementById('member-context-menu');
+function closeMemberContextMenu() {
+    if (memberContextMenu) {
+        memberContextMenu.hidden = true;
+        memberContextMenu.replaceChildren();
+    }
+}
+function openMemberContextMenu(x, y, actions) {
+    if (!memberContextMenu) return;
+    closeMemberContextMenu();
+    memberContextMenu.replaceChildren(...actions.map(action => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.role = 'menuitem';
+        btn.textContent = action.label;
+        if (action.danger) btn.className = 'btn-danger';
+        btn.addEventListener('click', () => {
+            closeMemberContextMenu();
+            action.run();
+        });
+        return btn;
+    }));
+    memberContextMenu.style.setProperty('left', `${Math.max(4, Math.min(x, window.innerWidth - 180))}px`);
+    memberContextMenu.style.setProperty('top', `${Math.max(4, Math.min(y, window.innerHeight - 160))}px`);
+    memberContextMenu.hidden = false;
+}
+document.addEventListener('click', event => {
+    if (memberContextMenu && !memberContextMenu.hidden && !memberContextMenu.contains(event.target)) {
+        closeMemberContextMenu();
+    }
+});
+document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') closeMemberContextMenu();
+});
 
 function setPeerName(item, name) {
     item.querySelector('.name').textContent = String(name);

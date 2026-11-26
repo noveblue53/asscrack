@@ -33,6 +33,7 @@ import { checkAllowedInvite } from '../network/knock.mjs';
 import { createDeviceIdentity, importDeviceIdentity, createRoomMembership } from '../network/room-membership.mjs';
 import { joinAdmission, restoreSavedAdmission } from './room-admission.mjs';
 import { observeRoomActivity } from './room-activity.mjs';
+import { initialHostFields, resolveRoomHostPlan, saveHostFields } from './room-host.mjs';
 // Saved rooms (milestone 6).
 import { createSavedRooms, makeProtector } from './saved-rooms.mjs';
 import { roomFingerprint } from './room-archive.mjs';
@@ -1182,33 +1183,6 @@ function createMainWindow() {
     }
 }
 
-// The host data of this profile for a room (file rooms/<tag>.host.json in the profile):
-// publicAddress (the typed public address) and upnpPort (the port of the last UPnP mapping).
-function readHostFile(file) {
-    try {
-        const value = JSON.parse(readFileSync(file, 'utf8'));
-        return value !== null && typeof value === 'object' ? value : {};
-    } catch {
-        return {};
-    }
-}
-function readHostAddress(file) {
-    const value = readHostFile(file).publicAddress;
-    return typeof value === 'string' ? value.trim() : '';
-}
-function readUpnpPort(file) {
-    const value = readHostFile(file).upnpPort;
-    return Number.isInteger(value) && value >= 1 && value <= 65535 ? value : null;
-}
-function saveHostFields(file, fields) {
-    try {
-        const temp = `${file}.tmp`;
-        writeFileSync(temp, JSON.stringify({ ...readHostFile(file), ...fields }), { mode: 0o600 });
-        renameSync(temp, file);
-    } catch (err) {
-        writeLog('WARN', `Host data not saved to ${file}: ${err?.message ?? err}`);
-    }
-}
 // Start the node of a room. options: the node options (name, room, and for a keyed room roomKey and inviteNodes).
 // The login handler and the reopen of a saved room use this function. Returns the login result.
 let retainRoomHints = null;
@@ -1248,18 +1222,15 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
                 `${roomFingerprint(options.room, options.roomKey)}.json`) };
         }
         const hostFile = alreadySaved ? hints.host : null;
-        // Older saved host data has no affirmative UPnP preference. Restoring an
-        // address and allowing the app to ask a router for a mapping are distinct.
-        const address = lan ? '' : reopen && hostFile ? readHostAddress(hostFile) : publicAddress;
-        const mapping = !lan && !address && (reopen && hostFile ? autoUpnp && readHostFile(hostFile).allowUpnp === true : allowUpnp === true);
+        // Saved internet rooms follow the global autoUpnp setting on reopen unless
+        // the room explicitly opted out (allowUpnp: false) or has a saved publicAddress.
+        const { address, mapping, savedPort } = resolveRoomHostPlan({ hostFile, publicAddress, allowUpnp, autoUpnp, reopen, lan });
         if (address !== '') {
             const { ip, port } = parsePublicAddress(address);
             options.announce = [`/ip4/${ip}/tcp/${port}`];
             options.port = port;
         } else if (mapping) {
-            // Reuse an opted-in mapping's former port on a saved reopen.
             options.upnp = true;
-            const savedPort = reopen && hostFile ? readUpnpPort(hostFile) : null;
             if (savedPort !== null && options.port === undefined) {
                 options.port = savedPort;
                 options.savedUpnpPort = true;
@@ -1322,16 +1293,14 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
             onLive('upnp', data => {
                 if (data?.state !== 'mapped' || !Number.isInteger(data.port)) return;
                 mappedPort = data.port;
-                if (persistence) saveHostFields(hints.host, { upnpPort: mappedPort });
+                if (persistence) saveHostFields(hints.host, { upnpPort: mappedPort }, { log: writeLog });
             });
-            saveUpnpChoice = () => { if (persistence) saveHostFields(hints.host, { allowUpnp: true }); };
+            saveUpnpChoice = () => { if (persistence) saveHostFields(hints.host, { allowUpnp: true }, { log: writeLog }); };
             retainRoomHints = () => {
                 mkdirSync(path.dirname(hints.peers), { recursive: true, mode: 0o700 });
                 if (!alreadySaved) node.setAddressStore(hints.peers);
-                const fields = {};
-                if (!reopen && !lan && (address || mapping)) Object.assign(fields, { publicAddress: address, allowUpnp: mapping });
-                if (mappedPort !== null) fields.upnpPort = mappedPort;
-                if (Object.keys(fields).length > 0) saveHostFields(hints.host, fields);
+                const fields = initialHostFields({ reopen, lan, address, mapping, mappedPort });
+                if (Object.keys(fields).length > 0) saveHostFields(hints.host, fields, { log: writeLog });
                 persistence = true;
             };
         }
@@ -1617,10 +1586,10 @@ function knockView(pending) {
     });
 }
 queryRoomIpc('asscrack:knocks', () => knockView(node?.knocks()));
-handleRoomIpc('asscrack:knock-answer', (_event, id, allow) => {
-    if (!node?.memberState().owner) throw new Error('Only the room owner can answer.');
+handleRoomIpc('asscrack:knock-answer', (_event, id, allow, canHost) => {
+    if (!node?.memberState().canManageMembers) throw new Error('Only the room owner or an admin can answer.');
     if (typeof id !== 'string' || id.length > 64) return false;
-    const done = node.answerKnock(id, allow === true);
+    const done = node.answerKnock(id, allow === true, { canHost: canHost === true });
     writeLog('INFO', `Knock ${allow === true ? 'allowed' : 'denied'}${done ? '' : ' (not waiting now)'}`);
     return done;
 });
@@ -1963,15 +1932,53 @@ handleRoomIpc('asscrack:enable-upnp', () => {
 });
 
 handleRoomIpc('asscrack:member-invite', (_event, deviceId, canHost) => {
-    if (!node?.memberState().owner) throw new Error('Only the room owner can invite devices.');
+    if (!node?.memberState().canManageMembers) throw new Error('Only the room owner or an admin can invite devices.');
     if (typeof deviceId !== 'string' || deviceId.length > 128) throw new Error('Enter the friend’s device ID.');
     return node.createMemberInvite(deviceId.trim(), { canHost: canHost === true });
 });
 
 handleRoomIpc('asscrack:member-revoke', (_event, deviceId) => {
-    if (!node?.memberState().owner) throw new Error('Only the room owner can revoke access.');
+    if (!node?.memberState().canManageMembers) throw new Error('Only the room owner or an admin can revoke access.');
     if (typeof deviceId !== 'string' || deviceId.length > 128) throw new Error('Enter a device ID.');
     return node.revokeMember(deviceId.trim());
+});
+
+handleRoomIpc('asscrack:member-role', (_event, deviceId, role) => {
+    if (!node?.memberState().owner) throw new Error('Only the room owner can change admin roles.');
+    if (typeof deviceId !== 'string' || deviceId.length > 128) throw new Error('Enter a device ID.');
+    node.setMemberRole(deviceId.trim(), String(role ?? ''));
+    return true;
+});
+
+handleRoomIpc('asscrack:member-can-host', (_event, deviceId, canHost) => {
+    if (!node?.memberState().canManageMembers) throw new Error('Only the room owner or an admin can change host access.');
+    if (typeof deviceId !== 'string' || deviceId.length > 128) throw new Error('Enter a device ID.');
+    node.setMemberCanHost(deviceId.trim(), canHost === true);
+    return true;
+});
+
+handleRoomIpc('asscrack:member-kick', (_event, deviceId) => {
+    if (!node?.memberState().canManageMembers) throw new Error('Only the room owner or an admin can kick devices.');
+    if (typeof deviceId !== 'string' || deviceId.length > 128) throw new Error('Enter a device ID.');
+    return node.kickMember(deviceId.trim());
+});
+
+handleRoomIpc('asscrack:member-ban', (_event, deviceId) => {
+    if (!node?.memberState().canManageMembers) throw new Error('Only the room owner or an admin can ban devices.');
+    if (typeof deviceId !== 'string' || deviceId.length > 128) throw new Error('Enter a device ID.');
+    return node.banMember(deviceId.trim());
+});
+
+handleRoomIpc('asscrack:member-unban', (_event, deviceId) => {
+    if (!node?.memberState().canManageMembers) throw new Error('Only the room owner or an admin can unban devices.');
+    if (typeof deviceId !== 'string' || deviceId.length > 128) throw new Error('Enter a device ID.');
+    return node.unbanMember(deviceId.trim());
+});
+
+handleRoomIpc('asscrack:member-forget', (_event, deviceId) => {
+    if (!node?.memberState().canManageMembers) throw new Error('Only the room owner or an admin can forget devices.');
+    if (typeof deviceId !== 'string' || deviceId.length > 128) throw new Error('Enter a device ID.');
+    return node.forgetMember(deviceId.trim());
 });
 
 // The window has no clipboard permission (setPermissions allows only the microphone). The main process copies.

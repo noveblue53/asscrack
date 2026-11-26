@@ -40,6 +40,11 @@ export function makeInvite({ room, key, nodes, ipv6 }) {
 // A protected room invite in the compact binary form "asscrack3:".
 export function makeMemberInvite({ room, key, nodes, membership }) {
     const k = typeof key === 'string' ? key : Buffer.from(key).toString('base64url')
+    if (membership?.grant?.epoch !== undefined) {
+        return PROTECTED_INVITE_PREFIX + Buffer.from(JSON.stringify({
+            v: MEMBERSHIP_VERSION, room, key: k, nodes, membership
+        })).toString('base64url')
+    }
     return COMPACT_INVITE_PREFIX + packCompact({ room, key: k, nodes, membership }).toString('base64url')
 }
 

@@ -26,7 +26,7 @@ import { createElection } from './election.mjs'
 import { createChannels } from './channels.mjs'
 import { createVoiceChannels, GENERAL_VOICE_CHANNEL } from './voice-channels.mjs'
 import { createRoomTopic } from './room-topic.mjs'
-import { createHistory, HISTORY_LIMIT, MAX_MESSAGE_BYTES, validHistoryItem } from './history.mjs'
+import { createHistory, HISTORY_LIMIT, MAX_MESSAGE_BYTES, historyLines, validHistoryItem } from './history.mjs'
 import { createFileTransfer, FILE_PROTOCOLS, FILE_SWARM_PROTOCOL } from './file-transfer.mjs'
 import { createScreenShare, SCREEN_FANOUT_PROTOCOL, SCREEN_PROTOCOL } from './screen-share.mjs'
 import { createScreenAudio, SCREEN_AUDIO_PROTOCOL } from './screen-audio.mjs'
@@ -305,6 +305,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     const updateSpread = createUpdateSpread(updates)
     const stopUpdateShare = updateSpread.subscribe(() => updateSpread.share(sessions.values()))
     const history = createHistory()
+    const ownMessageIds = new Set()
     const HISTORY_KEEP_MS = 10000
     // Up to one replay window per peer, in case history arrives just before host acceptance.
     const pendingHistory = new Map()
@@ -334,13 +335,25 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     function memberState() {
         if (!membership) return { protected: false }
         const entries = [...memberPeers.entries()].filter(([peerId]) => sessions.has(peerId) && memberAllowed(peerId))
-        const members = membership.owner ? membership.issued() : entries.filter(([, member]) => member.deviceId !== membership.ownerId)
-            .map(([, member]) => ({ deviceId: member.deviceId, canHost: member.canHost, revoked: false }))
+        const canManage = membership.canManageMembers()
+        const members = canManage ? membership.issued() : entries.filter(([, member]) => member.deviceId !== membership.ownerId)
+            .map(([, member]) => ({
+                deviceId: member.deviceId,
+                role: member.role ?? membership.roleOf(member.deviceId),
+                canHost: member.canHost,
+                status: 'active',
+                hidden: false,
+                revoked: false,
+                banned: false,
+                kicked: false
+            }))
         // easy-join part 3: roomId and ownerId for the room announce line of the friend links; autoAllowFriends for
         // the owner setting "Always allow my friends".
-        return { protected: true, owner: membership.owner, deviceId: membership.id, lan: membership.lan,
+        return { protected: true, owner: membership.owner, role: membership.role(), isAdmin: membership.isAdmin(),
+            canManageMembers: canManage, deviceId: membership.id, lan: membership.lan,
             roomId: membership.roomId, ownerId: membership.ownerId, autoAllowFriends: membership.autoAllowFriends(),
             admitted: membership.admitted(), canHost: membership.canHost(), revoked: membership.revoked(membership.id),
+            banned: membership.banned(membership.id), kicked: membership.kicked(membership.id),
             members: members.map(member => {
                 const pair = entries.find(([, active]) => active.deviceId === member.deviceId)
                 return { ...member, connected: Boolean(pair), ...(pair ? { peerId: pair[0] } : {}) }
@@ -399,7 +412,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     const knockIpRate = roomRateLimit(10, 60)
     knockCircuit = (source, destination) => {
         const sourceId = source.toString()
-        if (!knock || !membership || membership.lan || memberPeers.get(destination.toString())?.deviceId !== membership.ownerId) return false
+        const destPeer = memberPeers.get(destination.toString())
+        const destAllowed = destPeer?.deviceId === membership?.ownerId || destPeer?.role === 'admin'
+        if (!knock || !membership || membership.lan || !destAllowed) return false
         const connections = node.getConnections(source)
         const hops = connections.flatMap(connection => connection.streams.filter(stream =>
             stream.direction === 'inbound' && stream.protocol === RELAY_V2_HOP_CODEC && !knockCircuits.has(stream)))
@@ -509,6 +524,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         const added = messages.map(m => attachments.remember(m)).filter(m => history.add(m))
         console.info(`History applied: ${added.length} of ${messages.length} messages are new`)
         events.emit('history', { messages: added })
+        return added
     }
 
     // The host of the last onChange of the election.
@@ -524,6 +540,32 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     function sendHistoryToAll() {
         if (!election.isHost()) return
         for (const [peerId, session] of sessions) sendHistoryTo(peerId, session)
+    }
+
+    const ownHistoryItem = m => membership ? deviceOfMessage(m.id) === membership.id : ownMessageIds.has(m.id)
+
+    function sendBackfillTo(peerId, session, namedOnly = false) {
+        if (!session || election.isHost() || election.host()?.peerId !== peerId || !memberAllowed(peerId)) return
+        const capable = channels.capable(peerId)
+        const select = m => ownHistoryItem(m) && (m.channelId ? capable : !namedOnly)
+        if (!history.list().some(select)) return
+        const stillHost = () => !election.isHost() && election.host()?.peerId === peerId
+        const replay = history.replayLines(stillHost, select)
+        session.sendReplay((function* () {
+            const count = yield* replay
+            if (count !== undefined) console.info(`History backfill sent to ${peerId}: ${count} messages`)
+        })())
+    }
+
+    function forwardHistory(added, excludePeerId) {
+        if (!election.isHost() || !added.length) return
+        for (const [otherId, session] of sessions) {
+            if (otherId === excludePeerId || !memberAllowed(otherId)) continue
+            const capable = channels.capable(otherId)
+            const batch = capable ? added : added.filter(m => !m.channelId)
+            if (!batch.length) continue
+            for (const line of historyLines(batch, () => true, election.isHost)) session.send(line)
+        }
     }
 
     // M1 (P10a), items 1 and 2 (a partial fix): in a protected room, the host gives the history, and the host can write
@@ -542,6 +584,25 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
 
     function handleHistory(peerId, control) {
         if (!Array.isArray(control.messages) || control.messages.length > HISTORY_LIMIT) return
+        if (election.isHost()) {
+            if (!memberAllowed(peerId)) return
+            const peerDevice = membership ? memberPeers.get(peerId)?.deviceId : null
+            if (membership && !peerDevice) return
+            const from = memberName(peerId)
+            const messages = control.messages
+                .filter(m => validHistoryItem(m) && (!m.channelId || (channels.capable(peerId) && channels.known(m.channelId))) &&
+                    (!membership || deviceOfMessage(m.id) === peerDevice))
+                .map(({ id, text, time, channelId, attachment }) => ({
+                    id, from, text, time,
+                    ...(channelId ? { channelId } : {}),
+                    ...(attachment ? { attachment } : {})
+                }))
+                .filter(m => !history.has(m.id))
+            if (!messages.length) return
+            const added = applyHistory(messages)
+            if (added.length) forwardHistory(added, peerId)
+            return
+        }
         const messages = control.messages.filter(m => validHistoryItem(m) && (!m.channelId || (channels.capable(peerId) && channels.known(m.channelId))))
             .map(({ id, from, text, time, channelId, attachment }) => ({ id, from, text, time, ...(channelId ? { channelId } : {}), ...(attachment ? { attachment } : {}) }))
             .map(checkedHistoryItem).filter(Boolean)
@@ -562,6 +623,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     function removeHistory(ids) {
         const removed = new Set(ids)
         history.removeIds(removed)
+        for (const id of removed) ownMessageIds.delete(id)
         for (const kept of pendingHistory.values()) kept.messages = kept.messages.filter(m => !removed.has(m.id))
     }
     // deafened (G4, C2): this user hears no voice. A peer that does not know the field ignores it.
@@ -659,6 +721,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         changed: (state, added) => events.emit('channels', { ...state, added }),
         ready: id => {
             if (election.isHost() && history.list().some(m => m.channelId)) sendHistoryTo(id, sessions.get(id), true)
+            else if (!election.isHost() && election.host()?.peerId === id) sendBackfillTo(id, sessions.get(id), true)
         }
     })
     const topic = createRoomTopic({
@@ -679,6 +742,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         hostAllowed,
         onLost: info => failoverStart(info),
         onChange: info => {
+            const prevHostId = lastHostId
             const wasHost = lastHostId === selfId
             lastHostId = info.peerId
             events.emit('host-changed', info)
@@ -688,6 +752,12 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             // A new host sends the history to each member with a session. A member whose session opened before
             // this election got no history from openSession(). Send after the host announcement.
             if (info.peerId === selfId && !wasHost) queueMicrotask(sendHistoryToAll)
+            else if (info.peerId && info.peerId !== selfId && info.peerId !== prevHostId) {
+                const hostId = info.peerId
+                queueMicrotask(() => {
+                    if (election.host()?.peerId === hostId) sendBackfillTo(hostId, sessions.get(hostId))
+                })
+            }
             voiceRelay?.hostChanged()
             musicRelay?.hostChanged()
             // M4: a new host sends its roster. A roster of the old host is not valid now.
@@ -1224,7 +1294,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 if (!authenticatedMember) return reject('device authorization unavailable')
                 peerName = typeof control.name === 'string' ? control.name.trim().slice(0, 64) : ''
                 if (!membership.admitted()) {
-                    if (authenticatedMember.deviceId !== membership.ownerId) reject('first admission requires the owner')
+                    if (authenticatedMember.deviceId !== membership.ownerId && authenticatedMember.role !== 'admin') {
+                        reject('first admission requires the owner')
+                    }
                     return
                 }
                 if (!authenticatedMember.hasAdmission) {
@@ -1236,7 +1308,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 finishProof()
             } else if (membership && control.type === 'room-admitted') {
                 const first = !membership.admitted()
-                if (authenticatedMember?.deviceId !== membership.ownerId || !membership.acceptAdmission(control.signature)) {
+                const fromManager = authenticatedMember?.deviceId === membership.ownerId || authenticatedMember?.role === 'admin'
+                if (!fromManager || !membership.acceptAdmission(control.signature)) {
                     return reject('invalid room admission')
                 }
                 finishProof()
@@ -1256,6 +1329,13 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                     // Ignore an unknown type with no warning.
                     if (control.type === 'room-revocations' && membership) {
                         try { if (!membership.observe(control.state)) session.close() } catch { session.close() }
+                    }
+                    else if (control.type === 'room-roles' && membership) {
+                        try {
+                            if (!membership.observeRoles(control.records) || !membership.observeRoomCode(control.roomCode)) {
+                                session.close()
+                            }
+                        } catch { session.close() }
                     }
                     else if (control.type === 'host') election.handleAnnouncement(peerId, control)
                     else if (control.type === 'channels' && sessions.get(peerId) === session) channels.handle(peerId, control)
@@ -1451,6 +1531,13 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         channels.opened(peerId)
         const voiceCatalog = voiceChannels.opened()
         if (voiceCatalog && memberAllowed(peerId)) session.send(JSON.stringify(voiceCatalog))
+        if (membership && memberAllowed(peerId)) {
+            const records = membership.roleRecords()
+            const roomCode = membership.roomCodeState()
+            if (records.length > 0 || roomCode) {
+                session.send(JSON.stringify({ type: 'room-roles', v: 1, records, ...(roomCode ? { roomCode } : {}) }))
+            }
+        }
         attachments.opened(peerId)
         shelf.opened(peerId)
         whispers.opened(peerId, session)
@@ -1481,6 +1568,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         if (voiceState.inVoice || peerFull.get(peerId) === true) voiceRelay?.hostChanged()
         topic.sessionOpened(peerId)
         if (election.isHost()) sendHistoryTo(peerId, session)
+        else if (election.host()?.peerId === peerId) sendBackfillTo(peerId, session)
         if (voiceState.inVoice) session.send(voiceLine())
         // M4: the host sends its current roster on a new session.
         if (election.isHost() && voiceRelay.receivers().length > 0) session.send(rosterLine())
@@ -1675,9 +1763,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     }
     // easy-join part 2: the owner answers a knock. This is the only stream that the owner accepts from a peer that is
     // not admitted. The other handlers close the streams of such a peer, as before.
-    const knockDesk = knock && membership?.owner ? createKnockDesk({
+    const knockDesk = knock && membership ? createKnockDesk({
         membership,
-        makeInvite: deviceId => makeMemberInvite({ room, key, nodes: knockNodes(), membership: membership.issue(deviceId, false) }),
+        makeInvite: (deviceId, opts = {}) => makeMemberInvite({ room, key, nodes: knockNodes(), membership: membership.issue(deviceId, opts?.canHost === true) }),
         changed: ({ pending, added }) => events.emit('knocks', { pending, added }),
         log: text => console.info(text),
         // easy-join part 3: "Always allow my friends". The desk asks only after the device proof.
@@ -1687,23 +1775,40 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         // The tests give other limits: knock: { limits } (knock.mjs).
         limits: typeof knock === 'object' ? knock.limits : undefined
     }) : null
-    if (knockDesk) {
-        await node.handle(KNOCK_PROTOCOL, ({ stream, connection }) => {
-            const source = connection.remotePeer.toString()
-            // easy-join part 3: an admitted member with a session forwards the knock of its friend (forwardKnock). Only
-            // such a stream can carry a friend knock (FRIEND_KNOCK_CODE). The path of the limits is the member.
-            const forwarder = sessions.has(source) && memberAllowed(source) && memberPeers.get(source)?.deviceId !== membership.ownerId
-            if (!forwarder) markKnockSource(source)
-            const addr = connection.remoteAddr?.toString() ?? ''
-            let handler = null
-            const channel = knockChannel(stream, {
-                maxLineBytes: knockDesk.limits.maxLineBytes, maxStreamBytes: knockDesk.limits.maxStreamBytes,
-                onLine: message => handler?.receive(message),
-                onClose: () => handler?.closed()
-            })
-            handler = knockDesk.open(channel, forwarder ? { source, via: source, friend: true }
-                : { source, via: circuitRelay(addr) ?? ipOf(addr) ?? '?' })
-        }, { runOnTransientConnection: true, maxInboundStreams: 2, maxOutboundStreams: 1 })
+    let knockProtocolHandled = false
+    const onKnockStream = ({ stream, connection }) => {
+        if (!membership.canManageMembers()) {
+            stream.abort?.(new Error('Knock not handled'))
+            return
+        }
+        const source = connection.remotePeer.toString()
+        // easy-join part 3: an admitted member with a session forwards the knock of its friend (forwardKnock). Only
+        // such a stream can carry a friend knock (FRIEND_KNOCK_CODE). The path of the limits is the member.
+        const forwarder = sessions.has(source) && memberAllowed(source) && memberPeers.get(source)?.deviceId !== membership.ownerId
+        if (!forwarder) markKnockSource(source)
+        const addr = connection.remoteAddr?.toString() ?? ''
+        let handler = null
+        const channel = knockChannel(stream, {
+            maxLineBytes: knockDesk.limits.maxLineBytes, maxStreamBytes: knockDesk.limits.maxStreamBytes,
+            onLine: message => handler?.receive(message),
+            onClose: () => handler?.closed()
+        })
+        handler = knockDesk.open(channel, forwarder ? { source, via: source, friend: true }
+            : { source, via: circuitRelay(addr) ?? ipOf(addr) ?? '?' })
+    }
+    async function syncKnockProtocol() {
+        if (!knockDesk) return
+        const shouldHandle = membership.canManageMembers()
+        if (shouldHandle && !knockProtocolHandled) {
+            knockProtocolHandled = true
+            await node.handle(KNOCK_PROTOCOL, onKnockStream, { runOnTransientConnection: true, maxInboundStreams: 2, maxOutboundStreams: 1 })
+        } else if (!shouldHandle && knockProtocolHandled) {
+            knockProtocolHandled = false
+            await node.unhandle(KNOCK_PROTOCOL).catch(() => {})
+        }
+    }
+    if (knockDesk && membership.canManageMembers()) {
+        await syncKnockProtocol()
     }
 
     // The own TCP addresses (no /p2p-circuit, no /p2p/ part).
@@ -2547,23 +2652,46 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     }
     if (membership) {
         let lastRevocation = membership.revocations().sequence
+        let lastRoles = JSON.stringify(membership.roleRecords())
         membership.onChanged(() => {
             if (fullNode === true) setSelfFull(canRelay())
             else if (!canRelay()) setSelfFull(false)
             runUpnp()
+            void syncKnockProtocol()
+            for (const [peerId, info] of memberPeers) {
+                const known = membership.issued().find(m => m.deviceId === info.deviceId)
+                if (known) {
+                    info.canHost = known.canHost
+                    info.role = known.role
+                }
+            }
             const revocations = membership.revocations()
-            if (revocations.sequence > lastRevocation) {
-                lastRevocation = revocations.sequence
+            const roleRecords = membership.roleRecords()
+            const rolesJson = JSON.stringify(roleRecords)
+            const revChanged = revocations.sequence > lastRevocation
+            const rolesChanged = rolesJson !== lastRoles
+            if (revChanged) lastRevocation = revocations.sequence
+            if (rolesChanged) lastRoles = rolesJson
+            if (revChanged || rolesChanged) {
                 for (const [peerId, session] of sessions) {
                     if (membership.revoked(memberPeers.get(peerId)?.deviceId)) {
                         if (knownFullNodes.delete(peerId)) saveStore()
                         invitedFullNodes.delete(peerId)
                     }
-                    if (!memberAllowed(peerId) || !session.send(JSON.stringify({ type: 'room-revocations', state: revocations }))) {
+                    if (!memberAllowed(peerId)) {
                         session.close()
                         for (const connection of node.getConnections().filter(conn => conn.remotePeer.toString() === peerId)) {
                             connection.abort(new Error('Room access removed'))
                         }
+                        continue
+                    }
+                    if (revChanged && !session.send(JSON.stringify({ type: 'room-revocations', state: revocations }))) {
+                        session.close()
+                        continue
+                    }
+                    if (rolesChanged && !session.send(JSON.stringify({ type: 'room-roles', v: 1, records: roleRecords,
+                        ...(membership.roomCodeState() ? { roomCode: membership.roomCodeState() } : {}) }))) {
+                        session.close()
                     }
                 }
                 if (membership.revoked(membership.id)) {
@@ -2640,8 +2768,14 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         const line = JSON.stringify(named ? { type: 'channel-post', v: 1, message } : message)
         let count = 0
         for (const [peerId, session] of sessions) if (memberAllowed(peerId) && (!named || channels.capable(peerId)) && session.send(line)) count++
-        if (count > 0) history.add(message)
-        if (count > 0) failoverChat()
+        if (count > 0) {
+            history.add(message)
+            ownMessageIds.add(message.id)
+            if (ownMessageIds.size > HISTORY_LIMIT) {
+                for (const oid of ownMessageIds) if (!history.has(oid)) ownMessageIds.delete(oid)
+            }
+            failoverChat()
+        }
         typing.edited(false)
         return { ...message, accepted: count }
     }
@@ -2688,13 +2822,25 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         membershipSnapshot: () => membership?.snapshot() ?? null,
         setMembershipPersistence(callback) { membership?.setPersistence(callback) },
         createMemberInvite(deviceId, { canHost = false } = {}) {
-            if (!membership?.owner) throw new Error('Only the protected room owner can send invitations')
+            if (!membership?.canManageMembers()) throw new Error('Only the room owner or an admin can send invitations')
             const own = publicAddrs()
             if (!membership.lan && !own.length) throw new Error('A reachable owner address is required for first admission')
             const nodes = membership.lan ? [] : [{ id: selfId, addrs: own }]
             return makeMemberInvite({ room, key, nodes, membership: membership.issue(deviceId, canHost === true) })
         },
         revokeMember(deviceId) { return membership?.revoke(deviceId) ?? false },
+        setMemberRole(deviceId, role) {
+            if (!membership) throw new Error('Only a protected room has roles')
+            return membership.setMemberRole(deviceId, role)
+        },
+        setMemberCanHost(deviceId, canHost) {
+            if (!membership) throw new Error('Only a protected room has roles')
+            return membership.setMemberCanHost(deviceId, canHost)
+        },
+        kickMember(deviceId) { return membership?.kick(deviceId) ?? false },
+        banMember(deviceId) { return membership?.ban(deviceId) ?? false },
+        unbanMember(deviceId) { return membership?.unban(deviceId) ?? false },
+        forgetMember(deviceId) { return membership?.forget(deviceId) ?? false },
         // easy-join part 2: the room code of the owner. renew: "New room code" (the old code stops working).
         // Returns { code, expires }.
         roomCode({ renew = false } = {}) {
@@ -2709,9 +2855,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         // The knocks that wait for the owner: [{ id, name, mark, deviceId, at }].
         knocks: () => knockDesk?.list() ?? [],
         // Allow (true) or Deny of a knock. Returns false when the knock is not there now.
-        answerKnock: (id, allow) => knockDesk?.answer(id, allow === true) ?? false,
-        // The knock desk of the owner (knock.mjs), or null. A friend link channel can use it (part 3).
-        knockDesk: () => knockDesk,
+        answerKnock: (id, allow, opts) => knockDesk?.answer(id, allow === true, opts) ?? false,
+        // The knock desk of the owner or an active admin (knock.mjs), or null. A friend link channel can use it (part 3).
+        knockDesk: () => (membership?.canManageMembers?.() ? knockDesk : null),
         // easy-join part 3: "Always allow my friends" of the owner. Returns the value now.
         setAutoAllowFriends(on) {
             if (!membership?.owner) throw new Error('Only the room owner can change this setting.')

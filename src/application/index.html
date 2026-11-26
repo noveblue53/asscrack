@@ -526,6 +526,7 @@
           <img id="knock-pic" class="avatar-pic" alt="" hidden>
           <p id="knock-text"></p>
           <span id="knock-more" class="state-tag" hidden></span>
+          <label id="knock-host-label" class="knock-host-check" title="Lets this device host and relay for the room"><input type="checkbox" id="knock-can-host"> Can host</label>
           <button id="knock-allow" type="button">Allow</button>
           <button id="knock-deny" type="button">Deny</button>
         </div>
@@ -1011,6 +1012,7 @@
   <script src="chat-attachments.js"></script>
   <script src="renderer.js"></script>
   <script src="composer-keys.js"></script>
+  <div id="member-context-menu" class="context-menu" role="menu" hidden></div>
   <script src="room-membership-ui.js"></script>
   <script src="channels-ui.js"></script>
   <script src="voice-channels-ui.js"></script>

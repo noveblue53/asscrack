@@ -1902,8 +1902,38 @@ body.map-open #node-map:not([data-paused]) .nm-node.speaking .nm-pulse {
 #member-device-id { min-width: 0; height: 28px; padding: 0 10px; font: 12px Consolas, 'Courier New', monospace; }
 #member-invite-form button { justify-self: start; }
 #room-members { display: grid; gap: 6px; list-style: none; margin: 4px 0 0; padding: 0; }
-#room-members li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 4px 0; border-top: 1px solid var(--line); }
+#room-members li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 6px 0; border-top: 1px solid var(--line); }
 #room-members code { flex-basis: 100%; overflow-wrap: anywhere; }
+#room-members .member-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex-basis: 100%; }
+#room-members .role-tag { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink-soft); }
+#room-members .role-tag[data-role="admin"] { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+#room-members .role-tag[data-status="banned"] { border-color: var(--danger, #c43b3b); color: var(--danger, #c43b3b); }
+.knock-host-check { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--ink-soft); cursor: pointer; }
+.context-menu {
+  position: fixed;
+  z-index: 4000;
+  min-width: 160px;
+  padding: 4px;
+  display: grid;
+  gap: 2px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2);
+}
+.context-menu[hidden] { display: none; }
+.context-menu button {
+  text-align: left;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.context-menu button:hover { background: var(--surface-2, rgba(128, 128, 128, 0.14)); }
+.context-menu button.btn-danger { color: var(--danger, #c43b3b); }
 
 /* The full-node state in the status band. */
 #full-node-state {
