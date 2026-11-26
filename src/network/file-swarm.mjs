@@ -338,6 +338,22 @@ export function createFileSwarm({
         return picked
     }
 
+    function releaseRequest(peerId, index) {
+        assertSafeNonNegInt(index, 'index')
+        if (index >= totalPieces) {
+            throw new RangeError(`piece index ${index} out of bounds (totalPieces=${totalPieces})`)
+        }
+        const peer = peers.get(peerId)
+        let released = false
+        if (peer && peer.inFlight.delete(index)) released = true
+        const entry = inFlightPieces.get(index)
+        if (entry && entry.peerId === peerId) {
+            inFlightPieces.delete(index)
+            released = true
+        }
+        return released
+    }
+
     function markReceived(peerId, index, data) {
         assertSafeNonNegInt(index, 'index')
         if (index >= totalPieces) {
@@ -483,6 +499,7 @@ export function createFileSwarm({
         addPeerPiece,
         removePeer,
         nextRequests,
+        releaseRequest,
         markReceived,
         expireTimeouts,
         canServe,

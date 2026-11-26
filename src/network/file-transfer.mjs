@@ -5,6 +5,7 @@ import * as path from 'node:path'
 import { roomRateLimit } from './room-rate-limit.mjs'
 import { createPartialStore, partialKey, PARTIAL_TTL_MS } from './partial-store.mjs'
 import { createGrantStore, GRANT_LIMIT } from './send-grants.mjs'
+import { SWARM_DEFAULTS, createFileSwarm, pieceCount, pieceRange } from './file-swarm.mjs'
 import { markFromInternet } from './zone-mark.mjs'
 import { noFormatCharacters } from './text-safety.mjs'
 
@@ -13,6 +14,7 @@ export const FILE_PROTOCOL = '/asscrack/file/1.0.0'
 // partial to continue. A sender with only 1.0.0 then sends the full file from byte 0.
 export const FILE_RESUME_PROTOCOL = '/asscrack/file/1.1.0'
 export const FILE_PROTOCOLS = [FILE_PROTOCOL, FILE_RESUME_PROTOCOL]
+export const FILE_SWARM_PROTOCOL = '/asscrack/file-swarm/1.0.0'
 
 const CHUNK_SIZE = 65536
 // Flow version 1 bounds payload handed to the mux ahead of completed receiver writes. Its progress
@@ -22,6 +24,10 @@ const WRITE_UPDATE = WRITE_WINDOW / 4
 const WRITE_UPDATE_MS = 1000
 const REQUEST_LIMIT = 1024
 const REPLY_LIMIT = 256
+const SWARM_REPLY_LIMIT = 4096
+const SWARM_MANIFEST_LIMIT = 5 * 1024 * 1024
+const SWARM_TICK_MS = 1000
+const SWARM_NO_PEER_TIMEOUT_MS = 5000
 const PROGRESS_INTERVAL_MS = 100
 const CANCEL_WAIT_MS = 500
 const RETRY_WAIT_MS = 10000
@@ -139,8 +145,9 @@ async function readRequest(stream) {
 }
 
 // Reads the one-line reply of a 1.1.0 sender. The bytes after the line are file bytes.
-async function readReply(it) {
-    const header = Buffer.allocUnsafe(REPLY_LIMIT)
+async function readReply(it, limit = REPLY_LIMIT) {
+    const header = Buffer.allocUnsafe(Math.min(limit, 65536))
+    const chunks = []
     let used = 0
     for (;;) {
         const { value, done } = await it.next()
@@ -150,12 +157,22 @@ async function readReply(it) {
             const bytes = Buffer.from(parts[i].buffer, parts[i].byteOffset, parts[i].byteLength)
             const lf = bytes.indexOf(10)
             const size = lf < 0 ? bytes.length : lf
-            if (used + size > REPLY_LIMIT) return null
-            bytes.copy(header, used, 0, size)
+            if (used + size > limit) return null
+            if (used + size <= header.length && chunks.length === 0) {
+                bytes.copy(header, used, 0, size)
+            } else {
+                if (chunks.length === 0 && used > 0) chunks.push(header.subarray(0, used))
+                chunks.push(bytes.subarray(0, size))
+            }
             used += size
             if (lf < 0) continue
             let reply
-            try { reply = JSON.parse(header.toString('utf8', 0, used)) } catch { return null }
+            try {
+                const text = chunks.length === 0
+                    ? header.toString('utf8', 0, used)
+                    : Buffer.concat(chunks, used).toString('utf8')
+                reply = JSON.parse(text)
+            } catch { return null }
             if (!reply || typeof reply !== 'object') return null
             return { reply, rest: [bytes.subarray(lf + 1), ...parts.slice(i + 1)].filter(part => part.byteLength) }
         }
@@ -179,6 +196,17 @@ async function writeAll(fh, data, position) {
         if (!bytesWritten) throw new Error('no bytes written')
         done += bytesWritten
     }
+}
+
+async function readAt(fh, length, position) {
+    const buf = Buffer.allocUnsafe(length)
+    let done = 0
+    while (done < length) {
+        const { bytesRead } = await fh.read(buf, done, length - done, position + done)
+        if (!bytesRead) throw new TransferFailure('incomplete')
+        done += bytesRead
+    }
+    return buf
 }
 
 // SHA-256 of the first `bytes` bytes of an open file. Returns null when the file has fewer bytes.
@@ -230,9 +258,10 @@ export async function moveToFreeName(temp, dir, name, fs = fsp) {
 }
 
 // The file transfer part of a node. The node sends the file control lines to handleControl().
-export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOpen = peerId => openPeers().includes(peerId),
+export function createFileTransfer({ libp2p, selfId = null, events, sendTo, openPeers, isPeerOpen = peerId => openPeers().includes(peerId),
     peerNames, downloadDir, scratchDir = downloadDir, fileAckTimeout = 30000, fileOpenTimeout = OPEN_TIMEOUT_MS,
-    fileIdleTimeout = DATA_IDLE_MS, partials = {}, peerDevice = () => null }) {
+    fileIdleTimeout = DATA_IDLE_MS, partials = {}, peerDevice = () => null,
+    fileSwarm = true, fileSwarmOptions = {}, isSwarmCapable = () => false }) {
     // Offer and download state lives for the current room session.
     const ownOffers = new Map()
     const received = new Map()
@@ -244,6 +273,17 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
     const allowOfferControl = roomRateLimit(32, 128)
     // Peer cancel signals for active transfers: key `${offerId}|${peerId}`
     const cancelSignals = new Map()
+    const swarms = new Map()
+    const swarmPieceSize = Number.isSafeInteger(fileSwarmOptions?.pieceSize) && fileSwarmOptions.pieceSize > 0
+        ? fileSwarmOptions.pieceSize : SWARM_DEFAULTS.pieceSize
+    let swarmSeedingEnabled = fileSwarmOptions?.seedingEnabled !== false
+    let swarmSeedCap = Number.isSafeInteger(fileSwarmOptions?.seedCap) && fileSwarmOptions.seedCap >= 0
+        ? Math.min(fileSwarmOptions.seedCap, SWARM_DEFAULTS.maxSeedCap) : SWARM_DEFAULTS.defaultSeedCap
+    const swarmTickMs = Number.isSafeInteger(fileSwarmOptions?.tickMs) && fileSwarmOptions.tickMs > 0
+        ? fileSwarmOptions.tickMs : SWARM_TICK_MS
+    const swarmNoPeerTimeoutMs = Number.isSafeInteger(fileSwarmOptions?.noPeerTimeoutMs) && fileSwarmOptions.noPeerTimeoutMs > 0
+        ? fileSwarmOptions.noPeerTimeoutMs : SWARM_NO_PEER_TIMEOUT_MS
+    const swarmNow = typeof fileSwarmOptions?.now === 'function' ? fileSwarmOptions.now : Date.now
     let stopping = false
     let preparing = 0
     const preparation = new AbortController()
@@ -527,22 +567,116 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
             const prepared = { filePath, name: safeFileName(displayName ?? path.basename(filePath)), size: stat.size,
                 dev: stat.dev, ino: stat.ino, mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs }
             const hash = createHash('sha256')
+            const trackPieces = Boolean(fileSwarm && pieceCount(prepared.size, swarmPieceSize) <= SWARM_DEFAULTS.maxPieces)
+            const pieceHashes = trackPieces ? [] : null
+            let pieceHash = trackPieces && prepared.size > 0 ? createHash('sha256') : null
+            let pieceRem = swarmPieceSize
             if (prepared.size) {
                 const input = original.createReadStream({ highWaterMark: CHUNK_SIZE, end: prepared.size - 1,
                     autoClose: false, signal: preparation.signal })
-                for await (const chunk of input) hash.update(chunk)
+                for await (const chunk of input) {
+                    hash.update(chunk)
+                    if (pieceHashes) {
+                        let offset = 0
+                        while (offset < chunk.length) {
+                            const take = Math.min(pieceRem, chunk.length - offset)
+                            pieceHash.update(chunk.subarray(offset, offset + take))
+                            offset += take
+                            pieceRem -= take
+                            if (pieceRem === 0) {
+                                pieceHashes.push(pieceHash.digest('hex'))
+                                pieceHash = createHash('sha256')
+                                pieceRem = swarmPieceSize
+                            }
+                        }
+                    }
+                }
+                if (pieceHashes && pieceRem < swarmPieceSize) {
+                    pieceHashes.push(pieceHash.digest('hex'))
+                }
             }
             if (stopping || !matchesOriginal(await original.stat(), prepared) || !await unchanged(prepared)) {
                 throw new Error('File changed during preparation')
             }
-            return { ...prepared, sha256: hash.digest('hex') }
+            return { ...prepared, sha256: hash.digest('hex'),
+                ...(pieceHashes ? { pieceSize: swarmPieceSize, pieceHashes } : {}) }
         } finally {
             await original?.close().catch(() => {})
             preparing--
         }
     }
 
-    function publishOffer(prepared, recipients, offerId = randomUUID(), attachmentId = null, retryOf = null) {
+    function registerSwarmSeed(prepared, { roomWide = true, authorizedPeers = [] } = {}) {
+        if (!fileSwarm || !prepared || !Array.isArray(prepared.pieceHashes) || prepared.pieceHashes.length <= 1) return null
+        const pSize = prepared.pieceSize ?? swarmPieceSize
+        const existing = swarms.get(prepared.sha256)
+        if (existing) {
+            if (roomWide) existing.roomWide = true
+            for (const p of authorizedPeers) existing.authorizedPeers.add(p)
+            if (existing.role === 'seed') {
+                if (typeof prepared.filePath === 'string') existing.filePath = prepared.filePath
+                if (prepared.dev !== undefined) existing.originalMeta = prepared
+            }
+            return existing
+        }
+        const haveAll = Array.from({ length: prepared.pieceHashes.length }, (_, i) => i)
+        const swarm = createFileSwarm({
+            sha256: prepared.sha256,
+            size: prepared.size,
+            pieceSize: pSize,
+            pieceHashes: prepared.pieceHashes,
+            selfPeerId: selfId,
+            now: swarmNow,
+            seedCap: swarmSeedCap,
+            seedingEnabled: swarmSeedingEnabled,
+            have: haveAll
+        })
+        const entry = {
+            role: 'seed',
+            sha256: prepared.sha256,
+            size: prepared.size,
+            pieceSize: pSize,
+            pieceHashes: prepared.pieceHashes,
+            filePath: prepared.filePath,
+            originalMeta: prepared.dev !== undefined ? prepared : null,
+            fh: null,
+            roomWide: Boolean(roomWide),
+            authorizedPeers: new Set(authorizedPeers),
+            swarm
+        }
+        swarms.set(prepared.sha256, entry)
+        return entry
+    }
+
+    function unregisterSwarmSeed(sha256) {
+        const entry = swarms.get(sha256)
+        if (!entry || entry.role !== 'seed') return false
+        swarms.delete(sha256)
+        return true
+    }
+
+    function setSwarmSeeding(enabled) {
+        swarmSeedingEnabled = Boolean(enabled)
+        for (const entry of swarms.values()) entry.swarm.setSeedingEnabled(swarmSeedingEnabled)
+    }
+
+    function setSwarmSeedCap(cap) {
+        const next = Number.isSafeInteger(cap) && cap >= 0 ? Math.min(cap, SWARM_DEFAULTS.maxSeedCap) : SWARM_DEFAULTS.defaultSeedCap
+        swarmSeedCap = next
+        for (const entry of swarms.values()) entry.swarm.setSeedCap(next)
+    }
+
+    function swarmStatus() {
+        return [...swarms.values()].map(entry => ({
+            sha256: entry.sha256,
+            role: entry.role,
+            size: entry.size,
+            pieceSize: entry.pieceSize,
+            ...entry.swarm.progress()
+        }))
+    }
+
+    function publishOffer(prepared, recipients, offerId = randomUUID(), attachmentId = null, retryOf = null, options = {}) {
         if (stopping) throw new Error('Node stopped')
         if (ownOffers.size >= MAX_OUTGOING_OFFERS) {
             pruneOffers()
@@ -560,15 +694,29 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
         }
         if (pending > MAX_PENDING_SENDS) throw new Error('Too many recipients have pending file offers')
         const { name, size, sha256 } = prepared
+        const useSwarm = Boolean(options?.swarm === true && fileSwarm && Array.isArray(prepared.pieceHashes) && prepared.pieceHashes.length > 1)
         const offer = { ...prepared, offerId, attachmentId, retryOf, targets: new Set(), started: new Set(),
             failed: new Set(), failedUntil: new Map(), paused: new Map(), retries: new Map(), retryClaimed: false,
+            swarm: useSwarm, pieceSize: useSwarm ? prepared.pieceSize : null,
             expiresAt: Date.now() + OFFER_TTL_MS }
         const line = { type: 'file-offer', offerId, name, size, sha256, flow: 1 }
         if (attachmentId) line.attachmentId = attachmentId
         else line.retry = 1
         if (retryOf) line.retryOf = retryOf
+        if (useSwarm) {
+            line.swarm = 1
+            line.pieceSize = prepared.pieceSize
+        }
         for (const peerId of recipients) if (sendLine(peerId, line)) offer.targets.add(peerId)
-        if (offer.targets.size) ownOffers.set(offerId, offer)
+        if (offer.targets.size) {
+            ownOffers.set(offerId, offer)
+            if (useSwarm) {
+                registerSwarmSeed(prepared, {
+                    roomWide: Boolean(attachmentId) || recipients.length > 1,
+                    authorizedPeers: [...offer.targets]
+                })
+            }
+        }
         return { offerId, name, size, sha256, peers: offer.targets.size, recipients: [...offer.targets] }
     }
 
@@ -587,11 +735,11 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
         }
     }
 
-    async function offerFile(filePath, recipientId) {
+    async function offerFile(filePath, recipientId, options = {}) {
         const targeted = recipientId !== undefined
         if (targeted && !openPeers().includes(recipientId)) throw new Error('The selected recipient is not connected')
         const prepared = await prepareFile(filePath)
-        const offer = publishOffer(prepared, targeted ? [recipientId] : openPeers())
+        const offer = publishOffer(prepared, targeted ? [recipientId] : openPeers(), randomUUID(), null, null, options)
         if (targeted && !offer.peers) throw new Error('The selected recipient disconnected before the file could be offered')
         return offer
     }
@@ -1048,6 +1196,315 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
             ...(offer.resumeOf ? { resumeOf: offer.resumeOf } : {}) })
     }
 
+    function openPeerConnection(peerId) {
+        return libp2p?.getConnections().find(c => c.remotePeer.toString() === peerId && c.status === 'open') ?? null
+    }
+
+    async function readSwarmManifest(peerId, sha256, size, pieceSize, signal) {
+        const connection = openPeerConnection(peerId)
+        if (!connection) throw new TransferFailure('peer left')
+        const stream = await connection.newStream(FILE_SWARM_PROTOCOL, {
+            runOnTransientConnection: true,
+            signal: AbortSignal.any([signal, AbortSignal.timeout(fileOpenTimeout)])
+        })
+        try {
+            await stream.sink([Buffer.from(JSON.stringify({ op: 'manifest', sha256 }) + '\n')])
+            const it = stream.source[Symbol.asyncIterator]()
+            const answer = await readReply(it, SWARM_MANIFEST_LIMIT)
+            if (!answer) throw new TransferFailure('incomplete')
+            const { reply } = answer
+            if (!reply.ok) throw new TransferFailure(reply.reason === 'changed' ? 'the source file changed' : 'manifest refused')
+            const count = pieceCount(size, pieceSize)
+            if (reply.sha256 !== sha256 || reply.size !== size || reply.pieceSize !== pieceSize ||
+                !Array.isArray(reply.pieceHashes) || reply.pieceHashes.length !== count ||
+                typeof reply.bitfield !== 'string') {
+                throw new TransferFailure('invalid swarm manifest')
+            }
+            return {
+                pieceHashes: reply.pieceHashes,
+                bitfield: new Uint8Array(Buffer.from(reply.bitfield, 'base64'))
+            }
+        } catch (err) {
+            abortStream(stream, 'Swarm manifest ended')
+            throw err
+        }
+    }
+
+    async function fetchSwarmPiece(peerId, sha256, index, expectedLength, signal) {
+        const connection = openPeerConnection(peerId)
+        if (!connection) return { ok: false, reason: 'peer-left' }
+        let stream
+        try {
+            stream = await connection.newStream(FILE_SWARM_PROTOCOL, {
+                runOnTransientConnection: true,
+                signal: AbortSignal.any([signal, AbortSignal.timeout(fileOpenTimeout)])
+            })
+            await stream.sink([Buffer.from(JSON.stringify({ op: 'piece', sha256, index }) + '\n')])
+            const it = stream.source[Symbol.asyncIterator]()
+            const answer = await readReply(it, SWARM_REPLY_LIMIT)
+            if (!answer) return { ok: false, reason: 'incomplete' }
+            const { reply, rest } = answer
+            if (!reply.ok) return { ok: false, reason: reply.reason ?? 'refused' }
+            if (reply.index !== index || reply.length !== expectedLength) {
+                abortStream(stream, 'Bad piece header')
+                return { ok: false, reason: 'bad-header' }
+            }
+            const chunks = []
+            let total = 0
+            for (const part of rest) {
+                if (total + part.byteLength > expectedLength) {
+                    abortStream(stream, 'Oversize piece')
+                    return { ok: false, reason: 'oversize' }
+                }
+                chunks.push(part)
+                total += part.byteLength
+            }
+            if (total < expectedLength) {
+                for await (const chunk of joinSource([], it)) {
+                    if (signal.aborted) throw new Error('cancelled')
+                    for (const part of chunk instanceof Uint8Array ? [chunk] : chunk) {
+                        if (total + part.byteLength > expectedLength) {
+                            abortStream(stream, 'Oversize piece')
+                            return { ok: false, reason: 'oversize' }
+                        }
+                        chunks.push(part)
+                        total += part.byteLength
+                    }
+                    if (total === expectedLength) break
+                }
+            }
+            if (total !== expectedLength) return { ok: false, reason: 'incomplete' }
+            const data = chunks.length === 1 ? chunks[0] : Buffer.concat(chunks, total)
+            return { ok: true, data }
+        } catch {
+            abortStream(stream, 'Swarm piece ended')
+            return { ok: false, reason: 'stream-error' }
+        }
+    }
+
+    async function receiveSwarm(offer, t) {
+        const { offerId, peerId, sha256, size, pieceSize } = offer
+        const temp = path.join(scratchDir, `.asscrack-${offerId}.part`)
+        let fh = null
+        let tempCreated = false
+        let entry = null
+        let tickTimer = null
+        const abortCtrl = new AbortController()
+        t.abort = () => abortCtrl.abort()
+        const halted = () => t.selfCancel || t.peerCancel || t.pause || stopping
+        const inFlightTasks = new Set()
+        let receivedBytes = 0
+        let lastProgressAt = 0
+
+        function emitSwarmProgress(force = false) {
+            const now = Date.now()
+            if (force || now - lastProgressAt >= PROGRESS_INTERVAL_MS) {
+                lastProgressAt = now
+                events.emit('file-progress', { offerId, peerId, direction: 'receive', bytes: receivedBytes, size })
+            }
+        }
+
+        try {
+            await checkDownloadSpace()
+            const manifest = await readSwarmManifest(peerId, sha256, size, pieceSize, abortCtrl.signal)
+            if (halted()) throw new Error('cancelled')
+
+            fh = await fsp.open(temp, 'wx+', 0o600)
+            tempCreated = true
+
+            const swarm = createFileSwarm({
+                sha256,
+                size,
+                pieceSize,
+                pieceHashes: manifest.pieceHashes,
+                selfPeerId: selfId,
+                now: swarmNow,
+                seedCap: swarmSeedCap,
+                seedingEnabled: swarmSeedingEnabled
+            })
+            swarm.setPeerHave(peerId, manifest.bitfield)
+
+            const done = Promise.withResolvers()
+            let pumping = false
+            let pumpAgain = false
+            let noPeerSince = null
+
+            entry = {
+                role: 'leech',
+                sha256,
+                size,
+                pieceSize,
+                pieceHashes: manifest.pieceHashes,
+                filePath: temp,
+                originalMeta: null,
+                fh,
+                roomWide: true,
+                authorizedPeers: new Set(),
+                swarm,
+                pump: null
+            }
+            swarms.set(sha256, entry)
+
+            const swarmPeers = () => openPeers().filter(p => p !== selfId && isSwarmCapable(p))
+            for (const p of swarmPeers()) {
+                if (p !== peerId) sendLine(p, { type: 'file-swarm-query', sha256 })
+            }
+
+            async function fetchOne(remotePeerId, index) {
+                const range = pieceRange(index, size, pieceSize)
+                try {
+                    const result = await fetchSwarmPiece(remotePeerId, sha256, index, range.length, abortCtrl.signal)
+                    if (halted()) return
+                    if (!result.ok) {
+                        swarm.releaseRequest(remotePeerId, index)
+                        schedulePump()
+                        return
+                    }
+                    const mark = swarm.markReceived(remotePeerId, index, result.data)
+                    if (!mark.ok) {
+                        events.emit('file-swarm-bad-piece', {
+                            offerId,
+                            peerId: remotePeerId,
+                            sha256,
+                            index,
+                            badPieces: mark.badPieces ?? 0,
+                            banned: mark.banned === true
+                        })
+                        schedulePump()
+                        return
+                    }
+                    if (!mark.duplicate) {
+                        await writeAll(fh, result.data, range.start)
+                        receivedBytes += result.data.byteLength
+                        t.remaining -= BigInt(result.data.byteLength)
+                        emitSwarmProgress()
+                        for (const p of swarmPeers()) {
+                            sendLine(p, { type: 'file-swarm-have', sha256, index })
+                        }
+                    }
+                    if (swarm.complete()) {
+                        done.resolve()
+                    } else {
+                        schedulePump()
+                    }
+                } catch (err) {
+                    swarm.releaseRequest(remotePeerId, index)
+                    if (!halted()) schedulePump()
+                    else done.reject(err)
+                }
+            }
+
+            function schedulePump() {
+                if (halted() || swarm.complete()) return
+                if (pumping) {
+                    pumpAgain = true
+                    return
+                }
+                pumping = true
+                queueMicrotask(() => {
+                    pumping = false
+                    if (halted() || swarm.complete()) return
+                    pumpAgain = false
+                    for (const remotePeerId of swarmPeers()) {
+                        const indices = swarm.nextRequests(remotePeerId)
+                        for (const index of indices) {
+                            const task = fetchOne(remotePeerId, index)
+                            inFlightTasks.add(task)
+                            task.finally(() => inFlightTasks.delete(task))
+                        }
+                    }
+                    if (pumpAgain) schedulePump()
+                })
+            }
+
+            entry.pump = schedulePump
+            schedulePump()
+
+            tickTimer = setInterval(() => {
+                if (halted()) return
+                const expired = swarm.expireTimeouts()
+                if (expired.length > 0) schedulePump()
+                if (swarm.complete()) {
+                    done.resolve()
+                    return
+                }
+                const prog = swarm.progress()
+                const hasAvailable = prog.availability.some((count, idx) => count > 0 && !swarm.has(idx))
+                if (inFlightTasks.size === 0 && !hasAvailable) {
+                    noPeerSince ??= Date.now()
+                    if (Date.now() - noPeerSince >= swarmNoPeerTimeoutMs) {
+                        done.reject(new TransferFailure('no swarm peers have remaining pieces'))
+                    }
+                } else {
+                    noPeerSince = null
+                    if (inFlightTasks.size === 0 && hasAvailable) schedulePump()
+                }
+            }, swarmTickMs)
+            tickTimer.unref?.()
+
+            await done.promise
+            clearInterval(tickTimer)
+            tickTimer = null
+
+            if (halted()) throw new Error('cancelled')
+            const fullHash = await hashPrefix(fh, size)
+            if (!fullHash || fullHash.digest('hex') !== sha256) {
+                throw new TransferFailure('hash mismatch')
+            }
+            await fh.close()
+            fh = null
+            if (halted()) throw new Error('cancelled')
+
+            t.finalizing = true
+            await markFromInternet(temp)
+            const finalPath = await moveToFreeName(temp, downloadDir, offer.name)
+            tempCreated = false
+
+            entry.role = 'seed'
+            entry.filePath = finalPath
+            entry.fh = null
+            entry.pump = null
+
+            if (isPeerOpen(peerId)) sendLine(peerId, { type: 'file-received', offerId })
+            active.delete(t.key)
+            received.delete(offerId)
+            cancelSignals.delete(`${offerId}|${peerId}`)
+            emitSwarmProgress(true)
+            events.emit('file-done', {
+                offerId,
+                peerId,
+                direction: 'receive',
+                name: offer.name,
+                size,
+                path: finalPath,
+                ...(offer.attachmentId ? { attachmentId: offer.attachmentId, sha256 } : {}),
+                swarmed: true
+            })
+        } catch (err) {
+            clearInterval(tickTimer)
+            abortCtrl.abort()
+            await Promise.allSettled([...inFlightTasks])
+            if (fh) await fh.close().catch(() => {})
+            if (entry && swarms.get(sha256) === entry && entry.role === 'leech') {
+                swarms.delete(sha256)
+            }
+            if (tempCreated) await fsp.unlink(temp).catch(() => {})
+            const signalKey = `${offerId}|${peerId}`
+            let cancelled
+            if (t.selfCancel || stopping) cancelled = 'self'
+            else if (t.peerCancel || await peerCancelled(signalKey)) cancelled = 'peer'
+            cancelSignals.delete(signalKey)
+            active.delete(t.key)
+            received.delete(offerId)
+            if (cancelled) {
+                events.emit('file-cancelled', { offerId, peerId, direction: 'receive', by: cancelled })
+            } else {
+                if (isPeerOpen(peerId)) sendLine(peerId, { type: 'file-receive-failed', offerId })
+                failReceive(offer, shortReason(err))
+            }
+        }
+    }
+
     function acceptFile(offerId) {
         if (typeof downloadDir !== 'string' || downloadDir === '') throw new Error('No download folder is set')
         const offer = received.get(offerId)
@@ -1061,10 +1518,20 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
             return true
         }
         offer.state = 'active'
+        const useSwarm = Boolean(
+            fileSwarm &&
+            offer.swarm === true &&
+            offer.size > 0 &&
+            Number.isSafeInteger(offer.pieceSize) &&
+            offer.pieceSize > 0 &&
+            offer.size > offer.pieceSize &&
+            isSwarmCapable(offer.peerId) &&
+            !(store && store.has(offer.sha256, offer.size))
+        )
         const t = { direction: 'receive', key: `receive|${offerId}|${offer.peerId}`, offerId, peerId: offer.peerId,
-            stream: null, selfCancel: false, remaining: BigInt(offer.size) }
+            stream: null, selfCancel: false, remaining: BigInt(offer.size), swarm: useSwarm }
         active.set(t.key, t)
-        t.promise = receive(offer, t).catch(() => {})
+        t.promise = (useSwarm ? receiveSwarm(offer, t) : receive(offer, t)).catch(() => {})
         return true
     }
 
@@ -1153,13 +1620,48 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
         if (!t || t.finalizing) return false
         t.selfCancel = true
         sendLine(offer.peerId, { type: 'file-cancel', offerId })
+        t.abort?.()
         abortStream(t.stream, 'Transfer cancelled')
         return true
     }
 
     function handleControl(peerId, control) {
+        if (stopping || !isPeerOpen(peerId)) return
+        if (control.type === 'file-swarm-query') {
+            if (!fileSwarm || typeof control.sha256 !== 'string' || !SHA_RE.test(control.sha256)) return
+            const entry = swarms.get(control.sha256)
+            if (!entry || (!entry.roomWide && !entry.authorizedPeers.has(peerId))) return
+            if (!entry.swarm.canServe(peerId) || entry.swarm.progress().haveCount === 0) return
+            sendLine(peerId, {
+                type: 'file-swarm-bitfield',
+                sha256: control.sha256,
+                bitfield: Buffer.from(entry.swarm.haveBitfield()).toString('base64')
+            })
+            return
+        }
+        if (control.type === 'file-swarm-bitfield') {
+            if (!fileSwarm || typeof control.sha256 !== 'string' || !SHA_RE.test(control.sha256)) return
+            if (typeof control.bitfield !== 'string') return
+            const entry = swarms.get(control.sha256)
+            if (!entry || entry.role !== 'leech') return
+            try {
+                const bytes = new Uint8Array(Buffer.from(control.bitfield, 'base64'))
+                if (entry.swarm.setPeerHave(peerId, bytes)) entry.pump?.()
+            } catch {}
+            return
+        }
+        if (control.type === 'file-swarm-have') {
+            if (!fileSwarm || typeof control.sha256 !== 'string' || !SHA_RE.test(control.sha256)) return
+            if (!Number.isSafeInteger(control.index) || control.index < 0) return
+            const entry = swarms.get(control.sha256)
+            if (!entry || entry.role !== 'leech') return
+            try {
+                if (entry.swarm.addPeerPiece(peerId, control.index)) entry.pump?.()
+            } catch {}
+            return
+        }
         const offerId = control.offerId
-        if (typeof offerId !== 'string' || stopping || !isPeerOpen(peerId)) return
+        if (typeof offerId !== 'string') return
         if (control.type === 'file-retry') {
             if (allowOfferControl(peerId)) offerRetry(peerId, offerId, control.attemptId).catch(() => {})
         } else if (control.type === 'file-retry-unavailable') {
@@ -1198,7 +1700,10 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
                 finishRetry(retryOf, null, false)
             }
             received.set(offerId, { offerId, peerId, name, size, sha256, flow: control.flow === 1,
-                retry: control.retry === 1 && !rich.attachmentId, ...rich, state: 'offered', expiresAt: Date.now() + OFFER_TTL_MS,
+                retry: control.retry === 1 && !rich.attachmentId, ...rich,
+                swarm: control.swarm === 1,
+                pieceSize: Number.isSafeInteger(control.pieceSize) && control.pieceSize > 0 ? control.pieceSize : null,
+                state: 'offered', expiresAt: Date.now() + OFFER_TTL_MS,
                 ...(resume ? { resumeOf: retryOf } : {}) })
             // The user asked for this attempt with Resume. It needs no second accept.
             if (resume) {
@@ -1230,6 +1735,12 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
             if (t?.receipt) {
                 if (failed) t.window?.stop(reason)
                 if (failed || t.offeredBytes === t.totalBytes) t.receipt.resolve(failed ? reason : null)
+            }
+            else if (!failed) {
+                const own = ownOffers.get(offerId)
+                if (own && own.swarm && own.targets.delete(peerId)) {
+                    events.emit('file-done', { offerId, peerId, direction: 'send', name: own.name, size: own.size, confirmed: true, swarmed: true })
+                }
             }
             else if (failed) {
                 // A disk error can occur before the receiver opens the data stream.
@@ -1271,16 +1782,21 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
             if (t && !t.finalizing) {
                 t.peerCancel = true
                 noteCancel(`${offerId}|${peerId}`)
+                t.abort?.()
                 abortStream(t.stream, 'Transfer cancelled by peer')
             }
         }
     }
 
     function peerLeft(peerId) {
+        for (const entry of swarms.values()) {
+            if (entry.swarm.removePeer(peerId) && entry.role === 'leech') entry.pump?.()
+        }
         for (const request of requests) if (request.peerId === peerId) abortStream(request.stream, 'peer left')
         for (const t of active.values()) {
             if (t.peerId !== peerId || t.finalizing) continue
             if (t.direction === 'receive') {
+                if (t.swarm) continue
                 t.disconnected = true
                 interruptTransfer(t, 'peer left')
             } else interruptTransfer(t, 'peer left before confirming delivery')
@@ -1300,6 +1816,109 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
                 events.emit('file-failed', { offerId: own.offerId, peerId, direction: 'send', reason: 'peer left' })
             }
         }
+    }
+
+    function noteSwarmSendProgress(sha256, peerId) {
+        for (const own of ownOffers.values()) {
+            if (own.swarm && own.sha256 === sha256 && own.targets.has(peerId)) {
+                events.emit('file-progress', { offerId: own.offerId, peerId, direction: 'send', bytes: 0, size: own.size })
+            }
+        }
+    }
+
+    async function serveSwarm(stream, peerId) {
+        const openTimer = setTimeout(() => abortStream(stream, 'Swarm request timed out'), fileOpenTimeout)
+        openTimer.unref?.()
+        let request
+        try { request = await readRequest(stream) }
+        finally { clearTimeout(openTimer) }
+
+        const replyError = async reason => {
+            try {
+                await stream.sink([Buffer.from(JSON.stringify({ ok: false, reason }) + '\n')])
+                await stream.close()
+            } catch { abortStream(stream, reason) }
+        }
+
+        if (stopping || !fileSwarm || !isPeerOpen(peerId) || !request || typeof request !== 'object') {
+            abortStream(stream, 'Swarm request refused')
+            return
+        }
+        const { op, sha256 } = request
+        if (typeof sha256 !== 'string' || !SHA_RE.test(sha256)) {
+            await replyError('invalid')
+            return
+        }
+        const entry = swarms.get(sha256)
+        if (!entry || (!entry.roomWide && !entry.authorizedPeers.has(peerId))) {
+            await replyError('not-found')
+            return
+        }
+
+        if (op === 'manifest') {
+            if (entry.originalMeta && !await unchanged(entry.originalMeta)) {
+                await replyError('changed')
+                return
+            }
+            const payload = {
+                ok: true,
+                sha256: entry.sha256,
+                size: entry.size,
+                pieceSize: entry.pieceSize,
+                pieceHashes: entry.pieceHashes,
+                bitfield: Buffer.from(entry.swarm.haveBitfield()).toString('base64')
+            }
+            await stream.sink([Buffer.from(JSON.stringify(payload) + '\n')])
+            await stream.close()
+            noteSwarmSendProgress(sha256, peerId)
+            return
+        }
+
+        if (op === 'piece') {
+            const index = request.index
+            if (!Number.isSafeInteger(index) || index < 0 || index >= entry.swarm.totalPieces || !entry.swarm.has(index)) {
+                await replyError('missing')
+                return
+            }
+            if (!entry.swarm.reserveSeed(peerId)) {
+                await replyError('busy')
+                return
+            }
+            let fh = null
+            try {
+                const { start, length } = pieceRange(index, entry.size, entry.pieceSize)
+                let buf
+                if (entry.fh) {
+                    buf = await readAt(entry.fh, length, start)
+                } else {
+                    fh = await fsp.open(entry.filePath, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0))
+                    if (entry.originalMeta && !matchesOriginal(await fh.stat(), entry.originalMeta)) {
+                        await replyError('changed')
+                        return
+                    }
+                    buf = await readAt(fh, length, start)
+                }
+                const header = Buffer.from(JSON.stringify({ ok: true, index, length }) + '\n')
+                await stream.sink([header, buf])
+                await stream.close()
+                noteSwarmSendProgress(sha256, peerId)
+            } finally {
+                entry.swarm.releaseSeed(peerId)
+                await fh?.close().catch(() => {})
+            }
+            return
+        }
+
+        await replyError('unsupported')
+    }
+
+    function handleSwarmStream({ stream, connection }) {
+        const peerId = connection.remotePeer.toString()
+        if (stopping || !fileSwarm || !isPeerOpen(peerId)) {
+            abortStream(stream, 'Swarm request not admitted')
+            return
+        }
+        serveSwarm(stream, peerId).catch(() => abortStream(stream, 'Swarm stream ended'))
     }
 
     function handleStream({ stream, connection }) {
@@ -1329,16 +1948,20 @@ export function createFileTransfer({ libp2p, events, sendTo, openPeers, isPeerOp
                 // P7c: the part of a resumed receive stays (P7a). The sender keeps its grant as for a Pause.
                 const type = t.direction === 'receive' && t.keepsPart ? 'file-pause' : 'file-cancel'
                 sendLine(t.peerId, { type, offerId: t.offerId })
+                t.abort?.()
                 interruptTransfer(t, 'Node stopped')
             }
             if (t.promise) waits.push(t.promise)
         }
         await Promise.allSettled(waits)
+        swarms.clear()
     }
 
     return { prepareFile, publishOffer, offerAttachmentTo, expireAttachment, forgetOffer: id => ownOffers.delete(id), unchanged, offerFile, acceptFile,
         retryFile: offerId => retryFile(offerId), pauseFile, resumeFile, discardPartial, listPartials,
-        refuseFile, cancelFile, handleControl, peerLeft, handleStream, stop,
+        refuseFile, cancelFile, handleControl, peerLeft, handleStream, handleSwarmStream, stop,
+        registerSwarmSeed, unregisterSwarmSeed, setSwarmSeeding, setSwarmSeedCap, swarmStatus,
+        swarmEnabled: () => Boolean(fileSwarm),
         // P9C: the number of transfers that move data now (an update restart asks first).
         activeCount: () => active.size }
 }

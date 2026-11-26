@@ -11,17 +11,24 @@ const uuid = value => typeof value === 'string' && UUID.test(value)
 
 function fileDescriptor(value) {
     if (!value || typeof value !== 'object') return null
-    const { id, name, size, sha256 } = value
+    const { id, name, size, sha256, pieceSize } = value
     if (!uuid(id) || !Number.isSafeInteger(size) || size < 0 || typeof sha256 !== 'string' || !SHA.test(sha256) ||
         typeof name !== 'string' || name.length > 200 || safeFileName(name) !== name) return null
-    return { id, name, size, sha256 }
+    return {
+        id,
+        name,
+        size,
+        sha256,
+        ...(Number.isSafeInteger(pieceSize) && pieceSize > 0 ? { pieceSize } : {})
+    }
 }
 
 function sameFile(a, b) {
     return a.name === b.name && a.size === b.size && a.sha256 === b.sha256
 }
 
-export function createSharedShelf({ self, name, peerName, sessions, files, events, requestMs = REQUEST_MS }) {
+export function createSharedShelf({ self, name, peerName, sessions, files, events, requestMs = REQUEST_MS,
+    isSwarmCapable = () => false }) {
     const own = new Map()
     const publishers = new Map()
     const capable = new Set()
@@ -101,13 +108,19 @@ export function createSharedShelf({ self, name, peerName, sessions, files, event
             const descriptor = fileDescriptor({ ...prepared, id: randomUUID() })
             if (!descriptor) throw new Error('Unable to share this file')
             own.set(descriptor.id, { descriptor, prepared, available: true })
+            files.registerSwarmSeed?.(prepared, { roomWide: true })
             broadcastList()
             return descriptor.id
         } finally { preparing = false }
     }
 
     function remove(id) {
+        const removed = own.get(id)
         if (!own.delete(id)) return false
+        const sha = removed?.descriptor?.sha256
+        if (sha && ![...own.values()].some(entry => entry.descriptor.sha256 === sha)) {
+            files.unregisterSwarmSeed?.(sha)
+        }
         broadcastList()
         return true
     }
@@ -190,7 +203,8 @@ export function createSharedShelf({ self, name, peerName, sessions, files, event
             const available = await checkFile(source)
             if (stopped || sessions.get(peer) !== session || uploads.get(key) !== upload) return
             if (available && own.get(id) === source && send(peer, 'grant', { token, id, offerId })) {
-                const offer = files.publishOffer(source.prepared, [peer], offerId, id)
+                const useSwarm = Boolean(files.swarmEnabled?.() && source.prepared.pieceHashes?.length > 1 && isSwarmCapable(peer))
+                const offer = files.publishOffer(source.prepared, [peer], offerId, id, null, { swarm: useSwarm })
                 if (offer.peers) {
                     // A peer that never opens the offered stream must release its reservation.
                     upload.timer = setTimeout(() => files.cancelFile(offerId, peer), requestMs * 2)
