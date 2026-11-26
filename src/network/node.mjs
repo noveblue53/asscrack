@@ -32,6 +32,7 @@ import { createScreenShare, SCREEN_FANOUT_PROTOCOL, SCREEN_PROTOCOL } from './sc
 import { createScreenAudio, SCREEN_AUDIO_PROTOCOL } from './screen-audio.mjs'
 import { createVoiceRelay, MAX_VOICE_RELAYS, pickVoiceRelay, VOICE_PROTOCOL, VOICE_DIRECT_PROTOCOL } from './voice-relay.mjs'
 import { createRoomMusic, MUSIC_DIRECT_PROTOCOL, MUSIC_LIMITS, MUSIC_PROTOCOL } from './music.mjs'
+import { createMusicTree, MUSIC_FANOUT_PROTOCOL } from './music-tree.mjs'
 import { makeInvite, makeMemberInvite, makeRoomCode, validAddr, validPeerId } from './invite.mjs'
 import { createKnockDesk, KNOCK_PROTOCOL } from './knock.mjs'
 import { knockChannel } from './knock-stream.mjs'
@@ -39,6 +40,7 @@ import { DIALBACK_PROTOCOL, handleDialback, requestDialback, isGlobalUnicastIpv6
 
 export { FILE_PROTOCOL, safeFileName } from './file-transfer.mjs'
 export { pickVoiceRelay, VOICE_PROTOCOL, VOICE_DIRECT_PROTOCOL } from './voice-relay.mjs'
+export { MUSIC_FANOUT_PROTOCOL } from './music-tree.mjs'
 
 export const CHAT_PROTOCOL = '/asscrack/chat/receive'
 const PROTECTED_CHAT_PROTOCOL = '/asscrack/chat/2.0.0'
@@ -203,6 +205,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     musicResolve = undefined, musicDirect = true,
     // Sharded 1-hop voice relays across Full Nodes (set false to emulate 1.0.9 peers in tests).
     voiceSharding = true,
+    // Tree-forwarded DJ music (set false to emulate 1.0.9 listeners in tests).
+    musicFanout = true, musicFanoutOptions = undefined,
     // P9C: the update hub of the app (update-spread.mjs), or null: no update lines.
     updates = null,
     // Profile pictures (avatar.mjs): the picture hub of the app { own(), subscribe(fn) }, or null: no picture lines.
@@ -469,7 +473,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             all[peerId] = [...list]
             kinds[peerId] = { ...(linkKinds.get(peerId) ?? {}) }
         }
-        return { self: selfId, links: all, kinds, selfIdle, idlePeers: [...idlePeers], screenEdges: screen.screenEdges() }
+        return { self: selfId, links: all, kinds, selfIdle, idlePeers: [...idlePeers], screenEdges: screen.screenEdges(),
+            musicEdges: musicTree ? musicTree.musicEdges() : [] }
     }
 
     function emitTopology() {
@@ -836,7 +841,10 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         selfChannel: () => voiceState.channel,
         voicePeers: () => musicVoicePeers(),
         connectionFor: peerId => sessionConns.get(peerId) ?? node.getConnections().find(c => c.remotePeer.toString() === peerId),
-        onFrame: frame => events.emit('music-frame', frame),
+        onFrame: frame => {
+            if (musicFanoutActive && musicTree?.parentPeer()) return
+            events.emit('music-frame', frame)
+        },
         directCandidates: () => !musicDirect ? [] : [...peerVoice.keys()].filter(p => {
             const conn = sessionConns.get(p)
             return sessions.has(p) && conn && !conn.remoteAddr.toString().includes('/p2p-circuit') &&
@@ -854,6 +862,29 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         if (voiceState.inVoice) list.push(selfId)
         return list
     }
+    const musicFanoutActive = Boolean(musicFanout) && musicDirect !== false
+    let musicTree = null
+    musicTree = createMusicTree({
+        libp2p: node,
+        selfId,
+        sendLine: (peerId, line) => memberAllowed(peerId) && sessions.get(peerId)?.send(JSON.stringify(line)) === true,
+        broadcastLine: line => {
+            const text = JSON.stringify(line)
+            for (const [peerId, session] of sessions) if (memberAllowed(peerId)) session.send(text)
+        },
+        connectionFor: peerId => sessionConns.get(peerId) ?? node.getConnections().find(c => c.remotePeer.toString() === peerId),
+        voicePeers: musicVoicePeers,
+        channelOf: channelOfPeer,
+        selfChannel: () => voiceState.channel,
+        inVoice: () => voiceState.inVoice,
+        deafened: peerId => peerId === selfId ? voiceState.deafened : peerDeafened.has(peerId),
+        memberAllowed,
+        isCapable: peerId => infoOf(peerId)?.musicFanout === true,
+        getTopology: topology,
+        onFrame: frame => events.emit('music-frame', frame),
+        onEdgesChanged: () => emitTopology(),
+        musicFanoutOptions
+    })
     // Room music (music.mjs): the queue and the DJ. Session-only state, no history.
     const music = createRoomMusic({
         selfId,
@@ -864,7 +895,10 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             for (const [peerId, session] of sessions) if (memberAllowed(peerId) && session.send(text)) count++
             return count
         },
-        changed: view => events.emit('music', view),
+        changed: view => {
+            if (musicFanoutActive) musicTree?.djChanged(view?.dj ?? null, view?.dj && voiceState.inVoice ? voiceState.channel : null)
+            events.emit('music', view)
+        },
         notice: value => events.emit('music-notice', value),
         trackDone: value => events.emit('music-track', value),
         voiceOf: peerId => peerId === selfId ? { inVoice: voiceState.inVoice, channel: voiceState.channel }
@@ -976,6 +1010,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         info.diag = control.diag === 1
         info.clock = control.clock === 1
         info.voiceShard = control.voiceShard === 1
+        info.musicFanout = control.musicFanout === 1
         if (sessions.get(peerId) === session) helloKnown(peerId, info)
     }
     function helloKnown(peerId, info) {
@@ -1337,6 +1372,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                         if (sessions.get(peerId) === session) screen.handleLine(peerId, control)
                     } else if (control.type === 'screen-fanout') {
                         if (sessions.get(peerId) === session) screen.handleFanoutLine(peerId, control)
+                    } else if (control.type === 'music-fanout') {
+                        if (sessions.get(peerId) === session && musicFanoutActive) musicTree.handleLine(peerId, control)
                     } else if (control.type === 'typing') {
                         if (sessions.get(peerId) === session && control.v === 1 && typeof control.active === 'boolean') {
                             typing.received(peerId, control.active)
@@ -1369,14 +1406,14 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             }
         })
         chatInitiator.set(session, initiator)
-        sessionInfo.set(session, { sid, peerSid: null, diag: false, clock: false, voiceShard: false })
+        sessionInfo.set(session, { sid, peerSid: null, diag: false, clock: false, voiceShard: false, musicFanout: false })
         if (open) {
             openSession(session, peerId, connection, true, oldSession)
             return
         }
         pendingSettled.set(session, new Promise(resolve => { settle = resolve }))
         pendingChats.set(peerId, session)
-        const helloFields = voiceSharding ? { diag: 1, clock: 1, voiceShard: 1 } : { diag: 1, clock: 1 }
+        const helloFields = { diag: 1, clock: 1, ...(voiceSharding ? { voiceShard: 1 } : {}), ...(musicFanoutActive ? { musicFanout: 1 } : {}) }
         session.send(JSON.stringify(membership ? { type: 'hello', nonce, sid, ...helloFields } : { type: 'hello', name: senderName, nonce, sid, ...helloFields }))
         timer = setTimeout(() => reject(`no valid proof in ${PROOF_TIMEOUT_MS} ms`), PROOF_TIMEOUT_MS)
         session.done.catch(() => {}).finally(() => {
@@ -1402,7 +1439,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             replaced.close()
         }
         const info = sessionInfo.get(session)
-        const helloFields = voiceSharding ? { diag: 1, clock: 1, voiceShard: 1 } : { diag: 1, clock: 1 }
+        const helloFields = { diag: 1, clock: 1, ...(voiceSharding ? { voiceShard: 1 } : {}), ...(musicFanoutActive ? { musicFanout: 1 } : {}) }
         if (sendHello) session.send(JSON.stringify({ type: 'hello', name: senderName, sid: info?.sid, ...helloFields }))
         channels.opened(peerId)
         const voiceCatalog = voiceChannels.opened()
@@ -1483,6 +1520,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 peerMusicDirect.delete(peerId)
                 voiceRelay.peerLeft(peerId)
                 musicRelay.peerLeft(peerId)
+                musicTree.peerLeft(peerId)
                 music.peerLeft(peerId)
                 if (peerRoster.hostId === peerId) setPeerRoster({ hostId: null, members: [] })
                 election.sessionClosed(peerId)
@@ -1564,6 +1602,15 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             return
         }
         musicRelay.handleDirect(data)
+    }, { runOnTransientConnection: true })
+    await node.handle(MUSIC_FANOUT_PROTOCOL, async data => {
+        const peerId = data.connection.remotePeer.toString()
+        if (!musicFanoutActive || !sessions.has(peerId) || !memberAllowed(peerId) || !voiceState.inVoice ||
+            channelOfPeer(peerId) !== voiceState.channel) {
+            data.stream.abort?.(new Error('Music fanout is not authorized'))
+            return
+        }
+        await musicTree.handleStream(data)
     }, { runOnTransientConnection: true })
 
     await node.handle(PREVIEW_PROTOCOL, data => {
@@ -1711,9 +1758,12 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         if (before.inVoice && active && before.channel !== voiceState.channel) {
             voiceRelay.channelChanged()
             musicRelay.channelChanged()
+            musicTree.channelChanged()
         } else {
             voiceRelay.hostChanged()
             musicRelay.hostChanged()
+            const dj = music.state()?.dj ?? null
+            if (musicFanoutActive) musicTree.djChanged(dj, dj && active ? voiceState.channel : null)
         }
         // The channel in use: the window follows it when the node used General in place of an unknown ID.
         return { channel: voiceState.channel }
@@ -2703,6 +2753,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                 if (voiceState.inVoice) setVoice({})
                 screen.setIdle(true)
                 screenAudio.setIdle(true)
+                musicTree.setForwardingCap(0)
+            } else {
+                musicTree.setForwardingCap(musicFanoutOptions?.defaultMaxChildren ?? 2)
             }
             const line = nodeLine()
             for (const session of sessions.values()) session.send(line)
@@ -2736,9 +2789,19 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             voiceRelay.sendFrame(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)),
         voiceStats: () => voiceRelay.stats(),
         // Room music (music.mjs). Only the DJ in voice sends music frames.
-        sendMusicFrame: bytes => !selfIdle && voiceState.inVoice && (!membership || membership.admitted()) && music.isDj() &&
-            musicRelay.sendFrame(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)),
+        sendMusicFrame: bytes => {
+            if (selfIdle || !voiceState.inVoice || (membership && !membership.admitted()) || !music.isDj()) return false
+            const buf = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
+            if (musicFanoutActive) {
+                const sentTree = musicTree.sendFrame(buf)
+                const sentLegacy = musicTree.hasLegacyListeners() ? musicRelay.sendFrame(buf) : false
+                return sentTree || sentLegacy
+            }
+            return musicRelay.sendFrame(buf)
+        },
         musicStats: () => musicRelay.stats(),
+        musicTreeStats: () => musicTree.stats(),
+        musicParent: () => musicTree.parentPeer(),
         music: { state: music.state, add: music.add, addLocal: music.addLocal, skip: music.skip, pause: music.pause,
             remove: music.remove, move: music.move, stop: music.stop, playing: music.playing, ended: music.ended,
             failed: music.failed, progress: music.progress, reset: music.reset },
@@ -2801,6 +2864,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             election.stop()
             voiceRelay.stop()
             musicRelay.stop()
+            musicTree.stop()
             // Gap B1: tell each peer that this node quits, then give the lines time to go out. close() aborts the
             // stream at once and drops the queue. No open session: no wait.
             let byeSent = false

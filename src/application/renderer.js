@@ -2755,6 +2755,7 @@ messagePanel.addEventListener('dragleave', e => {
 let topologyLinks = {}; // peer ID -> the peer IDs that it has a chat session with
 let topologyKinds = {}; // peer ID -> { peer ID: 'relay' | 'mesh' }, the link kinds that each peer reports
 let topologyScreenEdges = []; // active screen share forwarding edges: [{ from, to, sharer }]
+let topologyMusicEdges = []; // active music forwarding edges: [{ from, to, dj }]
 let fullNodeSelf = false; // true when this computer is a full node (getFullNode)
 let fullNodePeers = new Set(); // the peer IDs of the full nodes (getFullNode, full-node events)
 let topologySelf = null;
@@ -2764,6 +2765,7 @@ function setTopology(data) {
     if (data.links !== null && typeof data.links === 'object') topologyLinks = data.links;
     if (data.kinds !== null && typeof data.kinds === 'object') topologyKinds = data.kinds;
     if (Array.isArray(data.screenEdges)) topologyScreenEdges = data.screenEdges;
+    if (Array.isArray(data.musicEdges)) topologyMusicEdges = data.musicEdges;
     if (typeof data.self === 'string') topologySelf = data.self;
     idlePeerIds = new Set(Array.isArray(data.idlePeers) ? data.idlePeers : []);
     selfIdle = data.selfIdle === true;
@@ -2823,7 +2825,7 @@ function updateNodeMap() {
             active.push(entry.direction === 'send' ? { id, from: self, to: peerId } : { id, from: peerId, to: self });
         }
     }
-    window.nodeMap.update({ self, host: hostId, nodes, links: topologyLinks, kinds: topologyKinds, transfers: active, screenEdges: topologyScreenEdges });
+    window.nodeMap.update({ self, host: hostId, nodes, links: topologyLinks, kinds: topologyKinds, transfers: active, screenEdges: topologyScreenEdges, musicEdges: topologyMusicEdges });
 }
 
 window.asscrack.onTopology(setTopology);

@@ -73,13 +73,17 @@
         id: 'nm-screen-arrow', viewBox: '0 0 10 10', refX: 7, refY: 5, markerWidth: 4.5, markerHeight: 4.5, orient: 'auto'
     });
     screenArrow.append(svgEl('path', { d: 'M0 0.5 L10 5 L0 9.5 z', fill: '#06b6d4' }));
+    const musicArrow = svgEl('marker', {
+        id: 'nm-music-arrow', viewBox: '0 0 10 10', refX: 7, refY: 5, markerWidth: 4.5, markerHeight: 4.5, orient: 'auto'
+    });
+    musicArrow.append(svgEl('path', { d: 'M0 0.5 L10 5 L0 9.5 z', fill: '#f59e0b' }));
     function pulseGradient(id, core, edge) {
         const g = svgEl('radialGradient', { id, cx: 0.5, cy: 0.5, r: 0.5 });
         g.append(stop(0, core, 1), stop(0.5, edge, 0.85), stop(1, edge, 0));
         return g;
     }
     defs.append(
-        gloss, shade, gold, arrow, screenArrow,
+        gloss, shade, gold, arrow, screenArrow, musicArrow,
         pulseGradient('nm-pulse-voice', '#d9ffd0', '#35d41a'),
         pulseGradient('nm-pulse-music', '#fff3c4', '#f59e0b'),
         pulseGradient('nm-pulse-screen', '#d6fbff', '#06b6d4'),
@@ -204,7 +208,19 @@
                 if (node) node.forwardingCount = (node.forwardingCount || 0) + 1;
             }
         }
-        return { host: seen.has(host) ? host : null, nodes: list, chatEdges, voice, transfers, screenEdges };
+        const musicEdges = [];
+        const musicKeys = new Set();
+        for (const item of Array.isArray(state?.musicEdges) ? state.musicEdges : []) {
+            const from = text(item?.from);
+            const to = text(item?.to);
+            const dj = text(item?.dj) || null;
+            if (!from || !to || from === to || !seen.has(from) || !seen.has(to)) continue;
+            const key = `${from}|${to}`;
+            if (musicKeys.has(key)) continue;
+            musicKeys.add(key);
+            musicEdges.push({ from, to, dj });
+        }
+        return { host: seen.has(host) ? host : null, nodes: list, chatEdges, voice, transfers, screenEdges, musicEdges };
     }
 
     // ---- Nodes ----
@@ -344,6 +360,13 @@
                 title: forwarded ? 'Screen share (forwarded)' : 'Screen share'
             });
         }
+        for (const edge of state.musicEdges) {
+            const forwarded = edge.dj ? edge.from !== edge.dj : state.musicEdges.some(e => e.to === edge.from);
+            wanted.set(`music|${edge.from}|${edge.to}`, {
+                kind: 'music', from: edge.from, to: edge.to, lane: 0, layer: 'voice',
+                title: forwarded ? 'Music (forwarded)' : 'Music'
+            });
+        }
         // Transfers between the same two nodes get different curves.
         const lanes = new Map();
         for (const transfer of state.transfers) {
@@ -374,6 +397,7 @@
             });
             if (data.kind === 'transfer') element.setAttribute('marker-end', 'url(#nm-arrow)');
             else if (data.kind === 'screen') element.setAttribute('marker-end', 'url(#nm-screen-arrow)');
+            else if (data.kind === 'music') element.setAttribute('marker-end', 'url(#nm-music-arrow)');
             const title = data.title ? svgEl('title') : null;
             if (title) {
                 title.textContent = data.title;
@@ -579,6 +603,7 @@
             speaking: state.nodes.some(node => node.speaking),
             file: state.transfers.length > 0,
             screen: state.screenEdges.length > 0,
+            music: state.musicEdges.length > 0,
         };
         for (const key of legend.children) key.hidden = !shown[key.dataset.legend];
         legend.hidden = !Object.values(shown).some(Boolean);
