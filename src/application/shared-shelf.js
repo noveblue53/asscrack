@@ -14,7 +14,7 @@
     let showTransfers = false;
 
     function update(row) {
-        const { own, available, state, name, publisher, peerId, size, reason } = row.data;
+        const { own, available, state, name, publisher, peerId, size, reason, seeding, seedingTo, swarmPeers } = row.data;
         row.name.textContent = name;
         row.info.textContent = `${formatSize(size)} · ${own ? 'You' : `${publisher} (${peerId.slice(-8)})`}`;
         // L2: the real type of a file of another person, and the warning for a program file (renderer.js).
@@ -26,7 +26,14 @@
         }
         const badges = { requesting: 'Requesting…', receiving: 'Downloading', saved: 'Saved',
             failed: reason || 'Download failed', cancelled: 'Cancelled' };
-        row.state.textContent = badges[state] ?? (available ? 'Available' : 'Unavailable');
+        let stateText = badges[state] ?? (available ? 'Available' : 'Unavailable');
+        if (state === 'receiving' && Number.isInteger(swarmPeers) && swarmPeers > 0) {
+            stateText = `Downloading · ${swarmPeers} ${swarmPeers === 1 ? 'seeder' : 'seeders'}`;
+        }
+        if ((own || state === 'saved') && seeding === true) {
+            stateText += seedingTo > 0 ? ` · Seeding (${seedingTo})` : ' · Seeding';
+        }
+        row.state.textContent = stateText;
         if (!available && ['failed', 'cancelled'].includes(state)) row.state.textContent += ' · Source unavailable';
         const text = own ? 'Remove' : state === 'receiving' ? 'Cancel' : state === 'saved' ? 'Show in Explorer' :
             ['failed', 'cancelled'].includes(state) ? 'Retry' : 'Download';

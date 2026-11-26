@@ -74,3 +74,50 @@ test('map-traffic aggregates voice, music, screen (including fanout), and file t
     })
     assert.deepEqual(snap3.edges, [])
 })
+
+test('map-traffic tracks per-seeder swarm progress and swarmStatus upload/download edges', () => {
+    const traffic = createMapTraffic()
+    traffic.recordFileProgress({
+        offerId: 'o-swarm',
+        peerId: 'peer-b',
+        direction: 'receive',
+        bytes: 49152,
+        swarmed: true,
+        seederBytes: { 'peer-b': 32768, 'peer-c': 16384 }
+    }, 'peer-a')
+
+    const node = {
+        peerId: 'peer-a',
+        host: () => null,
+        voiceStats: () => null,
+        musicStats: () => null,
+        screenStats: () => null,
+        activeTransfers: () => 1,
+        swarmStatus: () => [{
+            sha256: 'a'.repeat(64),
+            uploadedTo: { 'peer-d': 8192 },
+            downloadedFrom: { 'peer-b': 65536, 'peer-c': 16384 }
+        }]
+    }
+
+    const snap = traffic.snapshot(node)
+    const byKey = new Map(snap.edges.map(e => [`${e.kind}|${e.from}|${e.to}`, e.count]))
+    assert.equal(byKey.get('transfer|peer-b|peer-a'), 65536)
+    assert.equal(byKey.get('transfer|peer-c|peer-a'), 16384)
+    assert.equal(byKey.get('transfer|peer-a|peer-d'), 8192)
+
+    traffic.recordFileEnd({ offerId: 'o-swarm', peerId: 'peer-b', direction: 'receive' })
+    const snapDone = traffic.snapshot({
+        ...node,
+        activeTransfers: () => 0,
+        swarmStatus: () => [{
+            sha256: 'a'.repeat(64),
+            uploadedTo: { 'peer-d': 8192 },
+            downloadedFrom: {}
+        }]
+    })
+    const byKeyDone = new Map(snapDone.edges.map(e => [`${e.kind}|${e.from}|${e.to}`, e.count]))
+    assert.equal(byKeyDone.has('transfer|peer-b|peer-a'), false)
+    assert.equal(byKeyDone.has('transfer|peer-c|peer-a'), false)
+    assert.equal(byKeyDone.get('transfer|peer-a|peer-d'), 8192)
+})

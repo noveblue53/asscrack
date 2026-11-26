@@ -304,3 +304,20 @@ test('empty file swarm is immediately complete', () => {
     assert.deepEqual(swarm.progress().availability, [])
     assert.equal(swarm.progress().totalPieces, 0)
 })
+
+test('releaseRequest frees in-flight piece immediately without penalizing peer', async () => {
+    const pieceSize = 64
+    const { data, sha256 } = makeFile(pieceSize * 2, 31)
+    const pieceHashes = await hashPieces(data, pieceSize)
+    const swarm = createFileSwarm({ sha256, size: data.byteLength, pieceSize, pieceHashes, selfPeerId: 'self' })
+
+    swarm.setPeerHave('p1', [0, 1])
+    swarm.setPeerHave('p2', [0, 1])
+
+    assert.deepEqual(swarm.nextRequests('p1', 1), [0])
+    assert.deepEqual(swarm.nextRequests('p2', 1), [1])
+    assert.equal(swarm.releaseRequest('p1', 0), true)
+    assert.equal(swarm.releaseRequest('p1', 0), false)
+    assert.deepEqual(swarm.nextRequests('p2', 1), [0])
+    assert.equal(swarm.progress().peers.find(p => p.peerId === 'p1').badPieces, 0)
+})

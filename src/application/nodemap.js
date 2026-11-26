@@ -169,7 +169,7 @@
             const to = text(item?.to);
             if (!id || transferIds.has(id) || from === to || !seen.has(from) || !seen.has(to)) continue;
             transferIds.add(id);
-            transfers.push({ id, from, to });
+            transfers.push({ id, from, to, swarm: item.swarm === true });
         }
         const chatEdges = [...mesh].sort().map(key => {
             const [from, to] = key.split('|');
@@ -188,6 +188,12 @@
         for (const edge of chatEdges) {
             if (edge.from === self) byId.get(edge.to).linkToYou = edge.title;
             if (edge.to === self) byId.get(edge.from).linkToYou = edge.title;
+        }
+        for (const transfer of transfers) {
+            if (transfer.swarm) {
+                const node = byId.get(transfer.from);
+                if (node) node.seedingCount = (node.seedingCount || 0) + 1;
+            }
         }
         const screenEdges = [];
         const screenKeys = new Set();
@@ -285,6 +291,8 @@
         else node.group.removeAttribute('data-host');
         if (data.fullNode) node.group.setAttribute('data-full-node', 'true');
         else node.group.removeAttribute('data-full-node');
+        if (data.seedingCount > 0) node.group.setAttribute('data-seeding', 'true');
+        else node.group.removeAttribute('data-seeding');
         const first = Array.from(data.name.trim())[0];
         node.letter.textContent = first ? first.toUpperCase() : '?';
         node.label.textContent = (data.self ? 'You' : shortName(data.name, labelMax)) + (data.idle ? ' · Idle peer' : '');
@@ -292,6 +300,7 @@
         if (data.idle) facts.push('Idle peer');
         if (data.host) facts.push('Host (voice relay)');
         if (data.fullNode) facts.push('Full node (can relay)');
+        if (data.seedingCount > 0) facts.push('Seeding shared file');
         if (data.forwardingCount > 0) facts.push('Forwarding to ' + data.forwardingCount);
         if (data.linkToYou) facts.push('Chat link to you · ' + data.linkToYou);
         if (data.inVoice) facts.push((data.speaking ? 'speaks now' : data.muted ? 'in voice (muted)' : 'in voice') + (data.channel ? ' · ' + data.channel : ''));
@@ -373,7 +382,13 @@
             const pair = `${transfer.from}|${transfer.to}`;
             const lane = lanes.get(pair) ?? 0;
             lanes.set(pair, lane + 1);
-            wanted.set(`transfer|${transfer.id}`, { kind: 'transfer', from: transfer.from, to: transfer.to, lane });
+            wanted.set(`transfer|${transfer.id}`, {
+                kind: 'transfer',
+                from: transfer.from,
+                to: transfer.to,
+                lane,
+                title: transfer.swarm ? 'Swarm transfer' : 'File transfer'
+            });
         }
         for (const [key, edge] of edges) {
             const next = wanted.get(key);

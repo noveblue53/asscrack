@@ -27,7 +27,7 @@ import { createChannels } from './channels.mjs'
 import { createVoiceChannels, GENERAL_VOICE_CHANNEL } from './voice-channels.mjs'
 import { createRoomTopic } from './room-topic.mjs'
 import { createHistory, HISTORY_LIMIT, MAX_MESSAGE_BYTES, validHistoryItem } from './history.mjs'
-import { createFileTransfer, FILE_PROTOCOLS } from './file-transfer.mjs'
+import { createFileTransfer, FILE_PROTOCOLS, FILE_SWARM_PROTOCOL } from './file-transfer.mjs'
 import { createScreenShare, SCREEN_FANOUT_PROTOCOL, SCREEN_PROTOCOL } from './screen-share.mjs'
 import { createScreenAudio, SCREEN_AUDIO_PROTOCOL } from './screen-audio.mjs'
 import { createVoiceRelay, MAX_VOICE_RELAYS, pickVoiceRelay, VOICE_PROTOCOL, VOICE_DIRECT_PROTOCOL } from './voice-relay.mjs'
@@ -38,7 +38,7 @@ import { createKnockDesk, KNOCK_PROTOCOL } from './knock.mjs'
 import { knockChannel } from './knock-stream.mjs'
 import { DIALBACK_PROTOCOL, handleDialback, requestDialback, isGlobalUnicastIpv6, isPrivateIp, observedIp, peerAddrAllowed, tcpTarget } from './fullnode.mjs'
 
-export { FILE_PROTOCOL, safeFileName } from './file-transfer.mjs'
+export { FILE_PROTOCOL, FILE_SWARM_PROTOCOL, safeFileName } from './file-transfer.mjs'
 export { pickVoiceRelay, VOICE_PROTOCOL, VOICE_DIRECT_PROTOCOL } from './voice-relay.mjs'
 export { MUSIC_FANOUT_PROTOCOL } from './music-tree.mjs'
 
@@ -207,6 +207,8 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     voiceSharding = true,
     // Tree-forwarded DJ music (set false to emulate 1.0.9 listeners in tests).
     musicFanout = true, musicFanoutOptions = undefined,
+    // Piece-based file swarming (set false to emulate legacy peers in tests).
+    fileSwarm = true, fileSwarmOptions = undefined,
     // P9C: the update hub of the app (update-spread.mjs), or null: no update lines.
     updates = null,
     // Profile pictures (avatar.mjs): the picture hub of the app { own(), subscribe(fn) }, or null: no picture lines.
@@ -929,14 +931,17 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     })
 
     const filePeerAllowed = peerId => sessions.has(peerId) && memberAllowed(peerId)
+    const isSwarmCapable = peerId => Boolean(fileSwarm) && infoOf(peerId)?.fileSwarm === true
     const files = createFileTransfer({
         libp2p: node,
+        selfId,
         events,
         sendTo: (peerId, message) => filePeerAllowed(peerId) && sessions.get(peerId).send(JSON.stringify(message)),
         openPeers: () => [...sessions.keys()].filter(filePeerAllowed),
         isPeerOpen: filePeerAllowed,
         peerNames: () => Object.fromEntries([...names].filter(([peerId]) => sessions.has(peerId))),
         downloadDir, scratchDir, fileAckTimeout, partials,
+        fileSwarm, fileSwarmOptions, isSwarmCapable,
         // P7c: the room device ID of a peer (protected rooms). A paused file can then resume after a restart.
         peerDevice: peerId => (membership && memberAllowed(peerId) ? memberPeers.get(peerId)?.deviceId ?? null : null)
     })
@@ -966,7 +971,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         idle: () => selfIdle
     })
 
-    const shelf = createSharedShelf({ self: selfId, name: senderName, peerName: peer => names.get(peer), sessions, files, events })
+    const shelf = createSharedShelf({ self: selfId, name: senderName, peerName: peer => names.get(peer), sessions, files, events, isSwarmCapable })
     // Diagnostics (1.0.1): the session IDs and the abilities of the hello line of each session. session ->
     // { sid, peerSid, diag, clock }. Both sides log both IDs, thus two bundles can go on one timeline.
     const sessionInfo = new WeakMap()
@@ -1011,6 +1016,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         info.clock = control.clock === 1
         info.voiceShard = control.voiceShard === 1
         info.musicFanout = control.musicFanout === 1
+        info.fileSwarm = control.fileSwarm === 1
         if (sessions.get(peerId) === session) helloKnown(peerId, info)
     }
     function helloKnown(peerId, info) {
@@ -1406,14 +1412,14 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             }
         })
         chatInitiator.set(session, initiator)
-        sessionInfo.set(session, { sid, peerSid: null, diag: false, clock: false, voiceShard: false, musicFanout: false })
+        sessionInfo.set(session, { sid, peerSid: null, diag: false, clock: false, voiceShard: false, musicFanout: false, fileSwarm: false })
         if (open) {
             openSession(session, peerId, connection, true, oldSession)
             return
         }
         pendingSettled.set(session, new Promise(resolve => { settle = resolve }))
         pendingChats.set(peerId, session)
-        const helloFields = { diag: 1, clock: 1, ...(voiceSharding ? { voiceShard: 1 } : {}), ...(musicFanoutActive ? { musicFanout: 1 } : {}) }
+        const helloFields = { diag: 1, clock: 1, ...(voiceSharding ? { voiceShard: 1 } : {}), ...(musicFanoutActive ? { musicFanout: 1 } : {}), ...(fileSwarm ? { fileSwarm: 1 } : {}) }
         session.send(JSON.stringify(membership ? { type: 'hello', nonce, sid, ...helloFields } : { type: 'hello', name: senderName, nonce, sid, ...helloFields }))
         timer = setTimeout(() => reject(`no valid proof in ${PROOF_TIMEOUT_MS} ms`), PROOF_TIMEOUT_MS)
         session.done.catch(() => {}).finally(() => {
@@ -1439,7 +1445,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             replaced.close()
         }
         const info = sessionInfo.get(session)
-        const helloFields = { diag: 1, clock: 1, ...(voiceSharding ? { voiceShard: 1 } : {}), ...(musicFanoutActive ? { musicFanout: 1 } : {}) }
+        const helloFields = { diag: 1, clock: 1, ...(voiceSharding ? { voiceShard: 1 } : {}), ...(musicFanoutActive ? { musicFanout: 1 } : {}), ...(fileSwarm ? { fileSwarm: 1 } : {}) }
         if (sendHello) session.send(JSON.stringify({ type: 'hello', name: senderName, sid: info?.sid, ...helloFields }))
         channels.opened(peerId)
         const voiceCatalog = voiceChannels.opened()
@@ -1628,6 +1634,15 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         files.handleStream(data)
     }, {
         runOnTransientConnection: true, maxInboundStreams: 4, maxOutboundStreams: 4
+    })
+    await node.handle(FILE_SWARM_PROTOCOL, data => {
+        if (!memberAllowed(data.connection.remotePeer.toString())) {
+            data.stream.abort?.(new Error('File swarm is not authorized'))
+            return
+        }
+        files.handleSwarmStream(data)
+    }, {
+        runOnTransientConnection: true, maxInboundStreams: 32, maxOutboundStreams: 32
     })
     await node.handle(SCREEN_PROTOCOL, data => screen.handleStream(data),
         { runOnTransientConnection: true, maxInboundStreams: 32, maxOutboundStreams: 4 })
@@ -2830,6 +2845,9 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         cancelFile: (offerId, peerId) => files.cancelFile(offerId, peerId),
         // P9C: the number of transfers that move data now (an update restart asks first).
         activeTransfers: () => files.activeCount(),
+        setSwarmSeeding: enabled => { files.setSwarmSeeding(enabled); shelf.notifyChanged?.() },
+        setSwarmSeedCap: cap => files.setSwarmSeedCap(cap),
+        swarmStatus: () => files.swarmStatus(),
         ...screen.api,
         ...screenAudio.api,
         screenAudioStats: screenAudio.stats,

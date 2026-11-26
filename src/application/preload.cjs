@@ -368,6 +368,9 @@ contextBridge.exposeInMainWorld('asscrack', {
     getAutoUpnp: () => ipcRenderer.invoke('asscrack:auto-upnp'),
     setAutoUpnp: enabled => ipcRenderer.invoke('asscrack:set-auto-upnp', enabled === true),
     onAutoUpnp: listen('asscrack:auto-upnp'),
+    getSwarmSeeding: () => ipcRenderer.invoke('asscrack:swarm-seeding'),
+    setSwarmSeeding: enabled => ipcRenderer.invoke('asscrack:set-swarm-seeding', enabled === true),
+    onSwarmSeeding: listen('asscrack:swarm-seeding'),
     // 1.0.4: { active, paused, reason } of the guard of a window share that uses the screen.
     onScreenGuard: listen('asscrack:screen-guard'),
     onScreenViewers: listen('asscrack:screen-viewers'),

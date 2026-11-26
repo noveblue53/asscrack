@@ -535,6 +535,9 @@ const idleState = () => ({ idle: idlePeer, closeToTray });
 const autoUpnpPreference = path.join(app.getPath('userData'), 'auto-upnp.json');
 let autoUpnp = true;
 try { autoUpnp = JSON.parse(readFileSync(autoUpnpPreference, 'utf8')) !== false; } catch { /* new profile */ }
+const swarmSeedingPreference = path.join(app.getPath('userData'), 'swarm-seeding.json');
+let swarmSeeding = true;
+try { swarmSeeding = JSON.parse(readFileSync(swarmSeedingPreference, 'utf8')) !== false; } catch { /* new profile */ }
 const screenForwardingPreference = path.join(app.getPath('userData'), 'screen-forwarding.json');
 const clampForwardingCap = value => (Number.isInteger(value) ? Math.max(0, Math.min(8, value)) : 2);
 let screenForwardingCap = 2;
@@ -848,6 +851,16 @@ function setAutoUpnp(enabled) {
     return { enabled };
 }
 
+function setSwarmSeeding(enabled) {
+    if (typeof enabled !== 'boolean') throw new TypeError('Expected a swarm seeding preference');
+    writeFileSync(swarmSeedingPreference + '.tmp', JSON.stringify(enabled));
+    renameSync(swarmSeedingPreference + '.tmp', swarmSeedingPreference);
+    swarmSeeding = enabled;
+    node?.setSwarmSeeding?.(swarmSeeding);
+    sendToWindow('asscrack:swarm-seeding', { enabled: swarmSeeding });
+    return { enabled: swarmSeeding };
+}
+
 // P9B: the start at sign-in. The window gets the choice, the protected saved rooms (ID and name) and the state of
 // the start entry in Windows. No path and no argument.
 function startupView() {
@@ -911,6 +924,8 @@ handleRoomIpc('asscrack:set-screen-forwarding', (_event, value) => setScreenForw
 handleRoomIpc('asscrack:set-screen-hub-forwarding', (_event, value) => setScreenHubForwarding(value));
 handleRoomIpc('asscrack:auto-upnp', () => ({ enabled: autoUpnp }));
 handleRoomIpc('asscrack:set-auto-upnp', (_event, value) => setAutoUpnp(value));
+handleRoomIpc('asscrack:swarm-seeding', () => ({ enabled: swarmSeeding }));
+handleRoomIpc('asscrack:set-swarm-seeding', (_event, value) => setSwarmSeeding(value));
 onRoomIpc('asscrack:quit', () => app.quit());
 
 // Gap E3: the values of the About dialog.
@@ -1277,6 +1292,7 @@ async function startRoom(options, { publicAddress = '', allowUpnp = false, reope
         // Room music: the YouTube source of this computer when it is the DJ (music-source.mjs).
         options.musicResolve = request => music.resolve(request);
         options.screen = { ...options.screen, maxChildren: effectiveScreenForwardingCap(), hubForwarding: effectiveScreenHubForwarding() };
+        options.fileSwarmOptions = { ...options.fileSwarmOptions, seedingEnabled: swarmSeeding };
         try {
             node = await createAsscrackNode(options);
         } catch (err) {

@@ -11,17 +11,24 @@ const uuid = value => typeof value === 'string' && UUID.test(value)
 
 function fileDescriptor(value) {
     if (!value || typeof value !== 'object') return null
-    const { id, name, size, sha256 } = value
+    const { id, name, size, sha256, pieceSize } = value
     if (!uuid(id) || !Number.isSafeInteger(size) || size < 0 || typeof sha256 !== 'string' || !SHA.test(sha256) ||
         typeof name !== 'string' || name.length > 200 || safeFileName(name) !== name) return null
-    return { id, name, size, sha256 }
+    return {
+        id,
+        name,
+        size,
+        sha256,
+        ...(Number.isSafeInteger(pieceSize) && pieceSize > 0 ? { pieceSize } : {})
+    }
 }
 
 function sameFile(a, b) {
     return a.name === b.name && a.size === b.size && a.sha256 === b.sha256
 }
 
-export function createSharedShelf({ self, name, peerName, sessions, files, events, requestMs = REQUEST_MS }) {
+export function createSharedShelf({ self, name, peerName, sessions, files, events, requestMs = REQUEST_MS,
+    isSwarmCapable = () => false }) {
     const own = new Map()
     const publishers = new Map()
     const capable = new Set()
@@ -39,15 +46,26 @@ export function createSharedShelf({ self, name, peerName, sessions, files, event
     }
 
     function view() {
-        const items = [...own.values()].map(({ descriptor, available }) => ({
-            id: descriptor.id, name: descriptor.name, size: descriptor.size,
-            peerId: self, publisher: name, own: true, available
-        }))
+        const swarms = new Map((files?.swarmStatus?.() ?? []).map(s => [s.sha256, s]))
+        const items = [...own.values()].map(({ descriptor, available }) => {
+            const s = swarms.get(descriptor.sha256)
+            return {
+                id: descriptor.id, name: descriptor.name, size: descriptor.size,
+                peerId: self, publisher: name, own: true, available,
+                ...(s ? { seeding: s.role === 'seed' && s.seedingEnabled === true, seedingTo: s.activeSeeds ?? 0 } : {})
+            }
+        })
         for (const [peerId, publisher] of publishers) {
             for (const row of publisher.rows.values()) {
+                const s = swarms.get(row.descriptor.sha256)
+                const swarmPeers = s
+                    ? (s.role === 'leech' ? s.peers.filter(p => !p.banned && p.haveCount > 0).length : 0)
+                    : (row.swarmPeers > 0 ? row.swarmPeers : undefined)
                 items.push({ id: row.descriptor.id, name: row.descriptor.name, size: row.descriptor.size,
                     peerId, publisher: publisher.name, own: false, available: row.available && capable.has(peerId),
-                    state: row.state, offerId: row.offerId, reason: row.reason })
+                    state: row.state, offerId: row.offerId, reason: row.reason,
+                    ...(s ? { seeding: s.role === 'seed' && s.seedingEnabled === true, seedingTo: s.activeSeeds ?? 0 } : {}),
+                    ...(swarmPeers !== undefined ? { swarmPeers } : {}) })
             }
         }
         return { revision, items }
@@ -101,13 +119,19 @@ export function createSharedShelf({ self, name, peerName, sessions, files, event
             const descriptor = fileDescriptor({ ...prepared, id: randomUUID() })
             if (!descriptor) throw new Error('Unable to share this file')
             own.set(descriptor.id, { descriptor, prepared, available: true })
+            files.registerSwarmSeed?.(prepared, { roomWide: true })
             broadcastList()
             return descriptor.id
         } finally { preparing = false }
     }
 
     function remove(id) {
+        const removed = own.get(id)
         if (!own.delete(id)) return false
+        const sha = removed?.descriptor?.sha256
+        if (sha && ![...own.values()].some(entry => entry.descriptor.sha256 === sha)) {
+            files.unregisterSwarmSeed?.(sha)
+        }
         broadcastList()
         return true
     }
@@ -158,6 +182,7 @@ export function createSharedShelf({ self, name, peerName, sessions, files, event
         clearTimeout(pending.timer)
         pending.row.state = state
         pending.row.reason = reason
+        pending.row.swarmPeers = 0
         changed()
     }
 
@@ -190,7 +215,8 @@ export function createSharedShelf({ self, name, peerName, sessions, files, event
             const available = await checkFile(source)
             if (stopped || sessions.get(peer) !== session || uploads.get(key) !== upload) return
             if (available && own.get(id) === source && send(peer, 'grant', { token, id, offerId })) {
-                const offer = files.publishOffer(source.prepared, [peer], offerId, id)
+                const useSwarm = Boolean(files.swarmEnabled?.() && source.prepared.pieceHashes?.length > 1 && isSwarmCapable(peer))
+                const offer = files.publishOffer(source.prepared, [peer], offerId, id, null, { swarm: useSwarm })
                 if (offer.peers) {
                     // A peer that never opens the offered stream must release its reservation.
                     upload.timer = setTimeout(() => files.cancelFile(offerId, peer), requestMs * 2)
@@ -292,6 +318,13 @@ export function createSharedShelf({ self, name, peerName, sessions, files, event
 
     events.on('file-progress', data => {
         if (data.direction === 'send') clearTimeout(senderUpload(data)?.[1].timer)
+        else if (data.direction === 'receive' && Array.isArray(data.seeders)) {
+            const pending = granted.get(data.offerId)
+            if (pending && pending.peer === data.peerId && pending.row.swarmPeers !== data.seeders.length) {
+                pending.row.swarmPeers = data.seeders.length
+                changed()
+            }
+        }
     })
     events.on('file-done', data => transferred(data, 'saved'))
     events.on('file-failed', data => transferred(data, 'failed'))
@@ -306,6 +339,7 @@ export function createSharedShelf({ self, name, peerName, sessions, files, event
     })
 
     return { view, refresh, publish, remove, download, opened, closed, handle, classifyOffer, startOffer,
+        notifyChanged: changed,
         transferId(peer, token) {
             const pending = granted.get(token)
             return pending?.peer === peer ? pending.row.descriptor.id : undefined

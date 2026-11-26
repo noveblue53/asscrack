@@ -65,6 +65,17 @@ export function createMapTraffic() {
     function recordFileProgress(data, selfId) {
         const key = transferKey(data);
         if (!key || typeof selfId !== 'string' || !selfId) return;
+        if (data.direction === 'receive' && data.swarmed === true && data.seederBytes && typeof data.seederBytes === 'object') {
+            for (const [seederId, rawBytes] of Object.entries(data.seederBytes)) {
+                if (typeof seederId !== 'string' || !seederId || seederId === selfId) continue;
+                const bytes = Number(rawBytes);
+                if (!Number.isFinite(bytes) || bytes < 0) continue;
+                const seederKey = `${key}|${seederId}`;
+                if (!transferBytes.has(seederKey) && transferBytes.size >= MAX_TRACKED_PEERS) continue;
+                transferBytes.set(seederKey, { from: seederId, to: selfId, bytes });
+            }
+            return;
+        }
         const bytes = Number(data.bytes);
         if (!Number.isFinite(bytes) || bytes < 0) return;
         if (!transferBytes.has(key) && transferBytes.size >= MAX_TRACKED_PEERS) return;
@@ -75,7 +86,12 @@ export function createMapTraffic() {
 
     function recordFileEnd(data) {
         const key = transferKey(data);
-        if (key) transferBytes.delete(key);
+        if (!key) return;
+        transferBytes.delete(key);
+        const prefix = `${key}|`;
+        for (const k of transferBytes.keys()) {
+            if (k.startsWith(prefix)) transferBytes.delete(k);
+        }
     }
 
     function reset() {
@@ -132,6 +148,22 @@ export function createMapTraffic() {
         if (activeTransfers > 0) {
             for (const entry of transferBytes.values()) {
                 addEdge(edgeMap, 'transfer', entry.from, entry.to, entry.bytes);
+            }
+        }
+
+        const swarms = typeof node.swarmStatus === 'function' ? node.swarmStatus() : null;
+        if (Array.isArray(swarms)) {
+            for (const s of swarms) {
+                if (s?.uploadedTo && typeof s.uploadedTo === 'object') {
+                    for (const [remotePeerId, rawBytes] of Object.entries(s.uploadedTo)) {
+                        addEdge(edgeMap, 'transfer', selfId, remotePeerId, Number(rawBytes));
+                    }
+                }
+                if (s?.downloadedFrom && typeof s.downloadedFrom === 'object') {
+                    for (const [remotePeerId, rawBytes] of Object.entries(s.downloadedFrom)) {
+                        addEdge(edgeMap, 'transfer', remotePeerId, selfId, Number(rawBytes), 'max');
+                    }
+                }
             }
         }
 

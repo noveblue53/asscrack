@@ -241,3 +241,35 @@ test('node map renders music forwarding edges and unhides the music legend key',
     assert.equal(fwdEdge.textContent, 'Music (forwarded)')
     assert.equal(legend.querySelector('[data-legend="music"]').hidden, false)
 })
+
+test('node map renders swarm transfer edges and marks active seeders', () => {
+    const { document, window } = createDom([{ id: 'node-map' }, { id: 'map-legend', children:
+        ['relay', 'direct', 'relayed', 'unknown', 'full', 'voice', 'speaking', 'file', 'screen', 'music'].map(key => ({ id: key })) }])
+    const legend = document.getElementById('map-legend')
+    for (const key of legend.children) key.dataset.legend = key.id
+    document.createElementNS = (_, name) => document.createElement(name)
+    window.matchMedia = () => ({ matches: true })
+    class ResizeObserver { observe() {} }
+    const source = readFileSync(new URL('../src/application/nodemap.js', import.meta.url), 'utf8')
+    runInNewContext(source, { document, window, ResizeObserver, setTimeout: () => 1, clearTimeout() {} })
+    window.nodeMap.update({
+        self: 'a', host: 'a',
+        nodes: [{ id: 'a', name: 'Leecher' }, { id: 'b', name: 'SeederOne' }, { id: 'c', name: 'SeederTwo' }],
+        links: {},
+        transfers: [
+            { id: 'o1|b', from: 'b', to: 'a', swarm: true },
+            { id: 'o1|c', from: 'c', to: 'a', swarm: true }
+        ]
+    })
+    const edgeB = document.querySelector('[data-kind="transfer"][data-from="b"][data-to="a"]')
+    const edgeC = document.querySelector('[data-kind="transfer"][data-from="c"][data-to="a"]')
+    assert.ok(edgeB)
+    assert.ok(edgeC)
+    assert.equal(edgeB.textContent, 'Swarm transfer')
+    assert.equal(edgeC.textContent, 'Swarm transfer')
+    assert.equal(document.querySelector('[data-node="b"]').getAttribute('data-seeding'), 'true')
+    assert.equal(document.querySelector('[data-node="c"]').getAttribute('data-seeding'), 'true')
+    assert.equal(document.querySelector('[data-node="a"]').getAttribute('data-seeding'), null)
+    assert.match(document.querySelector('[data-node="b"]').textContent, /Seeding shared file/)
+    assert.equal(legend.querySelector('[data-legend="file"]').hidden, false)
+})
