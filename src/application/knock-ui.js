@@ -28,12 +28,15 @@
     const text = document.getElementById('knock-text');
     const allow = document.getElementById('knock-allow');
     const deny = document.getElementById('knock-deny');
+    const canHost = document.getElementById('knock-can-host');
     const moreTag = document.getElementById('knock-more');
     let list = [];
     let busy = false;
 
     function show() {
         const next = list[0];
+        const nextId = next?.id ?? '';
+        if (canHost && bar.dataset.knockId !== nextId) canHost.checked = false;
         bar.hidden = !next;
         text.textContent = next ? barText(next) : '';
         // 1.0.6: the cached profile picture of a friend that knocks (main.js knockView).
@@ -50,17 +53,19 @@
             moreTag.title = more > 0 ? `${more} more waiting` : '';
             moreTag.hidden = more === 0;
         }
-        bar.dataset.knockId = next?.id ?? '';
+        bar.dataset.knockId = nextId;
         allow.disabled = deny.disabled = busy;
+        if (canHost) canHost.disabled = busy;
     }
     async function answer(yes) {
         const current = list[0];
         if (!current || busy) return;
+        const host = yes && canHost?.checked === true;
         busy = true;
         list = list.slice(1);
         show();
         try {
-            const done = await api.answerKnock(current.id, yes);
+            const done = await api.answerKnock(current.id, yes, host);
             const status = document.getElementById('status');
             const who = current.name || 'Someone';
             if (status) status.textContent = !done ? `Request from ${who} ended.` : yes ? `Allowed ${who}.` : `Denied ${who}.`;

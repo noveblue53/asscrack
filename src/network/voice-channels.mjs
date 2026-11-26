@@ -37,7 +37,10 @@ export function checkVoiceCatalog(value) {
         names.add(nameKey(row.name))
         channels.push({ id: row.id, name: row.name })
     }
-    return { v: 1, seq: value.seq, channels: channels.sort(byId), signature: value.signature }
+    const out = { v: 1, seq: value.seq, channels: channels.sort(byId), signature: value.signature }
+    if (typeof value.issuer === 'string') out.issuer = value.issuer
+    if (value.issuerProof && typeof value.issuerProof === 'object') out.issuerProof = value.issuerProof
+    return out
 }
 
 // The input name of an edit: trimmed and NFC. Throws a plain text error for the window.
@@ -67,7 +70,10 @@ export function createVoiceChannels({ membership = null, seed = null, send = () 
     const seq = () => catalog?.seq ?? 0
     const list = () => [GENERAL, ...(catalog?.channels ?? []).map(row => ({ ...row }))]
     const view = () => ({
-        owner: membership?.owner === true, editable: membership?.owner === true, seq: seq(), channels: list()
+        owner: membership?.owner === true,
+        editable: membership?.owner === true || membership?.isAdmin?.() === true,
+        seq: seq(),
+        channels: list()
     })
     const line = () => ({ type: 'voice-channels', v: 1, catalog: structuredClone(catalog) })
     const has = id => id === GENERAL_VOICE_CHANNEL || (catalog?.channels.some(row => row.id === id) ?? false)
@@ -82,10 +88,14 @@ export function createVoiceChannels({ membership = null, seed = null, send = () 
 
     function edit(change) {
         if (!membership) throw new Error(ERRORS.legacy)
-        if (!membership.owner) throw new Error(ERRORS.owner)
+        if (!membership.owner && !membership.isAdmin?.()) throw new Error(ERRORS.owner)
         const channels = change((catalog?.channels ?? []).map(row => ({ ...row })))
         const state = { seq: seq() + 1, channels: channels.sort(byId) }
-        apply({ v: 1, ...state, signature: membership.signVoiceChannels(state) }, null)
+        const signed = membership.signVoiceChannels(state)
+        const catalogData = typeof signed === 'string'
+            ? { v: 1, ...state, signature: signed }
+            : { v: 1, ...state, ...signed }
+        apply(catalogData, null)
     }
 
     function taken(channels, name, except = null) {

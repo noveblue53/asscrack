@@ -33,7 +33,10 @@ export function knockTargets(code) {
             else if (node.id === owner) {
                 first.push({ addr: `${plain}/p2p/${owner}`, peer: owner })
                 bare.push({ addr: plain, peer: null })
-            } else first.push({ addr: `${plain}/p2p/${node.id}/p2p-circuit/p2p/${owner}`, peer: owner })
+            } else {
+                first.push({ addr: `${plain}/p2p/${node.id}/p2p-circuit/p2p/${owner}`, peer: owner })
+                bare.push({ addr: `${plain}/p2p/${node.id}`, peer: node.id })
+            }
         }
     }
     const seen = new Set()

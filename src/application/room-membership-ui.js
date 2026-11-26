@@ -128,10 +128,38 @@
         return result;
     }
 
+    function canManage() {
+        return Boolean(state?.owner || state?.canManageMembers);
+    }
+
+    function canActOn(member) {
+        if (!canManage() || !member) return false;
+        if (state.owner) return true;
+        return member.role !== 'admin';
+    }
+
+    async function runMemberAction(label, fn) {
+        if (busy || !canManage()) return;
+        busy = true;
+        listDevices();
+        try {
+            await fn();
+            inviteNote.textContent = label;
+            confirming = null;
+        } catch (error) {
+            inviteNote.textContent = error?.message ? errorText(error) : 'Action failed.';
+        } finally {
+            busy = false;
+            listDevices();
+        }
+    }
+
     function listDevices() {
-        const current = state?.owner ? state.members ?? [] : [];
-        const rows = current.map(member => ({ ...member, name: peerNames.get(member.peerId) ?? '' }));
-        const signature = JSON.stringify([rows, confirming, busy]);
+        const current = canManage() ? state.members ?? [] : [];
+        const rows = current
+            .filter(member => !member.hidden)
+            .map(member => ({ ...member, name: peerNames.get(member.peerId) ?? '' }));
+        const signature = JSON.stringify([rows, confirming, busy, state?.owner, state?.canManageMembers]);
         if (signature === rendering) return;
         rendering = signature;
         devicesSection.hidden = rows.length === 0;
@@ -142,33 +170,124 @@
             name.textContent = member.name || 'Device';
             const id = document.createElement('code');
             id.textContent = member.deviceId;
+            const status = member.status ?? (member.revoked ? 'removed' : 'active');
+            const roleTag = document.createElement('span');
+            roleTag.className = 'role-tag';
+            roleTag.dataset.role = member.role ?? 'member';
+            roleTag.dataset.status = status;
+            roleTag.textContent = status === 'banned' ? 'Banned'
+                : status === 'removed' ? 'Removed'
+                    : status === 'kicked' ? 'Kicked'
+                        : member.role === 'admin' ? 'Admin'
+                            : member.canHost ? 'Member · Host' : 'Member';
             const details = document.createElement('span');
-            details.textContent = member.revoked ? 'Removed' : (member.connected ? 'Connected' : 'Offline')
-                + (member.canHost ? ' · Can host' : ' · Member');
-            device.append(name, id, details);
-            if (member.revoked) return device;
-            if (confirming === member.deviceId) {
-                const confirm = button('Remove', () => revoke(member.deviceId));
-                confirm.className = 'btn-danger';
-                const cancel = button('Cancel', () => {
-                    confirming = null;
-                    listDevices();
-                    devices.querySelector(`[data-device-id="${member.deviceId}"] button`)?.focus();
-                });
-                confirm.disabled = cancel.disabled = busy;
-                device.append(confirm, cancel);
+            details.textContent = status !== 'active' ? '' : (member.connected ? 'Connected' : 'Offline');
+            device.append(name, roleTag, details, id);
+
+            const actions = [];
+            if (status === 'banned' || status === 'removed') {
+                if (canActOn(member) && typeof api.unbanMember === 'function') {
+                    const unbanBtn = button('Unban', () => runMemberAction('Device unbanned.', () => api.unbanMember(member.deviceId)));
+                    unbanBtn.disabled = busy;
+                    actions.push(unbanBtn);
+                }
+            } else if (status === 'kicked') {
+                if (canActOn(member)) {
+                    const banBtn = button('Ban', () => runMemberAction('Device banned.', () => api.banMember(member.deviceId)));
+                    banBtn.className = 'btn-danger';
+                    banBtn.disabled = busy;
+                    const forgetBtn = button('Forget', () => runMemberAction('Device forgotten.', () => api.forgetMember(member.deviceId)));
+                    forgetBtn.disabled = busy;
+                    actions.push(banBtn, forgetBtn);
+                }
             } else {
-                const deny = button('Remove', () => {
-                    confirming = member.deviceId;
-                    listDevices();
-                    devices.querySelector(`[data-device-id="${member.deviceId}"] button`)?.focus();
-                });
-                deny.disabled = busy;
-                deny.setAttribute('aria-label', `Remove ${member.name || 'device'}`);
-                device.append(deny);
+                const canToggleHost = state.owner || member.role !== 'admin' || member.deviceId === state.deviceId;
+                if (canToggleHost) {
+                    const hostLabel = document.createElement('label');
+                    hostLabel.className = 'admission-check';
+                    const hostCheck = document.createElement('input');
+                    hostCheck.type = 'checkbox';
+                    hostCheck.checked = member.canHost === true;
+                    hostCheck.disabled = busy;
+                    hostCheck.addEventListener('change', () => runMemberAction(
+                        hostCheck.checked ? 'Host access enabled.' : 'Host access removed.',
+                        () => api.setMemberCanHost(member.deviceId, hostCheck.checked)
+                    ));
+                    hostLabel.append(hostCheck, document.createTextNode(' Can host'));
+                    actions.push(hostLabel);
+                }
+                if (canActOn(member)) {
+                    if (confirming === member.deviceId) {
+                        const confirm = button('Remove', () => runMemberAction('Device removed.', () => {
+                            if (generatedFor === member.deviceId) clearCode();
+                            return api.revokeMember(member.deviceId);
+                        }));
+                        confirm.className = 'btn-danger';
+                        const cancel = button('Cancel', () => {
+                            confirming = null;
+                            listDevices();
+                            devices.querySelector(`[data-device-id="${member.deviceId}"] button`)?.focus();
+                        });
+                        confirm.disabled = cancel.disabled = busy;
+                        actions.push(confirm, cancel);
+                    } else {
+                        const deny = button('Remove', () => {
+                            confirming = member.deviceId;
+                            listDevices();
+                            devices.querySelector(`[data-device-id="${member.deviceId}"] button`)?.focus();
+                        });
+                        deny.disabled = busy;
+                        deny.setAttribute('aria-label', `Remove ${member.name || 'device'}`);
+                        const kickBtn = button('Kick', () => runMemberAction('Device kicked.', () => api.kickMember(member.deviceId)));
+                        kickBtn.disabled = busy;
+                        actions.push(deny, kickBtn);
+                    }
+                }
+                if (state.owner) {
+                    const nextRole = member.role === 'admin' ? 'member' : 'admin';
+                    const roleBtn = button(member.role === 'admin' ? 'Remove admin' : 'Make admin',
+                        () => runMemberAction(nextRole === 'admin' ? 'Promoted to Admin.' : 'Admin removed.',
+                            () => api.setMemberRole(member.deviceId, nextRole)));
+                    roleBtn.disabled = busy;
+                    actions.push(roleBtn);
+                }
             }
+            if (actions.length > 0) device.append(...actions);
             return device;
         }));
+    }
+
+    function contextActions(peerId) {
+        if (!canManage() || !peerId) return [];
+        const member = (state?.members ?? []).find(m => m.peerId === peerId);
+        if (!member || member.status === 'banned' || member.status === 'kicked') return [];
+        const out = [];
+        if (state.owner) {
+            const nextRole = member.role === 'admin' ? 'member' : 'admin';
+            out.push({
+                label: member.role === 'admin' ? 'Remove admin' : 'Make admin',
+                run: () => runMemberAction(nextRole === 'admin' ? 'Promoted to Admin.' : 'Admin removed.',
+                    () => api.setMemberRole(member.deviceId, nextRole))
+            });
+        }
+        if (state.owner || member.role !== 'admin') {
+            const nextHost = !member.canHost;
+            out.push({
+                label: nextHost ? 'Allow hosting (Can host)' : 'Remove hosting (Can host)',
+                run: () => runMemberAction(nextHost ? 'Host access enabled.' : 'Host access removed.',
+                    () => api.setMemberCanHost(member.deviceId, nextHost))
+            });
+            out.push({
+                label: 'Kick',
+                run: () => runMemberAction('Device kicked.', () => api.kickMember(member.deviceId))
+            });
+            out.push({
+                label: 'Ban',
+                danger: true,
+                run: () => runMemberAction('Device banned.', () => api.banMember(member.deviceId))
+            });
+        }
+        return out;
     }
 
     function update(next, nextReach) {
@@ -177,18 +296,20 @@
         state = next;
         if (nextReach !== undefined) reach = nextReach;
         inviteToggle.hidden = false;
-        inviteToggle.textContent = next.owner ? 'Invite' : 'Access';
-        if (first || !next.owner || next.members?.some(member => member.deviceId === generatedFor && member.revoked)) clearCode();
+        inviteToggle.textContent = next.owner || next.canManageMembers ? 'Invite' : 'Access';
+        if (first || (!next.owner && !next.canManageMembers) ||
+            next.members?.some(member => member.deviceId === generatedFor && member.revoked)) clearCode();
         // U1 of the UI copy pass: the role is a badge on the card head, not a sentence.
         const role = next.revoked ? ['removed', 'Removed', 'You were removed from this room']
             : !next.admitted ? ['waiting', 'Waiting for approval', 'Waiting for the room owner']
                 : next.owner ? ['owner', 'Owner', 'You created this room']
-                    : next.canHost ? ['host', 'Member · Host', 'Can host and relay for the room'] : ['member', 'Member', ''];
+                    : next.isAdmin ? ['admin', 'Admin', 'Can manage members, channels, and invites']
+                        : next.canHost ? ['host', 'Member · Host', 'Can host and relay for the room'] : ['member', 'Member', ''];
         accessStatus.hidden = false;
         accessStatus.dataset.role = role[0];
         accessStatus.textContent = role[1];
         accessStatus.title = role[2];
-        form.hidden = !next.owner;
+        form.hidden = !canManage();
         if (codeBox) codeBox.hidden = !next.owner;
         if (autoAllow && !autoAllowBusy) autoAllow.checked = next.owner && next.autoAllowFriends === true;
         const netNote = statusBar.querySelector('.net-note');
@@ -268,7 +389,7 @@
     canHost.addEventListener('change', clearCode);
     form.addEventListener('submit', async event => {
         event.preventDefault();
-        if (!state?.owner || busy || !canInvite()) return;
+        if (!canManage() || busy || !canInvite()) return;
         const id = target.value.trim();
         clearCode();
         busy = create.disabled = target.disabled = canHost.disabled = true;
@@ -292,6 +413,6 @@
     });
 
     api.onMembership(update);
-    api.onPeerName(() => { if (state?.owner) listDevices(); });
-    window.roomMembership = { start: update, update };
+    api.onPeerName(() => { if (canManage()) listDevices(); });
+    window.roomMembership = { start: update, update, contextActions };
 })();

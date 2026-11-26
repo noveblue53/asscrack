@@ -83,7 +83,7 @@ function rateLimit(clock, limits) {
 // invite.
 export function createKnockDesk({ membership, makeInvite, limits = {}, clock = realClock, changed = () => {}, log = () => {},
     autoAllow = () => false, autoAllowed = () => {}, report = () => {} }) {
-    if (!membership?.owner) throw new Error('Only the room owner can answer a knock.')
+    if (!membership?.roomId) throw new Error('Only the room owner can answer a knock.')
     const L = { ...KNOCK_LIMITS, ...limits }
     const pending = new Map()
     const coolDown = new Map()
@@ -158,6 +158,7 @@ export function createKnockDesk({ membership, makeInvite, limits = {}, clock = r
                     if (message?.type !== 'knock-hello' || message.v !== 1 || typeof message.room !== 'string' ||
                         typeof message.code !== 'string' || typeof message.nonce !== 'string' || !NONCE.test(message.nonce)) return drop('bad hello', 'bad-hello')
                     if (message.room !== membership.roomId) return refuse('room')
+                    if (!membership.owner && !membership.canManageMembers?.()) return refuse('old-code')
                     const check = friend === true ? (message.code === FRIEND_KNOCK_CODE ? 'ok' : 'old-code')
                         : membership.checkRoomCode(message.code)
                     if (check !== 'ok') return refuse(check)
@@ -165,7 +166,10 @@ export function createKnockDesk({ membership, makeInvite, limits = {}, clock = r
                     ownerNonce = newNonce()
                     state = 'proof'
                     step()
-                    channel.send({ type: 'knock-challenge', nonce: ownerNonce, proof: membership.knockOwnerProof(codeId, message.nonce) })
+                    const proof = membership.knockResponderProof
+                        ? membership.knockResponderProof(codeId, message.nonce)
+                        : membership.knockOwnerProof(codeId, message.nonce)
+                    channel.send({ type: 'knock-challenge', nonce: ownerNonce, proof })
                     return
                 }
                 if (message?.type !== 'knock' || !validDeviceId(message.device) || typeof message.signature !== 'string' ||
@@ -174,10 +178,9 @@ export function createKnockDesk({ membership, makeInvite, limits = {}, clock = r
                 // did not prove its key.
                 if (!membership.verifyKnock(message.device, codeId, ownerNonce, message.signature)) return drop('wrong device proof', 'wrong-proof')
                 const deviceId = message.device
-                if (deviceId === membership.ownerId) return refuse('owner')
-                if (membership.revoked(deviceId)) return refuse('removed')
-                // issue() refuses a device that has a different role (a grant that can host).
-                if (membership.issued().some(grant => grant.deviceId === deviceId && grant.canHost)) return refuse('role')
+                if (deviceId === membership.ownerId || deviceId === membership.id) return refuse('owner')
+                if (membership.banned ? membership.banned(deviceId) : membership.revoked(deviceId)) return refuse('removed')
+                if (membership.issued().some(grant => grant.deviceId === deviceId && grant.canHost && !grant.revoked)) return refuse('role')
                 if (coolingDown(deviceId)) {
                     finish('denied')
                     note('refused', context, { cause: 'cool-down' })
@@ -235,7 +238,7 @@ export function createKnockDesk({ membership, makeInvite, limits = {}, clock = r
     }
 
     // Allow or Deny of a prompt. Returns false when the prompt is not there now (an answer came, or it timed out).
-    function answer(id, allow) {
+    function answer(id, allow, { canHost = false } = {}) {
         const entry = pending.get(id)
         if (!entry) return false
         if (allow !== true) {
@@ -246,7 +249,7 @@ export function createKnockDesk({ membership, makeInvite, limits = {}, clock = r
         }
         let invite
         try {
-            invite = makeInvite(entry.deviceId)
+            invite = makeInvite(entry.deviceId, { canHost: canHost === true })
         } catch (err) {
             log(`Knock invite failed: ${err?.message ?? err}`)
             settle(entry, 'refused', { reason: 'error' }, 'refused', 'error')
@@ -286,8 +289,9 @@ export function createKnocker({ code, access, identity, name }) {
                     ...(result === 'allowed' ? { invite: message.invite } : {}) } }
             }
             if (state === 'hello') {
+                const verifyResp = access.verifyResponderKnock ?? access.verifyOwnerKnock
                 if (message?.type !== 'knock-challenge' || typeof message.nonce !== 'string' || !NONCE.test(message.nonce) ||
-                    !access.verifyOwnerKnock(code.codeId, nonce, message.proof)) {
+                    !verifyResp(code.codeId, nonce, message.proof)) {
                     state = 'done'
                     return { done: { result: 'not-owner' } }
                 }
@@ -305,7 +309,8 @@ export function createKnocker({ code, access, identity, name }) {
 export function checkAllowedInvite(code, identity, invite) {
     const value = readInvite(invite)
     if (value.room !== code.room || value.key !== code.key || value.membership?.owner !== code.owner ||
-        value.membership.lan !== code.lan || value.membership.grant?.deviceId !== identity.id || value.membership.grant.canHost !== false) {
+        value.membership.lan !== code.lan || value.membership.grant?.deviceId !== identity.id ||
+        typeof value.membership.grant.canHost !== 'boolean') {
         throw new Error('The answer of the owner is not valid.')
     }
     return value
@@ -319,7 +324,8 @@ export function checkFriendAllowedInvite({ roomId, owner }, identity, invite) {
     const m = value.membership
     let id = null
     try { id = roomCodeAccess(value.room, value.key, m?.owner, m?.lan).roomId } catch { id = null }
-    if (id !== roomId || m?.owner !== owner || m.grant?.deviceId !== identity.id || m.grant.canHost !== false) {
+    if (id !== roomId || m?.owner !== owner || m.grant?.deviceId !== identity.id ||
+        typeof m.grant.canHost !== 'boolean') {
         throw new Error('The answer of the owner is not valid.')
     }
     return value

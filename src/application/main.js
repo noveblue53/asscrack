@@ -1586,10 +1586,10 @@ function knockView(pending) {
     });
 }
 queryRoomIpc('asscrack:knocks', () => knockView(node?.knocks()));
-handleRoomIpc('asscrack:knock-answer', (_event, id, allow) => {
-    if (!node?.memberState().owner) throw new Error('Only the room owner can answer.');
+handleRoomIpc('asscrack:knock-answer', (_event, id, allow, canHost) => {
+    if (!node?.memberState().canManageMembers) throw new Error('Only the room owner or an admin can answer.');
     if (typeof id !== 'string' || id.length > 64) return false;
-    const done = node.answerKnock(id, allow === true);
+    const done = node.answerKnock(id, allow === true, { canHost: canHost === true });
     writeLog('INFO', `Knock ${allow === true ? 'allowed' : 'denied'}${done ? '' : ' (not waiting now)'}`);
     return done;
 });
@@ -1932,15 +1932,53 @@ handleRoomIpc('asscrack:enable-upnp', () => {
 });
 
 handleRoomIpc('asscrack:member-invite', (_event, deviceId, canHost) => {
-    if (!node?.memberState().owner) throw new Error('Only the room owner can invite devices.');
+    if (!node?.memberState().canManageMembers) throw new Error('Only the room owner or an admin can invite devices.');
     if (typeof deviceId !== 'string' || deviceId.length > 128) throw new Error('Enter the friend’s device ID.');
     return node.createMemberInvite(deviceId.trim(), { canHost: canHost === true });
 });
 
 handleRoomIpc('asscrack:member-revoke', (_event, deviceId) => {
-    if (!node?.memberState().owner) throw new Error('Only the room owner can revoke access.');
+    if (!node?.memberState().canManageMembers) throw new Error('Only the room owner or an admin can revoke access.');
     if (typeof deviceId !== 'string' || deviceId.length > 128) throw new Error('Enter a device ID.');
     return node.revokeMember(deviceId.trim());
+});
+
+handleRoomIpc('asscrack:member-role', (_event, deviceId, role) => {
+    if (!node?.memberState().owner) throw new Error('Only the room owner can change admin roles.');
+    if (typeof deviceId !== 'string' || deviceId.length > 128) throw new Error('Enter a device ID.');
+    node.setMemberRole(deviceId.trim(), String(role ?? ''));
+    return true;
+});
+
+handleRoomIpc('asscrack:member-can-host', (_event, deviceId, canHost) => {
+    if (!node?.memberState().canManageMembers) throw new Error('Only the room owner or an admin can change host access.');
+    if (typeof deviceId !== 'string' || deviceId.length > 128) throw new Error('Enter a device ID.');
+    node.setMemberCanHost(deviceId.trim(), canHost === true);
+    return true;
+});
+
+handleRoomIpc('asscrack:member-kick', (_event, deviceId) => {
+    if (!node?.memberState().canManageMembers) throw new Error('Only the room owner or an admin can kick devices.');
+    if (typeof deviceId !== 'string' || deviceId.length > 128) throw new Error('Enter a device ID.');
+    return node.kickMember(deviceId.trim());
+});
+
+handleRoomIpc('asscrack:member-ban', (_event, deviceId) => {
+    if (!node?.memberState().canManageMembers) throw new Error('Only the room owner or an admin can ban devices.');
+    if (typeof deviceId !== 'string' || deviceId.length > 128) throw new Error('Enter a device ID.');
+    return node.banMember(deviceId.trim());
+});
+
+handleRoomIpc('asscrack:member-unban', (_event, deviceId) => {
+    if (!node?.memberState().canManageMembers) throw new Error('Only the room owner or an admin can unban devices.');
+    if (typeof deviceId !== 'string' || deviceId.length > 128) throw new Error('Enter a device ID.');
+    return node.unbanMember(deviceId.trim());
+});
+
+handleRoomIpc('asscrack:member-forget', (_event, deviceId) => {
+    if (!node?.memberState().canManageMembers) throw new Error('Only the room owner or an admin can forget devices.');
+    if (typeof deviceId !== 'string' || deviceId.length > 128) throw new Error('Enter a device ID.');
+    return node.forgetMember(deviceId.trim());
 });
 
 // The window has no clipboard permission (setPermissions allows only the microphone). The main process copies.
