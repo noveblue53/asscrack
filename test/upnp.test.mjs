@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url'
 import path from 'node:path'
 import { createAsscrackNode } from '../src/network/node.mjs'
 import { DIALBACK_PROTOCOL } from '../src/network/fullnode.mjs'
+import { selectUpnpLocalIpv4 } from '../src/network/port-mapper.mjs'
 import { startIgd, fakeClient } from './helpers/fake-igd.mjs'
 
 const PUBLIC_IP = '93.184.216.34'
@@ -707,4 +708,27 @@ test('dialbackState() tracks checking, failed, and ok transitions and enableUpnp
         await Promise.allSettled([a.stop(), b.stop()])
         await igd.close()
     }
+})
+
+test('selectUpnpLocalIpv4 prefers default gateway interface and subnet over virtual VPN adapters', () => {
+    const ifaces = {
+        'Radmin VPN': [{ address: '26.73.170.44', netmask: '255.0.0.0', family: 'IPv4', internal: false }],
+        'Wi-Fi': [{ address: '192.168.0.155', netmask: '255.255.255.0', family: 'IPv4', internal: false }]
+    }
+    assert.equal(selectUpnpLocalIpv4({ interfaces: ifaces, defaultGateway: { gateway: '192.168.0.1', int: 'Wi-Fi' } }), '192.168.0.155')
+    assert.equal(selectUpnpLocalIpv4({ interfaces: ifaces, defaultGateway: { gateway: '192.168.0.1', int: 'Other' } }), '192.168.0.155')
+    assert.equal(selectUpnpLocalIpv4({
+        interfaces: {
+            Loopback: [{ address: '127.0.0.1', netmask: '255.0.0.0', family: 'IPv4', internal: true }],
+            'Radmin VPN': [{ address: '26.73.170.44', netmask: '255.0.0.0', family: 'IPv4', internal: false }],
+            LinkLocal: [{ address: '169.254.1.2', netmask: '255.255.0.0', family: 'IPv4', internal: false }],
+            'Wi-Fi': [{ address: '192.168.0.155', netmask: '255.255.255.0', family: 'IPv4', internal: false }]
+        },
+        defaultGateway: null
+    }), '192.168.0.155')
+    assert.equal(selectUpnpLocalIpv4({
+        interfaces: { Virtual: [{ address: '26.73.170.44', netmask: '255.0.0.0', family: 'IPv4', internal: false }] },
+        defaultGateway: null
+    }), '26.73.170.44')
+    assert.equal(selectUpnpLocalIpv4({ interfaces: {}, defaultGateway: null }), undefined)
 })
