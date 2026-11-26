@@ -196,6 +196,7 @@
             <li id="view-screen-hub-forwarding" data-room-only hidden role="menuitemcheckbox" aria-checked="false" tabindex="-1" title="Allow this full node to relay screen shares without watching">Relay shares when not watching</li>
             <li id="view-swarm-seeding" data-room-only hidden role="menuitemcheckbox" aria-checked="true" tabindex="-1" title="Help share downloaded room files with other buddies">Seed shared files</li>
             <li id="view-auto-upnp" role="menuitemcheckbox" aria-checked="true" tabindex="-1" title="Ask your router to open a port (UPnP / NAT-PMP) for internet rooms">Open port automatically</li>
+            <li id="view-mobile-bridge" role="menuitem" aria-haspopup="dialog" aria-controls="mobile-bridge-dialog" tabindex="-1">Mobile browser…</li>
             <li id="view-system-buttons" role="menuitemcheckbox" aria-checked="false" tabindex="-1" title="Applies after restart" hidden>Native title bar</li>
             <li id="view-updates" role="menuitem" aria-haspopup="dialog" aria-controls="about-dialog" tabindex="-1" hidden>Check for updates…</li>
           </ul>
@@ -989,6 +990,49 @@
     </form>
   </dialog>
 
+  <dialog id="mobile-bridge-dialog" aria-labelledby="mobile-bridge-title">
+    <h2 id="mobile-bridge-title">Mobile browser</h2>
+    <label class="check"><input type="checkbox" id="mobile-bridge-enabled"> Enable mobile browser bridge</label>
+    <p id="mobile-bridge-status" class="dialog-note"></p>
+    <div id="mobile-bridge-config" class="mobile-bridge-grid">
+      <label>Port <input type="number" id="mobile-bridge-port" min="0" max="65535" placeholder="Auto"></label>
+      <label>Remote host / DDNS <input type="text" id="mobile-bridge-host" placeholder="Optional"></label>
+      <label>Remote port <input type="number" id="mobile-bridge-remote-port" min="1" max="65535" placeholder="Same"></label>
+      <button type="button" id="mobile-bridge-save-config">Apply</button>
+    </div>
+    <div id="mobile-bridge-pairing" hidden>
+      <div class="mobile-qr-row">
+        <div class="mobile-qr-card">
+          <strong>LAN</strong>
+          <div id="mobile-qr-lan" class="mobile-qr-box"></div>
+          <div class="mobile-url-row">
+            <input type="text" id="mobile-url-lan" readonly>
+            <button type="button" id="mobile-copy-lan">Copy</button>
+          </div>
+        </div>
+        <div id="mobile-qr-remote-card" class="mobile-qr-card" hidden>
+          <strong>Remote</strong>
+          <div id="mobile-qr-remote" class="mobile-qr-box"></div>
+          <div class="mobile-url-row">
+            <input type="text" id="mobile-url-remote" readonly>
+            <button type="button" id="mobile-copy-remote">Copy</button>
+          </div>
+        </div>
+      </div>
+      <button type="button" id="mobile-bridge-refresh-qr">New pairing QR</button>
+    </div>
+    <div id="mobile-bridge-devices-wrap">
+      <div class="mobile-devices-head">
+        <strong>Paired devices</strong>
+        <button type="button" id="mobile-bridge-revoke-all" hidden>Revoke all</button>
+      </div>
+      <ul id="mobile-bridge-devices"></ul>
+    </div>
+    <form method="dialog" class="dialog-buttons">
+      <button value="close">Close</button>
+    </form>
+  </dialog>
+
   <script src="voice-gate.js"></script>
   <script src="activity-view.js"></script>
   <script src="voice.js"></script>
@@ -1042,5 +1086,6 @@
   <script src="whats-new.js"></script>
   <script src="diagnostics-ui.js"></script>
   <script src="clipboard-join-ui.js"></script>
+  <script src="mobile-bridge-ui.js"></script>
 </body>
 </html>

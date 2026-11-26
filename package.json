@@ -50,6 +50,7 @@
     "productName": "ASSCRACK",
     "files": [
       "src/application/**/*",
+      "src/mobile/**/*",
       "src/network/**/*",
       "package.json"
     ],

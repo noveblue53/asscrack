@@ -507,6 +507,15 @@
         void reopen(room, false, row?.querySelector('.reopen-room') ?? null);
     });
 
+    api.onMobileOpenRoom?.(async roomId => {
+        let result = null;
+        try { result = await api.listSavedRooms(); showState(result); } catch { return; }
+        const room = (result?.rooms ?? []).find(row => row.roomId === String(roomId));
+        if (!room) return;
+        const row = Array.from(savedList.querySelectorAll('.saved-room')).find(item => item.dataset.roomId === room.roomId);
+        void reopen(room, room.protected !== true, row?.querySelector('.reopen-room') ?? null);
+    });
+
     window.savedRoomsUi = {
         channelOpened(id) { if (openRoomId) void loadAfterLogin(openRoomId, id); },
         // The login fields of the save choice. Only a keyed room sends them.

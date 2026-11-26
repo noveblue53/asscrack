@@ -404,5 +404,18 @@ contextBridge.exposeInMainWorld('asscrack', {
     pickAvatar: () => ipcRenderer.invoke('asscrack:avatar-pick'),
     setAvatar: (token, crop) => ipcRenderer.invoke('asscrack:avatar-set', String(token ?? ''),
         { x: Number(crop?.x), y: Number(crop?.y), w: Number(crop?.w), h: Number(crop?.h) }),
-    removeAvatar: () => ipcRenderer.invoke('asscrack:avatar-remove')
+    removeAvatar: () => ipcRenderer.invoke('asscrack:avatar-remove'),
+    onMobileMessageSent: listen('asscrack:mobile-message-sent'),
+    onMobileWhisperSent: listen('asscrack:mobile-whisper-sent'),
+    onMobileOpenRoom: listen('asscrack:mobile-open-room')
+});
+
+contextBridge.exposeInMainWorld('mobileBridge', {
+    getState: () => ipcRenderer.invoke('asscrack:mobile-bridge-state'),
+    setEnabled: enabled => ipcRenderer.invoke('asscrack:mobile-bridge-set-enabled', enabled === true),
+    setConfig: patch => ipcRenderer.invoke('asscrack:mobile-bridge-set-config', patch && typeof patch === 'object' ? { ...patch } : {}),
+    createPairing: () => ipcRenderer.invoke('asscrack:mobile-bridge-pair'),
+    revokeDevice: id => ipcRenderer.invoke('asscrack:mobile-bridge-revoke', String(id ?? '')),
+    revokeAll: () => ipcRenderer.invoke('asscrack:mobile-bridge-revoke-all'),
+    onChanged: listen('asscrack:mobile-bridge-changed')
 });

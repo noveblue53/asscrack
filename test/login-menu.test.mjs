@@ -8,7 +8,8 @@ import { loadMenu } from './helpers/settings-menu.mjs';
 // window.updatesUi (updates-ui.js) is there in the app: the line "Check for updates…" shows.
 const APP = { globals: { updatesUi: { refreshAbout() {} } } };
 // What's new (2026-11-23): the notes line is also a login line (no data-room-only).
-const LOGIN_LINES = ['Theme…', 'Sound & notifications…', 'Open port automatically', 'Native title bar', 'Check for updates…',
+// Mobile browser (mobile-phase1): available on login screen too (no data-room-only).
+const LOGIN_LINES = ['Theme…', 'Sound & notifications…', 'Open port automatically', 'Mobile browser…', 'Native title bar', 'Check for updates…',
     'Keyboard shortcuts…', 'Save diagnostics…', "What's new…", 'About ASSCRACK…', 'Quit'];
 
 test('the Settings menu on the login screen has the login lines, and the arrow keys skip the other lines', () => {

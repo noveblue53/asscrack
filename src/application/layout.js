@@ -667,6 +667,7 @@
         else if (item.id === 'view-screen-hub-forwarding') window.screenForwarding?.toggleHub();
         else if (item.id === 'view-swarm-seeding') window.swarmSeeding?.toggle();
         else if (item.id === 'view-auto-upnp') window.autoUpnp?.toggle();
+        else if (item.id === 'view-mobile-bridge') window.mobileBridgeUi?.open();
         else if (item.id === 'view-quit') window.appShell ? window.appShell.quit() : window.asscrack.quit();
         else if (item.id === 'view-shortcuts') window.appShell?.openShortcuts();
         else if (item.id === 'view-whats-new') void window.whatsNew?.open();

@@ -22,7 +22,7 @@ const GROUPS = [
     ['Chat', ['view-previews', 'view-clear-previews']],
     ['Status', ['view-availability', 'view-avatar', 'view-typing']],
     ['Sound & voice', ['view-attention', 'view-voice-settings', 'view-voice', 'detach-voice']],
-    ['System', ['view-startup', 'view-close-idle', 'view-screen-forwarding', 'view-screen-hub-forwarding', 'view-swarm-seeding', 'view-auto-upnp', 'view-system-buttons', 'view-updates']],
+    ['System', ['view-startup', 'view-close-idle', 'view-screen-forwarding', 'view-screen-hub-forwarding', 'view-swarm-seeding', 'view-auto-upnp', 'view-mobile-bridge', 'view-system-buttons', 'view-updates']],
     ['Help', ['view-shortcuts', 'view-diag', 'view-whats-new', 'view-about']]
 ];
 
@@ -182,4 +182,16 @@ test('clicking Seed shared files toggles window.swarmSeeding', () => {
     r.toggle.click();
     r.document.getElementById('view-swarm-seeding').click();
     assert.equal(toggled, 1);
+});
+
+test('clicking Mobile browser opens window.mobileBridgeUi', () => {
+    let opened = 0;
+    const r = loadMenu({
+        globals: {
+            mobileBridgeUi: { open: () => { opened++; } }
+        }
+    });
+    r.toggle.click();
+    r.document.getElementById('view-mobile-bridge').click();
+    assert.equal(opened, 1);
 });

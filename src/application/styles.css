@@ -2395,3 +2395,15 @@ body.layout-dragging #buddy-panel {
   font-size: 12px;
   overflow-wrap: anywhere;
 }
+
+#mobile-bridge-dialog { max-width: 640px; width: min(640px, 92vw); }
+.mobile-bridge-grid { display: grid; grid-template-columns: 90px 1fr 90px auto; gap: 8px; align-items: end; margin: 10px 0; }
+.mobile-bridge-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85em; }
+.mobile-qr-row { display: flex; gap: 16px; flex-wrap: wrap; margin: 10px 0; }
+.mobile-qr-card { flex: 1 1 220px; display: flex; flex-direction: column; gap: 6px; padding: 10px; border: 1px solid var(--border, #333); border-radius: 6px; }
+.mobile-qr-box svg { width: 160px; height: 160px; display: block; border-radius: 4px; }
+.mobile-url-row { display: flex; gap: 6px; }
+.mobile-url-row input { flex: 1; min-width: 0; font-size: 0.8em; }
+.mobile-devices-head { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; }
+#mobile-bridge-devices { list-style: none; padding: 0; margin: 6px 0; display: flex; flex-direction: column; gap: 6px; }
+.mobile-device-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 0.9em; }

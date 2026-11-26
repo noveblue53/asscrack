@@ -55,7 +55,8 @@ test('the bridge exposes the room API and uses only ipcRenderer, contextBridge a
     const b = loadBridge();
     // G7a adds the world 'friends' (the Friends panel, the request bar and the buddy menu lines).
     // easy-join part 3 adds the world 'clipboardJoin' (the prompt for a device invite in the clipboard).
-    assert.deepEqual(Object.keys(b.worlds).sort(), ['asscrack', 'clipboardJoin', 'desktopFrame', 'friends', 'roomVoiceMonitor']);
+    // mobile-phase1 adds the world 'mobileBridge' (Settings > Mobile browser).
+    assert.deepEqual(Object.keys(b.worlds).sort(), ['asscrack', 'clipboardJoin', 'desktopFrame', 'friends', 'mobileBridge', 'roomVoiceMonitor']);
     assert.deepEqual(b.touched, []);
     for (const [name, fn] of Object.entries(b.api)) assert.equal(typeof fn, 'function', name);
 });
