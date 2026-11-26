@@ -486,7 +486,8 @@ export function createFileSwarm({
             availability: computeAvailability(),
             seedingEnabled: currentSeedingEnabled,
             seedCap: currentSeedCap,
-            activeSeeds: activeSeeds.size
+            activeSeeds: activeSeeds.size,
+            activeSeedPeers: [...activeSeeds]
         }
     }
 

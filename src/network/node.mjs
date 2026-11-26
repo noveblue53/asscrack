@@ -2845,7 +2845,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         cancelFile: (offerId, peerId) => files.cancelFile(offerId, peerId),
         // P9C: the number of transfers that move data now (an update restart asks first).
         activeTransfers: () => files.activeCount(),
-        setSwarmSeeding: enabled => files.setSwarmSeeding(enabled),
+        setSwarmSeeding: enabled => { files.setSwarmSeeding(enabled); shelf.notifyChanged?.() },
         setSwarmSeedCap: cap => files.setSwarmSeedCap(cap),
         swarmStatus: () => files.swarmStatus(),
         ...screen.api,

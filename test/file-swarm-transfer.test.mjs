@@ -296,3 +296,54 @@ test('127.0.0.1: targeted 1:1 file offer cannot be fetched over FILE_SWARM_PROTO
     const reply = JSON.parse(Buffer.concat(chunks).toString('utf8').trim())
     assert.deepEqual(reply, { ok: false, reason: 'not-found' })
 })
+
+test('127.0.0.1: swarm progress emits seeders/seederBytes, swarmStatus tracks uploadedTo/downloadedFrom, and setSwarmSeeding updates shelf view', { timeout: 30000 }, async t => {
+    const ctx = await setupNodes(3)
+    t.after(() => cleanup(ctx))
+    const [a, b, c] = ctx.nodes
+    const { buf, sha256 } = makePayload(FILE_SIZE, 41)
+    const srcFile = path.join(ctx.dir, 'swarm-ui-meta.bin')
+    await fsp.writeFile(srcFile, buf)
+
+    const fileId = await a.publishShelfFile(srcFile)
+    const row = (node, peerId) => node.shelf().items.find(i => i.peerId === peerId && i.id === fileId)
+    await waitFor(() => row(b, a.peerId)?.available && row(c, a.peerId)?.available, 'shelf listings reached B and C')
+
+    // B downloads from A first and becomes a seeder.
+    const doneB = []
+    b.events.on('file-done', e => { if (e.direction === 'receive') doneB.push(e) })
+    assert.equal(b.downloadShelfFile(a.peerId, fileId), true)
+    await waitFor(() => doneB.length === 1, 'B completed download')
+
+    // Check own shelf item on A reflects seeding: true, then seeding: false after setSwarmSeeding(false).
+    assert.equal(row(a, a.peerId)?.seeding, true)
+    a.setSwarmSeeding(false)
+    assert.equal(row(a, a.peerId)?.seeding, false)
+    a.setSwarmSeeding(true)
+    assert.equal(row(a, a.peerId)?.seeding, true)
+
+    // C downloads from A and B; capture file-progress events.
+    const progressC = []
+    const doneC = []
+    c.events.on('file-progress', e => { if (e.direction === 'receive') progressC.push(e) })
+    c.events.on('file-done', e => { if (e.direction === 'receive') doneC.push(e) })
+    assert.equal(c.downloadShelfFile(a.peerId, fileId), true)
+    await waitFor(() => doneC.length === 1, 'C completed download')
+
+    const swarmedProg = progressC.find(e => e.swarmed === true)
+    assert.ok(swarmedProg, 'file-progress has swarmed: true')
+    assert.ok(Array.isArray(swarmedProg.seeders) && swarmedProg.seeders.length >= 1, 'file-progress has seeders array')
+    assert.ok(swarmedProg.seederBytes && typeof swarmedProg.seederBytes === 'object', 'file-progress has seederBytes')
+
+    const statusC = c.swarmStatus().find(s => s.sha256 === sha256)
+    assert.ok(statusC, 'C has swarmStatus entry')
+    assert.ok(Array.isArray(statusC.activeSeedPeers), 'swarmStatus has activeSeedPeers')
+    const dlTotal = Object.values(statusC.downloadedFrom).reduce((sum, n) => sum + n, 0)
+    assert.equal(dlTotal, FILE_SIZE)
+
+    const statusA = a.swarmStatus().find(s => s.sha256 === sha256)
+    const statusB = b.swarmStatus().find(s => s.sha256 === sha256)
+    const totalUploaded = Object.values(statusA.uploadedTo).reduce((sum, n) => sum + n, 0) +
+        Object.values(statusB.uploadedTo).reduce((sum, n) => sum + n, 0)
+    assert.ok(totalUploaded >= FILE_SIZE, 'A and B uploadedTo accounts for transferred bytes')
+})

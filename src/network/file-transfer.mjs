@@ -642,6 +642,8 @@ export function createFileTransfer({ libp2p, selfId = null, events, sendTo, open
             fh: null,
             roomWide: Boolean(roomWide),
             authorizedPeers: new Set(authorizedPeers),
+            uploadedTo: new Map(),
+            downloadedFrom: new Map(),
             swarm
         }
         swarms.set(prepared.sha256, entry)
@@ -672,6 +674,8 @@ export function createFileTransfer({ libp2p, selfId = null, events, sendTo, open
             role: entry.role,
             size: entry.size,
             pieceSize: entry.pieceSize,
+            uploadedTo: Object.fromEntries(entry.uploadedTo),
+            downloadedFrom: Object.fromEntries(entry.downloadedFrom),
             ...entry.swarm.progress()
         }))
     }
@@ -1293,6 +1297,7 @@ export function createFileTransfer({ libp2p, selfId = null, events, sendTo, open
         t.abort = () => abortCtrl.abort()
         const halted = () => t.selfCancel || t.peerCancel || t.pause || stopping
         const inFlightTasks = new Set()
+        const seederBytes = new Map()
         let receivedBytes = 0
         let lastProgressAt = 0
 
@@ -1300,7 +1305,19 @@ export function createFileTransfer({ libp2p, selfId = null, events, sendTo, open
             const now = Date.now()
             if (force || now - lastProgressAt >= PROGRESS_INTERVAL_MS) {
                 lastProgressAt = now
-                events.emit('file-progress', { offerId, peerId, direction: 'receive', bytes: receivedBytes, size })
+                const seeders = entry
+                    ? entry.swarm.progress().peers.filter(p => !p.banned && (p.haveCount > 0 || p.inFlight > 0)).map(p => p.peerId)
+                    : []
+                events.emit('file-progress', {
+                    offerId,
+                    peerId,
+                    direction: 'receive',
+                    bytes: receivedBytes,
+                    size,
+                    swarmed: true,
+                    seeders,
+                    seederBytes: Object.fromEntries(seederBytes)
+                })
             }
         }
 
@@ -1340,6 +1357,8 @@ export function createFileTransfer({ libp2p, selfId = null, events, sendTo, open
                 fh,
                 roomWide: true,
                 authorizedPeers: new Set(),
+                uploadedTo: new Map(),
+                downloadedFrom: seederBytes,
                 swarm,
                 pump: null
             }
@@ -1377,6 +1396,7 @@ export function createFileTransfer({ libp2p, selfId = null, events, sendTo, open
                         await writeAll(fh, result.data, range.start)
                         receivedBytes += result.data.byteLength
                         t.remaining -= BigInt(result.data.byteLength)
+                        seederBytes.set(remotePeerId, (seederBytes.get(remotePeerId) ?? 0) + result.data.byteLength)
                         emitSwarmProgress()
                         for (const p of swarmPeers()) {
                             sendLine(p, { type: 'file-swarm-have', sha256, index })
@@ -1901,6 +1921,7 @@ export function createFileTransfer({ libp2p, selfId = null, events, sendTo, open
                 const header = Buffer.from(JSON.stringify({ ok: true, index, length }) + '\n')
                 await stream.sink([header, buf])
                 await stream.close()
+                entry.uploadedTo.set(peerId, (entry.uploadedTo.get(peerId) ?? 0) + length)
                 noteSwarmSendProgress(sha256, peerId)
             } finally {
                 entry.swarm.releaseSeed(peerId)

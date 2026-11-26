@@ -2184,6 +2184,23 @@ window.asscrack.onFileProgress(data => {
         progress.value = Number(data.bytes) || 0;
         showProgress(progress);
     }
+    if (data.direction === 'receive' && Array.isArray(data.seeders) && data.seeders.length > 0) {
+        const nextSeeders = [...new Set(data.seeders.filter(id => typeof id === 'string' && id))];
+        if (nextSeeders.length > 0) {
+            const changed = entry.seeders?.join('|') !== nextSeeders.join('|');
+            entry.seeders = nextSeeders;
+            const label = nextSeeders.length === 1 ? 'Receiving · 1 seeder' : `Receiving · ${nextSeeders.length} seeders`;
+            const names = nextSeeders.map(id => transferPeerName(id)).join(', ');
+            for (const row of [entry.item, entry.card].filter(Boolean)) {
+                const stateEl = row.querySelector('.state-text');
+                if (stateEl) {
+                    stateEl.textContent = label;
+                    stateEl.title = `Seeders: ${names}`;
+                }
+            }
+            if (changed) updateNodeMap();
+        }
+    }
 });
 
 window.asscrack.onShelfOffered?.(data => {
@@ -2195,6 +2212,7 @@ window.asscrack.onFileDone(data => {
     linkResume(data);
     const entry = transferForEvent(data);
     if (RESULT_STATES.has(entry.state)) return;
+    entry.seeders = null;
     for (const row of [entry.item, entry.card].filter(Boolean)) {
         const progress = row.querySelector('progress');
         progress.value = progress.max;
@@ -2218,6 +2236,7 @@ window.asscrack.onFileFailed(data => {
     linkResume(data);
     const entry = transferForEvent(data);
     if (entry.state !== 'failed' && RESULT_STATES.has(entry.state)) return;
+    entry.seeders = null;
     entry.retryable = data.retryable === true;
     entry.cancelRequested = false;
     entry.pauseRequested = false;
@@ -2226,7 +2245,9 @@ window.asscrack.onFileFailed(data => {
 window.asscrack.onFileRefused(data => setTransferResult(transferForEvent({ ...data, direction: 'send' }), 'refused', 'Refused'));
 window.asscrack.onFileCancelled(data => {
     linkResume(data);
-    setTransferResult(transferForEvent(data), 'cancelled', 'Cancelled');
+    const entry = transferForEvent(data);
+    entry.seeders = null;
+    setTransferResult(entry, 'cancelled', 'Cancelled');
 });
 
 // ---- P7b: Pause, Resume and Discard of a received file (P7a is the node part) ----
@@ -2821,8 +2842,14 @@ function updateNodeMap() {
         for (const entry of transfers.values()) {
             if (entry.state !== 'sending' && entry.state !== 'receiving') continue;
             const { offerId, peerId } = entry.item.dataset;
-            const id = `${offerId}|${peerId}`;
-            active.push(entry.direction === 'send' ? { id, from: self, to: peerId } : { id, from: peerId, to: self });
+            if (entry.direction === 'receive' && Array.isArray(entry.seeders) && entry.seeders.length > 0) {
+                for (const seederId of entry.seeders) {
+                    active.push({ id: `${offerId}|${seederId}`, from: seederId, to: self, swarm: true });
+                }
+            } else {
+                const id = `${offerId}|${peerId}`;
+                active.push(entry.direction === 'send' ? { id, from: self, to: peerId } : { id, from: peerId, to: self });
+            }
         }
     }
     window.nodeMap.update({ self, host: hostId, nodes, links: topologyLinks, kinds: topologyKinds, transfers: active, screenEdges: topologyScreenEdges, musicEdges: topologyMusicEdges });
@@ -3466,4 +3493,26 @@ document.addEventListener('keydown', e => {
     };
     api.onAutoUpnp?.(next => { updates++; apply(next); });
     api.getAutoUpnp?.().then(next => { if (!updates) apply(next); }).catch(() => {});
+}
+
+// Swarm seeding preference (Settings -> System -> Seed shared files).
+{
+    const api = window.asscrack;
+    const setting = document.getElementById('view-swarm-seeding');
+    let swarmSeedingEnabled = true;
+    let updates = 0;
+    function apply(next) {
+        if (!next || typeof next.enabled !== 'boolean') return;
+        swarmSeedingEnabled = next.enabled;
+        if (setting) setting.setAttribute('aria-checked', String(swarmSeedingEnabled));
+    }
+    window.swarmSeeding = {
+        state: () => ({ enabled: swarmSeedingEnabled }),
+        toggle: async () => {
+            try { apply(await api.setSwarmSeeding?.(!swarmSeedingEnabled)); }
+            catch { status.textContent = 'Couldn\'t save this setting.'; }
+        }
+    };
+    api.onSwarmSeeding?.(next => { updates++; apply(next); });
+    api.getSwarmSeeding?.().then(next => { if (!updates) apply(next); }).catch(() => {});
 }
