@@ -2913,12 +2913,13 @@ const MAP_UPNP_REASONS = {
 function showMapUpnp() {
     if (!mapUpnpBox || !mapUpnpButton) return;
     const ready = fullNodeSelf || roomReach?.state === 'ready';
-    const hide = !internetRoom || roomReach?.state === 'lan' || !hasApi('enableUpnp') || (ready && !mapUpnpTried);
+    const proven = fullNodeSelf || roomReach?.proven === true;
+    const dialback = roomReach?.dialback;
+    const autoDialbackVisible = !proven && roomReach?.state === 'ready' && (dialback === 'failed' || dialback === 'checking');
+    const hide = !internetRoom || roomReach?.state === 'lan' || !hasApi('enableUpnp') || (ready && !mapUpnpTried && !autoDialbackVisible);
     mapUpnpBox.hidden = hide;
     if (hide) return;
     const waiting = mapUpnpBusy || roomReach?.state === 'upnp-wait';
-    const proven = fullNodeSelf || roomReach?.proven === true;
-    const dialback = roomReach?.dialback;
     let showButton = true;
     let buttonText = 'Open port (UPnP)';
     let note = '';

@@ -139,6 +139,25 @@ test('the Network map UPnP box stays hidden when already reachable without click
     assert.equal(fullRoom.room.el('map-upnp-box').hidden, true);
 });
 
+test('the Network map UPnP box shows auto-UPnP dial-back checking and failure without clicking Open port', async () => {
+    const { room, state } = await startRoom({
+        reach: { state: 'ready', reason: null, proven: false, dialback: 'checking', dialbackReason: null },
+        owner: false
+    });
+    assert.equal(room.el('map-upnp-box').hidden, false);
+    assert.equal(room.el('map-upnp').hidden, true);
+    assert.equal(room.el('map-upnp-note').textContent, 'Port opened. Checking full node…');
+
+    state.reach = { state: 'ready', reason: null, proven: false, dialback: 'failed', dialbackReason: 'unreachable' };
+    room.handlers.onDialback({ state: 'failed', reason: 'unreachable' });
+    await settle();
+    assert.equal(room.el('map-upnp-box').hidden, false);
+    assert.equal(room.el('map-upnp').hidden, false);
+    assert.equal(room.el('map-upnp').textContent, 'Check again');
+    assert.equal(room.el('map-upnp-note').dataset.state, 'warn');
+    assert.equal(room.el('map-upnp-note').textContent, 'Port opened, but peers couldn\'t reach it. Not a full node.');
+});
+
 test('the Network map panel shows dial-back checking, failure with Check again, and full node confirmation', async () => {
     const { room, state } = await startRoom({
         reach: { state: 'none', reason: null, proven: false, dialback: 'idle', dialbackReason: null },
