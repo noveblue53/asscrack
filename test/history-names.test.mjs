@@ -80,3 +80,50 @@ test('M1: the window marks an unverified history line, never as an own line, and
     assert.equal(row('b').classList.contains('cont'), false, 'no group with the verified line')
     assert.equal(row('c').classList.contains('own'), false, 'an unverified line with the own name is not an own line')
 })
+
+test('M1: 127.0.0.1: host backfill rejects third-party device prefixes and enforces verified session name', { timeout: 30000 }, async t => {
+    const room = 'M1 backfill room', roomKey = newRoomKey()
+    const nodes = []
+    t.after(() => Promise.allSettled(nodes.map(n => n.stop())))
+    const start = async opts => { const n = await createAsscrackNode({ room, roomKey, ...fast, ...opts }); nodes.push(n); return n }
+    const ownerId = createDeviceIdentity()
+    const O = await start({ membership: createRoomMembership({ identity: ownerId, room, roomKey, lan: true }), name: 'Owner' })
+    const addr = n => n.getMultiaddrs().find(a => a.startsWith('/ip4/127.0.0.1/'))
+    async function member(name) {
+        const identity = createDeviceIdentity()
+        const invite = readInvite(O.createMemberInvite(identity.id, { canHost: false }))
+        const n = await start({ membership: restoreRoomMembership({ identity, room, roomKey, descriptor: invite.membership }), name })
+        await n.connect(addr(O))
+        await waitFor(() => n.peers().includes(O.peerId) && n.memberState().admitted, `${name} admitted`)
+        return { n, device: identity.id }
+    }
+    const { n: P, device: pDevice } = await member('Pat')
+    const { n: M, device: mDevice } = await member('Mallory')
+    await waitFor(() => O.isHost() && P.host()?.peerId === O.peerId && M.host()?.peerId === O.peerId, 'O is host for both')
+    await waitFor(() => O.peerNames()[P.peerId] === 'Pat', 'O knows Pat')
+
+    const time = Date.now()
+    const forgedOwner = { id: `${ownerId.id}.${randomUUID()}`, from: 'Owner', text: 'forged owner', time }
+    const forgedMallory = { id: `${mDevice}.${randomUUID()}`, from: 'Mallory', text: 'forged mallory', time: time + 1 }
+    const forgedUnknown = { id: `${createDeviceIdentity().id}.${randomUUID()}`, from: 'Someone', text: 'forged unknown', time: time + 2 }
+    const forgedBare = { id: randomUUID(), from: 'Owner', text: 'forged bare', time: time + 3 }
+    const ownFakeFrom = { id: `${pDevice}.${randomUUID()}`, from: 'Owner', text: 'own backfill', time: time + 4 }
+
+    assert.equal(P.sendTo(O.peerId, {
+        type: 'history',
+        messages: [forgedOwner, forgedMallory, forgedUnknown, forgedBare, ownFakeFrom]
+    }), true)
+
+    await waitFor(() => O.history().some(m => m.id === ownFakeFrom.id), 'O accepted Pat own backfill')
+    await waitFor(() => M.history().some(m => m.id === ownFakeFrom.id), 'M received forwarded backfill')
+
+    for (const node of [O, M]) {
+        const byId = Object.fromEntries(node.history().map(m => [m.id, m]))
+        assert.equal(byId[ownFakeFrom.id].from, 'Pat')
+        assert.equal(byId[ownFakeFrom.id].unverified, node === O ? undefined : true)
+        assert.equal(byId[forgedOwner.id], undefined)
+        assert.equal(byId[forgedMallory.id], undefined)
+        assert.equal(byId[forgedUnknown.id], undefined)
+        assert.equal(byId[forgedBare.id], undefined)
+    }
+})

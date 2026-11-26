@@ -5,6 +5,8 @@ import { multiaddr } from '@multiformats/multiaddr'
 import { createAsscrackNode, CHAT_PROTOCOL } from '../src/network/node.mjs'
 import { createHistory, HISTORY_LIMIT, MAX_MESSAGE_BYTES, historyLines, validHistoryItem } from '../src/network/history.mjs'
 import { createChatSession, MAX_CHAT_FRAME_BYTES } from '../src/network/chat-session.mjs'
+import { newRoomKey } from '../src/network/invite.mjs'
+import { createDeviceIdentity, createRoomMembership, restoreRoomMembership } from '../src/network/room-membership.mjs'
 
 const base = {
     room: 'history', listen: ['/ip4/127.0.0.1/tcp/0'], discovery: false,
@@ -252,6 +254,73 @@ test('attachment projection keeps only validated public fields and downgrades in
     const byId = Object.fromEntries(history.list().map(row => [row.id, row]))
     assert.deepEqual(byId.message.attachment, attachment)
     assert.deepEqual(byId.bad, { ...line, id: 'bad' })
+})
+
+test('127.0.0.1: protected room non-host members backfill own messages to reconnecting host without duplicates or loops', { timeout: 40000 }, async () => {
+    const room = 'history-backfill', roomKey = newRoomKey()
+    const timing = { discovery: false, listen: ['/ip4/127.0.0.1/tcp/0'], heartbeatInterval: 100, hostTimeout: 700, electionDelay: 300 }
+    const ownerId = createDeviceIdentity()
+    const relayId = createDeviceIdentity()
+    const memberId = createDeviceIdentity()
+    const ownerMembership = createRoomMembership({ identity: ownerId, room, roomKey, lan: false })
+    const relayDesc = ownerMembership.issue(relayId.id, false)
+    const memberDesc = ownerMembership.issue(memberId.id, false)
+
+    const nodes = []
+    const start = async opts => { const n = await createAsscrackNode({ room, roomKey, ...timing, ...opts }); nodes.push(n); return n }
+    try {
+        const O0 = await start({ membership: ownerMembership, name: 'Owner', fullNode: false, electionDelay: 5000 })
+        const R = await start({ membership: restoreRoomMembership({ identity: relayId, room, roomKey, descriptor: relayDesc }), name: 'Relay', fullNode: true, allowPrivateFullNode: true })
+        const M = await start({ membership: restoreRoomMembership({ identity: memberId, room, roomKey, descriptor: memberDesc }), name: 'Member', fullNode: false })
+
+        await connectPair(R, O0)
+        await connectPair(M, O0)
+        await connectPair(M, R)
+        await waitUntil(() => R.memberState().admitted && M.memberState().admitted, 8000)
+
+        const ownerSnap = O0.membershipSnapshot()
+        await O0.stop()
+        await waitUntil(() => !R.peers().includes(O0.peerId) && !M.peers().includes(O0.peerId), 5000)
+        assert.equal(R.host(), null)
+        assert.equal(M.host(), null)
+
+        assert.equal(M.send('waow'), 1)
+        assert.equal(R.send('relay-note'), 1)
+        await waitUntil(() => R.history().some(m => m.text === 'waow') && M.history().some(m => m.text === 'relay-note'), 5000)
+
+        const O = await start({ membership: restoreRoomMembership({ identity: ownerId, room, roomKey, descriptor: ownerSnap }), name: 'Owner', fullNode: false })
+        const events = { O: [], R: [], M: [] }
+        O.events.on('history', ({ messages }) => events.O.push(messages))
+        R.events.on('history', ({ messages }) => events.R.push(messages))
+        M.events.on('history', ({ messages }) => events.M.push(messages))
+
+        await connectPair(O, R)
+        await connectPair(O, M)
+        await waitUntil(() => agree([O, R, M]) && O.isHost() &&
+            O.history().some(m => m.text === 'waow') &&
+            O.history().some(m => m.text === 'relay-note'), 10000)
+
+        const waow = O.history().find(m => m.text === 'waow')
+        const relayNote = O.history().find(m => m.text === 'relay-note')
+        assert.equal(waow.from, 'Member')
+        assert.equal(waow.unverified, undefined)
+        assert.equal(relayNote.from, 'Relay')
+        assert.equal(relayNote.unverified, undefined)
+        assert.ok(events.O.some(batch => batch.some(m => m.text === 'waow')))
+        assert.ok(noDuplicates(O.history()))
+        assert.ok(noDuplicates(R.history()))
+        assert.ok(noDuplicates(M.history()))
+
+        // No-loop / deduplication check: history event counts remain stable.
+        const countsBefore = { O: events.O.length, R: events.R.length, M: events.M.length }
+        await delay(600)
+        assert.deepEqual({ O: events.O.length, R: events.R.length, M: events.M.length }, countsBefore)
+        assert.ok(noDuplicates(O.history()))
+        assert.ok(noDuplicates(R.history()))
+        assert.ok(noDuplicates(M.history()))
+    } finally {
+        await stopAll(nodes)
+    }
 })
 
 })
