@@ -2912,17 +2912,56 @@ const MAP_UPNP_REASONS = {
 
 function showMapUpnp() {
     if (!mapUpnpBox || !mapUpnpButton) return;
-    const hide = !internetRoom || roomReach?.state === 'lan' || fullNodeSelf || roomReach?.state === 'ready' || !hasApi('enableUpnp');
+    const ready = fullNodeSelf || roomReach?.state === 'ready';
+    const proven = fullNodeSelf || roomReach?.proven === true;
+    const dialback = roomReach?.dialback;
+    const autoDialbackVisible = !proven && roomReach?.state === 'ready' && (dialback === 'failed' || dialback === 'checking');
+    const hide = !internetRoom || roomReach?.state === 'lan' || !hasApi('enableUpnp') || (ready && !mapUpnpTried && !autoDialbackVisible);
     mapUpnpBox.hidden = hide;
     if (hide) return;
     const waiting = mapUpnpBusy || roomReach?.state === 'upnp-wait';
+    let showButton = true;
+    let buttonText = 'Open port (UPnP)';
+    let note = '';
+    let noteState = '';
+    if (waiting) {
+        buttonText = roomReach?.state === 'ready' ? 'Checking…' : UPNP_WAIT_TEXT;
+    } else if (proven) {
+        showButton = false;
+        note = 'Port open — full node active.';
+        noteState = 'ok';
+    } else if (roomReach?.state === 'ready') {
+        if (dialback === 'checking') {
+            showButton = false;
+            note = 'Port opened. Checking full node…';
+            noteState = 'busy';
+        } else if (dialback === 'failed') {
+            buttonText = 'Check again';
+            note = roomReach?.dialbackReason === 'private-ip'
+                ? 'Port opened, but public IP couldn\'t be verified. Not a full node.'
+                : 'Port opened, but peers couldn\'t reach it. Not a full node.';
+            noteState = 'warn';
+        } else {
+            showButton = false;
+            note = peerItems.size > 0
+                ? 'Port opened. Waiting for a direct peer to check.'
+                : 'Port opened. Checks when a peer joins.';
+            noteState = 'busy';
+        }
+    } else if (mapUpnpTried && roomReach?.state === 'upnp-failed') {
+        buttonText = 'Try UPnP again';
+        note = MAP_UPNP_REASONS[roomReach.reason] ?? MAP_UPNP_REASONS.failed;
+        noteState = 'warn';
+    } else if (mapUpnpError) {
+        note = mapUpnpError;
+        noteState = 'warn';
+    }
+    mapUpnpButton.hidden = !showButton;
     mapUpnpButton.disabled = waiting;
-    mapUpnpButton.textContent = waiting ? UPNP_WAIT_TEXT : (mapUpnpTried && roomReach?.state === 'upnp-failed') ? 'Try UPnP again' : 'Open port (UPnP)';
-    const note = waiting ? '' : (mapUpnpTried && roomReach?.state === 'upnp-failed')
-        ? (MAP_UPNP_REASONS[roomReach.reason] ?? MAP_UPNP_REASONS.failed)
-        : mapUpnpError;
+    mapUpnpButton.textContent = buttonText;
     if (mapUpnpNote) {
         mapUpnpNote.textContent = note;
+        mapUpnpNote.dataset.state = noteState;
         mapUpnpNote.hidden = !note;
     }
 }
@@ -3043,6 +3082,9 @@ if (hasApi('onFullNodeAddrs')) {
 // The UPnP result (mapped or none) changes the invite code or the note.
 if (hasApi('onUpnp')) {
     window.asscrack.onUpnp(() => refreshInvite());
+}
+if (hasApi('onDialback')) {
+    window.asscrack.onDialback(() => refreshInvite());
 }
 // The name of a full node can come later, and a full node can leave. The peer count changes the text (gap B4).
 window.asscrack.onPeerName(() => showFullNodeState());

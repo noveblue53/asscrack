@@ -83,7 +83,7 @@ protocol.registerSchemesAsPrivileged([{ scheme: 'room-media', privileges: {
 } }, { scheme: APP_SCHEME, privileges: APP_PRIVILEGES }, { scheme: MUSIC_SCHEME, privileges: MUSIC_PRIVILEGES }]);
 const EVENTS = ['channels', 'peer-discovered', 'peer-joined', 'peer-left', 'message', 'history', 'voice-state', 'voice-roster', 'host-changed', 'peer-name',
     'file-offer', 'file-retried', 'file-progress', 'file-done', 'file-failed', 'file-refused', 'file-cancelled', 'topology', 'full-node', 'full-node-addrs',
-    'voice-frame', 'connection', 'dial-failed', 'upnp', 'presence', 'topic', 'voice-channels',
+    'voice-frame', 'connection', 'dial-failed', 'upnp', 'dialback', 'presence', 'topic', 'voice-channels',
     // P7b: pause and resume of a received file (P7a). The Partial objects have no path.
     'file-paused', 'file-resumed', 'file-restarted', 'file-discarded', 'file-expired', 'file-partials'];
 
@@ -1914,13 +1914,20 @@ handleRoomIpc('asscrack:forget-room', (_event, roomId) => {
 function roomReach() {
     const failed = lastUpnp?.state === 'none';
     const reason = failed && typeof lastUpnp.reason === 'string' ? lastUpnp.reason : null;
+    const dialback = node.dialbackState?.() ?? { state: 'idle', reason: null };
     let state;
     if (node.roomKey() === null || node.memberState().lan === true) state = 'lan';
     else if (node.publicAddrs().length > 0) state = 'ready';
     else if (node.upnpPending()) state = 'upnp-wait';
     else if (failed) state = 'upnp-failed';
     else state = 'none';
-    return { state, reason: state === 'upnp-failed' ? reason : null, proven: node.fullNode() };
+    return {
+        state,
+        reason: state === 'upnp-failed' ? reason : null,
+        proven: node.fullNode(),
+        dialback: dialback.state,
+        dialbackReason: dialback.state === 'failed' ? dialback.reason : null
+    };
 }
 
 // Diagnostics: one journal line for each change of the reach state.
