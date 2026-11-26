@@ -208,12 +208,13 @@ test('127.0.0.1: two restricted members recover two-way voice and chat through t
     }, 20)
 
     await waitFor(() => audio.every(list => list.length >= 5), 5000, 'voice in both directions before loss')
-    function checkForwarding(relay) {
-        const { forwardedTo } = relay.voiceStats()
-        assert.ok(forwardedTo[a.peerId]?.[b.peerId] >= 5 && forwardedTo[b.peerId]?.[a.peerId] >= 5)
+    function checkForwarding(relays) {
+        const list = Array.isArray(relays) ? relays : [relays]
+        const fwd = (from, to) => list.reduce((sum, r) => sum + (r.voiceStats().forwardedTo[from]?.[to] ?? 0), 0)
+        assert.ok(fwd(a.peerId, b.peerId) >= 5 && fwd(b.peerId, a.peerId) >= 5)
         for (const endpoint of endpoints) assert.equal(endpoint.voiceStats().directStreams, 0)
     }
-    checkForwarding(primary)
+    checkForwarding([primary, alternate])
     const loss = performance.now()
     await primary.stop()
     phase = 1  // No post-loss frame was generated while the old host was still running.
@@ -224,7 +225,7 @@ test('127.0.0.1: two restricted members recover two-way voice and chat through t
         const fresh = list.filter(f => f.phase === 1)
         return fresh.length >= 50 && fresh.at(-1).at - fresh[0].at >= 1000
     }), 15000, 'sustained new voice in both directions')
-    checkForwarding(alternate)
+    checkForwarding([alternate])
     for (const [i, list] of audio.entries()) {
         const fresh = list.filter(f => f.phase === 1)
         assert.ok(fresh.every((f, j) => j === 0 || f.serial > fresh[j - 1].serial))

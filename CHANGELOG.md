@@ -7,6 +7,10 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased
+
+- **Sharded 1-hop voice relays**: Relayed voice traffic now spreads deterministically across all reachable Full Nodes in a room (up to 8 relays via Rendezvous Hashing in `src/network/voice-relay.mjs` and `src/network/node.mjs`), keeping directly connected pairs on `VOICE_DIRECT_PROTOCOL`, capping relayed voice latency at 1 hop, failing over seamlessly when a relay Full Node drops, and preserving backward compatibility with 1.0.9 clients (`voiceShard: 1` capability). Verified (`127.0.0.1`): `test/voice-sharded-relay.test.mjs` and `test/relay-spread.test.mjs` (11/11 pass), full suite `node tools/run-tests.mjs` (1,408 passed, 0 failed, 1 skipped).
+
 ## 1.0.8 (2026-11-25): retro themes, voice oscilloscopes, join UPnP and screen audio fixes
 
 Release 1.0.8 is the eighth update of 1.0.0. A 1.0.0 through 1.0.7 app gets it with the signed update
