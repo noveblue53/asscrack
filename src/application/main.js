@@ -135,9 +135,17 @@ if (dataFolder.dir) {
 // What's new (release-notes.mjs): a file of an older version in the data folder, before this run writes to it.
 const oldProfile = !moveOffer && hadOldProfile(app.getPath('userData'));
 
+function readArgValue(argv, name) {
+    const eqPrefix = `${name}=`;
+    for (let i = 0; i < argv.length; i++) {
+        if (argv[i] === name && i + 1 < argv.length) return argv[i + 1];
+        if (argv[i].startsWith(eqPrefix)) return argv[i].slice(eqPrefix.length);
+    }
+    return null;
+}
+
 if (process.argv.includes('--quic-probe')) {
-    const outIndex = process.argv.indexOf('--quic-probe-out');
-    const outPath = outIndex !== -1 ? process.argv[outIndex + 1] : null;
+    const outPath = readArgValue(process.argv, '--quic-probe-out');
     app.whenReady().then(async () => {
         let report;
         try {
@@ -153,6 +161,36 @@ if (process.argv.includes('--quic-probe')) {
         }
         process.stdout.write(json);
         app.exit(report.ok ? 0 : 1);
+    });
+} else if (process.argv.includes('--quic-bench')) {
+    const relay = readArgValue(process.argv, '--relay');
+    const target = readArgValue(process.argv, '--target');
+    const timeoutRaw = readArgValue(process.argv, '--timeout-ms');
+    const timeoutMs = timeoutRaw ? Number(timeoutRaw) : 15000;
+    const outPath = readArgValue(process.argv, '--out')
+        || path.join(process.env.PORTABLE_EXECUTABLE_DIR || process.cwd(), 'quic-bench-result.json');
+    const noDialog = process.argv.includes('--no-dialog');
+    app.whenReady().then(async () => {
+        let report;
+        try {
+            const { runInitiatorProbe } = await import('../network/quic-dcutr-prototype.mjs');
+            report = await runInitiatorProbe({ relay, target, timeoutMs });
+        } catch (err) {
+            report = { role: 'initiator', echoOk: false, upgraded: false, error: err?.stack || err?.message || String(err) };
+        }
+        const json = `${JSON.stringify(report, null, 2)}\n`;
+        mkdirSync(path.dirname(outPath), { recursive: true });
+        writeFileSync(outPath, json, 'utf8');
+        process.stdout.write(json);
+        if (!noDialog) {
+            dialog.showMessageBoxSync({
+                type: report.echoOk ? 'info' : 'error',
+                title: 'QUIC DCUtR Bench',
+                message: report.upgraded ? 'UPGRADED to direct QUIC' : 'Did NOT upgrade (relayed or failed)',
+                detail: json
+            });
+        }
+        app.exit(report.echoOk ? 0 : 1);
     });
 } else {
 

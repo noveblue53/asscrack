@@ -276,3 +276,64 @@ export async function runLoopbackProbe({ timeoutMs = 10000 } = {}) {
         error
     }
 }
+
+/**
+ * Run an initiator probe against a remote relay and circuit target, waiting for DCUtR upgrade and running echo.
+ */
+export async function runInitiatorProbe({ relay, target, port = 0, timeoutMs = 15000 } = {}) {
+    if (!relay || !target) throw new Error('relay and target are required')
+    const relayMa = multiaddr(relay)
+    const targetMa = multiaddr(target)
+    const initiator = await createQuicPeer({
+        listen: [`/ip4/0.0.0.0/udp/${port}/quic-v1`, '/p2p-circuit'],
+        enableDcutr: true
+    })
+    const listenQuic = initiator.getMultiaddrs().find(ma => ma.toString().includes('/quic-v1'))?.toString() ?? null
+    const summary = {
+        role: 'initiator',
+        runtime: {
+            node: process.versions.node,
+            electron: process.versions.electron ?? null,
+            platform: process.platform,
+            arch: process.arch
+        },
+        listenQuic,
+        listenPort: extractUdpPort(listenQuic),
+        relay,
+        target,
+        initialWasLimited: null,
+        upgraded: false,
+        elapsedMs: null,
+        directAddr: null,
+        echoOk: false,
+        echoVia: null,
+        error: null
+    }
+    try {
+        await initiator.dial(relayMa)
+        const start = Date.now()
+        const initialConn = await initiator.dial(targetMa)
+        summary.initialWasLimited = Boolean(initialConn.limits)
+
+        let activeConn = initialConn
+        try {
+            const directConn = await waitForDirectConnection(initiator, initialConn.remotePeer, timeoutMs)
+            summary.upgraded = true
+            summary.elapsedMs = Date.now() - start
+            summary.directAddr = directConn.remoteAddr.toString()
+            activeConn = directConn
+        } catch (err) {
+            summary.elapsedMs = Date.now() - start
+            summary.error = err?.message ?? String(err)
+        }
+
+        const stream = await activeConn.newStream(QUIC_PROBE_PROTOCOL, { runOnLimitedConnection: true })
+        summary.echoOk = await echoOverStream(stream, 'dcutr-2nat-ping')
+        summary.echoVia = summary.upgraded ? 'direct-quic' : 'relayed-circuit'
+    } catch (err) {
+        summary.error = err?.message ?? String(err)
+    } finally {
+        await initiator.stop()
+    }
+    return summary
+}
