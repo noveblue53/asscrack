@@ -7,6 +7,15 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
+## Unreleased
+
+- **Phase 1 Mobile Browser Client (desktop-hosted HTTPS bridge + mobile web UI)** (`src/application/mobile-cert.mjs`, `src/application/mobile-qr.mjs`, `src/application/mobile-auth.mjs`, `src/application/mobile-bridge.mjs`, `src/mobile/`):
+  - Added a zero-dependency `node:https` bridge with a persistent pure-JS ECDSA P-256 X.509 certificate (loopback, LAN, public IP, and manual SANs), pure-JS QR code SVG generator, single-use pairing tokens, hashed `HttpOnly; Secure; SameSite=Strict` per-device session cookies, IP rate limiting, UPnP port mapping (`src/network/port-mapper.mjs`), SSE live push (`GET /api/events`), and `fetch` POST actions.
+  - Built the responsive mobile web UI in `src/mobile/` behind a Phase 2–ready `transport.js` adapter covering saved rooms, text channels, chat history/live messages, whispers, member presence, typing indicators, authenticated inline image previews (`src/application/room-media.mjs`), and a `409` room-switch guard while desktop is in voice or screen share.
+  - Wired the bridge into `src/application/main.js`, `preload.cjs`, `index.html`, `styles.css`, `layout.js`, `mobile-bridge-ui.js`, `renderer.js`, `whispers.js`, and `saved-rooms-ui.js` (off by default, saved fixed port, LAN/Remote QR & URLs, device list with Revoke / Revoke all).
+  - Verified (`127.0.0.1`): `node --test test/mobile-cert.test.mjs test/mobile-qr.test.mjs test/mobile-auth.test.mjs test/mobile-bridge.test.mjs test/settings-menu.test.mjs` (`18` pass, `0` fail), `node --test test/login-menu.test.mjs test/preload-bridge.test.mjs` (`21` pass, `0` fail), full `npm test` (`1457` tests, `1438` pass, `18` skipped, `1` concurrent timing flake in `test/transfer-resume-restart.test.mjs` which passed `7/7` in isolation).
+  - Verified (`this PC`): `node tools/app-smoke-check.mjs` (`ok: true`, `0` errors) and isolated loopback HTTPS mobile bridge smoke run with fresh `--profile` and fake `APPDATA` (`0` console/terminal errors).
+
 ## 1.0.10 (2026-11-26): server roles, voice/music/file scaling, UPnP fixes and history backfill
 
 Release 1.0.10 is the tenth update of 1.0.0. A 1.0.0 through 1.0.9 app gets it with the signed update
