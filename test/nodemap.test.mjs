@@ -210,3 +210,34 @@ test('map renders active forwarding edges (Sharer -> Forwarder -> Viewer) with a
     assert.match(document.querySelector('[data-node="f"]').textContent, /Forwarding to 1/)
     assert.doesNotMatch(document.querySelector('[data-node="s"]').textContent, /Forwarding to/)
 })
+
+test('node map renders music forwarding edges and unhides the music legend key', () => {
+    const { document, window } = createDom([{ id: 'node-map' }, { id: 'map-legend', children:
+        ['relay', 'direct', 'relayed', 'unknown', 'full', 'voice', 'speaking', 'file', 'screen', 'music'].map(key => ({ id: key })) }])
+    document.getElementById('node-map')
+    const legend = document.getElementById('map-legend')
+    for (const key of legend.children) key.dataset.legend = key.id
+    document.createElementNS = (_, name) => document.createElement(name)
+    window.matchMedia = () => ({ matches: true })
+    class ResizeObserver { observe() {} }
+    const source = readFileSync(new URL('../src/application/nodemap.js', import.meta.url), 'utf8')
+    runInNewContext(source, { document, window, ResizeObserver, setTimeout: () => 1, clearTimeout() {} })
+    window.nodeMap.update({
+        self: 'dj', host: 'dj',
+        nodes: [{ id: 'dj', name: 'DJ' }, { id: 'f', name: 'Forwarder' }, { id: 'l', name: 'Listener' }],
+        links: {},
+        musicEdges: [
+            { from: 'dj', to: 'f', dj: 'dj' },
+            { from: 'f', to: 'l', dj: 'dj' }
+        ]
+    })
+    const directEdge = document.querySelector('[data-kind="music"][data-from="dj"][data-to="f"]')
+    const fwdEdge = document.querySelector('[data-kind="music"][data-from="f"][data-to="l"]')
+    assert.ok(directEdge, 'dj -> forwarder music edge rendered')
+    assert.ok(fwdEdge, 'forwarder -> listener music edge rendered')
+    assert.equal(directEdge.getAttribute('marker-end'), 'url(#nm-music-arrow)')
+    assert.equal(fwdEdge.getAttribute('marker-end'), 'url(#nm-music-arrow)')
+    assert.equal(directEdge.textContent, 'Music')
+    assert.equal(fwdEdge.textContent, 'Music (forwarded)')
+    assert.equal(legend.querySelector('[data-legend="music"]').hidden, false)
+})

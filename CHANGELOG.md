@@ -9,6 +9,8 @@ Each result has one of these labels:
 
 ## Unreleased
 
+- **Tree-forwarded room music streams**: Wired `src/network/music-fanout.mjs` into `src/network/music-tree.mjs` (`MUSIC_FANOUT_PROTOCOL = '/asscrack/music-fanout/1.0.0'`) and `src/network/node.mjs` (`musicFanout: 1` capability, automatic parent failover, and `1.0.9` backward compatibility via `musicRelay`), and added amber `musicEdges` arrows and legend visibility to the Network Map (`src/application/renderer.js`, `src/application/nodemap.js`, `src/application/index.html`, `src/application/styles.css`). Verified (`127.0.0.1`): `test/music-fanout.test.mjs`, `test/music-fanout-streams.test.mjs`, `test/music-relay.test.mjs`, `test/music.test.mjs`, and `test/nodemap.test.mjs` (`32` pass, `0` fail); `npm test` (`1413` tests, `1395` pass, `0` fail, `18` skipped); `this PC`: `node tools/app-smoke-check.mjs` (`0` errors).
+
 - **Sharded 1-hop voice relays**: Relayed voice traffic now spreads deterministically across all reachable Full Nodes in a room (up to 8 relays via Rendezvous Hashing in `src/network/voice-relay.mjs` and `src/network/node.mjs`), keeping directly connected pairs on `VOICE_DIRECT_PROTOCOL`, capping relayed voice latency at 1 hop, failing over seamlessly when a relay Full Node drops, and preserving backward compatibility with 1.0.9 clients (`voiceShard: 1` capability). Verified (`127.0.0.1`): `test/voice-sharded-relay.test.mjs` and `test/relay-spread.test.mjs` (11/11 pass), full suite `node tools/run-tests.mjs` (1,408 passed, 0 failed, 1 skipped).
 
 ## 1.0.8 (2026-11-25): retro themes, voice oscilloscopes, join UPnP and screen audio fixes
