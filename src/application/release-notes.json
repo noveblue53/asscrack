@@ -1,5 +1,17 @@
 [
   {
+    "version": "1.0.10",
+    "date": "2026-11-26",
+    "notes": [
+      "- Server roles and member management: Owner, Admin, and Member roles with live Can host toggles, offline Admin delegation, a right-click member menu, reversible Kick/Ban/Unban/Forget actions, and Can host on knock approval.",
+      "- Sharded 1-hop voice relays: relayed voice calls now spread across reachable Full Nodes for smoother audio behind NAT.",
+      "- Tree-forwarded room music streams: room music now fans out through listening peers with amber forwarding arrows in the network map.",
+      "- Piece-based file swarming: Shared Shelf and room transfers now download pieces from multiple peers, with a \"Seed shared files\" toggle in Settings and active seeder info.",
+      "- UPnP and reachability fixes: live full-node dial-back status in the network map, automatic default-gateway interface selection (avoiding VPN adapters), and automatic UPnP when reopening saved internet rooms.",
+      "- Chat history backfill: non-host members now backfill their own messages when a room host reconnects."
+    ]
+  },
+  {
     "version": "1.0.9",
     "date": "2026-11-25",
     "notes": [

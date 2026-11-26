@@ -7,7 +7,29 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
-## Unreleased
+## 1.0.10 (2026-11-26): server roles, voice/music/file scaling, UPnP fixes and history backfill
+
+Release 1.0.10 is the tenth update of 1.0.0. A 1.0.0 through 1.0.9 app gets it with the signed update
+(Settings, About ASSCRACK, Check now). The entries below this heading, down to the 1.0.8 entry, were "Unreleased"
+entries. Since 1.0.9, the app has these new items:
+
+- Server roles and member management (Owner, Admin, Member, live `Can host`, offline Admin delegation, right-click member menu, reversible `Kick`/`Ban`/`Unban`/`Forget`, and `Can host` on knock approval).
+- Sharded 1-hop voice relays across Full Nodes (`voiceShard: 1`).
+- Tree-forwarded room music streams (`musicFanout: 1`) with amber forwarding arrows in the network map.
+- Piece-based file swarming (`fileSwarm: 1`) for Shared Shelf and room transfers, with `Seed shared files` in Settings and active seeder UI.
+- Network map UPnP and full-node verification feedback, automatic default-gateway UPnP interface selection, and automatic UPnP when reopening saved internet rooms.
+- Non-host chat history backfill when a room host reconnects.
+
+Build:
+- `npm run dist` makes `ASSCRACK-1.0.10-portable.exe` (product name "ASSCRACK Portable"). `npm run dist:installer`
+  makes `ASSCRACK-1.0.10-setup.exe` (product name "ASSCRACK").
+- The release has six files: the two files above, their download copies `ASSCRACK-1.0.10-update.exe` and
+  `ASSCRACK-1.0.10-portable-update.exe` (the same bytes), `update.json` and `update.json.sig`. See
+  `docs/RELEASE_UPDATES.md`.
+- The notes and the date of `update.json` come from the 1.0.10 entry of `src/application/release-notes.json`.
+- Verification (`127.0.0.1` / `this PC`): full `npm test` suite, `test/release-notes.test.mjs`,
+  `ASSCRACK_RELEASE=1 test/update-release.test.mjs`, `node tools/sign-update.mjs --check-release`, and clean
+  `node tools/app-smoke-check.mjs`.
 
 - **Server roles, offline Admin delegation, and reversible Kick/Ban/Unban**:
   - Added signed per-device epoch role/status records (`Owner > Admin > Member` plus live-toggleable `Can host`) in `src/network/room-membership.mjs`, `src/network/voice-channels.mjs`, `src/network/knock.mjs`, `src/network/knock-client.mjs`, `src/network/invite.mjs`, and `src/network/node.mjs`, with seamless `v2` in-place room upgrades and `1.0.9` wire compatibility.
