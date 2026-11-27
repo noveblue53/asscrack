@@ -192,6 +192,7 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
     heartbeatInterval = 1000, hostTimeout = 5000, electionDelay = 3000, downloadDir, scratchDir, fileAckTimeout, partials,
     previewProvider = null, storedPreview = null, receiveWhisper = null, fullNode = 'auto', allowPrivateFullNode = false, relayOnly = false, roomKey = null, announce = [], storePath = null,
     redialInterval = 5000, inviteNodes = [], upnp = false, upnpTimeout = 70000, upnpLeaseSeconds = 1800,
+    relayFallbackMs = 15000, relayDial = true,
     upnpClient = null, seedHistory = [], seedChannels = [], seedVoiceChannels = null, membership = null,
     screen: screenOptions = {},
     // easy-join part 2: true (or an object with test limits) for the room node of the app. The owner answers knocks,
@@ -2367,13 +2368,13 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         relayDialTimer = setTimeout(() => { relayDialTimer = null; relayDials() }, delay)
     }
     function relayDials(probeExhausted = false) {
-        if (stopped) return
+        if (stopped || !relayDial) return
         const relays = [...sessions.keys()].filter(p => peerFull.get(p) === true && addrOf(p))
         if (relays.length === 0) return
         const wanted = new Set()
         for (const [from, list] of links) {
             if (!sessions.has(from)) continue
-            for (const p of list) if (p !== selfId && !sessions.has(p) && !pendingChats.has(p) && (selfId < p || selfFull)) wanted.add(p)
+            for (const p of list) if (p !== selfId && !sessions.has(p) && !pendingChats.has(p)) wanted.add(p)
         }
         // Clear the hold time of each target that is not wanted now (for example, its session is open).
         for (const target of wantedSince.keys()) if (!wanted.has(target)) wantedSince.delete(target)
@@ -2386,6 +2387,11 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
             const tries = relayDialTries.get(target) ?? 0
             if (tries >= RELAY_DIAL_TRIES && !probeExhausted) continue
             if (!wantedSince.has(target)) wantedSince.set(target, now)
+            // Lower peer ID (or full node) dials first; higher non-full peer waits relayFallbackMs before dialing as fallback.
+            if (selfId > target && !selfFull) {
+                const fallbackLeft = wantedSince.get(target) + relayFallbackMs - now
+                if (fallbackLeft > 0) { scheduleSettle(fallbackLeft); continue }
+            }
             // Hold the first try until each full node with a direct session and each known full node lists the
             // target, or until the hold time is more than RELAY_SETTLE_MS. A known full node with no session yet
             // has no links list, thus the hold also waits for its session.
@@ -2440,10 +2446,15 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
         for (const k of noReservationTries.keys()) if (k.split(' ')[0] === target) noReservationTries.delete(k)
     }
     let settleTimer = null
-    // One timer wakes relayDials() at the end of the first hold.
+    let settleDue = Infinity
+    // One timer wakes relayDials() at the earliest pending hold or fallback deadline.
     function scheduleSettle(delay) {
-        if (stopped || settleTimer) return
-        settleTimer = setTimeout(() => { settleTimer = null; relayDials() }, delay)
+        if (stopped) return
+        const due = Date.now() + delay
+        if (settleTimer && due >= settleDue) return
+        if (settleTimer) clearTimeout(settleTimer)
+        settleDue = due
+        settleTimer = setTimeout(() => { settleTimer = null; settleDue = Infinity; relayDials() }, delay)
     }
     // The number of relayed sessions and relay dials in flight of this node through the relay.
     function relayLoad(relay) {

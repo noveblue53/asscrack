@@ -22,10 +22,10 @@ Each result has one of these labels:
   - Verified (`this PC`): `node tools/app-smoke-check.mjs` (`ok: true`, `0` errors) and isolated loopback HTTPS mobile bridge smoke run with fresh `--profile` and fake `APPDATA` (`0` console/terminal errors).
   - Verified (`internet`): Owner paired a phone over UPnP port `41000`, joined a room, and sent live messages.
 
-- **UPnP dial-back retry and fallback, and full-node relay reconnect** (`src/network/node.mjs`):
+- **UPnP dial-back retry and fallback, and full-node / higher-ID relay reconnect** (`src/network/node.mjs`):
   - Track a per-family dial-back epoch and tried-peer set so UPnP mapping (and `Check again`) invalidates stale in-flight pre-UPnP dial-backs and retries once the open stream finishes, and a `private-ip` or failed dial-back falls back to other connected direct peers (preferring public-IP peers over LAN peers).
-  - Allow full nodes (`selfFull`) to dial lower-ID peers through a shared relay in `relayDials()`, and dial known full nodes listed in `links` even when already connected to another full node (`dialListedFullNodes()`), preventing reconnect deadlocks after sleep/wake.
-  - Verified (`127.0.0.1`): `node --test test/upnp.test.mjs test/relay.test.mjs test/relay-spread.test.mjs test/relay-path.test.mjs test/reopen-auto-upnp.test.mjs` (`46` pass, `0` fail) and full `npm test` (`1452` tests, `1434` pass, `0` fail, `18` skipped).
+  - Allow full nodes (`selfFull`) to dial lower-ID peers through a shared relay in `relayDials()`, allow higher-ID non-full peers to fall back to relay dialing after `relayFallbackMs` (`15000 ms`) when the lower-ID peer has not connected, and dial known full nodes listed in `links` even when already connected to another full node (`dialListedFullNodes()`).
+  - Verified (`127.0.0.1`): `node --test test/relay.test.mjs test/relay-spread.test.mjs test/relay-path.test.mjs test/connect-race.test.mjs test/upnp.test.mjs` (`43` pass, `0` fail); `this PC`: `node tools/app-smoke-check.mjs` (`0` errors).
 
 ## 1.0.10 (2026-11-26): server roles, voice/music/file scaling, UPnP fixes and history backfill
 

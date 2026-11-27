@@ -233,4 +233,43 @@ test('higher-ID full node reaches lower-ID relay-only peer through a shared rela
     }
 })
 
+test('higher-ID non-full node falls back to dialing lower-ID peer through a shared relay', { timeout: 60000 }, async () => {
+    const room = `fallback-relay-${Date.now()}`
+    const nodes = []
+    try {
+        let R, A, B
+        for (let i = 0; i < 20; i++) {
+            ;[R, A, B] = await Promise.all([
+                createAsscrackNode({ room, listen: LOCAL, discovery: false, fullNode: true, ...fast }),
+                createAsscrackNode({ room, relayOnly: true, fullNode: false, relayDial: false, ...fast }),
+                createAsscrackNode({ room, relayOnly: true, fullNode: false, relayFallbackMs: 300, ...fast })
+            ])
+            if (B.peerId > A.peerId) break
+            await stopAll([R, A, B])
+        }
+        nodes.push(R, A, B)
+        assert.ok(B.peerId > A.peerId, 'B has a higher peer ID than A')
+
+        const openedB = []
+        B.events.on('connection', ev => { if (ev.state === 'session' && ev.peer === A.peerId) openedB.push(ev) })
+
+        const rAddr = localAddr(R)
+        await A.connect(rAddr)
+        await B.connect(rAddr)
+
+        await waitFor(() => B.peers().includes(A.peerId) && A.peers().includes(B.peerId), 20000, 'B-A fallback session through R')
+        assert.ok(openedB.some(ev => ev.dir === 'out' && ev.type === 'relay'), 'B initiated outbound relay dial')
+
+        const gotA = []
+        const gotB = []
+        A.events.on('message', m => gotA.push(m.text))
+        B.events.on('message', m => gotB.push(m.text))
+        B.send('hello from higher peer')
+        A.send('hello from lower peer')
+        await waitFor(() => gotA.includes('hello from higher peer') && gotB.includes('hello from lower peer'), 10000, 'two-way chat A<->B')
+    } finally {
+        await stopAll(nodes)
+    }
+})
+
 })
