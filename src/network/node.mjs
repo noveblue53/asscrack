@@ -2138,7 +2138,10 @@ export async function createAsscrackNode({ room, listen, port = 0, discovery = t
                     dialFailed({ peer: '?', addr: bare, via: 'address', err, started })
                 }
             }
-        })().finally(() => dialing.delete(peerId))
+        })().finally(() => {
+            dialing.delete(peerId)
+            if (!stopped && !sessions.has(peerId)) scheduleRelayDials()
+        })
     }
 
     function dialDirectPeer(peerId, addrs) {

@@ -1,5 +1,13 @@
 [
   {
+    "version": "1.0.11",
+    "date": "2026-11-28",
+    "notes": [
+      "- Mobile browser client (Phase 1): connect from your phone browser directly to your desktop over HTTPS (Settings > Mobile browser…) with QR pairing, saved rooms, text channels, chat history, whispers, member presence, typing indicators, and inline image previews.",
+      "- UPnP and relay reconnect fixes: retries UPnP dial-back after port mapping or Check again, lets full nodes and higher-ID peers fall back to shared relays when direct connections time out, and triggers relay fallback immediately after failed direct dials."
+    ]
+  },
+  {
     "version": "1.0.10",
     "date": "2026-11-26",
     "notes": [

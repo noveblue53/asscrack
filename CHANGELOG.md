@@ -7,7 +7,23 @@ Each result has one of these labels:
 - **127.0.0.1**: a test on one PC only. It does not prove that the feature works on a LAN.
 - **internet**: a test on 2 computers on different networks, for example a home router and a phone hotspot.
 
-## Unreleased
+## 1.0.11 (2026-11-28): Phase 1 mobile browser client and UPnP/relay reconnect fixes
+
+Release 1.0.11 is the eleventh update of 1.0.0. A 1.0.0 through 1.0.10 app gets it with the signed update
+(Settings, About ASSCRACK, Check now). The entries below this heading, down to the 1.0.10 entry, were "Unreleased"
+entries. Since 1.0.10, the app has these new items:
+
+- Phase 1 Mobile Browser Client: desktop-hosted `node:https` bridge with pure-JS X.509 certificate, pure-JS QR code SVG pairing, hashed `HttpOnly; Secure; SameSite=Strict` device cookies, UPnP port mapping, SSE + POST mobile web UI (`src/mobile/`), and voice/screen-share room-switch guard.
+- UPnP dial-back retry/fallback, Friends panel UPnP `"Opening port…"` fix, and full-node / higher-ID relay reconnect (`src/network/node.mjs`), including triggering `scheduleRelayDials()` when `dialFullNode()` finishes failing.
+
+Build:
+- `npm run dist` makes `ASSCRACK-1.0.11-portable.exe` (product name "ASSCRACK Portable"). `npm run dist:installer`
+  makes `ASSCRACK-1.0.11-setup.exe` (product name "ASSCRACK").
+- The release has six files: the two files above, their download copies `ASSCRACK-1.0.11-update.exe` and
+  `ASSCRACK-1.0.11-portable-update.exe` (the same bytes), `update.json` and `update.json.sig`. See
+  `docs/RELEASE_UPDATES.md`.
+- The notes and the date of `update.json` come from the 1.0.11 entry of `src/application/release-notes.json`.
+- Verification (`127.0.0.1` / `this PC` / `internet`): `test/release-notes.test.mjs`, `ASSCRACK_RELEASE=1 test/update-release.test.mjs`, `node tools/sign-update.mjs --check-release`, `test/relay.test.mjs`, `test/mobile-bridge.test.mjs`, `node tools/app-smoke-check.mjs`, and owner `internet` phone pairing/chat field test.
 
 - **Friends panel UPnP "Opening port…" state fix** (`src/network/node.mjs`, `test/upnp.test.mjs`):
   - Marked `upnpPhase` as `'done'` before emitting the `'upnp'` event in all terminal paths of `runUpnp()` (`private-ip`, `mapped`, `timeout`, and router errors) so `upnpPending()` is already `false` when `friend-links.mjs` refreshes the Friends panel reachability state.
